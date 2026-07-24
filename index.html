@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -334,6 +333,7 @@ const brandLabel={'MARS':'MARS 瑪氏','PG':'PG 寶僑','CPG':'CPG 紙潔','跨�
 const BRAND_ORDER={'MARS':0,'PG':1,'CPG':2,'跨品類':3,'通用':4};
 function buildFilters(){
   const body=document.getElementById('filtersBody');
+  body.innerHTML='';   // 先清空，避免重覆呼叫時疊加
   const groups=[['brand','品牌 / 類別'],['platform','平台 / 通路'],['mode','寄銷 / 買斷 / 領用'],['delivery','物流方式（直送 / 竹運）']];
   groups.forEach(([key,label])=>{
     const g=el('div','fgroup'); g.appendChild(el('h3',null,label));
@@ -354,6 +354,7 @@ function buildFilters(){
 const HOT_KW=["退貨","補貨","嘜頭","效期","約倉","驗收","PO單","對帳","請款","退廠","EIP","拋單","缺貨","自編碼"];
 function buildKw(){
   const box=document.getElementById('kwSuggest');
+  box.innerHTML='<span class="lbl">熱門關鍵字</span>';   // 先清空（保留標題），避免重覆疊加
   HOT_KW.forEach(k=>{
     const b=el('button',null,esc(k)); b.dataset.kw=k;
     b.onclick=()=>{ state.kw.has(k)?state.kw.delete(k):state.kw.add(k); b.classList.toggle('on'); render(); };
@@ -364,6 +365,7 @@ function buildKw(){
 // ---- stats ----
 function buildStats(){
   const s=document.getElementById('stats');
+  s.innerHTML='';   // 先清空，避免重覆呼叫時疊加
   const platN=new Set(DATA.filter(d=>d.platform!=='通用').map(d=>d.platform)).size;
   const brandN=new Set(DATA.filter(d=>['MARS','PG','CPG'].includes(d.brand)).map(d=>d.brand)).size;
   [[String(DATA.length),'SOP 文件'],[String(platN),'電商通路'],[String(brandN),'品牌'],['3','出貨模式']].forEach(([n,l])=>{
@@ -576,7 +578,7 @@ function setBadge(kind,text,note){
   document.getElementById('srcNote').textContent=note||'';
 }
 function fmtTime(d){const p=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;}
+  return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;}
 
 async function loadData(){
   const {SOPS_CSV_URL,STEPS_CSV_URL}=CONFIG;
@@ -596,7 +598,7 @@ async function loadData(){
     }
   }
   DATA=SEED.map(enrich);
-  setBadge('seed','資料來源：內建範例','尚未連結試算表 · 46 份');
+  setBadge('seed','資料來源：內建範例','尚未連結試算表 · 內建 '+SEED.length+' 份 · 已更新 '+fmtTime(new Date()));
 }
 
 // 重新繪製整個頁面（載入或重新整理後）
@@ -622,6 +624,9 @@ async function init(){
   refreshUI();
 }
 document.getElementById('refreshBtn').onclick=async()=>{
+  // 先閃一下「重新整理中…」，讓每次點擊都有明顯回饋（即使是內建範例模式）
+  setBadge('loading','重新整理中…');
+  await new Promise(r=>setTimeout(r,180));
   await loadData();
   // 保留使用者目前的搜尋與篩選狀態，只重繪
   document.getElementById('totalCount').textContent=DATA.length;
