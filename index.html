@@ -146,6 +146,19 @@ header{border-bottom:1px solid var(--line);background:
 .fopt[data-k="mode"][data-v="寄銷"].on{background:var(--m-consign-wash);border-color:var(--m-consign);color:var(--m-consign)}
 .fopt[data-k="mode"][data-v="買斷"].on{background:var(--m-buyout-wash);border-color:var(--m-buyout);color:var(--m-buyout)}
 .fopt[data-k="mode"][data-v="領用"].on{background:var(--m-loan-wash);border-color:var(--m-loan);color:var(--m-loan)}
+/* 品牌篩選：選取時整顆填滿該品牌色、白字 */
+.fopt[data-k="brand"].on{color:#fff;border-color:transparent;font-weight:600}
+.fopt[data-k="brand"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="brand"][data-v="MARS"].on{background:#1500c9}
+.fopt[data-k="brand"][data-v="PG"].on{background:var(--brand-pg)}
+.fopt[data-k="brand"][data-v="CPG"].on{background:#d11021}
+.fopt[data-k="brand"][data-v="CPG"].on .cpg-logo{color:#fff}
+.fopt[data-k="brand"][data-v="跨品類"].on{background:var(--brand-cross)}
+.fopt[data-k="brand"][data-v="通用"].on{background:var(--brand-gen)}
+/* MARS 選取後，內層 LOGO 併入按鈕(去掉內框藍底)，成為單一藍色按鈕 */
+.fopt[data-k="brand"][data-v="MARS"].on .mars-logo{background:transparent;padding:0;color:#fff}
+/* PG 選取後，藍色 P&G 轉白色(避免藍底藍字) */
+.fopt[data-k="brand"][data-v="PG"].on .pg-logo{color:#fff}
 
 /* Cards */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;align-items:start}
@@ -161,6 +174,89 @@ header{border-bottom:1px solid var(--line);background:
 .chip-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .chip{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
 .chip.brand-MARS{background:var(--brand-mars-wash);color:var(--brand-mars)}
+.chip.mars-chip{background:transparent;border:0;padding:0}
+.mars-logo{display:inline-block;background:#1500c9;color:#fff;font-weight:800;
+  letter-spacing:.06em;padding:3px 9px;border-radius:5px;line-height:1.25;
+  font-family:"Helvetica Neue",Arial,var(--sans);font-size:11.5px}
+.fopt .mars-logo{background:transparent;color:#1500c9;padding:0;font-size:12.5px;letter-spacing:.04em}
+.chip.pg-chip{background:transparent;border:0;padding:0 2px}
+.pg-logo{display:inline-block;color:#1666b0;font-weight:700;font-style:italic;
+  font-family:Georgia,"Times New Roman",serif;letter-spacing:-.01em;font-size:14.5px;line-height:1.2}
+.fopt .pg-logo{font-size:14px}
+.chip.cpg-chip{background:transparent;border:0;padding:0 2px}
+.cpg-ico{width:13px;height:13px;vertical-align:-2px;margin-right:5px;display:inline-block;flex:none}
+.cpg-logo{display:inline-block;color:#d11021;font-weight:700;font-size:13px;letter-spacing:.02em}
+.fopt .cpg-logo{font-size:12.5px}
+/* 酷澎 Coupang 彩色字樣 */
+.chip.cp-chip{background:transparent;border:0;padding:0 2px}
+.cp-logo{display:inline-block;font-weight:800;font-size:14px;letter-spacing:-.02em;line-height:1.2;
+  font-family:"Helvetica Neue",Arial,var(--sans)}
+.fopt .cp-logo{font-size:13px}
+.cp-logo .cpc1{color:#4a2c17}
+.cp-logo .cpc2{color:#e2231a}
+.cp-logo .cpc3{color:#f7a81b}
+.cp-logo .cpc4{color:#7fbf3f}
+.cp-logo .cpc5{color:#27a9e1}
+@media (prefers-color-scheme:dark){.cp-logo .cpc1{color:#cdae95}}
+:root[data-theme="dark"] .cp-logo .cpc1{color:#cdae95}
+:root[data-theme="light"] .cp-logo .cpc1{color:#4a2c17}
+.fopt[data-k="platform"][data-v="酷澎"].on{background:#5c3a24;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="酷澎"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="酷澎"].on .cp-logo span{color:#fff}
+/* 博客來 (綠色購物袋 + 文字) */
+.bk-logo{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:13px;color:var(--ink);line-height:1.2}
+.bk-bag{width:16px;height:15px;flex:none}
+.fopt[data-k="platform"][data-v="博客來"].on{background:#7ab648;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="博客來"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="博客來"].on .bk-logo{color:#fff}
+/* momo (洋紅) */
+.mo-logo{display:inline-block;font-weight:800;font-size:14.5px;color:#e5008b;letter-spacing:-.03em;line-height:1.2}
+.fopt[data-k="platform"][data-v="MOMO"].on{background:#e5008b;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="MOMO"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="MOMO"].on .mo-logo{color:#fff}
+/* PChome (雙藍) */
+.pc-logo{display:inline-block;font-weight:800;font-size:13.5px;letter-spacing:-.02em;line-height:1.2}
+.pc-logo .pc1{color:#0b5cab}.pc-logo .pc2{color:#18a2df}
+.fopt[data-k="platform"][data-v="PCHOME"].on{background:#0b5cab;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="PCHOME"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="PCHOME"].on .pc-logo span{color:#fff}
+/* 雅虎 yahoo!拍賣 (紫) */
+.yh-logo{display:inline-block;font-weight:800;font-size:13.5px;line-height:1.2}
+.yh-logo .yh1{color:#6001d2}.yh-logo .yh2{color:var(--ink);font-weight:700;margin-left:3px}
+.fopt[data-k="platform"][data-v="雅虎"].on{background:#6001d2;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="雅虎"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="雅虎"].on .yh-logo span{color:#fff}
+/* 蝦皮 Shopee (橘) */
+.sp-logo{display:inline-flex;align-items:center;gap:5px;color:#ee4d2d;font-weight:700;font-size:13px;line-height:1.2}
+.sp-bag{width:15px;height:15px;flex:none}
+.fopt[data-k="platform"][data-v="蝦皮"].on{background:#ee4d2d;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="蝦皮"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="蝦皮"].on .sp-logo{color:#fff}
+/* 東森 EHS (紅) */
+.ehs-logo{display:inline-flex;align-items:center;gap:5px;color:#c30d23;font-weight:700;font-size:13px;line-height:1.2}
+.ehs-badge{width:17px;height:17px;flex:none}
+.fopt[data-k="platform"][data-v="東森"].on{background:#c30d23;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="東森"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="東森"].on .ehs-logo{color:#fff}
+/* 遠時 friDay 購物 (紅 D) */
+.fd-logo{display:inline-block;font-weight:800;font-size:13.5px;line-height:1.2;letter-spacing:-.01em}
+.fd-logo .fdink{color:var(--ink)}.fd-logo .fdred{color:#e60012}
+.fopt[data-k="platform"][data-v="遠時"].on{background:#e60012;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="遠時"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="遠時"].on .fd-logo span{color:#fff}
+/* HCT 新竹物流 (藍) */
+.hct-logo{display:inline-flex;align-items:center;gap:5px;color:var(--ink);font-weight:700;font-size:13px;line-height:1.2}
+.hct-badge{background:#17479e;color:#fff;font-weight:800;font-size:10.5px;letter-spacing:.03em;padding:2px 5px;border-radius:4px}
+.fopt[data-k="platform"][data-v="HCT新竹物流"].on{background:#17479e;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="HCT新竹物流"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="HCT新竹物流"].on .hct-logo{color:#fff}
+.fopt[data-k="platform"][data-v="HCT新竹物流"].on .hct-badge{background:rgba(255,255,255,.24)}
+/* UberEats (綠) */
+.ue-logo{display:inline-block;font-weight:800;font-size:13.5px;line-height:1.2;letter-spacing:-.02em}
+.ue-logo .ueink{color:var(--ink)}.ue-logo .uegreen{color:#06c167}
+.fopt[data-k="platform"][data-v="UberEats"].on{background:#06a556;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="platform"][data-v="UberEats"].on .n{color:rgba(255,255,255,.82)}
+.fopt[data-k="platform"][data-v="UberEats"].on .ue-logo span{color:#fff}
 .chip.brand-PG{background:var(--brand-pg-wash);color:var(--brand-pg)}
 .chip.brand-CPG{background:var(--brand-cpg-wash);color:var(--brand-cpg)}
 .chip.brand-跨品類{background:var(--brand-cross-wash);color:var(--brand-cross)}
@@ -348,6 +444,44 @@ function orderVals(key,map){
   return ks;
 }
 const brandLabel={'MARS':'MARS 瑪氏','PG':'PG 寶僑','CPG':'CPG 紙潔','跨品類':'跨品類','通用':'通用作業'};
+const MARS_LOGO='<span class="mars-logo">MARS</span>';
+const PG_LOGO='<span class="pg-logo">P&amp;G</span>';
+// 紙潔標誌：紅圓 + 白菱 + 紅心
+const CPG_ICON='<svg class="cpg-ico" viewBox="0 0 100 100" aria-hidden="true">'+
+  '<circle cx="50" cy="50" r="50" fill="#d11021"/>'+
+  '<polygon points="50,14 86,50 50,86 14,50" fill="#fff"/>'+
+  '<polygon points="50,36 64,50 50,64 36,50" fill="#d11021"/></svg>';
+const CPG_LOGO=CPG_ICON+'<span class="cpg-logo">CPG</span>';   // 紅菱圖示在左、紅字 CPG 在右
+const BRAND_LOGO={'MARS':MARS_LOGO,'PG':PG_LOGO,'CPG':CPG_LOGO};
+const BRAND_CHIP_CLASS={'MARS':'mars-chip','PG':'pg-chip','CPG':'cpg-chip'};
+// 品牌顯示：MARS/PG/CPG 用 LOGO，其餘用文字
+function brandLabelHTML(b){ return BRAND_LOGO[b]||esc(brandLabel[b]||b); }
+// 各平台商標字樣
+const COUPANG_LOGO='<span class="cp-logo"><span class="cpc1">cou</span><span class="cpc2">p</span>'+
+  '<span class="cpc3">a</span><span class="cpc4">n</span><span class="cpc5">g</span></span>';
+const BK_BAG='<svg class="bk-bag" viewBox="0 0 24 22" aria-hidden="true">'+
+  '<path d="M7 6a5 5 0 0 1 10 0" fill="none" stroke="#8cc63f" stroke-width="2"/>'+
+  '<rect x="2" y="6" width="20" height="15" rx="3" fill="#8cc63f"/>'+
+  '<path d="M8.5 11c1.4 2.2 5.6 2.2 7 0" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>';
+const BK_LOGO='<span class="bk-logo">'+BK_BAG+'博客來</span>';
+const MO_LOGO='<span class="mo-logo">momo</span>';
+const PC_LOGO='<span class="pc-logo"><span class="pc1">PC</span><span class="pc2">home</span></span>';
+const YH_LOGO='<span class="yh-logo"><span class="yh1">yahoo!</span><span class="yh2">拍賣</span></span>';
+const SP_BAG='<svg class="sp-bag" viewBox="0 0 24 24" aria-hidden="true">'+
+  '<path d="M8 8a4 4 0 0 1 8 0" fill="none" stroke="#ee4d2d" stroke-width="1.8"/>'+
+  '<rect x="3.5" y="7.5" width="17" height="14" rx="3" fill="#ee4d2d"/>'+
+  '<text x="12" y="18.2" font-size="10.5" fill="#fff" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold">S</text></svg>';
+const SP_LOGO='<span class="sp-logo">'+SP_BAG+'蝦皮</span>';
+const EHS_BADGE='<svg class="ehs-badge" viewBox="0 0 44 44" aria-hidden="true">'+
+  '<circle cx="22" cy="22" r="22" fill="#c30d23"/>'+
+  '<text x="22" y="28.5" font-size="16" fill="#fff" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold">EHS</text></svg>';
+const EHS_LOGO='<span class="ehs-logo">'+EHS_BADGE+'東森</span>';
+const FD_LOGO='<span class="fd-logo"><span class="fdink">fri</span><span class="fdred">D</span><span class="fdink">ay</span> <span class="fdred">購物</span></span>';
+const HCT_LOGO='<span class="hct-logo"><span class="hct-badge">HCT</span>新竹物流</span>';
+const UE_LOGO='<span class="ue-logo"><span class="ueink">Uber</span> <span class="uegreen">Eats</span></span>';
+const PLAT_LOGO={'酷澎':COUPANG_LOGO,'博客來':BK_LOGO,'MOMO':MO_LOGO,'PCHOME':PC_LOGO,'雅虎':YH_LOGO,
+  '蝦皮':SP_LOGO,'東森':EHS_LOGO,'遠時':FD_LOGO,'HCT新竹物流':HCT_LOGO,'UberEats':UE_LOGO};
+function platLabelHTML(v){ return PLAT_LOGO[v]||esc(v==='通用'?'通用':v); }
 const BRAND_ORDER={'MARS':0,'PG':1,'CPG':2,'跨品類':3,'通用':4};
 function buildFilters(){
   const body=document.getElementById('filtersBody');
@@ -358,9 +492,10 @@ function buildFilters(){
     const opts=el('div','fopts');
     const map=facetValues(key);
     orderVals(key,map).forEach(v=>{
+      if(key==='platform' && v==='通用') return;   // 通用 已在「品牌/類別」，平台不再重複
       const b=el('button','fopt'); b.dataset.k=key; b.dataset.v=v;
-      const disp = key==='brand'?(brandLabel[v]||v):v;
-      b.innerHTML=`${esc(disp)} <span class="n">${map.get(v)}</span>`;
+      const disp = key==='brand'?brandLabelHTML(v):(key==='platform'?platLabelHTML(v):esc(v));
+      b.innerHTML=`${disp} <span class="n">${map.get(v)}</span>`;
       b.onclick=()=>{ state[key].has(v)?state[key].delete(v):state[key].add(v); b.classList.toggle('on'); render(); };
       opts.appendChild(b);
     });
@@ -423,8 +558,8 @@ function card(d){
       <span class="code">${esc(d.codeShow||d.code)}</span>
     </div>
     <div class="chip-row">
-      <span class="chip brand-${d.brand}">${brandLabel[d.brand]||d.brand}</span>
-      <span class="chip plat">${esc(d.platform==='通用'?'通用':d.platform)}</span>
+      <span class="chip ${BRAND_CHIP_CLASS[d.brand]||('brand-'+d.brand)}">${brandLabelHTML(d.brand)}</span>
+      ${d.platform==='通用'?'':`<span class="chip ${PLAT_LOGO[d.platform]?'cp-chip':'plat'}">${platLabelHTML(d.platform)}</span>`}
       ${modeChips}${delivChip}${statusChip}
     </div>
     <div class="ch-foot">
