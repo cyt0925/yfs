@@ -249,8 +249,12 @@ header{border-bottom:1px solid var(--line);background:
 .hct-badge{background:#17479e;color:#fff;font-weight:800;font-size:10.5px;letter-spacing:.03em;padding:2px 5px;border-radius:4px}
 .fopt[data-k="platform"][data-v="HCT新竹物流"].on{background:#17479e;border-color:transparent;color:#fff;font-weight:600}
 .fopt[data-k="platform"][data-v="HCT新竹物流"].on .n{color:rgba(255,255,255,.82)}
-.fopt[data-k="platform"][data-v="HCT新竹物流"].on .hct-logo{color:#fff}
-.fopt[data-k="platform"][data-v="HCT新竹物流"].on .hct-badge{background:rgba(255,255,255,.24)}
+.fopt[data-k="platform"][data-v="HCT新竹物流"].on .hct-logo,
+.fopt[data-k="delivery"][data-v="HCT新竹物流"].on .hct-logo{color:#fff}
+.fopt[data-k="platform"][data-v="HCT新竹物流"].on .hct-badge,
+.fopt[data-k="delivery"][data-v="HCT新竹物流"].on .hct-badge{background:rgba(255,255,255,.24)}
+.fopt[data-k="delivery"][data-v="HCT新竹物流"].on{background:#17479e;border-color:transparent;color:#fff;font-weight:600}
+.fopt[data-k="delivery"][data-v="HCT新竹物流"].on .n{color:rgba(255,255,255,.82)}
 /* UberEats (綠) */
 .ue-logo{display:inline-block;font-weight:800;font-size:13.5px;line-height:1.2;letter-spacing:-.02em}
 .ue-logo .ueink{color:var(--ink)}.ue-logo .uegreen{color:#06c167}
@@ -266,8 +270,8 @@ header{border-bottom:1px solid var(--line);background:
 .chip.mode-買斷{background:var(--m-buyout-wash);color:var(--m-buyout)}
 .chip.mode-領用{background:var(--m-loan-wash);color:var(--m-loan)}
 .chip.deliv{background:transparent;border-color:currentColor;font-weight:600}
-.chip.deliv.直送{color:var(--d-direct)}
-.chip.deliv.竹運{color:var(--d-hct)}
+.chip.deliv.d-direct{color:var(--d-direct)}
+.chip.deliv.d-hct{color:var(--d-hct)}
 .chip.status{background:var(--m-consign-wash);color:var(--m-consign);font-weight:600}
 .ch-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:12px}
 .ch-meta{display:flex;gap:12px;flex-wrap:wrap}
@@ -557,7 +561,7 @@ function renderBlock(b){
   return `<p class="bp">${lab}${hl(b.x)}</p>`;
 }
 
-const PLATFORM_ORDER=["酷澎","博客來","PCHOME","MOMO","雅虎","蝦皮","東森","UberEats","遠時","HCT新竹物流","通用"];
+const PLATFORM_ORDER=["酷澎","博客來","PCHOME","MOMO","雅虎","蝦皮","東森","UberEats","遠時","通用"];
 const state={q:"",brand:new Set(),platform:new Set(),mode:new Set(),delivery:new Set(),kw:new Set()};
 
 // ---- build filter counts ----
@@ -575,7 +579,7 @@ function orderVals(key,map){
   if(key==='platform') ks.sort((a,b)=>PLATFORM_ORDER.indexOf(a)-PLATFORM_ORDER.indexOf(b));
   else if(key==='brand') ks.sort((a,b)=>(BRAND_ORDER[a]??9)-(BRAND_ORDER[b]??9));
   else if(key==='mode') ks.sort((a,b)=>({'寄銷':0,'買斷':1,'領用':2}[a])-({'寄銷':0,'買斷':1,'領用':2}[b]));
-  else if(key==='delivery') ks.sort((a,b)=>({'直送':0,'竹運':1}[a])-({'直送':0,'竹運':1}[b]));
+  else if(key==='delivery') ks.sort((a,b)=>({'直送':0,'HCT新竹物流':1,'竹運':1}[a])-({'直送':0,'HCT新竹物流':1,'竹運':1}[b]));
   return ks;
 }
 const brandLabel={'MARS':'MARS 瑪氏','PG':'PG 寶僑','CPG':'CPG 紙潔','跨品類':'跨品類','通用':'通用作業'};
@@ -621,7 +625,7 @@ const BRAND_ORDER={'MARS':0,'PG':1,'CPG':2,'跨品類':3,'通用':4};
 function buildFilters(){
   const body=document.getElementById('filtersBody');
   body.innerHTML='';   // 先清空，避免重覆呼叫時疊加
-  const groups=[['brand','品牌 / 類別'],['platform','平台 / 通路'],['mode','寄銷 / 買斷 / 領用'],['delivery','物流方式（直送 / 竹運）']];
+  const groups=[['brand','品牌 / 類別'],['platform','平台 / 通路'],['mode','寄銷 / 買斷 / 領用'],['delivery','物流方式（直送 / HCT新竹物流）']];
   groups.forEach(([key,label])=>{
     const g=el('div','fgroup'); g.appendChild(el('h3',null,label));
     const opts=el('div','fopts');
@@ -629,7 +633,10 @@ function buildFilters(){
     orderVals(key,map).forEach(v=>{
       if(key==='platform' && v==='通用') return;   // 通用 已在「品牌/類別」，平台不再重複
       const b=el('button','fopt'); b.dataset.k=key; b.dataset.v=v;
-      const disp = key==='brand'?brandLabelHTML(v):(key==='platform'?platLabelHTML(v):esc(v));
+      const disp = key==='brand'?brandLabelHTML(v)
+        :key==='platform'?platLabelHTML(v)
+        :(key==='delivery'&&v==='HCT新竹物流')?HCT_LOGO
+        :esc(v);
       b.innerHTML=`${disp} <span class="n">${map.get(v)}</span>`;
       b.onclick=()=>{ state[key].has(v)?state[key].delete(v):state[key].add(v); b.classList.toggle('on'); render(); };
       opts.appendChild(b);
@@ -684,7 +691,11 @@ const openCards=new Set();
 function card(d){
   const c=el('div','card'+(openCards.has(d.code)?' open':'')); c.dataset.code=d.code;
   const modeChips=d.modes.map(m=>`<span class="chip mode-${m}">${m}</span>`).join('');
-  const delivChip=d.delivery&&d.delivery!=='－'?`<span class="chip deliv ${d.delivery}">${d.delivery}</span>`:'';
+  let delivChip='';
+  if(d.delivery && d.delivery!=='－'){
+    if(d.delivery==='HCT新竹物流') delivChip=`<span class="chip cp-chip">${HCT_LOGO}</span>`;
+    else { const cls={'直送':'d-direct'}[d.delivery]||'d-hct'; delivChip=`<span class="chip deliv ${cls}">${esc(d.delivery)}</span>`; }
+  }
   const statusChip=d.status?`<span class="chip status">${esc(d.status)}</span>`:'';
   const head=el('div','card-head');
   head.innerHTML=`
@@ -802,6 +813,9 @@ document.getElementById('mFilter').onclick=()=>{
 /* ============================ 資料載入層 ============================ */
 // 依關鍵字詞庫計算 tags + 全文搜尋字串（與後端產生方式一致）
 function enrich(d){
+  // 合併：竹運＝HCT新竹物流（統一為物流方式，並把它從平台/通路移除）
+  if(d.delivery==='竹運') d.delivery='HCT新竹物流';
+  if(d.platform==='HCT新竹物流') d.platform='通用';
   const parts=[d.title,d.code,d.codeShow||'',d.status||'',d.purpose||'',d.overview||''];
   (d.roles||[]).forEach(r=>{parts.push(r[0],r[1]);});
   (d.steps||[]).forEach(s=>{parts.push(s[0],s[1]);});
@@ -1051,9 +1065,9 @@ function closeEditor(){ document.getElementById('editorBack').classList.remove('
 
 /* ---------- 表單渲染 ---------- */
 const BRAND_OPTS=['MARS','PG','CPG','跨品類','通用'];
-const PLAT_OPTS=['酷澎','博客來','PCHOME','MOMO','雅虎','蝦皮','東森','UberEats','遠時','HCT新竹物流','friDay','通用'];
+const PLAT_OPTS=['酷澎','博客來','PCHOME','MOMO','雅虎','蝦皮','東森','UberEats','遠時','friDay','通用'];
 const MODE_OPTS=['寄銷','買斷','領用'];
-const DELIV_OPTS=['直送','竹運','－'];
+const DELIV_OPTS=['直送','HCT新竹物流','－'];
 function opt(v,cur){ return `<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v)}</option>`; }
 function fld(id,label,val,hint,type){ return `<div class="fld"><label>${esc(label)}${hint?` <span class="hint">${esc(hint)}</span>`:''}</label>
   <input id="${id}" type="${type||'text'}" value="${esc(val||'')}"></div>`; }
