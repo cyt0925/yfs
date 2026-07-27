@@ -420,7 +420,6 @@ body:not(.signed-in) .signout{display:none}
 </style>
 </head>
 <body>
-<script src="https://accounts.google.com/gsi/client" async></script>
 
 <header>
   <div class="wrap head-inner">
@@ -450,10 +449,9 @@ body:not(.signed-in) .signout{display:none}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>重新整理</button>
     <span class="src-note" id="srcNote"></span>
     <div class="auth-area" id="authArea">
-      <div id="gsiBtn"></div>
+      <button class="btn btn-sm" id="editModeBtn" title="輸入編輯碼以編輯內容">🔑 編輯模式</button>
       <span class="who" id="whoAmI"></span>
       <button class="btn btn-primary btn-sm" id="addSopBtn" title="新增一份 SOP">＋ 新增 SOP</button>
-      <button class="btn btn-ghost btn-sm signout" id="signoutBtn">登出</button>
     </div>
   </div>
   <div class="kw-suggest" id="kwSuggest"><span class="lbl">熱門關鍵字</span></div>
@@ -939,59 +937,51 @@ document.addEventListener('keydown',e=>{
 
 <!-- ====================== 編輯器邏輯 ====================== -->
 <script>
-/* ---------- 登入 / 身分 ---------- */
-let ID_TOKEN=null, ME=null, ED=null, imgTargetStep=-1;
-const CAN_EDIT_MODE = ()=> !!(CONFIG.APPS_SCRIPT_URL && CONFIG.GOOGLE_CLIENT_ID);
+/* ---------- 編輯模式（共用編輯碼） ---------- */
+let EDIT_CODE=sessionStorage.getItem('yfs_edit_code')||null, ED=null, imgTargetStep=-1;
+const CAN_EDIT_MODE = ()=> !!CONFIG.APPS_SCRIPT_URL;
 
 function initAuth(){
   if(!CAN_EDIT_MODE()){ const a=document.getElementById('authArea'); if(a) a.style.display='none'; return; }
-  let tries=0;
-  const t=setInterval(()=>{
-    tries++;
-    if(window.google && google.accounts && google.accounts.id){
-      clearInterval(t);
-      google.accounts.id.initialize({client_id:CONFIG.GOOGLE_CLIENT_ID, callback:onCredential, auto_select:false});
-      google.accounts.id.renderButton(document.getElementById('gsiBtn'),
-        {type:'standard',theme:'outline',size:'medium',text:'signin_with',shape:'pill'});
-    } else if(tries>40){ clearInterval(t); }
-  },200);
+  if(EDIT_CODE) document.body.classList.add('can-edit');
+  updateEditStatus();
+  document.getElementById('editModeBtn').onclick=toggleEditMode;
 }
-function jwtPayload(tok){
-  try{ return JSON.parse(decodeURIComponent(escape(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))))); }
-  catch(e){ return {}; }
+function updateEditStatus(){
+  const on=document.body.classList.contains('can-edit');
+  document.getElementById('editModeBtn').textContent = on?'🔓 離開編輯':'🔑 編輯模式';
+  document.getElementById('whoAmI').textContent = on?'編輯模式開啟':'';
 }
-function onCredential(resp){
-  ID_TOKEN=resp.credential;
-  const p=jwtPayload(ID_TOKEN); ME=(p.email||'').toLowerCase();
-  const allow=(CONFIG.EDITOR_EMAILS||[]).map(x=>String(x).toLowerCase());
-  const canEdit = allow.length===0 || allow.includes(ME);
-  document.body.classList.add('signed-in');
-  document.body.classList.toggle('can-edit', canEdit);
-  document.getElementById('gsiBtn').style.display='none';
-  document.getElementById('whoAmI').innerHTML=(canEdit?'✎ ':'👁 ')+'<b>'+esc(p.name||ME)+'</b>'+(canEdit?'':'（無編輯權限）');
-  render();
-}
-function signOut(){
-  ID_TOKEN=null; ME=null;
-  document.body.classList.remove('signed-in','can-edit');
-  const g=document.getElementById('gsiBtn'); if(g) g.style.display='';
-  document.getElementById('whoAmI').textContent='';
-  if(window.google&&google.accounts&&google.accounts.id) google.accounts.id.disableAutoSelect();
-  render();
+async function toggleEditMode(){
+  if(document.body.classList.contains('can-edit')){
+    EDIT_CODE=null; sessionStorage.removeItem('yfs_edit_code');
+    document.body.classList.remove('can-edit'); updateEditStatus(); render(); return;
+  }
+  const code=prompt('請輸入編輯碼：');
+  if(!code) return;
+  try{
+    await rawPost('auth',null,code);
+    EDIT_CODE=code; sessionStorage.setItem('yfs_edit_code',code);
+    document.body.classList.add('can-edit'); updateEditStatus(); render();
+    toast('已進入編輯模式 ✓');
+  }catch(e){ alert('編輯碼錯誤，無法進入編輯模式'); }
 }
 
 /* ---------- 後端呼叫 ---------- */
-async function apiPost(action,payload){
-  if(!ID_TOKEN) throw new Error('尚未登入');
+async function rawPost(action,payload,code){
   const res=await fetch(CONFIG.APPS_SCRIPT_URL,{
     method:'POST', redirect:'follow',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body:JSON.stringify({token:ID_TOKEN,action,payload})
+    body:JSON.stringify({code:code,action:action,payload:payload})
   });
   let j; try{ j=await res.json(); }
   catch(e){ throw new Error('後端回應無法解析（請確認 Apps Script 已正確部署為「所有人」可存取）'); }
   if(!j.ok) throw new Error(j.error||'操作失敗');
   return j;
+}
+async function apiPost(action,payload){
+  if(!EDIT_CODE) throw new Error('尚未進入編輯模式');
+  return rawPost(action,payload,EDIT_CODE);
 }
 function toast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
@@ -1016,10 +1006,10 @@ function blankSop(){
   const d=new Date(), z=n=>String(n).padStart(2,'0');
   return {code:'',codeShow:'',title:'',brand:'通用',platform:'通用',modes:[],delivery:'－',
     version:'V1.0',date:`${d.getFullYear()}/${z(d.getMonth()+1)}/${z(d.getDate())}`,
-    author:(ME||''),status:'',purpose:'',overview:'',roles:[],exceptions:[],steps:[['步驟 1：',''] ]};
+    author:'',status:'',purpose:'',overview:'',roles:[],exceptions:[],steps:[['步驟 1：',''] ]};
 }
 function openEditor(code){
-  if(!ID_TOKEN){ toast('請先登入'); return; }
+  if(!EDIT_CODE){ toast('請先點右上「🔑 編輯模式」並輸入編輯碼'); return; }
   const isNew=!code;
   const src=isNew?blankSop():DATA.find(d=>d.code===code);
   if(!src){ toast('找不到這份 SOP'); return; }
@@ -1175,7 +1165,7 @@ async function saveEditor(){
   finally{ btn.disabled=false; }
 }
 async function delSop(code){
-  if(!ID_TOKEN){ toast('請先登入'); return; }
+  if(!EDIT_CODE){ toast('請先進入編輯模式'); return; }
   if(!confirm('確定要刪除「'+code+'」這份 SOP 嗎？\n此動作會從 Google 試算表移除，無法復原。')) return;
   try{
     await apiPost('delete',{code});
@@ -1186,7 +1176,6 @@ async function delSop(code){
 
 /* ---------- 綁定 ---------- */
 document.getElementById('addSopBtn').onclick=()=>openEditor('');
-document.getElementById('signoutBtn').onclick=signOut;
 document.getElementById('editorClose').onclick=closeEditor;
 document.getElementById('editorCancel').onclick=closeEditor;
 document.getElementById('editorSave').onclick=saveEditor;
