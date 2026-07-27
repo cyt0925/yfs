@@ -9,13 +9,9 @@ window.CONFIG = {
   // 角色欄位「角色｜職責」的分隔字元，勿改
   ROLE_SEP: "｜",
 
-  /* ── 編輯功能 ── */
-  // ③ Google 登入用戶端 ID
-  GOOGLE_CLIENT_ID: "529595948839-8fr03m0pp0sakfu24p3s8botoh3qkm6n.apps.googleusercontent.com",
-
-  // ④ Apps Script 網頁應用程式網址（/exec 結尾）
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwJ6Rz3T_3fcIIA-0q-pK4lR_Bmm8r5VlPrgZ2ExySahHyTatTlNdQvQ1dmn4lLAjgG/exec",
-
-  // ⑤ 會看到編輯按鈕的帳號（真正權限由後端白名單把關）
-  EDITOR_EMAILS: ["tcss1299@gmail.com"]
+  /* ── 編輯功能 ──
+     APPS_SCRIPT_URL 填好後，網站右上角會出現「🔑 編輯模式」。
+     編輯碼不放在這裡（這個檔是公開的）；編輯碼設在 Apps Script 的 Code.gs
+     裡（var EDIT_CODE），把碼私下發給可編輯的同事即可。 */
+  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwJ6Rz3T_3fcIIA-0q-pK4lR_Bmm8r5VlPrgZ2ExySahHyTatTlNdQvQ1dmn4lLAjgG/exec"
 };
