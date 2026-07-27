@@ -416,6 +416,22 @@ body:not(.signed-in) .signout{display:none}
   transition:.25s;pointer-events:none}
 .toast.show{opacity:1}
 .toolbar-edit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.advbox{border:1px solid var(--line);border-radius:10px;padding:2px 14px;margin:16px 0;background:var(--paper)}
+.advbox summary{cursor:pointer;padding:11px 0;font-size:13px;font-weight:600;color:var(--ink-2);list-style:revert}
+.advbox summary:hover{color:var(--accent-ink)}
+.advbox[open] summary{border-bottom:1px dashed var(--line);margin-bottom:8px}
+.advbox[open]{padding-bottom:12px}
+.combo{position:relative}
+.combo .combo-input{width:100%;box-sizing:border-box;padding-right:34px}
+.combo-arrow{position:absolute;right:1px;top:1px;bottom:1px;width:30px;border:none;background:transparent;
+  cursor:pointer;color:var(--muted);font-size:11px;display:flex;align-items:center;justify-content:center;border-radius:0 8px 8px 0}
+.combo-arrow:hover{color:var(--accent-ink)}
+.combo-menu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;background:var(--card);
+  border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);max-height:220px;overflow:auto;display:none}
+.combo-menu.show{display:block}
+.combo-opt{padding:8px 12px;font-size:13.5px;cursor:pointer;color:var(--ink-2)}
+.combo-opt:hover{background:var(--accent-wash);color:var(--accent-ink)}
+.combo-empty{padding:8px 12px;font-size:12.5px;color:var(--muted)}
 @media(max-width:560px){.fgrid{grid-template-columns:1fr}.rolerow{grid-template-columns:1fr}}
 </style>
 </head>
@@ -1002,9 +1018,15 @@ function rebuildKeepState(){
 }
 
 /* ---------- 開啟 / 關閉編輯器 ---------- */
+function genCode(){
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  const base='SOP-'+d.getFullYear()+z(d.getMonth()+1)+z(d.getDate())+'-'+z(d.getHours())+z(d.getMinutes())+z(d.getSeconds());
+  let c=base, i=1; while(DATA.some(x=>x.code===c)) c=base+'-'+(i++);
+  return c;
+}
 function blankSop(){
   const d=new Date(), z=n=>String(n).padStart(2,'0');
-  return {code:'',codeShow:'',title:'',brand:'通用',platform:'通用',modes:[],delivery:'－',
+  return {code:genCode(),codeShow:'',title:'',brand:'通用',platform:'通用',modes:[],delivery:'－',
     version:'V1.0',date:`${d.getFullYear()}/${z(d.getMonth()+1)}/${z(d.getDate())}`,
     author:'',status:'',purpose:'',overview:'',roles:[],exceptions:[],steps:[['步驟 1：',''] ]};
 }
@@ -1035,31 +1057,71 @@ const DELIV_OPTS=['直送','竹運','－'];
 function opt(v,cur){ return `<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v)}</option>`; }
 function fld(id,label,val,hint,type){ return `<div class="fld"><label>${esc(label)}${hint?` <span class="hint">${esc(hint)}</span>`:''}</label>
   <input id="${id}" type="${type||'text'}" value="${esc(val||'')}"></div>`; }
+// 下拉候選 = 內建預設 ∪ 目前資料裡出現過的值（越用越完整）
+function distinctVals(key){ const s=new Set(); DATA.forEach(d=>{const v=d[key]; if(v&&v!=='－') s.add(v);}); return [...s]; }
+function distinctModes(){ const s=new Set(); DATA.forEach(d=>(d.modes||[]).forEach(m=>m&&s.add(m))); return [...s]; }
+function dlist(id,vals){ return `<datalist id="${id}">${[...new Set(vals.filter(Boolean))].map(v=>`<option value="${esc(v)}">`).join('')}</datalist>`; }
+// 自製下拉：點欄位/按 ▾ 就在下方顯示完整清單，點選填入，也可直接打字
+function setupCombo(inputId, values){
+  const input=document.getElementById(inputId); if(!input) return;
+  const combo=input.closest('.combo'), menu=combo.querySelector('.combo-menu'), arrow=combo.querySelector('.combo-arrow');
+  const opts=[...new Set(values.filter(Boolean))];
+  function build(filter){
+    const f=(filter||'').trim().toLowerCase();
+    const list=opts.filter(v=>!f || String(v).toLowerCase().includes(f));
+    menu.innerHTML = list.length ? list.map(v=>`<div class="combo-opt">${esc(v)}</div>`).join('')
+                                 : '<div class="combo-empty">清單沒有，可直接輸入新的值</div>';
+    [...menu.querySelectorAll('.combo-opt')].forEach(o=>o.addEventListener('mousedown',e=>{
+      e.preventDefault(); input.value=o.textContent; menu.classList.remove('show');
+    }));
+  }
+  function open(all){ build(all?'':input.value); menu.classList.add('show'); }
+  arrow.addEventListener('click',e=>{ e.preventDefault(); menu.classList.contains('show')?menu.classList.remove('show'):open(true); input.focus(); });
+  input.addEventListener('focus',()=>open(true));
+  input.addEventListener('input',()=>open(false));
+  input.addEventListener('blur',()=>setTimeout(()=>menu.classList.remove('show'),150));
+}
 
 function renderEditorForm(){
-  const brandOpts = [...new Set([...BRAND_OPTS, ED.brand].filter(Boolean))].map(v=>opt(v,ED.brand)).join('');
-  const delivOpts = [...new Set([...DELIV_OPTS, ED.delivery].filter(Boolean))].map(v=>opt(v,ED.delivery)).join('');
-  const platList  = PLAT_OPTS.map(v=>`<option value="${esc(v)}">`).join('');
-  const modeChks  = MODE_OPTS.map(m=>`<label class="chk"><input type="checkbox" class="mode-chk" value="${esc(m)}"${(ED.modes||[]).includes(m)?' checked':''}>${esc(m)}</label>`).join('');
+  const brandVals=[...new Set([...BRAND_OPTS, ...distinctVals('brand')])];
+  const platVals =[...new Set([...PLAT_OPTS,  ...distinctVals('platform')])];
+  const delivVals=[...new Set([...DELIV_OPTS, ...distinctVals('delivery')])].filter(v=>v&&v!=='－');
+  const modeKnown=[...new Set([...MODE_OPTS,  ...distinctModes()])];
+  const modeChks  = modeKnown.map(m=>`<label class="chk"><input type="checkbox" class="mode-chk" value="${esc(m)}"${(ED.modes||[]).includes(m)?' checked':''}>${esc(m)}</label>`).join('');
   const body=document.getElementById('editorBody');
   body.innerHTML=`
     <div class="fgrid">
-      <div class="fld"><label>文件代碼 code <span class="hint">唯一識別，${ED._isNew?'新增後不建議再改':'不可修改'}</span></label>
-        <input id="f_code" value="${esc(ED.code)}" ${ED._isNew?'':'disabled'}></div>
-      ${fld('f_codeShow','顯示代碼 codeShow',ED.codeShow,'卡片右上角顯示，可留空')}
+      ${ED._isNew
+        ? `<input type="hidden" id="f_code" value="${esc(ED.code)}">`
+        : `<div class="fld"><label>文件代碼 code <span class="hint">系統識別用，不可修改</span></label>
+             <input id="f_code" value="${esc(ED.code)}" disabled></div>
+           ${fld('f_codeShow','顯示代碼 codeShow',ED.codeShow,'卡片右上角顯示，可留空')}`}
       <div class="fld full"><label>標題 title</label><input id="f_title" value="${esc(ED.title)}"></div>
-      <div class="fld"><label>品牌 / 類別</label><select id="f_brand">${brandOpts}</select></div>
-      <div class="fld"><label>平台 / 通路 <span class="hint">可自行輸入</span></label>
-        <input id="f_platform" list="platList" value="${esc(ED.platform)}"><datalist id="platList">${platList}</datalist></div>
-      <div class="fld"><label>寄銷 / 買斷 / 領用</label><div class="chkrow">${modeChks}</div></div>
-      <div class="fld"><label>物流方式 delivery</label><select id="f_delivery">${delivOpts}</select></div>
-      ${fld('f_version','版本 version',ED.version)}
-      ${fld('f_date','日期 date',ED.date,'如 2026/07/27')}
-      ${fld('f_author','負責人 author',ED.author)}
-      ${fld('f_status','狀態 status',ED.status,'可留空，如「待更新」')}
+      <div class="fld"><label>品牌 / 類別 <span class="hint">可下拉或自行輸入</span></label>
+        <div class="combo"><input id="f_brand" class="combo-input" autocomplete="off" value="${esc(ED.brand)}" placeholder="按 ▾ 選，或直接打字">
+          <button type="button" class="combo-arrow" tabindex="-1">▾</button><div class="combo-menu"></div></div></div>
+      <div class="fld"><label>平台 / 通路 <span class="hint">可下拉或自行輸入</span></label>
+        <div class="combo"><input id="f_platform" class="combo-input" autocomplete="off" value="${esc(ED.platform)}" placeholder="按 ▾ 選，或直接打字">
+          <button type="button" class="combo-arrow" tabindex="-1">▾</button><div class="combo-menu"></div></div></div>
+      <div class="fld"><label>寄銷 / 買斷 / 領用 <span class="hint">可複選</span></label>
+        <div class="chkrow">${modeChks}</div>
+        <input id="f_modeExtra" placeholder="其他模式（用逗號分隔）" style="margin-top:6px"></div>
+      <div class="fld"><label>物流方式 <span class="hint">可下拉或自行輸入，沒有就留空</span></label>
+        <div class="combo"><input id="f_delivery" class="combo-input" autocomplete="off" value="${esc(ED.delivery==='－'?'':ED.delivery)}" placeholder="按 ▾ 選，或直接打字">
+          <button type="button" class="combo-arrow" tabindex="-1">▾</button><div class="combo-menu"></div></div></div>
     </div>
     <div class="fld full"><label>目的 purpose</label><textarea id="f_purpose" rows="2">${esc(ED.purpose)}</textarea></div>
     <div class="fld full"><label>流程總覽 overview <span class="hint">各步驟用 → 分隔</span></label><textarea id="f_overview" rows="2">${esc(ED.overview)}</textarea></div>
+
+    <details class="advbox">
+      <summary>進階欄位（版本 / 日期 / 負責人 / 狀態）— 通常免填</summary>
+      <div class="fgrid" style="margin-top:10px">
+        ${fld('f_version','版本 version',ED.version)}
+        ${fld('f_date','日期 date',ED.date,'如 2026/07/27')}
+        ${fld('f_author','負責人 author',ED.author)}
+        ${fld('f_status','狀態 status',ED.status,'可留空，如「待更新」')}
+      </div>
+    </details>
 
     <div class="sub-title">角色與職責 <button class="btn btn-sm" id="addRoleBtn" type="button">＋ 新增角色</button></div>
     <div id="rolesWrap"></div>
@@ -1070,6 +1132,7 @@ function renderEditorForm(){
     <div class="sub-title">Step-by-Step 步驟 <button class="btn btn-sm" id="addStepBtn" type="button">＋ 新增步驟</button></div>
     <div id="stepsWrap"></div>`;
   renderRoles(); renderSteps();
+  setupCombo('f_brand',brandVals); setupCombo('f_platform',platVals); setupCombo('f_delivery',delivVals);
   document.getElementById('addRoleBtn').onclick=()=>{ ED.roles=readRoles(); ED.roles.push(['','']); renderRoles(); };
   document.getElementById('addStepBtn').onclick=()=>{ ED.steps=readSteps(); ED.steps.push([`步驟 ${ED.steps.length+1}：`,'']); renderSteps(); };
 }
@@ -1143,7 +1206,9 @@ function collectForm(){
   ED.brand=v('f_brand')||'通用'; ED.platform=v('f_platform')||'通用';
   ED.delivery=v('f_delivery')||'－'; ED.version=v('f_version'); ED.date=v('f_date');
   ED.author=v('f_author'); ED.status=v('f_status'); ED.purpose=v('f_purpose'); ED.overview=v('f_overview');
-  ED.modes=[...document.querySelectorAll('.mode-chk:checked')].map(c=>c.value);
+  const modeChecked=[...document.querySelectorAll('.mode-chk:checked')].map(c=>c.value);
+  const modeExtra=v('f_modeExtra').split(/[,，、]/).map(x=>x.trim()).filter(Boolean);
+  ED.modes=[...new Set([...modeChecked,...modeExtra])];
   ED.roles=readRoles().filter(r=>(r[0]||'').trim()||(r[1]||'').trim()).map(r=>[r[0].trim(),r[1].trim()]);
   ED.exceptions=v('f_exceptions').split('\n').map(x=>x.trim()).filter(Boolean);
   ED.steps=readSteps().filter(s=>(s[0]||'').trim()||(s[1]||'').trim()).map(s=>[s[0].trim(),s[1].replace(/\s+$/,'')]);
