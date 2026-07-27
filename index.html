@@ -70,6 +70,10 @@
   --d-direct:#6fb0d6; --d-hct:#96ab7a;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
 }
+:root{color-scheme:light}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark}}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.65;
   font-feature-settings:"palt";-webkit-font-smoothing:antialiased;}
@@ -756,7 +760,7 @@ function hl(text){
 
 // ---- card render ----
 const openCards=new Set();
-const BRAND_ACCENT={MARS:'var(--brand-mars)',PG:'var(--brand-pg)',CPG:'var(--brand-cpg)','跨品類':'var(--brand-cross)','通用':'var(--brand-gen)'};
+const BRAND_ACCENT={MARS:'#1500c9',PG:'var(--brand-pg)',CPG:'#d11021','跨品類':'var(--brand-cross)','通用':'var(--brand-gen)'};
 function card(d){
   const c=el('div','card'+(openCards.has(d.code)?' open':'')); c.dataset.code=d.code;
   c.style.setProperty('--ca', BRAND_ACCENT[d.brand]||'var(--accent)');
