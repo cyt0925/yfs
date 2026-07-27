@@ -346,9 +346,81 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;padd
   .grid{grid-template-columns:1fr}
   .card.open{grid-column:auto}
 }
+
+/* ====================== 編輯功能（登入後才顯示） ====================== */
+.auth-area{display:flex;align-items:center;gap:10px;margin-left:auto}
+.auth-area .who{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.auth-area .who b{color:var(--ink-2);font-weight:600}
+.btn{font-family:var(--sans);font-size:13px;font-weight:600;border-radius:9px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink-2);padding:7px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.15s}
+.btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+.btn svg{width:15px;height:15px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.06);color:#fff}
+.btn-danger{color:#c0392b;border-color:#e6b7b1}
+.btn-danger:hover{background:#fdecea;border-color:#c0392b;color:#c0392b}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted);padding:5px 8px}
+.btn-ghost:hover{color:var(--accent-ink)}
+.btn-sm{font-size:12px;padding:5px 10px}
+#addSopBtn{white-space:nowrap}
+.card-tools{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+body:not(.can-edit) .card-tools,body:not(.can-edit) #addSopBtn,body:not(.can-edit) .signout{display:none}
+body:not(.signed-in) .signout{display:none}
+
+/* modal */
+.modal-back{position:fixed;inset:0;background:rgba(10,16,22,.55);backdrop-filter:blur(2px);
+  display:none;align-items:flex-start;justify-content:center;z-index:60;padding:28px 16px;overflow:auto}
+.modal-back.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  width:min(880px,100%);max-width:880px;margin:auto;overflow:hidden}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:2}
+.modal-head h3{font-size:16px;margin:0;color:var(--ink)}
+.modal-x{background:none;border:none;font-size:24px;line-height:1;color:var(--muted);cursor:pointer;padding:0 4px}
+.modal-body{padding:18px 20px;max-height:none}
+.modal-foot{display:flex;gap:10px;justify-content:flex-end;align-items:center;
+  padding:14px 20px;border-top:1px solid var(--line);position:sticky;bottom:0;background:var(--card)}
+.modal-foot .msg{margin-right:auto;font-size:12.5px;color:var(--muted)}
+.modal-foot .msg.err{color:#c0392b}.modal-foot .msg.ok{color:var(--accent-ink)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.fld{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.fld.full{grid-column:1/-1}
+.fld label{font-size:12px;font-weight:600;color:var(--ink-2)}
+.fld .hint{font-size:11px;color:var(--muted);font-weight:400}
+.fld input,.fld textarea,.fld select{font-family:var(--sans);font-size:13.5px;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;box-sizing:border-box}
+.fld textarea{resize:vertical;line-height:1.6}
+.fld input:focus,.fld textarea:focus,.fld select:focus{outline:none;border-color:var(--accent)}
+.chkrow{display:flex;flex-wrap:wrap;gap:6px}
+.chk{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--ink-2);
+  border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;background:var(--paper)}
+.chk input{width:auto;margin:0}
+.sub-title{font-size:13px;font-weight:700;color:var(--accent-ink);margin:18px 0 8px;
+  display:flex;align-items:center;justify-content:space-between}
+.rolerow{display:grid;grid-template-columns:150px 1fr auto;gap:8px;margin-bottom:6px;align-items:center}
+.step-ed{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;background:var(--paper)}
+.step-ed .step-ed-top{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.step-ed .step-ed-top .num{font-size:12px;font-weight:700;color:#fff;background:var(--accent);
+  border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.step-ed .step-ed-top input{flex:1}
+.step-ed .body-tools{display:flex;gap:6px;margin:8px 0}
+.step-ed .legend{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.6}
+.step-ed .legend code{background:var(--line-2);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:10.5px}
+.step-preview{border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin-top:8px;background:var(--card)}
+.step-preview .pv-label{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.step-preview img{max-width:120px;max-height:90px;border-radius:6px;margin:3px;border:1px solid var(--line)}
+.step-preview .subh{font-weight:700;color:var(--accent-ink);border-left:3px solid var(--accent);padding-left:8px;margin:5px 0}
+.step-preview p{margin:4px 0;font-size:12.5px;line-height:1.6}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+  padding:11px 20px;border-radius:10px;font-size:13.5px;box-shadow:var(--shadow);z-index:80;opacity:0;
+  transition:.25s;pointer-events:none}
+.toast.show{opacity:1}
+.toolbar-edit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+@media(max-width:560px){.fgrid{grid-template-columns:1fr}.rolerow{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
+<script src="https://accounts.google.com/gsi/client" async></script>
 
 <header>
   <div class="wrap head-inner">
@@ -377,6 +449,12 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;padd
     <button class="src-refresh" id="refreshBtn" title="重新從試算表載入最新內容">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>重新整理</button>
     <span class="src-note" id="srcNote"></span>
+    <div class="auth-area" id="authArea">
+      <div id="gsiBtn"></div>
+      <span class="who" id="whoAmI"></span>
+      <button class="btn btn-primary btn-sm" id="addSopBtn" title="新增一份 SOP">＋ 新增 SOP</button>
+      <button class="btn btn-ghost btn-sm signout" id="signoutBtn">登出</button>
+    </div>
   </div>
   <div class="kw-suggest" id="kwSuggest"><span class="lbl">熱門關鍵字</span></div>
 </div>
@@ -405,12 +483,31 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;padd
   <img alt="附圖放大">
 </div>
 
+<!-- ====================== SOP 編輯器 ====================== -->
+<div class="modal-back" id="editorBack" role="dialog" aria-label="編輯 SOP">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="editorTitle">編輯 SOP</h3>
+      <button class="modal-x" id="editorClose" aria-label="關閉">×</button>
+    </div>
+    <div class="modal-body" id="editorBody"></div>
+    <div class="modal-foot">
+      <span class="msg" id="editorMsg"></span>
+      <button class="btn" id="editorCancel">取消</button>
+      <button class="btn btn-primary" id="editorSave">儲存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="imgPicker" accept="image/*" style="display:none">
+
 <!-- 設定檔：試算表網址放在 config.js（改那個檔就好，不用動這個大檔案）。 -->
 <script src="config.js"></script>
 <script>
 /* 若 config.js 不存在或未設定，預設為「內建範例」模式。 */
 const CONFIG = Object.assign(
-  { SOPS_CSV_URL:"", STEPS_CSV_URL:"", ROLE_SEP:"｜" },
+  { SOPS_CSV_URL:"", STEPS_CSV_URL:"", ROLE_SEP:"｜",
+    GOOGLE_CLIENT_ID:"", APPS_SCRIPT_URL:"", EDITOR_EMAILS:[] },
   (window.CONFIG||{})
 );
 
@@ -636,6 +733,12 @@ function card(d){
       const t=d.tags.map(x=>`<span class="tag">#${esc(x)}</span>`).join('');
       body.appendChild(sec('關鍵字',`<div class="tags">${t}</div>`));
     }
+    // 編輯工具（僅登入且有權限者可見，由 body.can-edit 控制）
+    const tools=el('div','card-tools');
+    const bEdit=el('button','btn btn-sm','✎ 編輯'); bEdit.onclick=e=>{e.stopPropagation();openEditor(d.code);};
+    const bDel=el('button','btn btn-sm btn-danger','🗑 刪除'); bDel.onclick=e=>{e.stopPropagation();delSop(d.code);};
+    tools.appendChild(bEdit); tools.appendChild(bDel);
+    body.appendChild(tools);
     c.appendChild(body);
   }
   return c;
@@ -832,6 +935,264 @@ document.getElementById('lightbox').onclick=e=>{
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape') document.getElementById('lightbox').classList.remove('show');
 });
+</script>
+
+<!-- ====================== 編輯器邏輯 ====================== -->
+<script>
+/* ---------- 登入 / 身分 ---------- */
+let ID_TOKEN=null, ME=null, ED=null, imgTargetStep=-1;
+const CAN_EDIT_MODE = ()=> !!(CONFIG.APPS_SCRIPT_URL && CONFIG.GOOGLE_CLIENT_ID);
+
+function initAuth(){
+  if(!CAN_EDIT_MODE()){ const a=document.getElementById('authArea'); if(a) a.style.display='none'; return; }
+  let tries=0;
+  const t=setInterval(()=>{
+    tries++;
+    if(window.google && google.accounts && google.accounts.id){
+      clearInterval(t);
+      google.accounts.id.initialize({client_id:CONFIG.GOOGLE_CLIENT_ID, callback:onCredential, auto_select:false});
+      google.accounts.id.renderButton(document.getElementById('gsiBtn'),
+        {type:'standard',theme:'outline',size:'medium',text:'signin_with',shape:'pill'});
+    } else if(tries>40){ clearInterval(t); }
+  },200);
+}
+function jwtPayload(tok){
+  try{ return JSON.parse(decodeURIComponent(escape(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))))); }
+  catch(e){ return {}; }
+}
+function onCredential(resp){
+  ID_TOKEN=resp.credential;
+  const p=jwtPayload(ID_TOKEN); ME=(p.email||'').toLowerCase();
+  const allow=(CONFIG.EDITOR_EMAILS||[]).map(x=>String(x).toLowerCase());
+  const canEdit = allow.length===0 || allow.includes(ME);
+  document.body.classList.add('signed-in');
+  document.body.classList.toggle('can-edit', canEdit);
+  document.getElementById('gsiBtn').style.display='none';
+  document.getElementById('whoAmI').innerHTML=(canEdit?'✎ ':'👁 ')+'<b>'+esc(p.name||ME)+'</b>'+(canEdit?'':'（無編輯權限）');
+  render();
+}
+function signOut(){
+  ID_TOKEN=null; ME=null;
+  document.body.classList.remove('signed-in','can-edit');
+  const g=document.getElementById('gsiBtn'); if(g) g.style.display='';
+  document.getElementById('whoAmI').textContent='';
+  if(window.google&&google.accounts&&google.accounts.id) google.accounts.id.disableAutoSelect();
+  render();
+}
+
+/* ---------- 後端呼叫 ---------- */
+async function apiPost(action,payload){
+  if(!ID_TOKEN) throw new Error('尚未登入');
+  const res=await fetch(CONFIG.APPS_SCRIPT_URL,{
+    method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({token:ID_TOKEN,action,payload})
+  });
+  let j; try{ j=await res.json(); }
+  catch(e){ throw new Error('後端回應無法解析（請確認 Apps Script 已正確部署為「所有人」可存取）'); }
+  if(!j.ok) throw new Error(j.error||'操作失敗');
+  return j;
+}
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2800);
+}
+function setMsg(m,isErr){ const e=document.getElementById('editorMsg'); e.textContent=m||''; e.className='msg'+(isErr?' err':(m?' ok':'')); }
+
+/* ---------- 重繪（保留篩選狀態） ---------- */
+function rebuildKeepState(){
+  document.getElementById('totalCount').textContent=DATA.length;
+  document.getElementById('stats').innerHTML='';
+  document.getElementById('filtersBody').innerHTML='';
+  document.getElementById('kwSuggest').innerHTML='<span class="lbl">熱門關鍵字</span>';
+  buildStats(); buildFilters(); buildKw(); updateFooter();
+  document.querySelectorAll('.fopt').forEach(b=>{if(state[b.dataset.k]&&state[b.dataset.k].has(b.dataset.v))b.classList.add('on');});
+  document.querySelectorAll('.kw-suggest button').forEach(b=>{if(state.kw.has(b.dataset.kw))b.classList.add('on');});
+  render();
+}
+
+/* ---------- 開啟 / 關閉編輯器 ---------- */
+function blankSop(){
+  const d=new Date(), z=n=>String(n).padStart(2,'0');
+  return {code:'',codeShow:'',title:'',brand:'通用',platform:'通用',modes:[],delivery:'－',
+    version:'V1.0',date:`${d.getFullYear()}/${z(d.getMonth()+1)}/${z(d.getDate())}`,
+    author:(ME||''),status:'',purpose:'',overview:'',roles:[],exceptions:[],steps:[['步驟 1：',''] ]};
+}
+function openEditor(code){
+  if(!ID_TOKEN){ toast('請先登入'); return; }
+  const isNew=!code;
+  const src=isNew?blankSop():DATA.find(d=>d.code===code);
+  if(!src){ toast('找不到這份 SOP'); return; }
+  ED=JSON.parse(JSON.stringify({
+    code:src.code||'',codeShow:src.codeShow||'',title:src.title||'',brand:src.brand||'通用',
+    platform:src.platform||'通用',modes:src.modes||[],delivery:src.delivery||'－',
+    version:src.version||'',date:src.date||'',author:src.author||'',status:src.status||'',
+    purpose:src.purpose||'',overview:src.overview||'',roles:src.roles||[],exceptions:src.exceptions||[],
+    steps:(src.steps||[]).map(s=>[s[0]||'',s[1]||''])
+  }));
+  ED._isNew=isNew;
+  document.getElementById('editorTitle').textContent=isNew?'新增 SOP':'編輯 SOP';
+  renderEditorForm(); setMsg('');
+  document.getElementById('editorBack').classList.add('show');
+}
+function closeEditor(){ document.getElementById('editorBack').classList.remove('show'); ED=null; }
+
+/* ---------- 表單渲染 ---------- */
+const BRAND_OPTS=['MARS','PG','CPG','跨品類','通用'];
+const PLAT_OPTS=['酷澎','博客來','PCHOME','MOMO','雅虎','蝦皮','東森','UberEats','遠時','HCT新竹物流','friDay','通用'];
+const MODE_OPTS=['寄銷','買斷','領用'];
+const DELIV_OPTS=['直送','竹運','－'];
+function opt(v,cur){ return `<option value="${esc(v)}"${v===cur?' selected':''}>${esc(v)}</option>`; }
+function fld(id,label,val,hint,type){ return `<div class="fld"><label>${esc(label)}${hint?` <span class="hint">${esc(hint)}</span>`:''}</label>
+  <input id="${id}" type="${type||'text'}" value="${esc(val||'')}"></div>`; }
+
+function renderEditorForm(){
+  const brandOpts = [...new Set([...BRAND_OPTS, ED.brand].filter(Boolean))].map(v=>opt(v,ED.brand)).join('');
+  const delivOpts = [...new Set([...DELIV_OPTS, ED.delivery].filter(Boolean))].map(v=>opt(v,ED.delivery)).join('');
+  const platList  = PLAT_OPTS.map(v=>`<option value="${esc(v)}">`).join('');
+  const modeChks  = MODE_OPTS.map(m=>`<label class="chk"><input type="checkbox" class="mode-chk" value="${esc(m)}"${(ED.modes||[]).includes(m)?' checked':''}>${esc(m)}</label>`).join('');
+  const body=document.getElementById('editorBody');
+  body.innerHTML=`
+    <div class="fgrid">
+      <div class="fld"><label>文件代碼 code <span class="hint">唯一識別，${ED._isNew?'新增後不建議再改':'不可修改'}</span></label>
+        <input id="f_code" value="${esc(ED.code)}" ${ED._isNew?'':'disabled'}></div>
+      ${fld('f_codeShow','顯示代碼 codeShow',ED.codeShow,'卡片右上角顯示，可留空')}
+      <div class="fld full"><label>標題 title</label><input id="f_title" value="${esc(ED.title)}"></div>
+      <div class="fld"><label>品牌 / 類別</label><select id="f_brand">${brandOpts}</select></div>
+      <div class="fld"><label>平台 / 通路 <span class="hint">可自行輸入</span></label>
+        <input id="f_platform" list="platList" value="${esc(ED.platform)}"><datalist id="platList">${platList}</datalist></div>
+      <div class="fld"><label>寄銷 / 買斷 / 領用</label><div class="chkrow">${modeChks}</div></div>
+      <div class="fld"><label>物流方式 delivery</label><select id="f_delivery">${delivOpts}</select></div>
+      ${fld('f_version','版本 version',ED.version)}
+      ${fld('f_date','日期 date',ED.date,'如 2026/07/27')}
+      ${fld('f_author','負責人 author',ED.author)}
+      ${fld('f_status','狀態 status',ED.status,'可留空，如「待更新」')}
+    </div>
+    <div class="fld full"><label>目的 purpose</label><textarea id="f_purpose" rows="2">${esc(ED.purpose)}</textarea></div>
+    <div class="fld full"><label>流程總覽 overview <span class="hint">各步驟用 → 分隔</span></label><textarea id="f_overview" rows="2">${esc(ED.overview)}</textarea></div>
+
+    <div class="sub-title">角色與職責 <button class="btn btn-sm" id="addRoleBtn" type="button">＋ 新增角色</button></div>
+    <div id="rolesWrap"></div>
+
+    <div class="fld full" style="margin-top:14px"><label>異常處理 exceptions <span class="hint">一行一項，可留空</span></label>
+      <textarea id="f_exceptions" rows="2">${esc((ED.exceptions||[]).join('\n'))}</textarea></div>
+
+    <div class="sub-title">Step-by-Step 步驟 <button class="btn btn-sm" id="addStepBtn" type="button">＋ 新增步驟</button></div>
+    <div id="stepsWrap"></div>`;
+  renderRoles(); renderSteps();
+  document.getElementById('addRoleBtn').onclick=()=>{ ED.roles=readRoles(); ED.roles.push(['','']); renderRoles(); };
+  document.getElementById('addStepBtn').onclick=()=>{ ED.steps=readSteps(); ED.steps.push([`步驟 ${ED.steps.length+1}：`,'']); renderSteps(); };
+}
+function readRoles(){ return [...document.querySelectorAll('#rolesWrap .rolerow')]
+  .map(r=>[r.querySelector('.r-name').value, r.querySelector('.r-duty').value]); }
+function readSteps(){ return [...document.querySelectorAll('#stepsWrap .step-ed')]
+  .map(s=>[s.querySelector('.st-title').value, s.querySelector('.st-body').value]); }
+function renderRoles(){
+  const w=document.getElementById('rolesWrap'); w.innerHTML='';
+  (ED.roles||[]).forEach((r,i)=>{
+    const row=el('div','rolerow');
+    row.innerHTML=`<input class="r-name" placeholder="角色（如 業務）" value="${esc(r[0]||'')}">
+      <input class="r-duty" placeholder="負責事項" value="${esc(r[1]||'')}">
+      <button class="btn btn-sm btn-ghost" type="button" title="刪除">✕</button>`;
+    row.querySelector('button').onclick=()=>{ ED.roles=readRoles(); ED.roles.splice(i,1); renderRoles(); };
+    w.appendChild(row);
+  });
+}
+function renderSteps(){
+  const w=document.getElementById('stepsWrap'); w.innerHTML='';
+  (ED.steps||[]).forEach((st,i)=>{
+    const box=el('div','step-ed'); box.dataset.i=i;
+    box.innerHTML=`
+      <div class="step-ed-top">
+        <span class="num">${i+1}</span>
+        <input class="st-title" placeholder="步驟標題（如 步驟 1：收到通知）" value="${esc(st[0]||'')}">
+        <button class="btn btn-sm btn-ghost mv-up" type="button" title="上移">▲</button>
+        <button class="btn btn-sm btn-ghost mv-dn" type="button" title="下移">▼</button>
+        <button class="btn btn-sm btn-danger rm-step" type="button" title="刪除步驟">✕</button>
+      </div>
+      <textarea class="st-body" rows="4" placeholder="步驟內容…">${esc(st[1]||'')}</textarea>
+      <div class="body-tools">
+        <button class="btn btn-sm ins-img" type="button">🖼 插入圖片</button>
+        <button class="btn btn-sm btn-ghost ins-sub" type="button">＋ 子標題</button>
+      </div>
+      <div class="legend">格式：<code>## 文字</code>＝子標題　<code>[圖]網址</code>＝圖片　開頭 <code>作業內容：</code>／<code>前置條件：</code> 會自動加粗　其他＝段落</div>
+      <div class="step-preview"><div class="pv-label">預覽</div><div class="pv-body"></div></div>`;
+    const ta=box.querySelector('.st-body');
+    const pv=box.querySelector('.pv-body');
+    const upd=()=>{ const blocks=parseBlocks(ta.value); pv.innerHTML=blocks.length?blocks.map(renderBlock).join(''):'<span class="hint">（空白）</span>'; };
+    ta.addEventListener('input',upd); upd();
+    box.querySelector('.ins-img').onclick=()=>pickImage(i);
+    box.querySelector('.ins-sub').onclick=()=>{ ta.value=(ta.value?ta.value.replace(/\s*$/,'')+'\n':'')+'## '; ta.focus(); upd(); };
+    box.querySelector('.rm-step').onclick=()=>{ ED.steps=readSteps(); ED.steps.splice(i,1); renderSteps(); };
+    box.querySelector('.mv-up').onclick=()=>{ if(i===0)return; ED.steps=readSteps(); [ED.steps[i-1],ED.steps[i]]=[ED.steps[i],ED.steps[i-1]]; renderSteps(); };
+    box.querySelector('.mv-dn').onclick=()=>{ ED.steps=readSteps(); if(i>=ED.steps.length-1)return; [ED.steps[i+1],ED.steps[i]]=[ED.steps[i],ED.steps[i+1]]; renderSteps(); };
+    w.appendChild(box);
+  });
+}
+
+/* ---------- 圖片上傳 ---------- */
+function pickImage(i){ imgTargetStep=i; const p=document.getElementById('imgPicker'); p.value=''; p.click(); }
+document.getElementById('imgPicker').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  setMsg('上傳圖片中…');
+  try{
+    const dataUrl=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+    const j=await apiPost('upload',{code:(document.getElementById('f_code').value||'img'),filename:f.name,dataUrl});
+    const box=document.querySelector('.step-ed[data-i="'+imgTargetStep+'"]');
+    if(box){ const ta=box.querySelector('.st-body');
+      ta.value=(ta.value?ta.value.replace(/\s*$/,'')+'\n':'')+'[圖]'+j.url;
+      ta.dispatchEvent(new Event('input')); }
+    setMsg('圖片已插入 ✓');
+  }catch(err){ setMsg('圖片上傳失敗：'+err.message,true); }
+};
+
+/* ---------- 收集表單 & 儲存 ---------- */
+function collectForm(){
+  const v=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+  ED.code=v('f_code'); ED.codeShow=v('f_codeShow'); ED.title=v('f_title');
+  ED.brand=v('f_brand')||'通用'; ED.platform=v('f_platform')||'通用';
+  ED.delivery=v('f_delivery')||'－'; ED.version=v('f_version'); ED.date=v('f_date');
+  ED.author=v('f_author'); ED.status=v('f_status'); ED.purpose=v('f_purpose'); ED.overview=v('f_overview');
+  ED.modes=[...document.querySelectorAll('.mode-chk:checked')].map(c=>c.value);
+  ED.roles=readRoles().filter(r=>(r[0]||'').trim()||(r[1]||'').trim()).map(r=>[r[0].trim(),r[1].trim()]);
+  ED.exceptions=v('f_exceptions').split('\n').map(x=>x.trim()).filter(Boolean);
+  ED.steps=readSteps().filter(s=>(s[0]||'').trim()||(s[1]||'').trim()).map(s=>[s[0].trim(),s[1].replace(/\s+$/,'')]);
+}
+async function saveEditor(){
+  collectForm();
+  if(!ED.code){ setMsg('請填「文件代碼 code」',true); return; }
+  if(!ED.title){ setMsg('請填「標題 title」',true); return; }
+  if(ED._isNew && DATA.some(d=>d.code===ED.code)){ setMsg('這個代碼已存在，請換一個',true); return; }
+  const btn=document.getElementById('editorSave'); btn.disabled=true; setMsg('儲存中…');
+  try{
+    const payload=Object.assign({},ED); delete payload._isNew;
+    await apiPost('save',payload);
+    const obj=enrich(JSON.parse(JSON.stringify(payload)));
+    const idx=DATA.findIndex(d=>d.code===obj.code);
+    if(idx>=0) DATA[idx]=obj; else DATA.push(obj);
+    closeEditor(); rebuildKeepState(); toast('已儲存 ✓');
+  }catch(e){ setMsg('儲存失敗：'+e.message,true); }
+  finally{ btn.disabled=false; }
+}
+async function delSop(code){
+  if(!ID_TOKEN){ toast('請先登入'); return; }
+  if(!confirm('確定要刪除「'+code+'」這份 SOP 嗎？\n此動作會從 Google 試算表移除，無法復原。')) return;
+  try{
+    await apiPost('delete',{code});
+    DATA=DATA.filter(d=>d.code!==code); openCards.delete(code);
+    rebuildKeepState(); toast('已刪除 ✓');
+  }catch(e){ toast('刪除失敗：'+e.message); }
+}
+
+/* ---------- 綁定 ---------- */
+document.getElementById('addSopBtn').onclick=()=>openEditor('');
+document.getElementById('signoutBtn').onclick=signOut;
+document.getElementById('editorClose').onclick=closeEditor;
+document.getElementById('editorCancel').onclick=closeEditor;
+document.getElementById('editorSave').onclick=saveEditor;
+document.getElementById('editorBack').addEventListener('click',e=>{ if(e.target.id==='editorBack') closeEditor(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeEditor(); });
+initAuth();
 </script>
 
 </body>
