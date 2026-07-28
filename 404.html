@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><title>轉向中…</title>
+<script>
+/* GitHub Pages 沒有真實的 /workflow 檔案，直接輸入網址或重新整理時會走到這裡。
+   記下要去的頁面，轉回站台首頁後由前端路由還原。 */
+(function(){
+  var seg=location.pathname.replace(/\/$/,'').split('/').pop();
+  var base=location.pathname.replace(/[^\/]*\/?$/,'');
+  try{ sessionStorage.setItem('yfs_route', seg==='workflow'?'workflow':''); }catch(e){}
+  location.replace(base);
+})();
+</script></head><body></body></html>
