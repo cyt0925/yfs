@@ -372,6 +372,9 @@ footer{border-top:1px solid var(--line);color:var(--muted);font-size:12.5px;padd
 .btn{font-family:var(--sans);font-size:13px;font-weight:600;border-radius:9px;border:1px solid var(--line);
   background:var(--card);color:var(--ink-2);padding:7px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.15s}
 .btn:hover{border-color:var(--accent);color:var(--accent-ink)}
+a.btn{text-decoration:none}
+.wf-link{margin-left:auto}
+.auth-area{margin-left:10px !important}
 .btn svg{width:15px;height:15px}
 .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn-primary:hover{filter:brightness(1.06);color:#fff}
@@ -481,6 +484,73 @@ body:not(.signed-in) .signout{display:none}
 .grid.list-view .ch-foot{flex:0 0 auto;margin-left:auto;border:0;padding:0}
 @media(min-width:861px){ .filters{max-height:calc(100vh - 32px);overflow:auto} }
 @media(max-width:560px){.fgrid{grid-template-columns:1fr}.rolerow{grid-template-columns:1fr}}
+
+/* ===== 分頁導覽 ===== */
+.nav-tabs{display:flex;gap:4px;margin-left:22px}
+.nav-tabs a{font-size:13.5px;font-weight:600;color:var(--muted);text-decoration:none;padding:8px 14px;
+  border-radius:10px;transition:.15s;white-space:nowrap}
+.nav-tabs a:hover{color:var(--accent-ink);background:var(--accent-wash)}
+.nav-tabs a.on{color:#fff;background:var(--accent)}
+@media(max-width:720px){.nav-tabs{margin-left:0;width:100%;justify-content:center}}
+/* ===== 工作流分析（scoped） ===== */
+.wf{padding-bottom:40px}
+.wf-head{padding:26px 0 4px}
+.wf-head h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
+.wf-head .sub{margin:2px 0 0;color:var(--muted);font-size:13px}
+.wf section{margin:32px 0}
+.wf h2{font-size:17px;margin:0 0 4px;display:flex;align-items:center;gap:9px}
+.wf h2 .n{width:24px;height:24px;border-radius:7px;background:var(--accent);color:#fff;font-size:12.5px;
+  display:grid;place-items:center;font-weight:800;flex:none}
+.wf h3{font-size:14px;margin:0 0 8px}
+.wf .lead{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+.wf .box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+.wf .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.wf .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.wf .kpi b{display:block;font-size:25px;font-weight:800;color:var(--accent-ink);line-height:1.15}
+.wf .kpi span{font-size:12px;color:var(--muted)}
+.wf .finding{border-left:4px solid var(--accent);background:var(--accent-wash);border-radius:0 10px 10px 0;
+  padding:14px 18px;margin:14px 0;font-size:14px;line-height:1.75}
+.wf .finding b{color:var(--accent-ink)}
+.wf .pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.wf .pcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow)}
+.wf .pid{font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700}
+.wf .pname{font-weight:700;font-size:14.5px;margin:2px 0 9px}
+.wf .bar{height:7px;border-radius:99px;background:var(--line-2);overflow:hidden}
+.wf .bar span{display:block;height:100%;background:var(--accent);border-radius:99px}
+.wf .pnum{font-size:11.5px;color:var(--muted);margin-top:6px}
+.wf .scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow)}
+.wf table{border-collapse:collapse;width:100%;font-size:13px;min-width:820px}
+.wf th,.wf td{padding:9px 10px;border-bottom:1px solid var(--line-2);text-align:center;vertical-align:middle}
+.wf thead th{position:sticky;top:0;background:var(--card);z-index:2;font-size:11.5px;color:var(--muted);
+  border-bottom:2px solid var(--line);font-family:var(--mono);font-weight:700}
+.wf thead th small{display:block;font-family:var(--sans);font-size:10.5px;font-weight:600;color:var(--ink-2);margin-top:2px}
+.wf td.nm{text-align:left;min-width:290px;display:flex;gap:9px;align-items:flex-start;padding:11px 12px}
+.wf td.nm b{font-weight:600;font-size:13px;display:block;line-height:1.4}
+.wf td.nm small{color:var(--muted);font-size:11.5px}
+.wf .bdot{width:9px;height:9px;border-radius:3px;margin-top:6px;flex:none}
+.wf .m{background:var(--line-2);border-radius:5px;padding:0 5px;margin-left:3px;font-size:10.5px}
+.wf td.on{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.wf td.on .dot{color:var(--accent);font-size:11px}
+.wf td.on i{display:block;font-style:normal;font-size:10.5px;color:var(--muted)}
+.wf td.off{color:color-mix(in srgb,var(--muted) 45%,transparent)}
+.wf td.cnt{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.wf tbody tr:hover{background:var(--accent-wash)}
+.wf .dtab td{text-align:left}
+.wf .dtab td.big{text-align:center;font-size:19px;font-weight:800;color:var(--accent-ink);width:64px;font-family:var(--mono)}
+.wf .dtab td b{font-weight:600;font-size:13px}
+.wf .dtab td small{display:block;color:var(--muted);font-size:11px;font-family:var(--mono);margin-top:2px}
+.wf .dtab td.ph{width:130px;color:var(--muted);font-size:12px;text-align:right}
+.wf .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:820px){.wf .two{grid-template-columns:1fr}}
+.wf .note{font-size:12.5px;color:var(--muted);background:var(--card);border:1px dashed var(--line);
+  border-radius:12px;padding:16px 18px;line-height:1.85}
+.wf .note b{color:var(--ink-2)}
+.wf ul.rec{margin:0;padding-left:20px;font-size:14px}
+.wf ul.rec li{margin:8px 0}
+.wf ul.rec code{background:var(--line-2);padding:1px 6px;border-radius:5px;font-size:12px}
+.wf .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:10px 2px 0}
+.wf .legend i{font-style:normal;color:var(--accent)}
+
 </style>
 </head>
 <body>
@@ -507,6 +577,10 @@ body:not(.signed-in) .signout{display:none}
         <p>各品牌與通路出貨作業標準流程 · 全三部分</p>
       </div>
     </div>
+    <nav class="nav-tabs">
+      <a href="./" data-view="sop" class="on">SOP 檢索</a>
+      <a href="workflow" data-view="workflow">工作流分析</a>
+    </nav>
     <div class="head-right">
       <button class="icon-btn" id="themeBtn" title="切換深色 / 淺色" aria-label="切換主題">🌙</button>
       <div class="stats" id="stats"></div>
@@ -514,6 +588,7 @@ body:not(.signed-in) .signout{display:none}
   </div>
 </header>
 
+<div id="view-sop">
 <div class="wrap searchbar">
   <div class="search-row">
     <div class="search-input">
@@ -540,7 +615,7 @@ body:not(.signed-in) .signout{display:none}
     <button class="src-refresh" id="refreshBtn" title="重新從試算表載入最新內容">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>重新整理</button>
     <span class="src-note" id="srcNote"></span>
-    <div class="auth-area" id="authArea">
+        <div class="auth-area" id="authArea">
       <button class="btn btn-sm" id="editModeBtn" title="輸入編輯碼以編輯內容">🔑 編輯模式</button>
       <span class="who" id="whoAmI"></span>
       <button class="btn btn-primary btn-sm" id="addSopBtn" title="新增一份 SOP">＋ 新增 SOP</button>
@@ -567,6 +642,242 @@ body:not(.signed-in) .signout{display:none}
   YFS 營運 SOP 檢索 · 共 <span id="footTotal">46</span> 份標準作業程序文件 · 內容依原始 .docx 文件整理<br>
   <span id="footBreak">MARS 瑪氏 8 · PG 寶僑 11 · CPG 紙潔 8 · 跨品類 14 · 通用作業 5</span>
 </footer>
+</div>
+<div id="view-workflow" class="wf" hidden>
+<div class="wrap">
+  <div class="wf-head">
+    <h1>營運工作流分析</h1>
+    <p class="sub">從 46 份 SOP、305 個步驟推導出的共同主幹與差異點</p>
+  </div>
+
+  <section><h2><span class="n">1</span>結論摘要</h2>
+    <p class="lead">先看數字，再看細節。</p>
+    <div class="kpis">
+      <div class="kpi"><b>46</b><span>份 SOP 文件</span></div>
+      <div class="kpi"><b>305</b><span>個作業步驟</span></div>
+      <div class="kpi"><b>39</b><span>組步驟跨文件完全重複</span></div>
+      <div class="kpi"><b>28</b><span>份文件含重複步驟</span></div>
+    </div>
+    <div class="finding"><b>核心發現：不是 46 套流程，而是一套流程被 46 種方式描述。</b><br>
+      全部 46 份文件都落在同一組 8 個階段內（未能歸類的步驟只有 3 個）。其中
+      <b>39 組步驟標題在不同文件間一字不差地重複</b>，例如「發信及登錄（OP）」出現在 7 份、
+      「收到業務通知（業務 / OP）」出現在 7 份。差異主要來自<b>文件寫法與顆粒度</b>，而非實際作業本身。</div>
+  </section>
+
+  <section><h2><span class="n">2</span>共同主幹：營運的 8 個階段</h2>
+    <p class="lead">把 305 個步驟依動作歸類後浮現的標準骨架。百分比 = 有多少份 SOP 涵蓋該階段。</p>
+    <div class="pgrid"><div class="pcard"><div class="pid">P1</div>
+  <div class="pname">接單與通知</div>
+  <div class="bar"><span style="width:85%"></span></div>
+  <div class="pnum">39/46 份 · 85%</div></div><div class="pcard"><div class="pid">P2</div>
+  <div class="pname">建檔與文件</div>
+  <div class="bar"><span style="width:70%"></span></div>
+  <div class="pnum">32/46 份 · 70%</div></div><div class="pcard"><div class="pid">P3</div>
+  <div class="pname">系統下採 EIP</div>
+  <div class="bar"><span style="width:26%"></span></div>
+  <div class="pnum">12/46 份 · 26%</div></div><div class="pcard"><div class="pid">P4</div>
+  <div class="pname">與原廠/供應商</div>
+  <div class="bar"><span style="width:39%"></span></div>
+  <div class="pnum">18/46 份 · 39%</div></div><div class="pcard"><div class="pid">P5</div>
+  <div class="pname">倉庫與物流</div>
+  <div class="bar"><span style="width:13%"></span></div>
+  <div class="pnum">6/46 份 · 13%</div></div><div class="pcard"><div class="pid">P6</div>
+  <div class="pname">標籤與嘜頭</div>
+  <div class="bar"><span style="width:7%"></span></div>
+  <div class="pnum">3/46 份 · 7%</div></div><div class="pcard"><div class="pid">P7</div>
+  <div class="pname">出貨與拋轉</div>
+  <div class="bar"><span style="width:11%"></span></div>
+  <div class="pnum">5/46 份 · 11%</div></div><div class="pcard"><div class="pid">P8</div>
+  <div class="pname">驗收對帳後續</div>
+  <div class="bar"><span style="width:15%"></span></div>
+  <div class="pnum">7/46 份 · 15%</div></div></div>
+    <div class="finding"><b>怎麼讀：</b>P1 接單與通知（39/46）與 P2 建檔與文件（32/46）幾乎每份都有 →
+      這是<b>所有品牌通路共用的前段主幹</b>，最適合優先標準化或工具化。後段階段涵蓋率低，是因為
+      <b>只有特定通路才需要</b>（例如嘜頭只在酷澎等少數通路出現），屬於合理的變異點。</div>
+  </section>
+
+  <section><h2><span class="n">3</span>差異矩陣：品牌 × 通路 × 階段</h2>
+    <p class="lead">每列是一份 SOP，每欄是一個階段。<b>●</b> 表示該文件有此階段的步驟（數字為步驟數），滑鼠移上去可看實際步驟名稱。</p>
+    <div class="scroll"><table><thead><tr><th style="text-align:left">SOP 文件</th><th title="接單與通知">P1<small>接單與通知</small></th><th title="建檔與文件">P2<small>建檔與文件</small></th><th title="系統下採 EIP">P3<small>系統下採 EIP</small></th><th title="與原廠/供應商">P4<small>與原廠/供應商</small></th><th title="倉庫與物流">P5<small>倉庫與物流</small></th><th title="標籤與嘜頭">P6<small>標籤與嘜頭</small></th><th title="出貨與拋轉">P7<small>出貨與拋轉</small></th><th title="驗收對帳後續">P8<small>驗收對帳後續</small></th><th>步驟</th></tr></thead>
+      <tbody><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>HCT新竹物流（瑪氏直送）出貨作業流程</b><small>MARS · HCT新竹物流 </small></div></td>
+      <td class="on" title="收到業務提供的總表"><span class="dot">●</span><i>1</i></td><td class="on" title="EIP採購單申請與填入 ／ 發信給瑪氏（OP）"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="等下午1530，勇信提供效期信，等採購通知後，匯入系統填入嘜頭"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">4</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>MOMO 出貨作業流程</b><small>MARS · MOMO <span class="m">寄銷</span></small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="EIP採購單申請與填入 ／ 發信給瑪氏（OP） ／ 原廠提供效期後回填Momo（OP）"><span class="dot">●</span><i>3</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="回信給瑪氏（OP）"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">4</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>PCHOME 出貨作業流程（直送）</b><small>MARS · PCHOME <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="收到業務提供的總表、採購單"><span class="dot">●</span><i>1</i></td><td class="on" title="EIP採購單申請與填入 ／ 發信給瑪氏（OP）"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">3</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>PCHOME 出貨作業流程（竹運）</b><small>MARS · PCHOME <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="收到業務提供的總表、採購單與確認庫存及無法出貨的商品 ／ 出貨資料檔案匯入"><span class="dot">●</span><i>2</i></td><td class="on" title="發信給竹運"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">3</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>優食（UberEats）出貨流程</b><small>MARS · UberEats </small></div></td>
+      <td class="on" title="收到系統通知信 ／ 拋單 ／ （步驟標題）"><span class="dot">●</span><i>3</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">3</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>酷澎－買斷出貨作業流程</b><small>MARS · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="收到業務提供的出貨通知資訊(提供補貨po單號、倉別) ／ 建立相關出貨文件 ／ 上傳採購表至EIP系統"><span class="dot">●</span><i>3</i></td><td class="on" title="製作採購單 ／ 製作Emma出貨表單 ／ 發信給瑪氏lucy打單 ／ 確認打單內容 ／ 勇信回覆效期後製作嘜頭 ／ 回覆出貨文件"><span class="dot">●</span><i>6</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="缺貨下修"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">10</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>酷澎 MARS 出貨作業流程</b><small>MARS · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="訂單歸檔 ／ 併單需求處理 ／ 約倉作業 ／ 竹運出貨相關文件"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="出貨前下修"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">5</td></tr><tr><td class="nm"><span class="bdot" style="background:#1500c9"></span>
+      <div><b>酷澎 MARS 新單整理與 PO 單修改流程</b><small>MARS · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="新單整理 ／ 製作整合表 ／ 訂單修改需求處理 ／ 拆單需求處理 ／ 訂單修改需求回覆"><span class="dot">●</span><i>5</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">5</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>PCHOME 寄銷/買斷/領用－原廠直出流程</b><small>PG · PCHOME <span class="m">寄銷</span><span class="m">買斷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="接收補貨通知並約倉"><span class="dot">●</span><i>1</i></td><td class="on" title="建立公槽資料夾 ／ 製作/修改採購單 ／ 製作/修改EIP上傳表 ／ 上傳EIP系統與通知採購 ／ 出貨前一天核單與修正"><span class="dot">●</span><i>5</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="贈品領用"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>PCHOME 寄銷/買斷/領用－竹運出貨流程</b><small>PG · PCHOME <span class="m">寄銷</span><span class="m">買斷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="接收補貨通知並約倉 ／ 製作/修改 訂單系統上傳表(寄銷) ／ 上傳訂單系統與通知出貨(寄銷)"><span class="dot">●</span><i>3</i></td><td class="on" title="建立公槽資料夾 ／ 製作/修改採購單(買斷/寄銷/領用) ／ 通知出貨(買斷) ／ 通知出貨(領用)"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>博客來－竹運出貨作業流程</b><small>PG · 博客來 <span class="m">寄銷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="建立出貨資料夾與匯入檔 ／ 收取訂單與匯出明細 ／ 處理出貨明細與系統拋單 ／ 列印採購單與填寫出貨資料 ／ 列印外箱嘜頭 ／ 領用單出貨"><span class="dot">●</span><i>6</i></td><td class="on" title="發送出貨文件與登記"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="貼附有效期限標示"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>博客來－直送出貨作業流程</b><small>PG · 博客來 <span class="m">寄銷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="建立出貨資料夾與出貨文件 ／ 收取訂單與匯出明細 ／ 製作出貨文件（OP） ／ 核單確認缺貨 ／ 列印採購單與填寫出貨資料 ／ 列印外箱嘜頭"><span class="dot">●</span><i>6</i></td><td class="on" title="EIP系統拋單（OP） ／ 發信（OP） ／ 發送出貨文件 ／ 領用單出貨"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="貼附有效期限標示"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">11</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>東森－竹運出貨作業流程</b><small>PG · 東森 <span class="m">寄銷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="收到業務提供的出貨單 ／ 勾選出貨品項 ／ 確認庫存並拋檔 ／ 領用單出貨"><span class="dot">●</span><i>4</i></td><td class="on" title="建立出貨資料夾 ／ 匯出入庫資料 ／ 更新補貨及採購單檔案 ／ 發信及登錄（OP）"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="匯出與列印文件"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">9</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>蝦皮寄銷－竹運出貨流程</b><small>PG · 蝦皮 <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 系統拋單（OP）"><span class="dot">●</span><i>2</i></td><td class="on" title="蝦皮後台下載採購單（OP） ／ 下採EIP（OP） ／ 蝦皮後台下載入庫單（OP） ／ 查詢進倉單（OP） ／ 匯出與列印PDF（OP） ／ 製作出貨檔案"><span class="dot">●</span><i>8</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">10</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>酷澎－買斷出貨作業流程（直送）</b><small>PG · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="收到業務提供的補貨通知資訊(提供補貨po單號、倉別)並確認送貨車數及約倉 ／ 製作採購單 ／ 上傳採購表至EIP系統及發信出貨通知請emma轉單 ／ 製作配置明細 ／ 製作出貨嘜頭"><span class="dot">●</span><i>5</i></td><td class="on" title="建立出貨資料夾 ／ 更改嘜頭檔案 ／ 出貨前一日確認是否缺貨並發送嘜頭檔案給原廠 ／ 發信通知出貨"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">9</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>酷澎 PG 出貨作業流程</b><small>PG · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="接收與整理新單 ／ 放單 ／ 訂單修改需求 ／ PO單需求處理 ／ 排定出貨 ／ 出貨前下修"><span class="dot">●</span><i>6</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">6</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>酷澎買斷－竹運出貨作業流程</b><small>PG · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="補貨通知 ／ 製作出貨文件 ／ 約倉 ／ 確認庫存並拋檔"><span class="dot">●</span><i>4</i></td><td class="on" title="建立出貨資料夾 ／ 製作嘜頭 ／ 發信通知出貨"><span class="dot">●</span><i>3</i></td><td class="on" title="驗收單及進貨規範"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>雅虎寄銷－竹運出貨流程</b><small>PG · 雅虎 <span class="m">寄銷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 建立補貨資料夾（OP） ／ 系統拋單（OP） ／ 領用單出貨"><span class="dot">●</span><i>4</i></td><td class="on" title="核對庫存（OP） ／ 文件檢查（OP） ／ 發信及登錄（OP）"><span class="dot">●</span><i>3</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="查詢進倉單（OP） ／ 匯出與列印PDF（OP） ／ 自編碼確認（OP）"><span class="dot">●</span><i>3</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">10</td></tr><tr><td class="nm"><span class="bdot" style="background:#1d63b8"></span>
+      <div><b>雅虎寄銷－直送出貨流程</b><small>PG · 雅虎 <span class="m">寄銷</span><span class="m">領用</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 建立補貨資料夾（OP） ／ 核單確認缺貨"><span class="dot">●</span><i>3</i></td><td class="on" title="查詢進倉單（OP） ／ 製作出貨文件（OP） ／ EIP系統拋單（OP） ／ 發信（OP） ／ 文件檢查（OP） ／ 發信（OP）"><span class="dot">●</span><i>6</i></td><td class="on" title="領用單出貨"><span class="dot">●</span><i>1</i></td><td class="on" title="匯出與列印PDF（OP） ／ 自編碼確認（OP）"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">12</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>MOMO 寄銷出貨流程</b><small>CPG · MOMO <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="建立出貨資料夾與匯入檔 ／ 建立補貨資料夾（OP） ／ 上傳EIP系統與通知採購"><span class="dot">●</span><i>3</i></td><td class="on" title="製作入庫通知單及嘜頭 ／ 文件檢查 ／ 發信及登錄（OP）"><span class="dot">●</span><i>3</i></td><td class="on" title="自編碼下載(OP）"><span class="dot">●</span><i>1</i></td><td class="on" title="發信通知採購"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>PCHOME 寄銷－原廠直出流程</b><small>CPG · PCHOME <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="接收補貨通知並約倉 ／ 建立資料夾 ／ 上傳EIP系統與通知採購"><span class="dot">●</span><i>3</i></td><td class="on" title="製作EIP上傳表 ／ 製作借貨單"><span class="dot">●</span><i>2</i></td><td class="on" title="發信通知採購"><span class="dot">●</span><i>1</i></td><td class="on" title="抓嘜頭和二聯單單據 ／ 發信給採購"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>優食（UberEats）－直送買斷出貨流程</b><small>CPG · UberEats <span class="m">買斷</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 建立補貨資料夾（OP） ／ 製作補貨文件。（OP） ／ 提供Emma匯入文件（OP） ／ 發信（OP）"><span class="dot">●</span><i>5</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="Eip下採（OP）"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">6</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>博客來－直送出貨作業流程</b><small>CPG · 博客來 <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="建立出貨資料夾與出貨文件 ／ 填寫出貨資料 ／ 列印外箱嘜頭"><span class="dot">●</span><i>3</i></td><td class="on" title="製作出貨文件 ／ 填寫採購單 ／ EIP系統拋單（OP） ／ 發信（OP）"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>東森－直送寄銷出貨流程</b><small>CPG · 東森 <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 建立補貨資料夾（OP）"><span class="dot">●</span><i>2</i></td><td class="on" title="製作入庫指示書（OP） ／ 文件檢查（OP） ／ 發信及登錄（OP）"><span class="dot">●</span><i>3</i></td><td class="on" title="Eip下採（OP）"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">6</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>蝦皮寄銷－竹運出貨流程</b><small>CPG · 蝦皮 <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 建立補貨資料夾（OP） ／ 核對竹運庫存(OP） ／ 系統拋單(OP)"><span class="dot">●</span><i>4</i></td><td class="on" title="製作竹運B單（OP） ／ 下載入庫單（OP） ／ 文件檢查（OP） ／ 發信及登錄（OP）"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>酷澎 CPG（紙潔）出貨作業流程</b><small>CPG · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="接收與整理新單 ／ 訂單修改需求 ／ 依貨況回覆訂單修改需求、整合訂單 ／ 拆單需求處理 ／ 併單需求處理 ／ 排定出貨"><span class="dot">●</span><i>8</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#d11021"></span>
+      <div><b>雅虎－直送寄銷出貨流程</b><small>CPG · 雅虎 <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="收到業務通知（業務 / OP） ／ 建立補貨資料夾（OP）"><span class="dot">●</span><i>2</i></td><td class="on" title="製作進倉單及嘜頭（OP） ／ 自編碼下載(OP） ／ 文件檢查（OP） ／ 發信及登錄（OP）"><span class="dot">●</span><i>4</i></td><td class="on" title="Eip下採（OP）"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>東森－退廠作業流程</b><small>跨品類 · 東森 </small></div></td>
+      <td class="on" title="收到東森退廠信件 ／ 回壓退廠日期"><span class="dot">●</span><i>2</i></td><td class="on" title="內部資料登記"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="發信給東森物流 ／ 確認東森回覆"><span class="dot">●</span><i>2</i></td><td class="on" title="：登入東森系統操作"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="東森回信後開始作業 ／ 輸出退廠單 PDF"><span class="dot">●</span><i>2</i></td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>蝦皮－問答卡片（客服 FAQ）設定作業流程</b><small>跨品類 · 蝦皮 </small></div></td>
+      <td class="on" title="1. 出貨時間相關 ／ 2. 收到商品數量不對"><span class="dot">●</span><i>2</i></td><td class="on" title="將問答內容設定至蝦皮後台"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="整理常見問題與標準回覆"><span class="dot">●</span><i>1</i></td><td class="on" title="3. 商品破損或漏液狀況 ／ 4. 離島配送問題"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="5. 出貨是否附上單據或發票"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>蝦皮－大宗訂單作業流程</b><small>跨品類 · 蝦皮 </small></div></td>
+      <td class="on" title="確認到貨日並回壓出貨 ／ 拋單與建價設定 ／ ：系統訂單備註與通知物流 ／ 拋單後通知物流"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">4</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>蝦皮－店配訂單未驗入作業流程</b><small>跨品類 · 蝦皮 </small></div></td>
+      <td class="on" title="發現異常 ／ 聯繫蝦皮確認包裹狀態 ／ 執行盤虧及庫調作業"><span class="dot">●</span><i>3</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="確認包裹狀態"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">4</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>遠時（GoHappy）－請款作業流程</b><small>跨品類 · 遠時 </small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="存檔結帳資料至公槽 ／ 通知遠時我司已完成請款流程"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="路徑:\\10.37.90.10\永豐商店\18.客戶資料\電子EC客戶\轉單平台\02. Friday(GOHappy)\對帳資料 ／ 將對帳資料提供給財務OP核對"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="結帳作業 ／ 提供費用發票給財務OP"><span class="dot">●</span><i>2</i></td><td class="on" title="上傳發票等相關請款資訊"><span class="dot">●</span><i>1</i></td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 PDF 驗收單批次簽名自動化流程</b><small>跨品類 · 酷澎 </small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="初始設定Colab -2：建立新專案 ／ 準備檔案"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="輸出結果"><span class="dot">●</span><i>1</i></td><td class="cnt">6</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 PO 單確認作業流程</b><small>跨品類 · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="查看是否有新建立訂單並拋入至公司酷澎採購入庫處理系統 ／ 彙整PO和搜尋訂單 ／ 檢閱訂單明細 ／ 管理訂單-產品資訊 ／ 管理訂單-狀態確認 ／ 管理訂單-退貨資訊"><span class="dot">●</span><i>6</i></td><td class="on" title="酷澎物流中心位置和進倉規範守則和麥頭更新"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 PO 單調整(審核)作業流程</b><small>跨品類 · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="調整倉別 ／ 下修數量或整張不出 ／ 調整交貨日期 ／ 提出拆/併單需求=&gt;2025/10/03線上諮詢停止支援，但酷澎採購可以 ／ 管理供應狀態維護 ／ 確認是否審核完成"><span class="dot">●</span><i>7</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">7</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 QA 資料庫（知識庫問答）</b><small>跨品類 · 酷澎 </small></div></td>
+      <td class="on" title="1.PO單確認相關 ／ 3. 退貨商品相關問題"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="2.進倉驗收問題"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="4.帳務/請款相關"><span class="dot">●</span><i>1</i></td><td class="cnt">4</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 全面前端作業流程</b><small>跨品類 · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="更改 PO 確認數量　—　Chloe／Nicole／小真（全線） ／ 約倉／取消　—　紙潔-Chloe／瑪氏＋P&amp;G-Nicole ／ 出貨前下修（基本上為缺貨）"><span class="dot">●</span><i>3</i></td><td class="on" title="維護管理供應狀態　—　小真（全線） ／ 更改 PO 單交貨日期或物流中心　—　紙潔-Chloe／瑪氏＋P&amp;G-Nicole"><span class="dot">●</span><i>2</i></td><td class="on" title="拉單／收單／取消　—　小真（全線） ／ 配貨確認／酷澎主檔維護　—　紙潔-Chloe／瑪氏-雅慈（Nicole、Chloe 協助）／P&amp;G-Nicole"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="退貨資訊修改　—　小真（全線）"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 對帳及上傳發票請款作業流程</b><small>跨品類 · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="存檔至公槽並插入總金額欄位 ／ 上傳發票和折讓單等相關請款資訊"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="對外-可先MAIL通知酷澎窗口(蘇小姐)，已下載當月對帳資訊。 ／ 對內-除財務OP外，一併CC給各線相關同仁"><span class="dot">●</span><i>2</i></td><td class="on" title="下載對帳資料"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="請款資料送出並確認"><span class="dot">●</span><i>1</i></td><td class="on" title="將對帳資料提供給財務OP核對 ／ 通知酷澎會計部我司已完成請款流程"><span class="dot">●</span><i>2</i></td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 約倉作業流程</b><small>跨品類 · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="酷澎系統約倉"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="推算車數與時長"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">2</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎 驗收確認作業流程</b><small>跨品類 · 酷澎 <span class="m">買斷</span></small></div></td>
+      <td class="on" title="酷澎後台申請退貨 ／ 驗收異常申請 ／ 雲端驗收完成表格登記 ／ 訂單系統追蹤與退貨入庫(原廠出貨#EM) ／ 訂單系統追蹤與退貨入庫(竹運出貨#CUP)"><span class="dot">●</span><i>5</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="進貨商品驗收與退貨通知"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">6</td></tr><tr><td class="nm"><span class="bdot" style="background:#8155a7"></span>
+      <div><b>酷澎採購入庫處理系統 — 操作手冊</b><small>跨品類 · 酷澎 </small></div></td>
+      <td class="on" title="功能一·Tab3：整合表預覽匯出"><span class="dot">●</span><i>1</i></td><td class="on" title="功能一·Tab1：批次上傳採購單 ／ 功能一·Tab2：酷澎主檔匯入 ／ 功能一·Tab4：產生嘜頭 ／ 功能二·Tab1：批次上傳配送表PDF ／ 功能二·Tab2：配送資料查詢 ／ 功能二·Tab3：竹運嘜頭與效期合併（尚未開發）"><span class="dot">●</span><i>6</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="功能一·MARS 嘜頭特殊規則"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">8</td></tr><tr><td class="nm"><span class="bdot" style="background:#5c6470"></span>
+      <div><b>外倉盤點作業流程</b><small>通用 · 通用 </small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="通知與預約作業"><span class="dot">●</span><i>1</i></td><td class="on" title="盤點前準備作業 ／ 寄銷倉盤點作業 ／ 簽署與文件回收 ／ 盤差處理與報表對帳"><span class="dot">●</span><i>4</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">5</td></tr><tr><td class="nm"><span class="bdot" style="background:#5c6470"></span>
+      <div><b>加工組裝作業流程（含貼標改包）</b><small>通用 · 通用 </small></div></td>
+      <td class="on" title="業務派工申請 ／ 物流回覆與確認 ／ 加工申請與核准 ／ 結案 ／ 業務派工申請 ／ 物流評估報價"><span class="dot">●</span><i>7</i></td><td class="on" title="加工完成與回饋"><span class="dot">●</span><i>1</i></td><td class="on" title="加工執行與進度回覆"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">9</td></tr><tr><td class="nm"><span class="bdot" style="background:#5c6470"></span>
+      <div><b>寄銷通路退貨作業流程</b><small>通用 · 通用 <span class="m">寄銷</span></small></div></td>
+      <td class="on" title="退貨驗收入庫（物流）"><span class="dot">●</span><i>1</i></td><td class="on" title="退貨資訊登錄（企劃專員） ／ 入庫單開立（採購）"><span class="dot">●</span><i>2</i></td><td class="on" title="資料檢核與補登（企劃專員）"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="對帳作業（財務 &amp; 企劃）"><span class="dot">●</span><i>1</i></td><td class="cnt">5</td></tr><tr><td class="nm"><span class="bdot" style="background:#5c6470"></span>
+      <div><b>逆物流作業流程（退貨）</b><small>通用 · 通用 <span class="m">寄銷</span><span class="m">買斷</span></small></div></td>
+      <td class="on" title="消費者（轉單）退貨流程"><span class="dot">●</span><i>1</i></td><td class="on" title="進貨驗退流程 ／ 退廠流程"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="退貨分類"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="cnt">4</td></tr><tr><td class="nm"><span class="bdot" style="background:#5c6470"></span>
+      <div><b>EIP 申請庫存調整步驟</b><small>通用 · 通用 </small></div></td>
+      <td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="進入申請表單 ／ 選擇結帳/促銷/請款 → 庫存調整申請單"><span class="dot">●</span><i>2</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="填寫異動類型與倉庫"><span class="dot">●</span><i>1</i></td><td class="off" title="此文件未涵蓋此階段">－</td><td class="off" title="此文件未涵蓋此階段">－</td><td class="on" title="填寫庫存差異調整報表"><span class="dot">●</span><i>1</i></td><td class="cnt">4</td></tr></tbody></table></div>
+    <div class="legend"><span><i>●</i> 有此階段</span><span>－ 無此階段</span><span>色塊＝品牌</span><span>滑鼠移到 ● 看步驟明細</span></div>
+    <div class="finding"><b>看縱向欄位找答案：</b>某階段整欄幾乎都是 ●，代表<b>不分品牌通路都要做</b> → 可統一。
+      某階段只有零星幾份，代表是<b>特定通路的專屬要求</b> → 做成例外清單即可，不必每份文件重寫。</div>
+  </section>
+
+  <section><h2><span class="n">4</span>重複度報告：可優化的具體標的</h2>
+    <p class="lead">以下步驟在多份文件中重複出現。重複次數越高，統一或自動化後省下的成本越大。</p>
+    <div class="two">
+      <div><h3>完全相同的步驟（標題一字不差）</h3>
+        <div class="scroll"><table class="dtab"><thead><tr><th>份數</th><th style="text-align:left">步驟</th><th style="text-align:right">階段</th></tr></thead><tbody><tr><td class="big">7</td><td><b>發信及登錄（OP）</b>
+  <small>SOP-ET-PG-001、SOP-MO-CPG-001、SOP-SP-CPG-001、SOP-SP-PG-001、SOP-YH-CPG-001-東森、SOP-YH-CPG-001-雅虎…</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">7</td><td><b>收到業務通知（業務 / OP）</b>
+  <small>SOP-SP-CPG-001、SOP-SP-PG-001、SOP-UB-CPG-001、SOP-YH-CPG-001-東森、SOP-YH-CPG-001-雅虎、SOP-YH-PG-001…</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">7</td><td><b>建立補貨資料夾（OP）</b>
+  <small>SOP-MO-CPG-001、SOP-SP-CPG-001、SOP-UB-CPG-001、SOP-YH-CPG-001-東森、SOP-YH-CPG-001-雅虎、SOP-YH-PG-001…</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">6</td><td><b>文件檢查（OP）</b>
+  <small>SOP-MO-CPG-001、SOP-SP-CPG-001、SOP-YH-CPG-001-東森、SOP-YH-CPG-001-雅虎、SOP-YH-PG-001、SOP-YH-PG-002</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">5</td><td><b>領用單出貨</b>
+  <small>SOP-BK-PG-001、SOP-BK-PG-002、SOP-ET-PG-001、SOP-YH-PG-001、SOP-YH-PG-002</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">4</td><td><b>製作出貨文件（OP）</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-002、SOP-CP-PG-002、SOP-YH-PG-002</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">4</td><td><b>發信（OP）</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-002、SOP-UB-CPG-001、SOP-YH-PG-002</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">4</td><td><b>出貨前下修（基本上為缺貨）</b>
+  <small>SOP-CP-CP-001-全面前端、SOP-CP-CPG-001-出貨、SOP-CP-MARS-001-出貨、SOP-CP-PG-001-出貨</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>EIP採購單申請與填入</b>
+  <small>SOP-HCT-MARS-001、SOP-MO-MARS-001、SOP-PC-MARS-001-直送</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>發信給瑪氏（OP）</b>
+  <small>SOP-HCT-MARS-001、SOP-MO-MARS-001、SOP-PC-MARS-001-直送</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>列印外箱嘜頭</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-001、SOP-BK-PG-002</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">3</td><td><b>EIP系統拋單（OP）</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-002、SOP-YH-PG-002</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>建立出貨資料夾</b>
+  <small>SOP-CP-PG-001、SOP-CP-PG-002、SOP-ET-PG-001</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>接收補貨通知並約倉</b>
+  <small>SOP-PC-CPG-001、SOP-PC-PG-001、SOP-PC-PG-002</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">3</td><td><b>上傳EIP系統與通知採購</b>
+  <small>SOP-MO-CPG-001、SOP-PC-CPG-001、SOP-PC-PG-001</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>查詢進倉單（OP）</b>
+  <small>SOP-SP-PG-001、SOP-YH-PG-001、SOP-YH-PG-002</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>匯出與列印PDF（OP）</b>
+  <small>SOP-SP-PG-001、SOP-YH-PG-001、SOP-YH-PG-002</small></td>
+  <td class="ph">建檔與文件</td></tr><tr><td class="big">3</td><td><b>系統拋單（OP）</b>
+  <small>SOP-SP-CPG-001、SOP-SP-PG-001、SOP-YH-PG-001</small></td>
+  <td class="ph">接單與通知</td></tr><tr><td class="big">3</td><td><b>Eip下採（OP）</b>
+  <small>SOP-UB-CPG-001、SOP-YH-CPG-001-東森、SOP-YH-CPG-001-雅虎</small></td>
+  <td class="ph">系統下採 EIP</td></tr><tr><td class="big">2</td><td><b>製作採購單</b>
+  <small>SOP-CP-MARS-001、SOP-CP-PG-001</small></td>
+  <td class="ph">建檔與文件</td></tr></tbody></table></div></div>
+      <div><h3>高度相似的步驟（寫法不同、做同件事）</h3>
+        <div class="scroll"><table class="dtab"><thead><tr><th>份數</th><th style="text-align:left">步驟群</th></tr></thead><tbody><tr><td class="big">13</td><td><b>建立出貨資料夾 ／ 建立出貨資料夾與出貨文件 ／ 建立出貨資料夾與匯入檔 ／ 建立補貨資料夾（OP）</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-001、SOP-BK-PG-002、SOP-CP-PG-001、SOP-CP-PG-002、SOP-ET-PG-001…</small></td></tr><tr><td class="big">6</td><td><b>EIP系統拋單（OP） ／ 系統拋單(OP)</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-002、SOP-SP-CPG-001、SOP-SP-PG-001、SOP-YH-PG-001、SOP-YH-PG-002</small></td></tr><tr><td class="big">5</td><td><b>製作出貨文件 ／ 製作補貨文件。（OP）</b>
+  <small>SOP-BK-CPG-001、SOP-BK-PG-002、SOP-CP-PG-002、SOP-UB-CPG-001、SOP-YH-PG-002</small></td></tr><tr><td class="big">4</td><td><b>PO單需求處理 ／ 併單需求處理 ／ 拆單需求處理</b>
+  <small>SOP-CP-CPG-001-出貨、SOP-CP-MARS-001-出貨、SOP-CP-MARS-001-新單整理、SOP-CP-PG-001-出貨</small></td></tr><tr><td class="big">4</td><td><b>收到業務提供的出貨單 ／ 收到業務提供的出貨通知資訊(提供補貨po單號、倉別) ／ 收到業務提供的總表 ／ 收到業務提供的總表、採購單</b>
+  <small>SOP-CP-MARS-001、SOP-ET-PG-001、SOP-HCT-MARS-001、SOP-PC-MARS-001-直送</small></td></tr><tr><td class="big">4</td><td><b>製作/修改採購單(買斷/寄銷/領用) ／ 製作採購單</b>
+  <small>SOP-CP-MARS-001、SOP-CP-PG-001、SOP-PC-PG-001、SOP-PC-PG-002</small></td></tr><tr><td class="big">3</td><td><b>回信給瑪氏（OP） ／ 發信給瑪氏（OP）</b>
+  <small>SOP-HCT-MARS-001、SOP-MO-MARS-001、SOP-PC-MARS-001-直送</small></td></tr><tr><td class="big">3</td><td><b>建立公槽資料夾 ／ 建立資料夾</b>
+  <small>SOP-PC-CPG-001、SOP-PC-PG-001、SOP-PC-PG-002</small></td></tr><tr><td class="big">3</td><td><b>發信通知出貨 ／ 通知出貨(領用)</b>
+  <small>SOP-CP-PG-001、SOP-CP-PG-002、SOP-PC-PG-002</small></td></tr><tr><td class="big">3</td><td><b>訂單修改需求 ／ 訂單修改需求回覆 ／ 訂單修改需求處理</b>
+  <small>SOP-CP-CPG-001-出貨、SOP-CP-MARS-001-新單整理、SOP-CP-PG-001-出貨</small></td></tr></tbody></table></div></div>
+    </div>
+    <div class="finding"><b>最大的單一機會：</b>「建立出貨資料夾」這組寫法在 <b>13 份</b>文件出現（含各種變體），
+      「收到業務通知」<b>7 份</b>、「發信及登錄」<b>7 份</b>、「文件檢查」<b>6 份</b>。
+      這些是每天重複做、且各通路做法幾乎一樣的動作。</div>
+  </section>
+
+  <section><h2><span class="n">5</span>建議的優化方向</h2>
+    <div class="box"><ul class="rec">
+      <li><b>統一詞彙表</b>：同件事目前有多種寫法（建立資料夾／建立公槽資料夾／建立出貨資料夾）。先訂標準動作名稱，新人可讀性提升，也才比較得出差異。</li>
+      <li><b>抽出「共用主幹 SOP」</b>：把 P1～P2 各通路都一樣的部分寫成<u>一份</u>主流程，個別 SOP 只寫差異 → 文件量大幅縮減，改一次全部生效。</li>
+      <li><b>優先自動化重複最高的動作</b>：<code>建立出貨資料夾</code>（13 份）、<code>製作採購單／出貨文件</code>（多份）規則明確，最適合做成範本或小工具。</li>
+      <li><b>把變異點做成檢核表</b>：嘜頭、約倉、竹運預約等特定通路要求，整理成「通路專屬注意事項」對照表。</li>
+      <li><b>用矩陣找文件缺口</b>：若某份 SOP 在多數同類文件都有的階段是「－」，可能是<b>文件漏寫</b>而非真的不用做。</li>
+    </ul></div>
+  </section>
+
+  <section><h2><span class="n">6</span>分析方法與限制</h2>
+    <div class="note"><b>資料來源：</b>46 份 SOP 文件解析後的 305 個步驟，與 SOP 檢索中心同一份資料。<br>
+      <b>分析方法：</b>依步驟標題與內文的動作關鍵字歸入 8 階段；再以字串正規化比對找出跨文件完全重複與高度相似（相似度 ≥ 0.72）的步驟。<br>
+      <b>限制（重要）：</b>本分析<b>僅根據文件內容</b>推導，未經第一線人員訪談驗證，呈現的是「<b>文件上寫的流程</b>」。
+      口頭默契、時間壓力、例外的實際判斷、文件未記載的步驟，都無法從文件中得知。建議作為<b>與營運同仁討論的起點</b>，而非最終結論。</div>
+  </section>
+</div></div>
+
 
 <div class="lightbox" id="lightbox" role="dialog" aria-label="放大檢視附圖">
   <button class="lb-close" aria-label="關閉">×</button>
@@ -1388,6 +1699,50 @@ document.getElementById('editorSave').onclick=saveEditor;
 document.getElementById('editorBack').addEventListener('click',e=>{ if(e.target.id==='editorBack') closeEditor(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeEditor(); });
 initAuth();
+</script>
+
+
+<script>
+/* ===== 前端路由：網址變 /workflow 但不重新載入頁面 ===== */
+(function(){
+  var ROUTES={'':'sop','workflow':'workflow'};
+  // 站台根目錄（支援 GitHub Pages 專案頁 /repo/）
+  function baseOf(){
+    var p=location.pathname.replace(/index\.html$/,'');
+    p=p.replace(/(^|\/)(workflow)\/?$/,'/');
+    if(!/\/$/.test(p)) p+='/';
+    return p;
+  }
+  var BASE=baseOf();
+  function routeFromPath(){
+    var rest=location.pathname.replace(/index\.html$/,'');
+    if(rest.indexOf(BASE)===0) rest=rest.slice(BASE.length);
+    rest=rest.replace(/^\/|\/$/g,'');
+    return ROUTES[rest]!==undefined?ROUTES[rest]:'sop';
+  }
+  function show(view,push,path){
+    document.getElementById('view-sop').hidden=(view!=='sop');
+    document.getElementById('view-workflow').hidden=(view!=='workflow');
+    document.querySelectorAll('.nav-tabs a').forEach(function(a){
+      a.classList.toggle('on', a.dataset.view===view);
+    });
+    document.title = view==='workflow' ? '營運工作流分析 · YFS' : 'YFS 營運 SOP 檢索中心';
+    if(push) history.pushState({view:view}, '', path);
+    window.scrollTo({top:0,behavior:'auto'});
+  }
+  window.__goView=function(view){ show(view,true, view==='workflow'?BASE+'workflow':BASE); };
+  document.addEventListener('click',function(ev){
+    var a=ev.target.closest && ev.target.closest('.nav-tabs a, a[data-view]');
+    if(!a||!a.dataset.view) return;
+    ev.preventDefault(); window.__goView(a.dataset.view);
+  });
+  window.addEventListener('popstate',function(){ show(routeFromPath(),false); });
+  // 深層連結還原（GitHub Pages 404 轉導用）
+  try{ var r=sessionStorage.getItem('yfs_route');
+    if(r){ sessionStorage.removeItem('yfs_route');
+      history.replaceState({},'',r==='workflow'?BASE+'workflow':BASE); } }catch(e){}
+  show(routeFromPath(),false);
+})();
 </script>
 
 </body>
