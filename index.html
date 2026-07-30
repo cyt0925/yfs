@@ -432,7 +432,10 @@ body:not(.signed-in) .signout{display:none}
 .step-ed .step-ed-top .num{font-size:12px;font-weight:700;color:#fff;background:var(--accent);
   border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .step-ed .step-ed-top input{flex:1}
-.step-ed .body-tools{display:flex;gap:6px;margin:8px 0}
+.step-ed .body-tools{display:flex;gap:6px;margin:8px 0;align-items:center;flex-wrap:wrap}
+.step-ed .st-tag-lab{margin-left:auto;display:flex;align-items:center;gap:6px;
+  font-size:11.5px;color:var(--muted);white-space:nowrap}
+.step-ed .st-tag{width:130px;font-size:12px;padding:4px 8px}
 .step-ed .legend{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.6}
 .step-ed .legend code{background:var(--line-2);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:10.5px}
 .step-preview{border:1px dashed var(--line);border-radius:8px;padding:8px 10px;margin-top:8px;background:var(--card)}
@@ -1384,7 +1387,7 @@ function openEditor(code){
     platform:src.platform||'通用',modes:src.modes||[],delivery:src.delivery||'－',
     version:src.version||'',date:src.date||'',author:src.author||'',status:src.status||'',
     purpose:src.purpose||'',overview:src.overview||'',roles:src.roles||[],exceptions:src.exceptions||[],
-    steps:(src.steps||[]).map(s=>[s[0]||'',s[1]||''])
+    steps:(src.steps||[]).map(s=>s[2]&&s[2].length?[s[0]||'',s[1]||'',s[2]]:[s[0]||'',s[1]||''])
   }));
   ED._isNew=isNew;
   document.getElementById('editorTitle').textContent=isNew?'新增 SOP':'編輯 SOP';
@@ -1483,7 +1486,13 @@ function renderEditorForm(){
 function readRoles(){ return [...document.querySelectorAll('#rolesWrap .rolerow')]
   .map(r=>[r.querySelector('.r-name').value, r.querySelector('.r-duty').value]); }
 function readSteps(){ return [...document.querySelectorAll('#stepsWrap .step-ed')]
-  .map(s=>[s.querySelector('.st-title').value, s.querySelector('.st-body').value]); }
+  .map(s=>{
+    // 標籤要跟著這一步一起被讀回來，否則上移/下移/刪除任一步都會把標籤弄丟
+    const row=[s.querySelector('.st-title').value, s.querySelector('.st-body').value];
+    const tags=(s.querySelector('.st-tag').value||'').split(/[,，、]/).map(x=>x.trim()).filter(Boolean);
+    if(tags.length) row.push(tags);
+    return row;
+  }); }
 function renderRoles(){
   const w=document.getElementById('rolesWrap'); w.innerHTML='';
   (ED.roles||[]).forEach((r,i)=>{
@@ -1511,6 +1520,10 @@ function renderSteps(){
       <div class="body-tools">
         <button class="btn btn-sm ins-img" type="button">🖼 插入圖片</button>
         <button class="btn btn-sm btn-ghost ins-sub" type="button">＋ 子標題</button>
+        <label class="st-tag-lab" title="這一步對應出貨主幹的哪個階段，多個用逗號分隔；不屬於主幹的填 exception，不確定就留空">
+          主幹階段
+          <input class="st-tag" placeholder="如 t1 或 t2,t7" value="${esc((st[2]||[]).join(','))}">
+        </label>
       </div>
       <div class="legend">格式：<code>## 文字</code>＝子標題　<code>[圖]網址</code>＝圖片　開頭 <code>作業內容：</code>／<code>前置條件：</code> 會自動加粗　其他＝段落</div>
       <div class="step-preview"><div class="pv-label">預覽</div><div class="pv-body"></div></div>`;
@@ -1555,7 +1568,8 @@ function collectForm(){
   ED.modes=[...new Set([...modeChecked,...modeExtra])];
   ED.roles=readRoles().filter(r=>(r[0]||'').trim()||(r[1]||'').trim()).map(r=>[r[0].trim(),r[1].trim()]);
   ED.exceptions=v('f_exceptions').split('\n').map(x=>x.trim()).filter(Boolean);
-  ED.steps=readSteps().filter(s=>(s[0]||'').trim()||(s[1]||'').trim()).map(s=>[s[0].trim(),s[1].replace(/\s+$/,'')]);
+  ED.steps=readSteps().filter(s=>(s[0]||'').trim()||(s[1]||'').trim())
+    .map(s=>{const r=[s[0].trim(),s[1].replace(/\s+$/,'')]; if(s[2]&&s[2].length) r.push(s[2]); return r;});
 }
 async function saveEditor(){
   collectForm();
