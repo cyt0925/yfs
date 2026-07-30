@@ -1124,9 +1124,10 @@ document.getElementById('themeBtn').onclick=()=>{
 };
 applyThemeBtn();
 document.getElementById('resetBtn').onclick=resetAll;
-// 點 logo / 標題 回到首頁（清搜尋、篩選、排序，捲回頂端；保留檢視與主題偏好）
+// 點 logo / 標題 回到首頁（清搜尋、篩選、排序、收合所有展開的文件卡片，捲回頂端；保留檢視與主題偏好）
 function goHome(){
   state.sort='default'; const sel=document.getElementById('sortSel'); if(sel) sel.value='default';
+  openCards.clear();
   resetAll();
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -1271,7 +1272,8 @@ document.getElementById('refreshBtn').onclick=async()=>{
   setBadge('loading','重新整理中…');
   await new Promise(r=>setTimeout(r,180));
   await loadData();
-  // 保留使用者目前的搜尋與篩選狀態，只重繪
+  // 保留使用者目前的搜尋與篩選狀態，只重繪；但收合所有展開的文件卡片
+  openCards.clear();
   document.getElementById('totalCount').textContent=DATA.length;
   document.getElementById('stats').innerHTML='';
   document.getElementById('filtersBody').innerHTML='';
