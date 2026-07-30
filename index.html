@@ -1124,11 +1124,17 @@ document.getElementById('themeBtn').onclick=()=>{
 };
 applyThemeBtn();
 document.getElementById('resetBtn').onclick=resetAll;
-// 點 logo / 標題 回到首頁（清搜尋、篩選、排序、收合所有展開的文件卡片，捲回頂端；保留檢視與主題偏好）
+// 點 logo / 標題 回到首頁（清搜尋、篩選、排序、收合所有展開的文件卡片與流程圖面板，
+// 切回 SOP 檢索頁，捲回頂端；保留檢視與主題偏好）
 function goHome(){
   state.sort='default'; const sel=document.getElementById('sortSel'); if(sel) sel.value='default';
   openCards.clear();
   resetAll();
+  // 流程圖：收合目前展開的階段/文件面板，關掉還開著的文件詳情視窗
+  if(typeof WF!=='undefined'){ WF.mapPhase=null; WF.type2Open=null; }
+  if(typeof wfCloseSopModal==='function') wfCloseSopModal();
+  if(typeof wfBuild==='function') wfBuild();
+  if(typeof window.__goView==='function') window.__goView('sop');
   window.scrollTo({top:0,behavior:'smooth'});
 }
 const homeLink=document.getElementById('homeLink');
