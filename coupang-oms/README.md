@@ -5,19 +5,42 @@
 
 ## 怎麼跑起來
 
+第一次要先裝套件（只需一次）：
+
 ```bash
 pip install -r requirements.txt
-python app.py
 ```
 
-終端機會印出網址，用瀏覽器打開 <http://127.0.0.1:5000> 即可。
-`database.db` 會在第一次啟動時自動建立。
+之後每次啟動，**雙擊 `啟動系統.bat`** 就好，瀏覽器會自動打開。
+（或者手動跑 `python app.py`，再開 <http://127.0.0.1:5000>。）
 
-驗證系統邏輯是否正常（用真實整合表跑完整流程，36 項檢查）：
+驗證系統邏輯是否正常（用真實整合表跑完整流程，46 項檢查）：
 
 ```bash
 python test_flow.py
 ```
+
+## 怎麼更新版本
+
+**把整個 `coupang-oms` 資料夾解壓縮覆蓋掉就好，不用挑檔案。**
+
+你的訂單資料和設定不在這個資料夾裡，而是在它隔壁：
+
+```
+酷澎訂單管理系統/
+├── coupang-oms/        ← 程式碼。更新時整包覆蓋，隨便蓋
+│   └── defaults/       ← 設定檔的出廠預設值（只在第一次啟動時複製過去）
+└── 資料與設定/          ← 這個不要動
+    ├── database.db         你匯入的所有訂單與修改歷程
+    ├── config.json         操作人員名單、狀態選項
+    ├── export_profiles.json 匯出欄位格式
+    └── backups/            自動備份
+```
+
+第一次跑新版時，系統會自動把舊位置的 `database.db`、`config.json`、
+`backups/` 搬到「資料與設定」資料夾，終端機會印出搬了什麼。之後就不會再動。
+
+要備份的話，複製「**資料與設定**」這個資料夾就夠了，程式碼隨時可以重新下載。
 
 ## 核心防呆（這幾條是系統的命）
 
@@ -45,12 +68,12 @@ python test_flow.py
 
 ```
 coupang-oms/
+├── 啟動系統.bat            雙擊啟動
 ├── app.py                  Flask API：查詢、編輯、匯入兩階段、匯出
-├── db.py                   SQLite schema、WAL 設定、自動備份
+├── db.py                   SQLite schema、WAL 設定、資料夾搬遷、自動備份
 ├── importer.py             整合表解析與差異比對（系統的心臟）
 ├── normalize.py            欄位正規化，唯一實作
-├── config.json             操作人員名單、狀態選項 ← 可直接改
-├── export_profiles.json    匯出欄位名稱／順序／格式 ← 可直接改
+├── defaults/               設定檔出廠預設值（不是你在用的那份）
 ├── templates/index.html    單一頁面前端
 ├── test_flow.py            端到端驗證
 └── samples/整合表範例.xlsx   測試用真實資料
@@ -58,8 +81,8 @@ coupang-oms/
 
 ## 匯出格式怎麼對齊 ERP
 
-打開 `export_profiles.json`，找到 `erp` 這個 profile，把 `columns` 改成公司 ERP
-匯入規範要求的欄位名稱與順序即可，**不需要動任何程式碼**：
+打開「**資料與設定**」資料夾裡的 `export_profiles.json`，找到 `erp` 這個 profile，
+把 `columns` 改成公司 ERP 匯入規範要求的欄位名稱與順序即可，**不需要動任何程式碼**：
 
 ```json
 { "header": "ERP 欄位名稱", "field": "系統內部欄位", "format": "text|int|date|decimal" }
@@ -74,5 +97,6 @@ coupang-oms/
 
 ## 備份
 
-每次匯入寫入前會自動把 `database.db` 複製到 `backups/`，保留最近 30 份。
-`database.db` 就是全部身家，建議另外定期複製到公司雲端硬碟。
+每次匯入寫入前會自動把 `database.db` 複製到「資料與設定/backups/」，保留最近 30 份。
+那只防「匯入出錯」，防不了整個資料夾被誤刪，所以建議定期把「**資料與設定**」
+資料夾複製一份到公司雲端硬碟。

@@ -50,7 +50,8 @@ INSERT_FIELDS = [
 # ---------------------------------------------------------------- 設定檔
 
 def load_json(name, default):
-    path = os.path.join(BASE_DIR, name)
+    # 設定檔住在資料資料夾，不在程式資料夾——更新版本時不會被覆蓋
+    path = os.path.join(db.DATA_DIR, name)
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
@@ -783,10 +784,16 @@ def _same(a, b):
 
 
 if __name__ == "__main__":
+    moved = db.ensure_data_dir()
     init_db()
     print("=" * 60)
     print(" 酷澎訂單管理系統 已啟動")
     print(" 請用瀏覽器打開： http://127.0.0.1:5000")
-    print(f" 資料庫位置： {db.DB_PATH}")
+    print()
+    print(f" 資料與設定放在： {db.DATA_DIR}")
+    print(" （更新程式時，這個資料夾不要動，裡面是你的訂單和設定）")
+    if moved:
+        print()
+        print(f" ※ 已把 {'、'.join(moved)} 從舊位置搬進資料資料夾")
     print("=" * 60)
     app.run(host="127.0.0.1", port=5000, debug=False)

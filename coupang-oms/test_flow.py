@@ -20,12 +20,11 @@ _tmp = tempfile.mkdtemp(prefix="oms_test_")
 sys.path.insert(0, BASE_DIR)
 
 import db  # noqa: E402
-db.DB_PATH = os.path.join(_tmp, "test.db")
-db.BACKUP_DIR = os.path.join(_tmp, "backups")
+db.DATA_DIR = os.path.join(_tmp, "資料與設定")
+db.DB_PATH = os.path.join(db.DATA_DIR, "test.db")
+db.BACKUP_DIR = os.path.join(db.DATA_DIR, "backups")
 
 import app as app_module  # noqa: E402
-app_module.db.DB_PATH = db.DB_PATH
-app_module.db.BACKUP_DIR = db.BACKUP_DIR
 
 PASS, FAIL = [], []
 
@@ -252,6 +251,26 @@ def main():
     still = next(r for r in client.get("/api/orders?page_size=500").get_json()["rows"]
                  if r["id"] == blank["id"])
     check("值沒有被改掉", still["line"] == "瑪氏", f"實際 {still['line']}")
+
+    print("\n【12】資料與設定和程式碼分家（整包覆蓋更新不會洗掉資料）")
+    check("資料庫建在資料資料夾，不在程式資料夾",
+          os.path.dirname(db.DB_PATH) == db.DATA_DIR)
+    check("設定檔自動從 defaults 補到資料資料夾",
+          os.path.exists(os.path.join(db.DATA_DIR, "config.json"))
+          and os.path.exists(os.path.join(db.DATA_DIR, "export_profiles.json")))
+
+    # 模擬使用者改過設定後又更新版本：ensure_data_dir 會再跑一次
+    cfg_path = os.path.join(db.DATA_DIR, "config.json")
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump({"operators": ["小真", "Alice", "Jerry"]}, fh, ensure_ascii=False)
+    db.ensure_data_dir()
+    with open(cfg_path, encoding="utf-8") as fh:
+        after = json.load(fh)
+    check("重新啟動不會把使用者改過的設定蓋回預設值",
+          after["operators"] == ["小真", "Alice", "Jerry"], after["operators"])
+    check("API 讀得到使用者改過的操作人員",
+          client.get("/api/config").get_json()["operators"]
+          == ["小真", "Alice", "Jerry"])
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

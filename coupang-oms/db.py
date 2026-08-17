@@ -14,8 +14,21 @@ import sqlite3
 import datetime as _dt
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "database.db")
-BACKUP_DIR = os.path.join(BASE_DIR, "backups")
+
+# 資料與設定放在程式資料夾「外面」的兄弟資料夾。
+#
+# 這樣更新版本時只要把整個 coupang-oms 解壓縮覆蓋掉就好，不必挑檔案、
+# 也不會洗掉已匯入的訂單和改好的設定。程式碼歸程式碼，資料歸資料。
+DATA_DIR = os.environ.get("COUPANG_OMS_DATA") or os.path.join(
+    os.path.dirname(BASE_DIR), "資料與設定")
+DEFAULTS_DIR = os.path.join(BASE_DIR, "defaults")
+
+DB_PATH = os.path.join(DATA_DIR, "database.db")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
+
+# 舊版把這些檔案放在程式資料夾裡，第一次啟動時自動搬過去
+_MIGRATE = ("database.db", "config.json", "export_profiles.json")
+_SEED = ("config.json", "export_profiles.json")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
@@ -154,7 +167,38 @@ def get_conn():
     return conn
 
 
+def ensure_data_dir():
+    """建立資料資料夾、從舊位置搬檔、補上預設設定檔。
+
+    每次啟動都跑，但都是冪等的：已經存在的東西一律不動，
+    所以使用者改過的 config.json 永遠不會被預設值蓋掉。
+    """
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    moved = []
+    for name in _MIGRATE:
+        old = os.path.join(BASE_DIR, name)
+        new = os.path.join(DATA_DIR, name)
+        if os.path.exists(old) and not os.path.exists(new):
+            shutil.move(old, new)
+            moved.append(name)
+
+    old_backups = os.path.join(BASE_DIR, "backups")
+    if os.path.isdir(old_backups) and not os.path.isdir(BACKUP_DIR):
+        shutil.move(old_backups, BACKUP_DIR)
+        moved.append("backups")
+
+    for name in _SEED:
+        target = os.path.join(DATA_DIR, name)
+        source = os.path.join(DEFAULTS_DIR, name)
+        if not os.path.exists(target) and os.path.exists(source):
+            shutil.copy2(source, target)
+
+    return moved
+
+
 def init_db():
+    ensure_data_dir()
     conn = get_conn()
     try:
         conn.executescript(SCHEMA)
