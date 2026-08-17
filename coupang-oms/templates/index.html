@@ -33,9 +33,11 @@
   .scroll-x { overflow-x: auto; }
   table.grid { table-layout: fixed; }
   table.grid th { position: sticky; top: 0; z-index: 10; }
-  /* 加上直向格線，讓「欄位對齊」這件事看得見，不用靠眼睛猜 */
-  table.grid th, table.grid td { border-right: 1px solid rgba(255,255,255,.12); }
-  table.grid tbody td { border-right-color: #e3e7ee; }
+  /* 加上直向格線，讓「欄位對齊」這件事看得見，不用靠眼睛猜。
+     上一版用了 12% 透明度的白線，淡到幾乎看不見，等於沒加——這次改成
+     實色，深色表頭用可辨識的深藍灰、白色列身用中性淺灰，一眼就看得出來。 */
+  table.grid th, table.grid td { border-right: 1px solid #3a4b66; }
+  table.grid tbody td { border-right-color: #d7dde6; }
   table.grid th:last-child, table.grid td:last-child { border-right: none; }
   .row-alert { background-color: #fdf2f2; }
   .row-warn  { background-color: #fffbeb; }
