@@ -783,17 +783,45 @@ def _same(a, b):
     return str(a).strip() == str(b).strip()
 
 
+def lan_ip():
+    """抓這台電腦在辦公室網路上的位址，好告訴同事要連哪裡。"""
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # 不會真的送出封包，只是讓作業系統挑出對外那張網卡
+        sock.connect(("8.8.8.8", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return ""
+    finally:
+        sock.close()
+
+
 if __name__ == "__main__":
     moved = db.ensure_data_dir()
     init_db()
-    print("=" * 60)
+    ip = lan_ip()
+
+    print("=" * 62)
     print(" 酷澎訂單管理系統 已啟動")
-    print(" 請用瀏覽器打開： http://127.0.0.1:5000")
+    print()
+    print("  你自己用：      http://127.0.0.1:5000")
+    if ip and ip != "127.0.0.1":
+        print(f"  給同事的網址：  http://{ip}:5000")
+        print("                 （同一個辦公室網路才連得到，")
+        print("                   而且這台電腦要開著、程式要跑著）")
+    else:
+        print("  ※ 抓不到辦公室網路位址，同事可能連不進來。")
     print()
     print(f" 資料與設定放在： {db.DATA_DIR}")
     print(" （更新程式時，這個資料夾不要動，裡面是你的訂單和設定）")
     if moved:
         print()
         print(f" ※ 已把 {'、'.join(moved)} 從舊位置搬進資料資料夾")
-    print("=" * 60)
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    print("=" * 62)
+
+    # 綁 0.0.0.0 才收得到區網連線；threaded 讓多人同時操作不用排隊
+    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
