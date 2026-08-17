@@ -11,7 +11,7 @@
 pip install -r requirements.txt
 ```
 
-之後每次啟動，**雙擊 `啟動系統.bat`** 就好，瀏覽器會自動打開。
+之後每次啟動，**雙擊 `START.bat`** 就好，瀏覽器會自動打開。
 （或者手動跑 `python app.py`，再開 <http://127.0.0.1:5000>。）
 
 驗證系統邏輯是否正常（用真實整合表跑完整流程，46 項檢查）：
@@ -68,7 +68,7 @@ python test_flow.py
 
 ```
 coupang-oms/
-├── 啟動系統.bat            雙擊啟動
+├── START.bat               雙擊啟動（檔名用英文，避免 Windows 解壓縮亂碼）
 ├── app.py                  Flask API：查詢、編輯、匯入兩階段、匯出
 ├── db.py                   SQLite schema、WAL 設定、資料夾搬遷、自動備份
 ├── importer.py             整合表解析與差異比對（系統的心臟）
