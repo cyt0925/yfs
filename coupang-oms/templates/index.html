@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>酷澎訂單管理系統</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<style>
+  body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  .scroll-x { overflow-x: auto; }
+  table.grid th { position: sticky; top: 0; z-index: 10; }
+  .row-alert { background-color: #fef2f2; }
+  .row-warn  { background-color: #fffbeb; }
+  .row-pulled { color: #64748b; }
+  dialog::backdrop { background: rgba(15,23,42,.55); }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- ── 頂部 ───────────────────────────────────────────── -->
+<header class="bg-slate-800 text-white shadow-lg">
+  <div class="max-w-[1800px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-2">
+      <i class="bi bi-box-seam text-2xl text-sky-400"></i>
+      <div>
+        <h1 class="text-lg font-bold leading-tight">酷澎訂單管理系統</h1>
+        <p class="text-[11px] text-slate-400 leading-tight">永豐商店 OP 中繼站</p>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-2 bg-slate-700/60 rounded-lg px-3 py-1.5">
+      <i class="bi bi-person-badge text-sky-300"></i>
+      <span class="text-xs text-slate-300">操作人員</span>
+      <select id="operator" class="bg-slate-900 text-white text-sm rounded px-2 py-1 border border-slate-600">
+        <option value="">— 請選擇 —</option>
+      </select>
+    </div>
+    <button id="btn-upload" class="bg-sky-600 hover:bg-sky-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+      <i class="bi bi-cloud-arrow-up"></i> 上傳整合表
+    </button>
+    <button id="btn-export" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+      <i class="bi bi-file-earmark-excel"></i> 匯出報表
+    </button>
+  </div>
+</header>
+
+<div id="operator-warning" class="hidden bg-amber-400 text-amber-950 text-sm text-center py-2 font-medium">
+  <i class="bi bi-exclamation-triangle-fill"></i> 請先選擇操作人員，否則無法上傳、編輯或匯出（修改歷程需要記錄是誰改的）。
+</div>
+
+<main class="max-w-[1800px] mx-auto px-5 py-5 space-y-4">
+
+  <!-- ── 統計 ───────────────────────────────────────── -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+      <p class="text-xs text-slate-500">符合條件筆數</p>
+      <p id="stat-total" class="text-2xl font-bold text-slate-800">0</p>
+    </div>
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
+      <p class="text-xs text-slate-500">出貨數量合計</p>
+      <p id="stat-qty" class="text-2xl font-bold text-sky-700">0</p>
+    </div>
+    <button id="stat-review-card" class="bg-white rounded-xl p-4 shadow-sm border-2 border-amber-300 text-left hover:bg-amber-50">
+      <p class="text-xs text-amber-700"><i class="bi bi-bell-fill"></i> 異動待確認</p>
+      <p id="stat-review" class="text-2xl font-bold text-amber-600">0</p>
+    </button>
+    <button id="stat-alert-card" class="bg-white rounded-xl p-4 shadow-sm border-2 border-red-300 text-left hover:bg-red-50">
+      <p class="text-xs text-red-700"><i class="bi bi-exclamation-octagon-fill"></i> 已拉單後遭變更</p>
+      <p id="stat-alert" class="text-2xl font-bold text-red-600">0</p>
+    </button>
+  </section>
+
+  <!-- ── 篩選 ───────────────────────────────────────── -->
+  <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 單號</span>
+        <input id="f-po" class="border rounded px-2 py-1.5" placeholder="模糊搜尋"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品名 / 料號 / 條碼</span>
+        <input id="f-keyword" class="border rounded px-2 py-1.5" placeholder="關鍵字"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別</span>
+        <select id="f-line" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌</span>
+        <select id="f-brand" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">倉別</span>
+        <select id="f-warehouse" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">訂單類型</span>
+        <select id="f-ordertype" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期（起）</span>
+        <input id="f-from" type="date" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期（迄）</span>
+        <input id="f-to" type="date" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 狀態</span>
+        <select id="f-status" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
+        <select id="f-receiving" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">拉單狀態</span>
+        <select id="f-pulled" class="border rounded px-2 py-1.5">
+          <option value="">全部</option><option value="0">未拉單</option><option value="1">已拉單</option>
+        </select></label>
+      <label class="flex items-end gap-2 pb-1">
+        <input id="f-review" type="checkbox" class="w-4 h-4">
+        <span class="text-xs text-slate-600">只看待確認</span></label>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button id="btn-search" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded-lg text-sm font-semibold">
+        <i class="bi bi-search"></i> 搜尋</button>
+      <button id="btn-reset" class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-lg text-sm">重設</button>
+      <div class="flex-1"></div>
+      <button id="btn-confirm-review" class="bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-check2-circle"></i> 確認選取的異動</button>
+      <button id="btn-unpull" class="bg-white border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
+    </div>
+  </section>
+
+  <!-- ── 列表 ───────────────────────────────────────── -->
+  <section class="bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="scroll-x" style="max-height:65vh; overflow-y:auto;">
+      <table class="grid w-full text-sm border-collapse">
+        <thead class="bg-slate-700 text-white text-xs">
+          <tr>
+            <th class="px-2 py-2"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
+            <th class="px-2 py-2 text-left">狀態</th>
+            <th class="px-2 py-2 text-left">PO 單號</th>
+            <th class="px-2 py-2 text-left">類型</th>
+            <th class="px-2 py-2 text-left">線別</th>
+            <th class="px-2 py-2 text-left">品牌</th>
+            <th class="px-2 py-2 text-left">品名</th>
+            <th class="px-2 py-2 text-left">永豐料號</th>
+            <th class="px-2 py-2 text-left">倉別</th>
+            <th class="px-2 py-2 text-left">交期</th>
+            <th class="px-2 py-2 text-right">下單數量</th>
+            <th class="px-2 py-2 text-right">出貨數量</th>
+            <th class="px-2 py-2 text-left">PO狀態</th>
+            <th class="px-2 py-2 text-left">驗收</th>
+            <th class="px-2 py-2 text-left">備註</th>
+            <th class="px-2 py-2"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="flex items-center gap-3 px-4 py-3 border-t text-sm">
+      <button id="btn-prev" class="px-3 py-1 border rounded hover:bg-slate-50">上一頁</button>
+      <span id="page-info" class="text-slate-600"></span>
+      <button id="btn-next" class="px-3 py-1 border rounded hover:bg-slate-50">下一頁</button>
+      <div class="flex-1"></div>
+      <span id="selected-info" class="text-slate-500"></span>
+    </div>
+  </section>
+</main>
+
+<!-- ── 上傳 Modal ─────────────────────────────────────── -->
+<dialog id="dlg-upload" class="rounded-xl p-0 w-[min(1100px,94vw)] backdrop:bg-slate-900/60">
+  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-cloud-arrow-up"></i> 上傳酷澎整合表</h2>
+    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+    <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-sky-900">
+      <p class="font-semibold mb-1"><i class="bi bi-info-circle"></i> 直接整份上傳就好，不用記上次拉到哪。</p>
+      <ul class="list-disc list-inside text-xs space-y-0.5 text-sky-800">
+        <li>內容完全相同的 → 自動略過</li>
+        <li>全新的單 → 自動新增</li>
+        <li>酷澎偷偷改過的 → 更新並記錄歷程，推到最上面等你確認</li>
+        <li>資料庫有、這份檔案沒有的 → <b>完全不動</b>（上傳片段不會誤判成取消）</li>
+      </ul>
+    </div>
+    <input id="file-input" type="file" accept=".xlsx,.xlsm" class="block w-full text-sm border rounded-lg p-2">
+    <div id="upload-result" class="hidden space-y-3"></div>
+  </div>
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
+    <button data-close class="px-4 py-2 rounded-lg border">取消</button>
+    <button id="btn-preview" class="px-4 py-2 rounded-lg bg-slate-800 text-white">解析並預覽</button>
+    <button id="btn-commit" class="hidden px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold">確認匯入</button>
+  </div>
+</dialog>
+
+<!-- ── 編輯 Modal ─────────────────────────────────────── -->
+<dialog id="dlg-edit" class="rounded-xl p-0 w-[min(900px,94vw)]">
+  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-pencil-square"></i> 編輯訂單</h2>
+    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+    <div id="edit-header" class="bg-slate-50 border rounded-lg p-3 text-sm"></div>
+    <div id="edit-lock" class="hidden bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-800"></div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">出貨數量</span>
+        <input id="e-qty" type="number" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期</span>
+        <input id="e-date" type="date" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">倉別</span>
+        <input id="e-warehouse" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 狀態</span>
+        <select id="e-status" class="border rounded px-2 py-1.5"></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
+        <select id="e-receiving" class="border rounded px-2 py-1.5"></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別 <span id="e-line-hint" class="text-[10px]"></span></span>
+        <input id="e-line" list="dl-line" class="border rounded px-2 py-1.5">
+        <datalist id="dl-line"></datalist></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌 <span id="e-brand-hint" class="text-[10px]"></span></span>
+        <input id="e-brand" list="dl-brand" class="border rounded px-2 py-1.5">
+        <datalist id="dl-brand"></datalist></label>
+    </div>
+    <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-slate-500">備註</span>
+      <textarea id="e-remarks" rows="3" class="border rounded px-2 py-1.5"></textarea></label>
+    <div>
+      <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
+        <i class="bi bi-clock-history"></i> 修改歷程
+        <span class="text-xs font-normal text-slate-500">（誰、什麼時候、把哪個欄位改成什麼）</span>
+      </h3>
+      <div id="edit-logs" class="border rounded-lg max-h-64 overflow-y-auto text-xs"></div>
+    </div>
+  </div>
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
+    <button data-close class="px-4 py-2 rounded-lg border">取消</button>
+    <button id="btn-save" class="px-4 py-2 rounded-lg bg-sky-600 text-white font-semibold">儲存修改</button>
+  </div>
+</dialog>
+
+<!-- ── 匯出 Modal ─────────────────────────────────────── -->
+<dialog id="dlg-export" class="rounded-xl p-0 w-[min(700px,94vw)]">
+  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-file-earmark-excel"></i> 匯出 Excel</h2>
+    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="p-5 space-y-4 text-sm">
+    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">匯出格式</span>
+      <select id="x-profile" class="border rounded px-2 py-2"></select>
+      <span id="x-profile-note" class="text-xs text-slate-500"></span></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">範圍</span>
+      <select id="x-scope" class="border rounded px-2 py-2">
+        <option value="filter">目前篩選條件的全部資料</option>
+        <option value="selected">只匯出勾選的資料列</option>
+      </select></label>
+    <label class="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3">
+      <input id="x-mark" type="checkbox" class="w-4 h-4 mt-0.5">
+      <span>
+        <b>匯出後標記為「已拉單」並鎖定編輯</b>
+        <span class="block text-xs text-amber-800 mt-1">
+          代表這批已正式拋入 ERP、交給倉庫。取消勾選就是「試算／預覽」匯出，不會鎖住任何單。
+        </span>
+      </span>
+    </label>
+    <p id="x-hint" class="text-xs text-slate-500"></p>
+  </div>
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
+    <button data-close class="px-4 py-2 rounded-lg border">取消</button>
+    <button id="btn-do-export" class="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold">
+      <i class="bi bi-download"></i> 產生 Excel</button>
+  </div>
+</dialog>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? "").toString()
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+let CONFIG = {}, PAGE = 1, PAGE_SIZE = 100, TOTAL = 0, ROWS = [], CURRENT = null, BATCH = null;
+const selected = new Set();
+
+function toast(msg, kind = "ok") {
+  const el = $("#toast");
+  el.className = "fixed bottom-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50 " +
+    (kind === "err" ? "bg-red-600" : kind === "warn" ? "bg-amber-600" : "bg-emerald-600");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.add("hidden"), 4200);
+}
+
+function operator() { return $("#operator").value; }
+
+function requireOperator() {
+  if (!operator()) {
+    $("#operator-warning").classList.remove("hidden");
+    toast("請先在右上角選擇操作人員。", "warn");
+    return false;
+  }
+  $("#operator-warning").classList.add("hidden");
+  return true;
+}
+
+function fillSelect(el, values, keepAll = true) {
+  const current = el.value;
+  el.innerHTML = keepAll ? '<option value="">全部</option>' : "";
+  values.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = v === "" ? "（空白）" : v;
+    el.appendChild(o);
+  });
+  if (values.includes(current)) el.value = current;
+}
+
+async function loadConfig() {
+  CONFIG = await (await fetch("/api/config")).json();
+  const op = $("#operator");
+  op.innerHTML = '<option value="">— 請選擇 —</option>';
+  CONFIG.operators.forEach(o => op.insertAdjacentHTML("beforeend", `<option>${esc(o)}</option>`));
+  const saved = localStorage.getItem("oms_operator");
+  if (saved && CONFIG.operators.includes(saved)) op.value = saved;
+
+  fillSelect($("#f-line"), CONFIG.lines);
+  fillSelect($("#f-brand"), CONFIG.brands);
+  fillSelect($("#f-warehouse"), CONFIG.warehouses);
+  fillSelect($("#f-ordertype"), CONFIG.order_types);
+  fillSelect($("#f-status"), CONFIG.po_statuses);
+  fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
+  fillSelect($("#e-status"), CONFIG.po_statuses, false);
+  fillSelect($("#e-receiving"), CONFIG.receiving_statuses, false);
+
+  // 補填時給既有值當提示，避免打成「瑪氏 」「瑪式」這種對不起來的字
+  $("#dl-line").innerHTML = CONFIG.lines.map(v => `<option value="${esc(v)}">`).join("");
+  $("#dl-brand").innerHTML = CONFIG.brands.map(v => `<option value="${esc(v)}">`).join("");
+
+  const xp = $("#x-profile");
+  xp.innerHTML = "";
+  CONFIG.export_profiles.forEach(p => {
+    xp.insertAdjacentHTML("beforeend",
+      `<option value="${esc(p.key)}" data-note="${esc(p.note)}" data-mark="${p.mark_pulled_default ? 1 : 0}"
+       >${esc(p.label)}（${p.column_count} 欄）</option>`);
+  });
+  syncProfileNote();
+}
+
+function filters() {
+  return {
+    po_number: $("#f-po").value.trim(),
+    keyword: $("#f-keyword").value.trim(),
+    line: $("#f-line").value,
+    brand: $("#f-brand").value,
+    warehouse: $("#f-warehouse").value,
+    order_type: $("#f-ordertype").value,
+    date_from: $("#f-from").value,
+    date_to: $("#f-to").value,
+    po_status: $("#f-status").value,
+    receiving_status: $("#f-receiving").value,
+    is_pulled: $("#f-pulled").value,
+    needs_review: $("#f-review").checked ? "1" : "",
+    alert_level: filters._alert || "",
+  };
+}
+
+async function loadOrders() {
+  const params = new URLSearchParams(
+    Object.entries(filters()).filter(([, v]) => v !== "" && v != null));
+  params.set("page", PAGE);
+  params.set("page_size", PAGE_SIZE);
+  const data = await (await fetch("/api/orders?" + params)).json();
+
+  TOTAL = data.total; ROWS = data.rows;
+  $("#stat-total").textContent = data.total.toLocaleString();
+  $("#stat-qty").textContent = (data.summary.qty_ship || 0).toLocaleString();
+  $("#stat-review").textContent = data.summary.needs_review;
+  $("#stat-alert").textContent = data.summary.changed_after_pull;
+
+  const pages = Math.max(1, Math.ceil(TOTAL / PAGE_SIZE));
+  $("#page-info").textContent = `第 ${PAGE} / ${pages} 頁 · 共 ${TOTAL} 筆`;
+  $("#btn-prev").disabled = PAGE <= 1;
+  $("#btn-next").disabled = PAGE >= pages;
+
+  renderRows();
+}
+
+function renderRows() {
+  const tb = $("#tbody");
+  if (!ROWS.length) {
+    tb.innerHTML = `<tr><td colspan="16" class="text-center py-16 text-slate-400">
+      沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
+    updateSelectedInfo();
+    return;
+  }
+  tb.innerHTML = ROWS.map(r => {
+    const cls = r.alert_level === "changed_after_pull" ? "row-alert"
+              : r.needs_review ? "row-warn"
+              : r.is_pulled ? "row-pulled" : "";
+    let badge = "";
+    if (r.alert_level === "changed_after_pull")
+      badge = `<span class="inline-block bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded" title="${esc(r.review_reason)}">拉單後被改</span>`;
+    else if (r.needs_review)
+      badge = `<span class="inline-block bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded" title="${esc(r.review_reason)}">待確認</span>`;
+    else if (r.is_pulled)
+      badge = `<span class="inline-block bg-slate-400 text-white text-[10px] px-1.5 py-0.5 rounded">已拉單</span>`;
+    else
+      badge = `<span class="inline-block bg-sky-100 text-sky-700 text-[10px] px-1.5 py-0.5 rounded">未拉單</span>`;
+
+    const qtyDiff = r.qty_ship != null && r.qty_coupang != null && r.qty_ship !== r.qty_coupang;
+    return `<tr class="${cls} border-b hover:bg-slate-50">
+      <td class="px-2 py-1.5 text-center"><input type="checkbox" data-id="${r.id}"
+          class="row-check w-4 h-4" ${selected.has(r.id) ? "checked" : ""}></td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${badge}</td>
+      <td class="px-2 py-1.5 font-mono text-xs whitespace-nowrap">${esc(r.po_number)}
+        ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.order_type)}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${r.line ? esc(r.line)
+        : '<span class="text-amber-600 text-xs">待補</span>'}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.brand)}</td>
+      <td class="px-2 py-1.5 max-w-[260px] truncate" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
+      <td class="px-2 py-1.5 font-mono text-xs whitespace-nowrap">${esc(r.yf_sku)}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.warehouse)}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.delivery_date)}</td>
+      <td class="px-2 py-1.5 text-right">${r.qty_coupang ?? ""}</td>
+      <td class="px-2 py-1.5 text-right ${qtyDiff ? "text-red-600 font-bold" : ""}"
+          title="${qtyDiff ? "出貨數量與酷澎下單數量不一致" : ""}">${r.qty_ship ?? ""}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.po_status)}</td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.receiving_status)}</td>
+      <td class="px-2 py-1.5 max-w-[200px] truncate" title="${esc(r.remarks)}">${esc(r.remarks)}</td>
+      <td class="px-2 py-1.5"><button data-edit="${r.id}"
+          class="text-sky-600 hover:text-sky-800"><i class="bi bi-pencil-square"></i></button></td>
+    </tr>`;
+  }).join("");
+  updateSelectedInfo();
+}
+
+function updateSelectedInfo() {
+  $("#selected-info").textContent = selected.size ? `已勾選 ${selected.size} 筆` : "";
+}
+
+// ── 編輯 ────────────────────────────────────────────────
+async function openEdit(id) {
+  const row = ROWS.find(r => r.id === id);
+  if (!row) return;
+  CURRENT = row;
+  $("#edit-header").innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div><span class="text-xs text-slate-500">PO 單號</span><br><b class="font-mono">${esc(row.po_number)}</b></div>
+      <div><span class="text-xs text-slate-500">SKU ID</span><br><span class="font-mono text-xs">${esc(row.sku_id)}</span></div>
+      <div><span class="text-xs text-slate-500">品牌 / 線別</span><br>${esc(row.brand)} / ${esc(row.line) || "待補"}</div>
+      <div><span class="text-xs text-slate-500">酷澎下單數量</span><br><b>${row.qty_coupang ?? "-"}</b>
+        <span class="text-[10px] text-slate-500">（唯讀，只有匯入能改）</span></div>
+    </div>
+    <div class="mt-2 text-xs text-slate-600">${esc(row.product_name)}</div>`;
+
+  const lock = $("#edit-lock");
+  if (row.is_pulled) {
+    lock.classList.remove("hidden");
+    lock.innerHTML = `<i class="bi bi-lock-fill"></i> 這筆已於 <b>${esc(row.pulled_at)}</b>
+      由 <b>${esc(row.pulled_by)}</b> 拉單並鎖定，倉庫可能已拿到資料。
+      需要修改請先用列表上方的「解除拉單鎖定」。`;
+  } else lock.classList.add("hidden");
+
+  $("#e-qty").value = row.qty_ship ?? "";
+  $("#e-date").value = row.delivery_date || "";
+  $("#e-warehouse").value = row.warehouse || "";
+  $("#e-status").value = row.po_status || "";
+  $("#e-receiving").value = row.receiving_status || "";
+  $("#e-remarks").value = row.remarks || "";
+
+  // 線別／品牌：空白才給補，已經有值就鎖起來
+  [["line", "#e-line", "#e-line-hint"], ["brand", "#e-brand", "#e-brand-hint"]]
+    .forEach(([field, input, hint]) => {
+      const blank = !(row[field] || "").trim();
+      $(input).value = row[field] || "";
+      $(input).dataset.locked = blank ? "" : "1";
+      $(hint).textContent = blank ? "（空白，可補填）" : "（以整合表為準，不可改）";
+      $(hint).className = blank ? "text-[10px] text-amber-600" : "text-[10px] text-slate-400";
+    });
+
+  [...document.querySelectorAll("#dlg-edit input, #dlg-edit select, #dlg-edit textarea")]
+    .forEach(el => el.disabled = !!row.is_pulled);
+  if (!row.is_pulled) {
+    $("#e-line").disabled = $("#e-line").dataset.locked === "1";
+    $("#e-brand").disabled = $("#e-brand").dataset.locked === "1";
+  }
+  $("#btn-save").disabled = !!row.is_pulled;
+
+  $("#edit-logs").innerHTML = '<p class="p-3 text-slate-400">載入中…</p>';
+  $("#dlg-edit").showModal();
+
+  const logs = await (await fetch(`/api/orders/${id}/logs`)).json();
+  $("#edit-logs").innerHTML = logs.length ? logs.map(l => `
+    <div class="px-3 py-2 border-b last:border-0 flex gap-3">
+      <span class="text-slate-400 whitespace-nowrap font-mono">${esc(l.changed_at)}</span>
+      <span class="px-1.5 rounded ${l.source === "import" ? "bg-sky-100 text-sky-700"
+        : l.source === "system" ? "bg-slate-200 text-slate-700" : "bg-emerald-100 text-emerald-700"}">
+        ${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span>
+      <b class="whitespace-nowrap">${esc(l.operator)}</b>
+      <span class="flex-1">
+        <b>${esc(l.field_label)}</b>：
+        <span class="text-slate-500 line-through">${esc(l.old_value) || "（空白）"}</span>
+        <i class="bi bi-arrow-right text-slate-400"></i>
+        <span class="text-slate-900 font-semibold">${esc(l.new_value) || "（空白）"}</span>
+        ${l.note ? `<span class="block text-[11px] text-slate-400">${esc(l.note)}</span>` : ""}
+      </span>
+    </div>`).join("") : '<p class="p-3 text-slate-400">尚無修改紀錄。</p>';
+}
+
+async function saveEdit() {
+  if (!requireOperator() || !CURRENT) return;
+  const res = await fetch(`/api/orders/${CURRENT.id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      operator: operator(), version: CURRENT.version,
+      qty_ship: $("#e-qty").value, delivery_date: $("#e-date").value,
+      warehouse: $("#e-warehouse").value, po_status: $("#e-status").value,
+      receiving_status: $("#e-receiving").value, remarks: $("#e-remarks").value,
+      // 只在原本空白時才送，避免不小心把既有值蓋掉
+      ...($("#e-line").dataset.locked ? {} : { line: $("#e-line").value }),
+      ...($("#e-brand").dataset.locked ? {} : { brand: $("#e-brand").value }),
+    }),
+  });
+  const data = await res.json();
+  if (res.status === 409) { toast(data.message, "err"); $("#dlg-edit").close(); loadOrders(); return; }
+  if (!res.ok) { toast(data.message || data.error, "err"); return; }
+  toast(data.changed ? `已儲存，記錄了 ${data.changed} 項變更。` : "沒有任何欄位變動。");
+  $("#dlg-edit").close();
+  loadOrders();
+}
+
+// ── 匯入 ────────────────────────────────────────────────
+async function doPreview() {
+  if (!requireOperator()) return;
+  const file = $("#file-input").files[0];
+  if (!file) { toast("請先選擇檔案。", "warn"); return; }
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("operator", operator());
+  $("#btn-preview").disabled = true;
+  $("#upload-result").innerHTML = '<p class="text-slate-500">解析中…</p>';
+  $("#upload-result").classList.remove("hidden");
+
+  const res = await fetch("/api/import/preview", { method: "POST", body: fd });
+  const data = await res.json();
+  $("#btn-preview").disabled = false;
+  if (!res.ok) {
+    $("#upload-result").innerHTML =
+      `<div class="bg-red-50 border border-red-300 rounded-lg p-3 text-red-800">${esc(data.error)}</div>`;
+    return;
+  }
+  BATCH = data.batch_id;
+  $("#btn-commit").classList.remove("hidden");
+
+  const updRows = data.updated.map(u => `
+    <tr class="border-b ${u.after_pull ? "bg-red-50" : ""}">
+      <td class="px-2 py-1 font-mono text-xs">${esc(u.row.po_number)}</td>
+      <td class="px-2 py-1 text-xs">${esc(u.row.product_name).slice(0, 26)}</td>
+      <td class="px-2 py-1">${u.changes.map(c =>
+        `<span class="${c.critical ? "text-red-700 font-semibold" : "text-slate-600"}">
+           ${esc(c.label)}：${esc(c.old)} → ${esc(c.new)}</span>`).join("<br>")}</td>
+      <td class="px-2 py-1 text-xs">${u.after_pull
+        ? '<span class="text-red-700 font-bold">已拉單後被改</span>' : ""}</td>
+    </tr>`).join("");
+
+  $("#upload-result").innerHTML = `
+    <div class="grid grid-cols-4 gap-2 text-center">
+      <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+        <p class="text-xs text-emerald-700">新增</p>
+        <p class="text-2xl font-bold text-emerald-700">${data.new_count}</p></div>
+      <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <p class="text-xs text-amber-700">酷澎改過（要更新）</p>
+        <p class="text-2xl font-bold text-amber-700">${data.updated_count}</p></div>
+      <div class="bg-slate-100 border rounded-lg p-3">
+        <p class="text-xs text-slate-600">完全相同（略過）</p>
+        <p class="text-2xl font-bold text-slate-600">${data.identical_count}</p></div>
+      <div class="bg-red-50 border border-red-300 rounded-lg p-3">
+        <p class="text-xs text-red-700">已拉單後被改</p>
+        <p class="text-2xl font-bold text-red-700">${data.after_pull_count}</p></div>
+    </div>
+    ${data.after_pull_count ? `<div class="bg-red-100 border border-red-400 rounded-lg p-3 text-sm text-red-900">
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 注意：有 ${data.after_pull_count} 筆是「已經拉單交給倉庫之後」才被酷澎改動的。</b>
+      倉庫手上拿到的可能是舊資料，匯入後請立刻處理。</div>` : ""}
+    ${data.warnings.length ? `<div class="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900">
+      <b>解析提醒（${data.warnings.length}）：</b><ul class="list-disc list-inside mt-1">
+      ${data.warnings.slice(0, 20).map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
+    ${data.updated_count ? `<div>
+      <h3 class="font-semibold text-sm mb-1">酷澎改了什麼（前 ${Math.min(200, data.updated_count)} 筆）</h3>
+      <div class="border rounded-lg overflow-auto max-h-64"><table class="w-full text-sm">
+        <thead class="bg-slate-100 text-xs"><tr>
+          <th class="px-2 py-1 text-left">PO 單號</th><th class="px-2 py-1 text-left">品名</th>
+          <th class="px-2 py-1 text-left">變更內容</th><th class="px-2 py-1"></th></tr></thead>
+        <tbody>${updRows}</tbody></table></div></div>` : ""}
+    <p class="text-xs text-slate-500">以上都還沒寫進資料庫。按「確認匯入」才會實際寫入，過程中若任何一列出錯會整批還原。</p>`;
+}
+
+async function doCommit() {
+  if (!BATCH) return;
+  $("#btn-commit").disabled = true;
+  const res = await fetch("/api/import/commit", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ batch_id: BATCH, operator: operator() }),
+  });
+  const data = await res.json();
+  $("#btn-commit").disabled = false;
+  if (!res.ok) { toast(data.error, "err"); return; }
+  toast(`匯入完成：新增 ${data.inserted} 筆、更新 ${data.updated} 筆、略過重複 ${data.identical} 筆。`);
+  $("#dlg-upload").close();
+  BATCH = null;
+  $("#btn-commit").classList.add("hidden");
+  $("#upload-result").classList.add("hidden");
+  $("#file-input").value = "";
+  await loadConfig();
+  PAGE = 1;
+  loadOrders();
+}
+
+// ── 匯出 ────────────────────────────────────────────────
+function syncProfileNote() {
+  const opt = $("#x-profile").selectedOptions[0];
+  if (!opt) return;
+  $("#x-profile-note").textContent = opt.dataset.note || "";
+  $("#x-mark").checked = opt.dataset.mark === "1";
+}
+
+async function doExport() {
+  if (!requireOperator()) return;
+  const scope = $("#x-scope").value;
+  const ids = scope === "selected" ? [...selected] : [];
+  if (scope === "selected" && !ids.length) { toast("你選擇了「只匯出勾選的」，但沒有勾選任何資料列。", "warn"); return; }
+
+  const body = {
+    operator: operator(), profile: $("#x-profile").value,
+    mark_pulled: $("#x-mark").checked, filters: filters(), ids,
+  };
+  const res = await fetch("/api/export", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: "匯出失敗" }));
+    toast(data.error, "err");
+    return;
+  }
+  const blob = await res.blob();
+  const disp = res.headers.get("Content-Disposition") || "";
+  const match = /filename\*=UTF-8''([^;]+)/.exec(disp) || /filename="?([^";]+)"?/.exec(disp);
+  const name = match ? decodeURIComponent(match[1]) : "export.xlsx";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  URL.revokeObjectURL(url);
+  toast($("#x-mark").checked ? "已匯出，並將這批標記為已拉單。" : "已匯出（未標記拉單）。");
+  $("#dlg-export").close();
+  selected.clear();
+  loadOrders();
+}
+
+// ── 批次動作 ────────────────────────────────────────────
+async function confirmReview() {
+  if (!requireOperator()) return;
+  if (!selected.size) { toast("請先勾選要確認的資料列。", "warn"); return; }
+  const res = await fetch("/api/orders/review", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), ids: [...selected] }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return; }
+  toast(`已確認 ${data.count} 筆異動。`);
+  selected.clear();
+  loadOrders();
+}
+
+async function unpull() {
+  if (!requireOperator()) return;
+  if (!selected.size) { toast("請先勾選要解除鎖定的資料列。", "warn"); return; }
+  const reason = prompt("倉庫可能已經拿到這批資料了。請填寫解除拉單鎖定的原因：");
+  if (!reason) return;
+  const res = await fetch("/api/orders/unpull", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), ids: [...selected], reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return; }
+  toast(`已解除 ${data.count} 筆的拉單鎖定。`);
+  selected.clear();
+  loadOrders();
+}
+
+// ── 事件綁定 ────────────────────────────────────────────
+document.addEventListener("click", e => {
+  const close = e.target.closest("[data-close]");
+  if (close) { close.closest("dialog").close(); return; }
+  const edit = e.target.closest("[data-edit]");
+  if (edit) openEdit(Number(edit.dataset.edit));
+});
+
+$("#tbody").addEventListener("change", e => {
+  const cb = e.target.closest(".row-check");
+  if (!cb) return;
+  const id = Number(cb.dataset.id);
+  cb.checked ? selected.add(id) : selected.delete(id);
+  updateSelectedInfo();
+});
+
+$("#check-all").addEventListener("change", e => {
+  ROWS.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id));
+  renderRows();
+});
+
+$("#operator").addEventListener("change", e => {
+  localStorage.setItem("oms_operator", e.target.value);
+  if (e.target.value) $("#operator-warning").classList.add("hidden");
+});
+
+$("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
+$("#btn-reset").addEventListener("click", () => {
+  ["#f-po", "#f-keyword", "#f-from", "#f-to"].forEach(s => $(s).value = "");
+  ["#f-line", "#f-brand", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-pulled"]
+    .forEach(s => $(s).value = "");
+  $("#f-review").checked = false;
+  filters._alert = ""; PAGE = 1; loadOrders();
+});
+$("#btn-prev").addEventListener("click", () => { if (PAGE > 1) { PAGE--; loadOrders(); } });
+$("#btn-next").addEventListener("click", () => { PAGE++; loadOrders(); });
+$("#stat-review-card").addEventListener("click", () => {
+  $("#f-review").checked = true; filters._alert = ""; PAGE = 1; loadOrders();
+});
+$("#stat-alert-card").addEventListener("click", () => {
+  filters._alert = "changed_after_pull"; $("#f-review").checked = false; PAGE = 1; loadOrders();
+});
+$("#btn-upload").addEventListener("click", () => { if (requireOperator()) $("#dlg-upload").showModal(); });
+$("#btn-export").addEventListener("click", () => { if (requireOperator()) $("#dlg-export").showModal(); });
+$("#btn-preview").addEventListener("click", doPreview);
+$("#btn-commit").addEventListener("click", doCommit);
+$("#btn-save").addEventListener("click", saveEdit);
+$("#btn-do-export").addEventListener("click", doExport);
+$("#x-profile").addEventListener("change", syncProfileNote);
+$("#btn-confirm-review").addEventListener("click", confirmReview);
+$("#btn-unpull").addEventListener("click", unpull);
+$("#f-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
+$("#f-keyword").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
+
+(async () => { await loadConfig(); await loadOrders(); })();
+</script>
+</body>
+</html>
