@@ -1,24 +1,25 @@
 @echo off
-chcp 65001 >nul
+REM ASCII-only on purpose: Chinese characters break cmd.exe batch parsing.
+REM See README.md for the Chinese instructions.
 cd /d "%~dp0"
-title 酷澎訂單管理系統
+title Coupang OMS
 
 echo ============================================================
-echo  酷澎訂單管理系統
+echo   Coupang OMS  /  Coupang Order Management System
 echo ============================================================
 echo.
-echo  啟動中，瀏覽器會自動打開，請稍等幾秒...
+echo   Starting... your browser will open in a few seconds.
 echo.
-echo  [!] 這個視窗不要關掉，關掉系統就停了。
-echo      要停止系統：按 Ctrl + C，或直接關掉這個視窗。
+echo   [!] Do NOT close this window - the system stops if you do.
+echo       To stop: press Ctrl-C, or just close this window.
 echo.
 echo ============================================================
 echo.
 
-start "" cmd /c "timeout /t 3 >nul & start "" http://127.0.0.1:5000"
+start "" /min cmd /c "timeout /t 4 >nul && start "" http://127.0.0.1:5000"
 
 python app.py
 
 echo.
-echo 系統已停止。按任意鍵關閉視窗。
+echo System stopped. Press any key to close.
 pause >nul
