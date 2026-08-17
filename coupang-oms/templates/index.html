@@ -197,6 +197,12 @@
         <select id="e-status" class="border rounded px-2 py-1.5"></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
         <select id="e-receiving" class="border rounded px-2 py-1.5"></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別 <span id="e-line-hint" class="text-[10px]"></span></span>
+        <input id="e-line" list="dl-line" class="border rounded px-2 py-1.5">
+        <datalist id="dl-line"></datalist></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌 <span id="e-brand-hint" class="text-[10px]"></span></span>
+        <input id="e-brand" list="dl-brand" class="border rounded px-2 py-1.5">
+        <datalist id="dl-brand"></datalist></label>
     </div>
     <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-slate-500">備註</span>
       <textarea id="e-remarks" rows="3" class="border rounded px-2 py-1.5"></textarea></label>
@@ -306,6 +312,10 @@ async function loadConfig() {
   fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
   fillSelect($("#e-status"), CONFIG.po_statuses, false);
   fillSelect($("#e-receiving"), CONFIG.receiving_statuses, false);
+
+  // 補填時給既有值當提示，避免打成「瑪氏 」「瑪式」這種對不起來的字
+  $("#dl-line").innerHTML = CONFIG.lines.map(v => `<option value="${esc(v)}">`).join("");
+  $("#dl-brand").innerHTML = CONFIG.brands.map(v => `<option value="${esc(v)}">`).join("");
 
   const xp = $("#x-profile");
   xp.innerHTML = "";
@@ -439,8 +449,23 @@ async function openEdit(id) {
   $("#e-status").value = row.po_status || "";
   $("#e-receiving").value = row.receiving_status || "";
   $("#e-remarks").value = row.remarks || "";
+
+  // 線別／品牌：空白才給補，已經有值就鎖起來
+  [["line", "#e-line", "#e-line-hint"], ["brand", "#e-brand", "#e-brand-hint"]]
+    .forEach(([field, input, hint]) => {
+      const blank = !(row[field] || "").trim();
+      $(input).value = row[field] || "";
+      $(input).dataset.locked = blank ? "" : "1";
+      $(hint).textContent = blank ? "（空白，可補填）" : "（以整合表為準，不可改）";
+      $(hint).className = blank ? "text-[10px] text-amber-600" : "text-[10px] text-slate-400";
+    });
+
   [...document.querySelectorAll("#dlg-edit input, #dlg-edit select, #dlg-edit textarea")]
     .forEach(el => el.disabled = !!row.is_pulled);
+  if (!row.is_pulled) {
+    $("#e-line").disabled = $("#e-line").dataset.locked === "1";
+    $("#e-brand").disabled = $("#e-brand").dataset.locked === "1";
+  }
   $("#btn-save").disabled = !!row.is_pulled;
 
   $("#edit-logs").innerHTML = '<p class="p-3 text-slate-400">載入中…</p>';
@@ -473,6 +498,9 @@ async function saveEdit() {
       qty_ship: $("#e-qty").value, delivery_date: $("#e-date").value,
       warehouse: $("#e-warehouse").value, po_status: $("#e-status").value,
       receiving_status: $("#e-receiving").value, remarks: $("#e-remarks").value,
+      // 只在原本空白時才送，避免不小心把既有值蓋掉
+      ...($("#e-line").dataset.locked ? {} : { line: $("#e-line").value }),
+      ...($("#e-brand").dataset.locked ? {} : { brand: $("#e-brand").value }),
     }),
   });
   const data = await res.json();

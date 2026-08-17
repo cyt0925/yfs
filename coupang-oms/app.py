@@ -31,6 +31,14 @@ EDITABLE_FIELDS = {
     "receiving_status": "驗收狀態",
 }
 
+# 酷澎來源欄位中，允許 OP「補空白」的欄位。
+# 只有原本是空白時才能填，已經有值的一律不給改——避免有人手滑把瑪氏
+# 改成寶僑。上游主檔之後補建了，匯入仍會以主檔為準覆蓋回來並記歷程。
+FILLABLE_FIELDS = {
+    "line":  "線別",
+    "brand": "品牌",
+}
+
 INSERT_FIELDS = [
     "po_number", "sku_id", "order_type", "parent_po", "line", "brand",
     "product_name", "barcode", "yf_sku", "warehouse", "address",
@@ -306,6 +314,23 @@ def api_update_order(order_id):
             if _same(old_val, new_val):
                 continue
             changes.append((field, label, old_val, new_val))
+
+        # 補空白：只有原本沒有值的欄位才收，已經有值的直接忽略
+        for field, label in FILLABLE_FIELDS.items():
+            if field not in payload:
+                continue
+            new_val = norm_text(payload[field])
+            if not new_val:
+                continue
+            if norm_text(order[field]):
+                return jsonify({
+                    "error": "readonly",
+                    "message": (
+                        f"「{label}」已經有值（{order[field]}），不開放修改。"
+                        "這個欄位以酷澎整合表為準，需要更正請回頭修主檔後重新上傳。"
+                    ),
+                }), 400
+            changes.append((field, label, order[field], new_val))
 
         if not changes:
             return jsonify({"ok": True, "changed": 0, "order": order})

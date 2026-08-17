@@ -229,6 +229,30 @@ def main():
     check("解鎖原因寫進歷程",
           any(l["field"] == "is_pulled" and "重出" in l["note"] for l in logs))
 
+    print("\n【11】線別／品牌：空白可補，有值不可改")
+    all_rows = client.get("/api/orders?page_size=500").get_json()["rows"]
+    blank = next((r for r in all_rows if not (r["line"] or "").strip()), None)
+    check("樣本裡確實有一筆線別空白（顯示為待補）", blank is not None)
+
+    res = client.put(f"/api/orders/{blank['id']}", json={
+        "operator": "小真", "version": blank["version"], "line": "瑪氏"})
+    check("空白的線別可以補填", res.status_code == 200, res.get_json())
+    filled = next(r for r in client.get("/api/orders?page_size=500").get_json()["rows"]
+                  if r["id"] == blank["id"])
+    check("補填後值正確寫入", filled["line"] == "瑪氏", f"實際 {filled['line']}")
+    logs = client.get(f"/api/orders/{blank['id']}/logs").get_json()
+    check("補填動作記進歷程且來源為手動",
+          any(l["field"] == "line" and l["new_value"] == "瑪氏"
+              and l["source"] == "manual" for l in logs))
+
+    res = client.put(f"/api/orders/{filled['id']}", json={
+        "operator": "Nicole", "version": filled["version"], "line": "寶僑"})
+    check("已經有值的線別不給改（擋下手滑改錯線別）", res.status_code == 400,
+          f"實際 {res.status_code}")
+    still = next(r for r in client.get("/api/orders?page_size=500").get_json()["rows"]
+                 if r["id"] == blank["id"])
+    check("值沒有被改掉", still["line"] == "瑪氏", f"實際 {still['line']}")
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:
