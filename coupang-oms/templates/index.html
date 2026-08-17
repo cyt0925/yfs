@@ -5,41 +5,70 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>酷澎訂單管理系統</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+  // 品牌色系：深藍灰為結構色（頁首、表頭、主要按鈕），紅色是唯一的強調色
+  // （logo、上傳這個核心動作），避免紅色跟「異動警示」的紅搶戲。
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          ink: {
+            50: "#f2f4f7", 100: "#e3e7ee", 200: "#c3cbda", 300: "#9aa7bd",
+            400: "#69789a", 500: "#4b5975", 600: "#38455d", 700: "#2c374b",
+            800: "#212a3a", 900: "#161d29", 950: "#0e131c",
+          },
+          brand: {
+            50: "#fdf2f2", 100: "#fbe1e1", 200: "#f6c2c3", 300: "#ec9598",
+            400: "#df6569", 500: "#cc373d", 600: "#b1222b", 700: "#921922",
+            800: "#77161e", 900: "#63151c",
+          },
+        },
+      },
+    },
+  };
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 <style>
   body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
   .scroll-x { overflow-x: auto; }
+  table.grid { table-layout: fixed; }
   table.grid th { position: sticky; top: 0; z-index: 10; }
-  .row-alert { background-color: #fef2f2; }
+  .row-alert { background-color: #fdf2f2; }
   .row-warn  { background-color: #fffbeb; }
-  .row-pulled { color: #64748b; }
-  dialog::backdrop { background: rgba(15,23,42,.55); }
+  .row-pulled { color: #69789a; }
+  dialog::backdrop { background: rgba(14,19,28,.6); }
 </style>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body class="bg-ink-50 text-ink-900">
 
 <!-- ── 頂部 ───────────────────────────────────────────── -->
-<header class="bg-slate-800 text-white shadow-lg">
+<header class="bg-ink-900 text-white shadow-lg border-b-[3px] border-brand-600">
   <div class="max-w-[1800px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
-    <div class="flex items-center gap-2">
-      <i class="bi bi-box-seam text-2xl text-sky-400"></i>
+    <div class="flex items-center gap-2.5">
+      <svg viewBox="0 0 48 48" width="36" height="36" class="w-9 h-9 flex-none" aria-hidden="true">
+        <path d="M24 3 L45 20 L41 20 L41 43 L7 43 L7 20 L3 20 Z" fill="#B1222B"/>
+        <rect x="17" y="20" width="8" height="8" rx="1.6" fill="#fff"/>
+        <circle cx="30.5" cy="24" r="4.2" fill="#fff"/>
+        <rect x="17" y="31" width="8" height="8" rx="1.6" fill="#fff"/>
+        <circle cx="30.5" cy="35" r="4.2" fill="#fff"/>
+      </svg>
       <div>
-        <h1 class="text-lg font-bold leading-tight">酷澎訂單管理系統</h1>
-        <p class="text-[11px] text-slate-400 leading-tight">永豐商店 OP 中繼站</p>
+        <h1 class="text-lg font-bold leading-tight tracking-tight">酷澎訂單管理系統</h1>
+        <p class="text-[11px] text-ink-300 leading-tight">永豐商店 OP 中繼站</p>
       </div>
     </div>
     <div class="flex-1"></div>
-    <div class="flex items-center gap-2 bg-slate-700/60 rounded-lg px-3 py-1.5">
-      <i class="bi bi-person-badge text-sky-300"></i>
-      <span class="text-xs text-slate-300">操作人員</span>
-      <select id="operator" class="bg-slate-900 text-white text-sm rounded px-2 py-1 border border-slate-600">
+    <div class="flex items-center gap-2 bg-ink-800/70 rounded-lg px-3 py-1.5 border border-ink-700">
+      <i class="bi bi-person-badge text-brand-300"></i>
+      <span class="text-xs text-ink-300">操作人員</span>
+      <select id="operator" class="bg-ink-950 text-white text-sm rounded px-2 py-1 border border-ink-600">
         <option value="">— 請選擇 —</option>
       </select>
     </div>
-    <button id="btn-upload" class="bg-sky-600 hover:bg-sky-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+    <button id="btn-upload" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
       <i class="bi bi-cloud-arrow-up"></i> 上傳整合表
     </button>
-    <button id="btn-export" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+    <button id="btn-export" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-file-earmark-excel"></i> 匯出報表
     </button>
   </div>
@@ -53,13 +82,13 @@
 
   <!-- ── 統計 ───────────────────────────────────────── -->
   <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-      <p class="text-xs text-slate-500">符合條件筆數</p>
-      <p id="stat-total" class="text-2xl font-bold text-slate-800">0</p>
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-ink-100">
+      <p class="text-xs text-ink-400">符合條件筆數</p>
+      <p id="stat-total" class="text-2xl font-bold text-ink-900">0</p>
     </div>
-    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-      <p class="text-xs text-slate-500">出貨數量合計</p>
-      <p id="stat-qty" class="text-2xl font-bold text-sky-700">0</p>
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-ink-100">
+      <p class="text-xs text-ink-400">出貨數量合計</p>
+      <p id="stat-qty" class="text-2xl font-bold text-ink-700">0</p>
     </div>
     <button id="stat-review-card" class="bg-white rounded-xl p-4 shadow-sm border-2 border-amber-300 text-left hover:bg-amber-50">
       <p class="text-xs text-amber-700"><i class="bi bi-bell-fill"></i> 異動待確認</p>
@@ -72,53 +101,71 @@
   </section>
 
   <!-- ── 篩選 ───────────────────────────────────────── -->
-  <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+  <section class="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 單號</span>
-        <input id="f-po" class="border rounded px-2 py-1.5" placeholder="模糊搜尋"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品名 / 料號 / 條碼</span>
-        <input id="f-keyword" class="border rounded px-2 py-1.5" placeholder="關鍵字"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別</span>
-        <select id="f-line" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌</span>
-        <select id="f-brand" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">倉別</span>
-        <select id="f-warehouse" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">訂單類型</span>
-        <select id="f-ordertype" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期（起）</span>
-        <input id="f-from" type="date" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期（迄）</span>
-        <input id="f-to" type="date" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 狀態</span>
-        <select id="f-status" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
-        <select id="f-receiving" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">拉單狀態</span>
-        <select id="f-pulled" class="border rounded px-2 py-1.5">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
+        <input id="f-po" class="border rounded px-2 py-2" placeholder="模糊搜尋"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品名 / 料號 / 條碼</span>
+        <input id="f-keyword" class="border rounded px-2 py-2" placeholder="關鍵字"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
+        <select id="f-line" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品牌</span>
+        <select id="f-brand" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">倉別</span>
+        <select id="f-warehouse" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型</span>
+        <select id="f-ordertype" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">交期（起）</span>
+        <input id="f-from" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">交期（迄）</span>
+        <input id="f-to" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
+        <select id="f-status" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
+        <select id="f-receiving" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
+        <select id="f-pulled" class="border rounded px-2 py-2">
           <option value="">全部</option><option value="0">未拉單</option><option value="1">已拉單</option>
         </select></label>
       <label class="flex items-end gap-2 pb-1">
         <input id="f-review" type="checkbox" class="w-4 h-4">
-        <span class="text-xs text-slate-600">只看待確認</span></label>
+        <span class="text-xs text-ink-600">只看待確認</span></label>
     </div>
     <div class="flex gap-2 mt-3">
-      <button id="btn-search" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded-lg text-sm font-semibold">
+      <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
         <i class="bi bi-search"></i> 搜尋</button>
-      <button id="btn-reset" class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-lg text-sm">重設</button>
+      <button id="btn-reset" class="bg-ink-100 hover:bg-ink-200 text-ink-700 px-4 py-2 rounded-lg text-sm">重設</button>
       <div class="flex-1"></div>
       <button id="btn-confirm-review" class="bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-lg text-sm">
         <i class="bi bi-check2-circle"></i> 確認選取的異動</button>
-      <button id="btn-unpull" class="bg-white border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm">
+      <button id="btn-unpull" class="bg-white border border-ink-200 hover:bg-ink-50 text-ink-700 px-4 py-2 rounded-lg text-sm">
         <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
     </div>
   </section>
 
   <!-- ── 列表 ───────────────────────────────────────── -->
-  <section class="bg-white rounded-xl shadow-sm border border-slate-200">
+  <section class="bg-white rounded-xl shadow-sm border border-ink-100">
     <div class="scroll-x" style="max-height:65vh; overflow-y:auto;">
       <table class="grid w-full text-sm border-collapse">
-        <thead class="bg-slate-700 text-white text-xs">
+        <colgroup>
+          <col style="width:40px">
+          <col style="width:96px">
+          <col style="width:132px">
+          <col style="width:56px">
+          <col style="width:72px">
+          <col style="width:92px">
+          <col style="width:260px">
+          <col style="width:104px">
+          <col style="width:72px">
+          <col style="width:100px">
+          <col style="width:88px">
+          <col style="width:88px">
+          <col style="width:80px">
+          <col style="width:72px">
+          <col style="width:180px">
+          <col style="width:44px">
+        </colgroup>
+        <thead class="bg-ink-900 text-white text-xs">
           <tr>
             <th class="px-2 py-2"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
             <th class="px-2 py-2 text-left">狀態</th>
@@ -141,26 +188,26 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
-    <div class="flex items-center gap-3 px-4 py-3 border-t text-sm">
-      <button id="btn-prev" class="px-3 py-1 border rounded hover:bg-slate-50">上一頁</button>
-      <span id="page-info" class="text-slate-600"></span>
-      <button id="btn-next" class="px-3 py-1 border rounded hover:bg-slate-50">下一頁</button>
+    <div class="flex items-center gap-3 px-4 py-3 border-t border-ink-100 text-sm">
+      <button id="btn-prev" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">上一頁</button>
+      <span id="page-info" class="text-ink-500"></span>
+      <button id="btn-next" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">下一頁</button>
       <div class="flex-1"></div>
-      <span id="selected-info" class="text-slate-500"></span>
+      <span id="selected-info" class="text-ink-400"></span>
     </div>
   </section>
 </main>
 
 <!-- ── 上傳 Modal ─────────────────────────────────────── -->
-<dialog id="dlg-upload" class="rounded-xl p-0 w-[min(1100px,94vw)] backdrop:bg-slate-900/60">
-  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+<dialog id="dlg-upload" class="rounded-xl p-0 w-[min(1100px,94vw)] backdrop:bg-ink-950/70">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-cloud-arrow-up"></i> 上傳酷澎整合表</h2>
-    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
   <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-    <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-sky-900">
+    <div class="bg-ink-50 border border-ink-200 rounded-lg p-3 text-sm text-ink-800">
       <p class="font-semibold mb-1"><i class="bi bi-info-circle"></i> 直接整份上傳就好，不用記上次拉到哪。</p>
-      <ul class="list-disc list-inside text-xs space-y-0.5 text-sky-800">
+      <ul class="list-disc list-inside text-xs space-y-0.5 text-ink-600">
         <li>內容完全相同的 → 自動略過</li>
         <li>全新的單 → 自動新增</li>
         <li>酷澎偷偷改過的 → 更新並記錄歷程，推到最上面等你確認</li>
@@ -172,40 +219,40 @@
   </div>
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
     <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-preview" class="px-4 py-2 rounded-lg bg-slate-800 text-white">解析並預覽</button>
-    <button id="btn-commit" class="hidden px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold">確認匯入</button>
+    <button id="btn-preview" class="px-4 py-2 rounded-lg bg-ink-900 hover:bg-ink-800 text-white">解析並預覽</button>
+    <button id="btn-commit" class="hidden px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">確認匯入</button>
   </div>
 </dialog>
 
 <!-- ── 編輯 Modal ─────────────────────────────────────── -->
 <dialog id="dlg-edit" class="rounded-xl p-0 w-[min(900px,94vw)]">
-  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-pencil-square"></i> 編輯訂單</h2>
-    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
   <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
     <div id="edit-header" class="bg-slate-50 border rounded-lg p-3 text-sm"></div>
     <div id="edit-lock" class="hidden bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-800"></div>
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">出貨數量</span>
-        <input id="e-qty" type="number" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期</span>
-        <input id="e-date" type="date" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">倉別</span>
-        <input id="e-warehouse" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 狀態</span>
-        <select id="e-status" class="border rounded px-2 py-1.5"></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
-        <select id="e-receiving" class="border rounded px-2 py-1.5"></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別 <span id="e-line-hint" class="text-[10px]"></span></span>
-        <input id="e-line" list="dl-line" class="border rounded px-2 py-1.5">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">出貨數量</span>
+        <input id="e-qty" type="number" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">交期</span>
+        <input id="e-date" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">倉別</span>
+        <input id="e-warehouse" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
+        <select id="e-status" class="border rounded px-2 py-2"></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
+        <select id="e-receiving" class="border rounded px-2 py-2"></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別 <span id="e-line-hint" class="text-[10px]"></span></span>
+        <input id="e-line" list="dl-line" class="border rounded px-2 py-2">
         <datalist id="dl-line"></datalist></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌 <span id="e-brand-hint" class="text-[10px]"></span></span>
-        <input id="e-brand" list="dl-brand" class="border rounded px-2 py-1.5">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品牌 <span id="e-brand-hint" class="text-[10px]"></span></span>
+        <input id="e-brand" list="dl-brand" class="border rounded px-2 py-2">
         <datalist id="dl-brand"></datalist></label>
     </div>
-    <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-slate-500">備註</span>
-      <textarea id="e-remarks" rows="3" class="border rounded px-2 py-1.5"></textarea></label>
+    <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-ink-400">備註</span>
+      <textarea id="e-remarks" rows="3" class="border rounded px-2 py-2"></textarea></label>
     <div>
       <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
         <i class="bi bi-clock-history"></i> 修改歷程
@@ -216,21 +263,21 @@
   </div>
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
     <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-save" class="px-4 py-2 rounded-lg bg-sky-600 text-white font-semibold">儲存修改</button>
+    <button id="btn-save" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">儲存修改</button>
   </div>
 </dialog>
 
 <!-- ── 匯出 Modal ─────────────────────────────────────── -->
 <dialog id="dlg-export" class="rounded-xl p-0 w-[min(700px,94vw)]">
-  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-file-earmark-excel"></i> 匯出 Excel</h2>
-    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
   <div class="p-5 space-y-4 text-sm">
-    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">匯出格式</span>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">匯出格式</span>
       <select id="x-profile" class="border rounded px-2 py-2"></select>
-      <span id="x-profile-note" class="text-xs text-slate-500"></span></label>
-    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">範圍</span>
+      <span id="x-profile-note" class="text-xs text-ink-400"></span></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">範圍</span>
       <select id="x-scope" class="border rounded px-2 py-2">
         <option value="filter">目前篩選條件的全部資料</option>
         <option value="selected">只匯出勾選的資料列</option>
@@ -244,11 +291,11 @@
         </span>
       </span>
     </label>
-    <p id="x-hint" class="text-xs text-slate-500"></p>
+    <p id="x-hint" class="text-xs text-ink-400"></p>
   </div>
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
     <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-do-export" class="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold">
+    <button id="btn-do-export" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
       <i class="bi bi-download"></i> 產生 Excel</button>
   </div>
 </dialog>
@@ -386,31 +433,31 @@ function renderRows() {
     else if (r.is_pulled)
       badge = `<span class="inline-block bg-slate-400 text-white text-[10px] px-1.5 py-0.5 rounded">已拉單</span>`;
     else
-      badge = `<span class="inline-block bg-sky-100 text-sky-700 text-[10px] px-1.5 py-0.5 rounded">未拉單</span>`;
+      badge = `<span class="inline-block bg-ink-100 text-ink-700 text-[10px] px-1.5 py-0.5 rounded">未拉單</span>`;
 
     const qtyDiff = r.qty_ship != null && r.qty_coupang != null && r.qty_ship !== r.qty_coupang;
     return `<tr class="${cls} border-b hover:bg-slate-50">
-      <td class="px-2 py-1.5 text-center"><input type="checkbox" data-id="${r.id}"
+      <td class="px-2 py-2 text-center"><input type="checkbox" data-id="${r.id}"
           class="row-check w-4 h-4" ${selected.has(r.id) ? "checked" : ""}></td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${badge}</td>
-      <td class="px-2 py-1.5 font-mono text-xs whitespace-nowrap">${esc(r.po_number)}
+      <td class="px-2 py-2 whitespace-nowrap">${badge}</td>
+      <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">${esc(r.po_number)}
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.order_type)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${r.line ? esc(r.line)
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.order_type)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${r.line ? esc(r.line)
         : '<span class="text-amber-600 text-xs">待補</span>'}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.brand)}</td>
-      <td class="px-2 py-1.5 max-w-[260px] truncate" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
-      <td class="px-2 py-1.5 font-mono text-xs whitespace-nowrap">${esc(r.yf_sku)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.warehouse)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.delivery_date)}</td>
-      <td class="px-2 py-1.5 text-right">${r.qty_coupang ?? ""}</td>
-      <td class="px-2 py-1.5 text-right ${qtyDiff ? "text-red-600 font-bold" : ""}"
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.brand)}</td>
+      <td class="px-2 py-2 max-w-[260px] truncate" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
+      <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">${esc(r.yf_sku)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
+      <td class="px-2 py-2 text-right">${r.qty_coupang ?? ""}</td>
+      <td class="px-2 py-2 text-right ${qtyDiff ? "text-red-600 font-bold" : ""}"
           title="${qtyDiff ? "出貨數量與酷澎下單數量不一致" : ""}">${r.qty_ship ?? ""}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.po_status)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.receiving_status)}</td>
-      <td class="px-2 py-1.5 max-w-[200px] truncate" title="${esc(r.remarks)}">${esc(r.remarks)}</td>
-      <td class="px-2 py-1.5"><button data-edit="${r.id}"
-          class="text-sky-600 hover:text-sky-800"><i class="bi bi-pencil-square"></i></button></td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.po_status)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.receiving_status)}</td>
+      <td class="px-2 py-2 max-w-[200px] truncate" title="${esc(r.remarks)}">${esc(r.remarks)}</td>
+      <td class="px-2 py-2"><button data-edit="${r.id}"
+          class="text-ink-500 hover:text-brand-600"><i class="bi bi-pencil-square"></i></button></td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
@@ -427,10 +474,10 @@ async function openEdit(id) {
   CURRENT = row;
   $("#edit-header").innerHTML = `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-      <div><span class="text-xs text-slate-500">PO 單號</span><br><b class="font-mono">${esc(row.po_number)}</b></div>
-      <div><span class="text-xs text-slate-500">SKU ID</span><br><span class="font-mono text-xs">${esc(row.sku_id)}</span></div>
-      <div><span class="text-xs text-slate-500">品牌 / 線別</span><br>${esc(row.brand)} / ${esc(row.line) || "待補"}</div>
-      <div><span class="text-xs text-slate-500">酷澎下單數量</span><br><b>${row.qty_coupang ?? "-"}</b>
+      <div><span class="text-xs text-ink-400">PO 單號</span><br><b class="font-mono">${esc(row.po_number)}</b></div>
+      <div><span class="text-xs text-ink-400">SKU ID</span><br><span class="font-mono text-xs">${esc(row.sku_id)}</span></div>
+      <div><span class="text-xs text-ink-400">品牌 / 線別</span><br>${esc(row.brand)} / ${esc(row.line) || "待補"}</div>
+      <div><span class="text-xs text-ink-400">酷澎下單數量</span><br><b>${row.qty_coupang ?? "-"}</b>
         <span class="text-[10px] text-slate-500">（唯讀，只有匯入能改）</span></div>
     </div>
     <div class="mt-2 text-xs text-slate-600">${esc(row.product_name)}</div>`;
@@ -475,8 +522,8 @@ async function openEdit(id) {
   $("#edit-logs").innerHTML = logs.length ? logs.map(l => `
     <div class="px-3 py-2 border-b last:border-0 flex gap-3">
       <span class="text-slate-400 whitespace-nowrap font-mono">${esc(l.changed_at)}</span>
-      <span class="px-1.5 rounded ${l.source === "import" ? "bg-sky-100 text-sky-700"
-        : l.source === "system" ? "bg-slate-200 text-slate-700" : "bg-emerald-100 text-emerald-700"}">
+      <span class="px-1.5 rounded ${l.source === "import" ? "bg-ink-100 text-ink-700"
+        : l.source === "system" ? "bg-ink-200 text-ink-700" : "bg-brand-100 text-brand-700"}">
         ${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span>
       <b class="whitespace-nowrap">${esc(l.operator)}</b>
       <span class="flex-1">
@@ -573,7 +620,7 @@ async function doPreview() {
           <th class="px-2 py-1 text-left">PO 單號</th><th class="px-2 py-1 text-left">品名</th>
           <th class="px-2 py-1 text-left">變更內容</th><th class="px-2 py-1"></th></tr></thead>
         <tbody>${updRows}</tbody></table></div></div>` : ""}
-    <p class="text-xs text-slate-500">以上都還沒寫進資料庫。按「確認匯入」才會實際寫入，過程中若任何一列出錯會整批還原。</p>`;
+    <p class="text-xs text-ink-400">以上都還沒寫進資料庫。按「確認匯入」才會實際寫入，過程中若任何一列出錯會整批還原。</p>`;
 }
 
 async function doCommit() {
