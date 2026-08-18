@@ -33,12 +33,12 @@
   .scroll-x { overflow-x: auto; }
   table.grid { table-layout: fixed; }
   table.grid th { position: sticky; top: 0; z-index: 10; }
-  /* 加上直向格線，讓「欄位對齊」這件事看得見，不用靠眼睛猜。
-     上一版用了 12% 透明度的白線，淡到幾乎看不見，等於沒加——這次改成
-     實色，深色表頭用可辨識的深藍灰、白色列身用中性淺灰，一眼就看得出來。 */
-  table.grid th, table.grid td { border-right: 1px solid #3a4b66; }
-  table.grid tbody td { border-right-color: #d7dde6; }
-  table.grid th:last-child, table.grid td:last-child { border-right: none; }
+  /* 做成像 Excel 一樣「每一格四邊都框起來」的完整方格，而不是只有
+     直線、沒有格線包住整格。這樣每個儲存格的邊界都是明確畫出來的，
+     對不對齊用眼睛就能直接確認，不需要再靠猜或量。 */
+  table.grid th, table.grid td { border: 1px solid #3a4b66; }
+  table.grid tbody td { border-color: #c3cbda; }
+  table.grid tbody tr:first-child td { border-top: none; }
   .row-alert { background-color: #fdf2f2; }
   .row-warn  { background-color: #fffbeb; }
   .row-pulled { color: #69789a; }
@@ -434,27 +434,19 @@ function renderRows() {
     const cls = r.alert_level === "changed_after_pull" ? "row-alert"
               : r.needs_review ? "row-warn"
               : r.is_pulled ? "row-pulled" : "";
-    // 狀態欄用「圓點＋文字」而不是有底色的膠囊，膠囊自己的內距會讓文字
-    // 偏離儲存格左邊界、跟表頭「狀態」對不齊。
-    //
-    // 圓點本身也不能用 Bootstrap Icons 那個 <i class="bi bi-circle-fill">：
-    // 圖示字型的符號在字型檔裡通常會內建一點點左側留白（字體本身的
-    // side-bearing，不是 CSS 留白，抓不掉），會讓整組「圓點＋文字」比
-    // 表頭文字往右偏幾個像素——這正是使用者一直說「只有狀態那欄特別
-    // 歪」的原因，因為全表只有這欄用了圖示字。改成純 CSS 畫的圓點
-    // （一個 4x4px 的圓角方塊），不透過任何字型渲染，圓點跟文字的起點
-    // 保證跟儲存格左邊界完全貼齊。
-    const dot = (color) =>
-      `<span class="inline-block w-1 h-1 rounded-full flex-none" style="background:${color}"></span>`;
+    // 狀態欄直接用純文字上色，跟「線別」欄那個橘色「待補」文字完全
+    // 同一種寫法：不加圖示、不加圓點、不加底色膠囊，任何裝飾都可能
+    // 帶來額外留白讓文字偏離儲存格邊界。純文字＋顏色是唯一保證跟
+    // 表頭文字同一個起點的寫法。
     let badge = "";
     if (r.alert_level === "changed_after_pull")
-      badge = `<span class="inline-flex items-center gap-1.5 text-red-700 font-semibold text-xs whitespace-nowrap" title="${esc(r.review_reason)}">${dot("#b91c1c")}拉單後被改</span>`;
+      badge = `<span class="text-red-700 font-semibold whitespace-nowrap" title="${esc(r.review_reason)}">拉單後被改</span>`;
     else if (r.needs_review)
-      badge = `<span class="inline-flex items-center gap-1.5 text-amber-700 font-semibold text-xs whitespace-nowrap" title="${esc(r.review_reason)}">${dot("#b45309")}待確認</span>`;
+      badge = `<span class="text-amber-700 font-semibold whitespace-nowrap" title="${esc(r.review_reason)}">待確認</span>`;
     else if (r.is_pulled)
-      badge = `<span class="inline-flex items-center gap-1.5 text-ink-500 text-xs whitespace-nowrap">${dot("#69789a")}已拉單</span>`;
+      badge = `<span class="text-ink-500 whitespace-nowrap">已拉單</span>`;
     else
-      badge = `<span class="inline-flex items-center gap-1.5 text-ink-500 text-xs whitespace-nowrap">${dot("#9aa7bd")}未拉單</span>`;
+      badge = `<span class="text-ink-500 whitespace-nowrap">未拉單</span>`;
 
     const qtyDiff = r.qty_ship != null && r.qty_coupang != null && r.qty_ship !== r.qty_coupang;
     return `<tr class="${cls} border-b hover:bg-slate-50">
