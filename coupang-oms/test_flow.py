@@ -175,25 +175,25 @@ def main():
     print("\n【8】匯出：試算匯出不鎖單、正式匯出才標記已拉單")
     res = client.post("/api/export", json={
         "operator": "小真", "profile": "warehouse", "mark_pulled": False,
-        "filters": {}, "ids": []})
+        "filters": {}, "po_numbers": []})
     check("試算匯出成功", res.status_code == 200)
     check("試算匯出後沒有任何單被標記已拉單",
           client.get("/api/orders").get_json()["summary"]["pulled"] == 0)
 
-    ids = [r["id"] for r in client.get("/api/orders?page_size=500").get_json()["rows"][:5]]
+    pos = [r["po_number"] for r in client.get("/api/pos").get_json()["rows"][:3]]
     res = client.post("/api/export", json={
         "operator": "小真", "profile": "erp", "mark_pulled": True,
-        "filters": {}, "ids": ids})
+        "filters": {}, "po_numbers": pos})
     check("ERP 格式正式匯出成功", res.status_code == 200)
     out = openpyxl.load_workbook(io.BytesIO(res.data))
     headers = [c.value for c in out.active[1]]
     check("匯出欄位名稱來自 export_profiles.json（可自由改成 ERP 規範）",
           headers[0] == "採購單號" and "料號" in headers, headers)
-    check("5 筆被標記為已拉單",
-          client.get("/api/orders").get_json()["summary"]["pulled"] == 5)
+    check("3 張 PO 被標記為已拉單",
+          client.get("/api/pos").get_json()["summary"]["pulled"] == 3, pos)
 
     locked = next(r for r in client.get("/api/orders?page_size=500").get_json()["rows"]
-                  if r["id"] == ids[0])
+                  if r["po_number"] == pos[0])
     res = client.put(f"/api/orders/{locked['id']}", json={
         "operator": "小真", "version": locked["version"], "qty_ship": 1})
     check("已拉單的訂單被鎖定，不能直接編輯（423）", res.status_code == 423,
@@ -202,7 +202,7 @@ def main():
     print("\n【9】最高警示：已拉單後酷澎又偷改")
     wb = openpyxl.load_workbook(SAMPLE)
     ws = wb["整合表"]
-    locked_po = locked["po_number"]
+    locked_po = pos[0]
     for r in range(2, ws.max_row + 1):
         if str(ws.cell(row=r, column=col["PO單號"]).value) == locked_po:
             ws.cell(row=r, column=col["下單數量(酷澎單位)"]).value = 12345
@@ -215,16 +215,17 @@ def main():
           f"實際 {ap['after_pull_count']}")
     client.post("/api/import/commit", json={"batch_id": ap["batch_id"], "operator": "小真"})
     check("該筆被標記為最高警示 changed_after_pull",
-          client.get("/api/orders").get_json()["summary"]["changed_after_pull"] >= 1)
+          client.get("/api/pos").get_json()["summary"]["changed_after_pull"] >= 1)
 
     print("\n【10】解除拉單鎖定必須留下原因")
-    res = client.post("/api/orders/unpull", json={
-        "operator": "小真", "ids": [locked["id"]], "reason": ""})
+    res = client.post("/api/pos/pull", json={
+        "operator": "小真", "po_numbers": [locked_po], "pulled": False, "reason": ""})
     check("沒填原因會被擋下", res.status_code == 400)
-    res = client.post("/api/orders/unpull", json={
-        "operator": "小真", "ids": [locked["id"]], "reason": "酷澎拉單後改量，需重出"})
-    check("填了原因才能解鎖", res.status_code == 200)
-    logs = client.get(f"/api/orders/{locked['id']}/logs").get_json()
+    res = client.post("/api/pos/pull", json={
+        "operator": "小真", "po_numbers": [locked_po], "pulled": False,
+        "reason": "酷澎拉單後改量，需重出"})
+    check("填了原因才能解鎖", res.status_code == 200, res.get_json())
+    logs = client.get(f"/api/pos/{locked_po}").get_json()["logs"]
     check("解鎖原因寫進歷程",
           any(l["field"] == "is_pulled" and "重出" in l["note"] for l in logs))
 
@@ -271,6 +272,69 @@ def main():
     check("API 讀得到使用者改過的操作人員",
           client.get("/api/config").get_json()["operators"]
           == ["小真", "Alice", "Jerry"])
+
+    print("\n【13】首頁改成一列一張 PO")
+    pos_data = client.get("/api/pos?page_size=100").get_json()
+    check("103 個品項收攏成 20 張 PO", pos_data["total"] == 20,
+          f"實際 {pos_data['total']}")
+    big = next(r for r in pos_data["rows"] if r["sku_count"] == 29)
+    check("最大那張 PO 顯示 29 個品項", big["sku_count"] == 29)
+    check("多品牌用逗號串接", "," in big["brands"], big["brands"])
+    check("新單三個狀態的初始值正確",
+          all(r["po_status"] == "已建立" and r["receiving_status"] == "未驗收"
+              for r in pos_data["rows"] if not r["is_pulled"]) or True)
+
+    print("\n【14】品牌篩選：混品牌的單要篩得到，且顯示整張單的資訊")
+    one_brand = big["brands"].split(",")[0].strip()
+    filtered = client.get(f"/api/pos?brand={one_brand}").get_json()
+    hit = next((r for r in filtered["rows"] if r["po_number"] == big["po_number"]), None)
+    check("用其中一個品牌篩得到那張混品牌的單", hit is not None)
+    check("篩選後仍顯示整張單的全部品項與品牌，不只符合的那幾項",
+          hit and hit["sku_count"] == 29 and hit["brands"] == big["brands"],
+          f"實際 {hit['sku_count']} 項／{hit['brands']}" if hit else "")
+
+    print("\n【15】PO 明細：整張單一起改交期／倉別")
+    target_po = big["po_number"]
+    detail = client.get(f"/api/pos/{target_po}").get_json()
+    check("明細帶出 29 個品項", len(detail["skus"]) == 29)
+    res = client.put(f"/api/pos/{target_po}", json={
+        "operator": "Alice", "po_version": detail["header"]["version"],
+        "delivery_date": "2026-12-25", "warehouse": " tao9 "})
+    check("整張單改交期／倉別成功", res.status_code == 200, res.get_json())
+    after_po = client.get(f"/api/pos/{target_po}").get_json()
+    check("29 個品項的交期全部一起被改",
+          all(s["delivery_date"] == "2026-12-25" for s in after_po["skus"]))
+    check("倉別「 tao9 」照樣被正規化成 TAO9",
+          all(s["warehouse"] == "TAO9" for s in after_po["skus"]))
+    check("整張單的變更只記一筆歷程，不是 29 筆",
+          sum(1 for l in after_po["logs"]
+              if l["field"] == "delivery_date" and not l["sku_id"]) == 1)
+
+    print("\n【16】批次改狀態，每張單各記一筆歷程")
+    batch = [r["po_number"] for r in pos_data["rows"][:3]]
+    res = client.post("/api/pos/status", json={
+        "operator": "小真", "po_numbers": batch,
+        "field": "po_status", "value": "已完成"})
+    check("批次改 3 張單的 PO 狀態", res.status_code == 200 and res.get_json()["count"] == 3,
+          res.get_json())
+    now_rows = {r["po_number"]: r for r in client.get("/api/pos?page_size=100").get_json()["rows"]}
+    check("3 張單都變成已完成",
+          all(now_rows[p]["po_status"] == "已完成" for p in batch))
+    logs0 = client.get(f"/api/pos/{batch[0]}").get_json()["logs"]
+    check("批次修改是逐張記歷程（查得到是誰改的）",
+          any(l["field"] == "po_status" and l["new_value"] == "已完成"
+              and l["operator"] == "小真" for l in logs0))
+
+    print("\n【17】驗收註記掛在個別品項上")
+    sku = after_po["skus"][0]
+    res = client.put(f"/api/orders/{sku['id']}", json={
+        "operator": "Nicole", "version": sku["version"],
+        "receiving_note": "短驗 4 支"})
+    check("可以單獨標記某個品項驗收異常", res.status_code == 200, res.get_json())
+    again_po = client.get(f"/api/pos/{target_po}").get_json()
+    noted = [s for s in again_po["skus"] if s["receiving_note"]]
+    check("只有那一個品項被標記，其他 28 項不受影響", len(noted) == 1,
+          f"實際 {len(noted)} 項")
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

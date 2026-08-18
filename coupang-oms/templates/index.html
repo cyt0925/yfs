@@ -137,10 +137,17 @@
         <i class="bi bi-search"></i> 搜尋</button>
       <button id="btn-reset" class="bg-ink-100 hover:bg-ink-200 text-ink-700 px-4 py-2 rounded-lg text-sm">重設</button>
       <div class="flex-1"></div>
+      <select id="batch-field" class="border border-ink-200 rounded px-2 py-2 text-sm">
+        <option value="po_status">PO 狀態</option>
+        <option value="receiving_status">驗收狀態</option>
+      </select>
+      <select id="batch-value" class="border border-ink-200 rounded px-2 py-2 text-sm"></select>
+      <button id="btn-batch-status" class="bg-ink-900 hover:bg-ink-800 text-white px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-lightning-charge"></i> 批次套用</button>
       <button id="btn-confirm-review" class="bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-check2-circle"></i> 確認選取的異動</button>
-      <button id="btn-unpull" class="bg-white border border-ink-200 hover:bg-ink-50 text-ink-700 px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
+        <i class="bi bi-check2-circle"></i> 確認異動</button>
+      <button id="btn-pull" class="bg-white border border-ink-200 hover:bg-ink-50 text-ink-700 px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-box-arrow-right"></i> 拉單狀態</button>
     </div>
   </section>
 
@@ -151,43 +158,37 @@
            等比例壓扁，連「下單數量」都會被擠成兩行。改成表格用自己實際需要
            的寬度（min-width，各欄加總），畫面裝不下就交給外層 .scroll-x 橫向
            捲動，欄位本身永遠不被壓縮、不會換行造成視覺上的錯位。 -->
-      <table class="grid text-sm border-collapse" style="min-width:1720px; width:max-content;">
+      <table class="grid text-sm border-collapse" style="min-width:1380px; width:max-content;">
         <colgroup>
           <col style="width:40px">
-          <col style="width:100px">
-          <col style="width:140px">
+          <col style="width:150px">
+          <col style="width:130px">
           <col style="width:64px">
-          <col style="width:84px">
-          <col style="width:110px">
-          <col style="width:280px">
-          <col style="width:120px">
-          <col style="width:80px">
-          <col style="width:110px">
-          <col style="width:100px">
           <col style="width:100px">
           <col style="width:90px">
           <col style="width:80px">
           <col style="width:200px">
-          <col style="width:48px">
+          <col style="width:110px">
+          <col style="width:110px">
+          <col style="width:80px">
+          <col style="width:88px">
+          <col style="width:88px">
         </colgroup>
         <thead class="bg-ink-900 text-white text-xs">
           <tr>
             <th class="px-2 py-2 whitespace-nowrap"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">狀態</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">PO 單號</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">警示</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">類型</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">線別</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">品牌</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">品名</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">永豐料號</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">倉別</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">交期</th>
-            <th class="px-2 py-2 text-right whitespace-nowrap">下單數量</th>
-            <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">PO狀態</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">PO 狀態</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">拉單</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">驗收</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">備註</th>
-            <th class="px-2 py-2 whitespace-nowrap"></th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">品牌 / 線別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">建檔日</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">到貨日</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">到貨倉別</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">品項數</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -233,46 +234,17 @@
   </div>
 </dialog>
 
-<!-- ── 編輯 Modal ─────────────────────────────────────── -->
-<dialog id="dlg-edit" class="rounded-xl p-0 w-[min(900px,94vw)]">
+<!-- ── PO 明細 Modal ─────────────────────────────────── -->
+<dialog id="dlg-po" class="rounded-xl p-0 w-[min(1200px,96vw)]">
   <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
-    <h2 class="font-bold"><i class="bi bi-pencil-square"></i> 編輯訂單</h2>
+    <h2 class="font-bold flex items-center gap-2"><i class="bi bi-receipt"></i>
+      PO <span id="po-title" class="font-mono"></span></h2>
     <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
-  <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-    <div id="edit-header" class="bg-slate-50 border rounded-lg p-3 text-sm"></div>
-    <div id="edit-lock" class="hidden bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-800"></div>
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">出貨數量</span>
-        <input id="e-qty" type="number" class="border rounded px-2 py-2"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">交期</span>
-        <input id="e-date" type="date" class="border rounded px-2 py-2"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">倉別</span>
-        <input id="e-warehouse" class="border rounded px-2 py-2"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
-        <select id="e-status" class="border rounded px-2 py-2"></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
-        <select id="e-receiving" class="border rounded px-2 py-2"></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別 <span id="e-line-hint" class="text-[10px]"></span></span>
-        <input id="e-line" list="dl-line" class="border rounded px-2 py-2">
-        <datalist id="dl-line"></datalist></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品牌 <span id="e-brand-hint" class="text-[10px]"></span></span>
-        <input id="e-brand" list="dl-brand" class="border rounded px-2 py-2">
-        <datalist id="dl-brand"></datalist></label>
-    </div>
-    <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-ink-400">備註</span>
-      <textarea id="e-remarks" rows="3" class="border rounded px-2 py-2"></textarea></label>
-    <div>
-      <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
-        <i class="bi bi-clock-history"></i> 修改歷程
-        <span class="text-xs font-normal text-slate-500">（誰、什麼時候、把哪個欄位改成什麼）</span>
-      </h3>
-      <div id="edit-logs" class="border rounded-lg max-h-64 overflow-y-auto text-xs"></div>
-    </div>
-  </div>
-  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
-    <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-save" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">儲存修改</button>
+  <div id="po-body" class="p-5 space-y-4 max-h-[76vh] overflow-y-auto"></div>
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-ink-50">
+    <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
+    <button id="btn-po-save" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">儲存修改</button>
   </div>
 </dialog>
 
@@ -289,7 +261,7 @@
     <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">範圍</span>
       <select id="x-scope" class="border rounded px-2 py-2">
         <option value="filter">目前篩選條件的全部資料</option>
-        <option value="selected">只匯出勾選的資料列</option>
+        <option value="selected">只匯出勾選的 PO</option>
       </select></label>
     <label class="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3">
       <input id="x-mark" type="checkbox" class="w-4 h-4 mt-0.5">
@@ -366,12 +338,7 @@ async function loadConfig() {
   fillSelect($("#f-ordertype"), CONFIG.order_types);
   fillSelect($("#f-status"), CONFIG.po_statuses);
   fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
-  fillSelect($("#e-status"), CONFIG.po_statuses, false);
-  fillSelect($("#e-receiving"), CONFIG.receiving_statuses, false);
-
-  // 補填時給既有值當提示，避免打成「瑪氏 」「瑪式」這種對不起來的字
-  $("#dl-line").innerHTML = CONFIG.lines.map(v => `<option value="${esc(v)}">`).join("");
-  $("#dl-brand").innerHTML = CONFIG.brands.map(v => `<option value="${esc(v)}">`).join("");
+  syncBatchValues();
 
   const xp = $("#x-profile");
   xp.innerHTML = "";
@@ -406,7 +373,7 @@ async function loadOrders() {
     Object.entries(filters()).filter(([, v]) => v !== "" && v != null));
   params.set("page", PAGE);
   params.set("page_size", PAGE_SIZE);
-  const data = await (await fetch("/api/orders?" + params)).json();
+  const data = await (await fetch("/api/pos?" + params)).json();
 
   TOTAL = data.total; ROWS = data.rows;
   $("#stat-total").textContent = data.total.toLocaleString();
@@ -415,7 +382,7 @@ async function loadOrders() {
   $("#stat-alert").textContent = data.summary.changed_after_pull;
 
   const pages = Math.max(1, Math.ceil(TOTAL / PAGE_SIZE));
-  $("#page-info").textContent = `第 ${PAGE} / ${pages} 頁 · 共 ${TOTAL} 筆`;
+  $("#page-info").textContent = `第 ${PAGE} / ${pages} 頁 · 共 ${TOTAL} 張 PO`;
   $("#btn-prev").disabled = PAGE <= 1;
   $("#btn-next").disabled = PAGE >= pages;
 
@@ -425,149 +392,207 @@ async function loadOrders() {
 function renderRows() {
   const tb = $("#tbody");
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="16" class="text-center py-16 text-slate-400">
+    tb.innerHTML = `<tr><td colspan="13" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
   }
   tb.innerHTML = ROWS.map(r => {
-    const cls = r.alert_level === "changed_after_pull" ? "row-alert"
-              : r.needs_review ? "row-warn"
+    // 警示掛在整張單上：只要底下任何一個品項被酷澎改過，整列就亮燈，
+    // 進去彈窗才看是哪幾項。OP 要處理的單位本來就是整張單。
+    const cls = r.after_pull_count > 0 ? "row-alert"
+              : r.review_count > 0 ? "row-warn"
               : r.is_pulled ? "row-pulled" : "";
-    // 狀態欄直接用純文字上色，跟「線別」欄那個橘色「待補」文字完全
-    // 同一種寫法：不加圖示、不加圓點、不加底色膠囊，任何裝飾都可能
-    // 帶來額外留白讓文字偏離儲存格邊界。純文字＋顏色是唯一保證跟
-    // 表頭文字同一個起點的寫法。
-    let badge = "";
-    if (r.alert_level === "changed_after_pull")
-      badge = `<span class="text-red-700 font-semibold whitespace-nowrap" title="${esc(r.review_reason)}">拉單後被改</span>`;
-    else if (r.needs_review)
-      badge = `<span class="text-amber-700 font-semibold whitespace-nowrap" title="${esc(r.review_reason)}">待確認</span>`;
-    else if (r.is_pulled)
-      badge = `<span class="text-ink-500 whitespace-nowrap">已拉單</span>`;
-    else
-      badge = `<span class="text-ink-500 whitespace-nowrap">未拉單</span>`;
+    let alert = `<span class="text-ink-300">—</span>`;
+    if (r.after_pull_count > 0)
+      alert = `<span class="text-red-700 font-semibold whitespace-nowrap">拉單後被改 ${r.after_pull_count} 項</span>`;
+    else if (r.review_count > 0)
+      alert = `<span class="text-amber-700 font-semibold whitespace-nowrap">${r.review_count} 項有異動</span>`;
 
-    const qtyDiff = r.qty_ship != null && r.qty_coupang != null && r.qty_ship !== r.qty_coupang;
-    return `<tr class="${cls} border-b hover:bg-slate-50">
-      <td class="px-2 py-2 text-center"><input type="checkbox" data-id="${r.id}"
-          class="row-check w-4 h-4" ${selected.has(r.id) ? "checked" : ""}></td>
-      <td class="px-2 py-2 whitespace-nowrap">${badge}</td>
-      <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">${esc(r.po_number)}
+    return `<tr class="${cls} hover:bg-ink-50">
+      <td class="px-2 py-2 text-center"><input type="checkbox" data-po="${esc(r.po_number)}"
+          class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
+      <td class="px-2 py-2 whitespace-nowrap"><button data-open="${esc(r.po_number)}"
+          class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
+      <td class="px-2 py-2 text-xs">${alert}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.order_type)}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${r.line ? esc(r.line)
-        : '<span class="text-amber-600 text-xs">待補</span>'}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.brand)}</td>
-      <td class="px-2 py-2 max-w-[260px] truncate" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
-      <td class="px-2 py-2 font-mono text-xs whitespace-nowrap">${esc(r.yf_sku)}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
-      <td class="px-2 py-2 text-right">${r.qty_coupang ?? ""}</td>
-      <td class="px-2 py-2 text-right ${qtyDiff ? "text-red-600 font-bold" : ""}"
-          title="${qtyDiff ? "出貨數量與酷澎下單數量不一致" : ""}">${r.qty_ship ?? ""}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.po_status)}</td>
+      <td class="px-2 py-2 whitespace-nowrap ${r.is_pulled ? "text-ink-500" : "text-ink-900"}">${r.is_pulled ? "已拉單" : "未拉單"}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.receiving_status)}</td>
-      <td class="px-2 py-2 max-w-[200px] truncate" title="${esc(r.remarks)}">${esc(r.remarks)}</td>
-      <td class="px-2 py-2"><button data-edit="${r.id}"
-          class="text-ink-500 hover:text-brand-600"><i class="bi bi-pencil-square"></i></button></td>
+      <td class="px-2 py-2 truncate" title="${esc(r.brands)} / ${esc(r.lines)}">${esc(r.brands) || "—"}
+        <span class="block text-[10px] text-ink-400">${esc(r.lines) || "線別待補"}</span></td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.filed_date)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
+      <td class="px-2 py-2 text-right">${r.sku_count}</td>
+      <td class="px-2 py-2 text-right ${r.qty_ship !== r.qty_coupang ? "text-red-600 font-bold" : ""}"
+          title="${r.qty_ship !== r.qty_coupang ? "出貨數量與酷澎下單數量不一致" : ""}">${(r.qty_ship || 0).toLocaleString()}</td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
 }
 
 function updateSelectedInfo() {
-  $("#selected-info").textContent = selected.size ? `已勾選 ${selected.size} 筆` : "";
+  $("#selected-info").textContent = selected.size ? `已勾選 ${selected.size} 張 PO` : "";
 }
 
 // ── 編輯 ────────────────────────────────────────────────
-async function openEdit(id) {
-  const row = ROWS.find(r => r.id === id);
-  if (!row) return;
-  CURRENT = row;
-  $("#edit-header").innerHTML = `
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-      <div><span class="text-xs text-ink-400">PO 單號</span><br><b class="font-mono">${esc(row.po_number)}</b></div>
-      <div><span class="text-xs text-ink-400">SKU ID</span><br><span class="font-mono text-xs">${esc(row.sku_id)}</span></div>
-      <div><span class="text-xs text-ink-400">品牌 / 線別</span><br>${esc(row.brand)} / ${esc(row.line) || "待補"}</div>
-      <div><span class="text-xs text-ink-400">酷澎下單數量</span><br><b>${row.qty_coupang ?? "-"}</b>
-        <span class="text-[10px] text-slate-500">（唯讀，只有匯入能改）</span></div>
-    </div>
-    <div class="mt-2 text-xs text-slate-600">${esc(row.product_name)}</div>`;
+// ── PO 明細彈窗 ─────────────────────────────────────────
+async function openPo(poNumber) {
+  CURRENT = null;
+  $("#po-title").textContent = poNumber;
+  $("#po-body").innerHTML = '<p class="p-6 text-ink-300">載入中…</p>';
+  $("#dlg-po").showModal();
 
-  const lock = $("#edit-lock");
-  if (row.is_pulled) {
-    lock.classList.remove("hidden");
-    lock.innerHTML = `<i class="bi bi-lock-fill"></i> 這筆已於 <b>${esc(row.pulled_at)}</b>
-      由 <b>${esc(row.pulled_by)}</b> 拉單並鎖定，倉庫可能已拿到資料。
-      需要修改請先用列表上方的「解除拉單鎖定」。`;
-  } else lock.classList.add("hidden");
+  const res = await fetch(`/api/pos/${encodeURIComponent(poNumber)}`);
+  if (!res.ok) { toast("找不到這張 PO。", "err"); $("#dlg-po").close(); return; }
+  const d = await res.json();
+  CURRENT = d;
 
-  $("#e-qty").value = row.qty_ship ?? "";
-  $("#e-date").value = row.delivery_date || "";
-  $("#e-warehouse").value = row.warehouse || "";
-  $("#e-status").value = row.po_status || "";
-  $("#e-receiving").value = row.receiving_status || "";
-  $("#e-remarks").value = row.remarks || "";
+  const h = d.header;
+  const locked = !!h.is_pulled;
+  const opt = (list, cur) => list.map(v =>
+    `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v) || "（空白）"}</option>`).join("");
 
-  // 線別／品牌：空白才給補，已經有值就鎖起來
-  [["line", "#e-line", "#e-line-hint"], ["brand", "#e-brand", "#e-brand-hint"]]
-    .forEach(([field, input, hint]) => {
-      const blank = !(row[field] || "").trim();
-      $(input).value = row[field] || "";
-      $(input).dataset.locked = blank ? "" : "1";
-      $(hint).textContent = blank ? "（空白，可補填）" : "（以整合表為準，不可改）";
-      $(hint).className = blank ? "text-[10px] text-amber-600" : "text-[10px] text-slate-400";
-    });
+  const skuRows = d.skus.map(s => {
+    const cls = s.alert_level === "changed_after_pull" ? "bg-red-50"
+              : s.needs_review ? "bg-amber-50" : "";
+    const diff = s.qty_ship != null && s.qty_coupang != null && s.qty_ship !== s.qty_coupang;
+    return `<tr class="${cls} border-b border-ink-100">
+      <td class="px-2 py-1.5 text-xs">${s.needs_review
+        ? `<span class="${s.alert_level === "changed_after_pull" ? "text-red-700" : "text-amber-700"} font-semibold whitespace-nowrap"
+             title="${esc(s.review_reason)}">已改</span>` : ""}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px]">${esc(s.yf_sku)}</td>
+      <td class="px-2 py-1.5 text-xs">${esc(s.product_name)}</td>
+      <td class="px-2 py-1.5 text-xs">${esc(s.brand)}</td>
+      <td class="px-2 py-1.5 text-right text-xs">${s.qty_coupang ?? ""}</td>
+      <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="qty_ship"
+          value="${s.qty_ship ?? ""}" ${locked ? "disabled" : ""}
+          class="w-20 border border-ink-200 rounded px-1 py-0.5 text-xs text-right ${diff ? "text-red-600 font-bold" : ""}"></td>
+      <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="receiving_note"
+          value="${esc(s.receiving_note)}" ${locked ? "disabled" : ""} placeholder="短驗 / 溢收…"
+          class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
+      <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="remarks"
+          value="${esc(s.remarks)}" ${locked ? "disabled" : ""}
+          class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
+    </tr>`;
+  }).join("");
 
-  [...document.querySelectorAll("#dlg-edit input, #dlg-edit select, #dlg-edit textarea")]
-    .forEach(el => el.disabled = !!row.is_pulled);
-  if (!row.is_pulled) {
-    $("#e-line").disabled = $("#e-line").dataset.locked === "1";
-    $("#e-brand").disabled = $("#e-brand").dataset.locked === "1";
-  }
-  $("#btn-save").disabled = !!row.is_pulled;
-
-  $("#edit-logs").innerHTML = '<p class="p-3 text-slate-400">載入中…</p>';
-  $("#dlg-edit").showModal();
-
-  const logs = await (await fetch(`/api/orders/${id}/logs`)).json();
-  $("#edit-logs").innerHTML = logs.length ? logs.map(l => `
-    <div class="px-3 py-2 border-b last:border-0 flex gap-3">
-      <span class="text-slate-400 whitespace-nowrap font-mono">${esc(l.changed_at)}</span>
-      <span class="px-1.5 rounded ${l.source === "import" ? "bg-ink-100 text-ink-700"
+  const logRows = d.logs.length ? d.logs.map(l => `
+    <div class="px-3 py-1.5 border-b border-ink-100 last:border-0 flex gap-2 items-baseline">
+      <span class="text-ink-300 whitespace-nowrap font-mono text-[11px]">${esc(l.changed_at)}</span>
+      <span class="px-1.5 rounded text-[10px] ${l.source === "import" ? "bg-ink-100 text-ink-700"
         : l.source === "system" ? "bg-ink-200 text-ink-700" : "bg-brand-100 text-brand-700"}">
         ${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span>
-      <b class="whitespace-nowrap">${esc(l.operator)}</b>
-      <span class="flex-1">
+      <b class="whitespace-nowrap text-xs">${esc(l.operator)}</b>
+      <span class="flex-1 text-xs">
+        ${l.sku_id ? `<span class="text-ink-400 font-mono text-[10px]">${esc(l.sku_id)}</span> ` : ""}
         <b>${esc(l.field_label)}</b>：
-        <span class="text-slate-500 line-through">${esc(l.old_value) || "（空白）"}</span>
-        <i class="bi bi-arrow-right text-slate-400"></i>
-        <span class="text-slate-900 font-semibold">${esc(l.new_value) || "（空白）"}</span>
-        ${l.note ? `<span class="block text-[11px] text-slate-400">${esc(l.note)}</span>` : ""}
+        <span class="text-ink-400 line-through">${esc(l.old_value) || "（空白）"}</span>
+        →<span class="font-semibold">${esc(l.new_value) || "（空白）"}</span>
+        ${l.note ? `<span class="block text-[10px] text-ink-300">${esc(l.note)}</span>` : ""}
       </span>
-    </div>`).join("") : '<p class="p-3 text-slate-400">尚無修改紀錄。</p>';
+    </div>`).join("") : '<p class="p-3 text-ink-300 text-xs">尚無修改紀錄。</p>';
+
+  $("#po-body").innerHTML = `
+    ${locked ? `<div class="bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-800">
+      <i class="bi bi-lock-fill"></i> 這張單已於 <b>${esc(h.pulled_at)}</b> 由 <b>${esc(h.pulled_by)}</b>
+      拉單並鎖定，倉庫可能已拿到資料。要修改請先用上方的「拉單狀態」解除。</div>` : ""}
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
+        <select id="p-status" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">${opt(CONFIG.po_statuses, h.po_status)}</select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
+        <select id="p-recv" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">${opt(CONFIG.receiving_statuses, h.receiving_status)}</select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">建檔日</span>
+        <input id="p-filed" type="date" value="${esc(h.filed_date)}" ${locked ? "disabled" : ""}
+          class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
+        <input value="${h.is_pulled ? "已拉單" : "未拉單"}" disabled
+          class="border rounded px-2 py-1.5 bg-ink-50 text-ink-500"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨日（整張單）</span>
+        <input id="p-date" type="date" value="${esc(d.delivery_date)}" ${locked ? "disabled" : ""}
+          class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨倉別（整張單）</span>
+        <input id="p-wh" value="${esc(d.warehouse)}" ${locked ? "disabled" : ""}
+          class="border rounded px-2 py-1.5"></label>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">品牌 / 線別</span>
+        <span class="text-sm py-1.5">${esc(d.brands) || "—"} <span class="text-ink-400">/ ${esc(d.lines) || "待補"}</span></span></div>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">類型</span>
+        <span class="text-sm py-1.5">${esc(d.skus[0]?.order_type || "")}</span></div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-sm mb-2">品項明細（${d.skus.length} 項）
+        <span class="text-xs font-normal text-ink-400">— 底色標示的是酷澎改過的品項</span></h3>
+      <div class="border border-ink-200 rounded-lg overflow-auto max-h-72">
+        <table class="w-full text-sm">
+          <thead class="bg-ink-100 text-xs sticky top-0"><tr>
+            <th class="px-2 py-1.5 text-left w-12">警示</th>
+            <th class="px-2 py-1.5 text-left w-24">永豐料號</th>
+            <th class="px-2 py-1.5 text-left">品名</th>
+            <th class="px-2 py-1.5 text-left w-24">品牌</th>
+            <th class="px-2 py-1.5 text-right w-20">下單數量</th>
+            <th class="px-2 py-1.5 text-left w-24">出貨數量</th>
+            <th class="px-2 py-1.5 text-left w-32">驗收註記</th>
+            <th class="px-2 py-1.5 text-left w-32">備註</th>
+          </tr></thead>
+          <tbody>${skuRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-sm mb-2"><i class="bi bi-clock-history"></i> 修改歷程
+        <span class="text-xs font-normal text-ink-400">（整張單的所有異動，含各品項）</span></h3>
+      <div class="border border-ink-200 rounded-lg max-h-56 overflow-y-auto">${logRows}</div>
+    </div>`;
+
+  $("#btn-po-save").disabled = locked;
 }
 
-async function saveEdit() {
+async function savePo() {
   if (!requireOperator() || !CURRENT) return;
-  const res = await fetch(`/api/orders/${CURRENT.id}`, {
+  const po = CURRENT.header.po_number;
+  let changed = 0, failed = 0;
+
+  // 先存整張單共用的欄位
+  const res = await fetch(`/api/pos/${encodeURIComponent(po)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      operator: operator(), version: CURRENT.version,
-      qty_ship: $("#e-qty").value, delivery_date: $("#e-date").value,
-      warehouse: $("#e-warehouse").value, po_status: $("#e-status").value,
-      receiving_status: $("#e-receiving").value, remarks: $("#e-remarks").value,
-      // 只在原本空白時才送，避免不小心把既有值蓋掉
-      ...($("#e-line").dataset.locked ? {} : { line: $("#e-line").value }),
-      ...($("#e-brand").dataset.locked ? {} : { brand: $("#e-brand").value }),
+      operator: operator(), po_version: CURRENT.header.version,
+      po_status: $("#p-status").value, receiving_status: $("#p-recv").value,
+      filed_date: $("#p-filed").value, delivery_date: $("#p-date").value,
+      warehouse: $("#p-wh").value,
     }),
   });
   const data = await res.json();
-  if (res.status === 409) { toast(data.message, "err"); $("#dlg-edit").close(); loadOrders(); return; }
   if (!res.ok) { toast(data.message || data.error, "err"); return; }
-  toast(data.changed ? `已儲存，記錄了 ${data.changed} 項變更。` : "沒有任何欄位變動。");
-  $("#dlg-edit").close();
+  changed += data.changed || 0;
+
+  // 再存每個品項自己的欄位（只送真的改過的）
+  for (const sku of CURRENT.skus) {
+    const body = {};
+    ["qty_ship", "receiving_note", "remarks"].forEach(f => {
+      const el = document.querySelector(`[data-sku="${sku.id}"][data-f="${f}"]`);
+      if (!el) return;
+      const now = el.value;
+      const was = sku[f] == null ? "" : String(sku[f]);
+      if (now !== was) body[f] = now;
+    });
+    if (!Object.keys(body).length) continue;
+    const r = await fetch(`/api/orders/${sku.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: operator(), version: sku.version, ...body }),
+    });
+    const rd = await r.json();
+    if (r.ok) changed += rd.changed || 0; else failed++;
+  }
+
+  if (failed) { toast(`有 ${failed} 個品項存檔失敗，請重新載入後再試。`, "err"); }
+  else toast(changed ? `已儲存，記錄了 ${changed} 項變更。` : "沒有任何欄位變動。");
+  $("#dlg-po").close();
   loadOrders();
 }
 
@@ -668,12 +693,12 @@ function syncProfileNote() {
 async function doExport() {
   if (!requireOperator()) return;
   const scope = $("#x-scope").value;
-  const ids = scope === "selected" ? [...selected] : [];
-  if (scope === "selected" && !ids.length) { toast("你選擇了「只匯出勾選的」，但沒有勾選任何資料列。", "warn"); return; }
+  const pos = scope === "selected" ? [...selected] : [];
+  if (scope === "selected" && !pos.length) { toast("你選擇了「只匯出勾選的」，但沒有勾選任何 PO。", "warn"); return; }
 
   const body = {
     operator: operator(), profile: $("#x-profile").value,
-    mark_pulled: $("#x-mark").checked, filters: filters(), ids,
+    mark_pulled: $("#x-mark").checked, filters: filters(), po_numbers: pos,
   };
   const res = await fetch("/api/export", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -699,32 +724,60 @@ async function doExport() {
 }
 
 // ── 批次動作 ────────────────────────────────────────────
+function syncBatchValues() {
+  const field = $("#batch-field").value;
+  const list = field === "po_status" ? CONFIG.po_statuses : CONFIG.receiving_statuses;
+  $("#batch-value").innerHTML = (list || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+}
+
 async function confirmReview() {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要確認的資料列。", "warn"); return; }
-  const res = await fetch("/api/orders/review", {
+  if (!selected.size) { toast("請先勾選要確認的 PO。", "warn"); return; }
+  const res = await fetch("/api/pos/review", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operator: operator(), ids: [...selected] }),
+    body: JSON.stringify({ operator: operator(), po_numbers: [...selected] }),
   });
   const data = await res.json();
   if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`已確認 ${data.count} 筆異動。`);
+  toast(`已確認 ${data.count} 張單的異動。`);
   selected.clear();
   loadOrders();
 }
 
-async function unpull() {
+async function batchStatus() {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要解除鎖定的資料列。", "warn"); return; }
-  const reason = prompt("倉庫可能已經拿到這批資料了。請填寫解除拉單鎖定的原因：");
-  if (!reason) return;
-  const res = await fetch("/api/orders/unpull", {
+  if (!selected.size) { toast("請先勾選要修改的 PO。", "warn"); return; }
+  const field = $("#batch-field").value, value = $("#batch-value").value;
+  const label = field === "po_status" ? "PO 狀態" : "驗收狀態";
+  if (!confirm(`要把勾選的 ${selected.size} 張單，${label}都改成「${value}」嗎？`)) return;
+  const res = await fetch("/api/pos/status", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operator: operator(), ids: [...selected], reason }),
+    body: JSON.stringify({ operator: operator(), po_numbers: [...selected], field, value }),
   });
   const data = await res.json();
   if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`已解除 ${data.count} 筆的拉單鎖定。`);
+  toast(`已把 ${data.count} 張單的${label}改成「${value}」。`);
+  selected.clear();
+  loadOrders();
+}
+
+async function togglePull() {
+  if (!requireOperator()) return;
+  if (!selected.size) { toast("請先勾選要調整的 PO。", "warn"); return; }
+  const pulled = confirm(
+    `勾選了 ${selected.size} 張單。\n\n按「確定」＝標記為已拉單（已交倉庫）\n按「取消」＝解除拉單鎖定`);
+  const reason = prompt(
+    pulled ? "請填寫標記為已拉單的原因："
+           : "倉庫可能已經拿到這批資料了。請填寫解除拉單鎖定的原因：");
+  if (!reason) return;
+  const res = await fetch("/api/pos/pull", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), po_numbers: [...selected], pulled, reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return; }
+  toast(`已調整 ${data.count} 張單的拉單狀態。`);
   selected.clear();
   loadOrders();
 }
@@ -733,20 +786,20 @@ async function unpull() {
 document.addEventListener("click", e => {
   const close = e.target.closest("[data-close]");
   if (close) { close.closest("dialog").close(); return; }
-  const edit = e.target.closest("[data-edit]");
-  if (edit) openEdit(Number(edit.dataset.edit));
+  const open = e.target.closest("[data-open]");
+  if (open) openPo(open.dataset.open);
 });
 
 $("#tbody").addEventListener("change", e => {
   const cb = e.target.closest(".row-check");
   if (!cb) return;
-  const id = Number(cb.dataset.id);
-  cb.checked ? selected.add(id) : selected.delete(id);
+  const po = cb.dataset.po;
+  cb.checked ? selected.add(po) : selected.delete(po);
   updateSelectedInfo();
 });
 
 $("#check-all").addEventListener("change", e => {
-  ROWS.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id));
+  ROWS.forEach(r => e.target.checked ? selected.add(r.po_number) : selected.delete(r.po_number));
   renderRows();
 });
 
@@ -775,11 +828,13 @@ $("#btn-upload").addEventListener("click", () => { if (requireOperator()) $("#dl
 $("#btn-export").addEventListener("click", () => { if (requireOperator()) $("#dlg-export").showModal(); });
 $("#btn-preview").addEventListener("click", doPreview);
 $("#btn-commit").addEventListener("click", doCommit);
-$("#btn-save").addEventListener("click", saveEdit);
+$("#btn-po-save").addEventListener("click", savePo);
 $("#btn-do-export").addEventListener("click", doExport);
 $("#x-profile").addEventListener("change", syncProfileNote);
 $("#btn-confirm-review").addEventListener("click", confirmReview);
-$("#btn-unpull").addEventListener("click", unpull);
+$("#btn-pull").addEventListener("click", togglePull);
+$("#btn-batch-status").addEventListener("click", batchStatus);
+$("#batch-field").addEventListener("change", syncBatchValues);
 $("#f-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 $("#f-keyword").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 

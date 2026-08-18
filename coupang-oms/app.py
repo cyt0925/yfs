@@ -23,7 +23,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-17.8"
+BUILD_VERSION = "2026-08-18.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -32,14 +32,27 @@ app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 # 造成「明明換了檔案，畫面卻沒變」的誤判）。
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 
-# OP 可線上編輯的欄位 -> 中文名。匯入永遠不會覆蓋這些欄位。
+# 單一 SKU 自己的欄位，改一個品項不影響同張單的其他品項。
+# 匯入永遠不會覆蓋這些欄位。
 EDITABLE_FIELDS = {
-    "qty_ship":         "出貨數量",
-    "delivery_date":    "交期",
-    "warehouse":        "倉別",
-    "remarks":          "備註",
+    "qty_ship":       "出貨數量",
+    "remarks":        "備註",
+    "receiving_note": "驗收註記",
+}
+
+# 整張 PO 共用的欄位，改了就是整張單一起改（OP 拋 ERP、交倉庫都是整張
+# 單一起行動，不會拆開）。存在 po_headers，匯入一律不覆蓋。
+PO_EDITABLE_FIELDS = {
     "po_status":        "PO狀態",
     "receiving_status": "驗收狀態",
+    "filed_date":       "建檔日",
+}
+
+# 整張 PO 共用、但屬於酷澎來源的欄位：OP 可以改（跟酷澎談好調整），
+# 改的時候整張單一起改，但它們存在 orders 上、且會參與匯入比對。
+PO_COUPANG_FIELDS = {
+    "delivery_date": "交期",
+    "warehouse":     "倉別",
 }
 
 # 酷澎來源欄位中，允許 OP「補空白」的欄位。
@@ -74,7 +87,7 @@ def get_config():
     return load_json("config.json", {
         "operators": ["OP"],
         "po_statuses": ["已建立", "已回覆", "處理中", "已完成", "修改中", "已取消"],
-        "receiving_statuses": ["", "完成", "異常", "重啟"],
+        "receiving_statuses": ["未驗收", "完成", "異常", "重啟"],
         "order_types": ["一般", "NS", "補單", "拆單"],
     })
 
@@ -112,7 +125,7 @@ def api_config():
     try:
         def distinct(column):
             rows = conn.execute(
-                f"SELECT DISTINCT {column} AS v FROM orders "
+                f"SELECT DISTINCT {column} AS v FROM order_rows "
                 f"WHERE {column} IS NOT NULL AND {column} != '' ORDER BY v"
             ).fetchall()
             return [r["v"] for r in rows]
@@ -192,7 +205,7 @@ def api_orders():
     conn = get_conn()
     try:
         total = conn.execute(
-            f"SELECT COUNT(*) AS c FROM orders{clause}", params
+            f"SELECT COUNT(*) AS c FROM order_rows{clause}", params
         ).fetchone()["c"]
 
         summary = conn.execute(
@@ -200,12 +213,12 @@ def api_orders():
                        SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review,
                        SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END) AS after_pull,
                        SUM(CASE WHEN is_pulled=1 THEN 1 ELSE 0 END) AS pulled
-                FROM orders{clause}""",
+                FROM order_rows{clause}""",
             params,
         ).fetchone()
 
         rows = conn.execute(
-            f"""SELECT * FROM orders{clause}
+            f"""SELECT * FROM order_rows{clause}
                 ORDER BY needs_review DESC,
                          CASE alert_level WHEN 'changed_after_pull' THEN 0
                                           WHEN 'changed' THEN 1 ELSE 2 END,
@@ -286,7 +299,7 @@ def api_update_order(order_id):
 
     conn = get_conn()
     try:
-        order = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+        order = conn.execute("SELECT * FROM order_rows WHERE id = ?", (order_id,)).fetchone()
         if order is None:
             return jsonify({"error": "找不到這筆訂單。"}), 404
         order = dict(order)
@@ -313,14 +326,7 @@ def api_update_order(order_id):
             if field not in payload:
                 continue
             raw = payload[field]
-            if field == "qty_ship":
-                new_val = norm_int(raw)
-            elif field == "delivery_date":
-                new_val = norm_date(raw)
-            elif field == "warehouse":
-                new_val = norm_warehouse(raw)
-            else:
-                new_val = norm_text(raw)
+            new_val = norm_int(raw) if field == "qty_ship" else norm_text(raw)
 
             old_val = order[field]
             if _same(old_val, new_val):
@@ -366,78 +372,356 @@ def api_update_order(order_id):
                              (order_id,))
         conn.commit()
 
-        updated = dict(conn.execute("SELECT * FROM orders WHERE id = ?",
+        updated = dict(conn.execute("SELECT * FROM order_rows WHERE id = ?",
                                     (order_id,)).fetchone())
         return jsonify({"ok": True, "changed": len(changes), "order": updated})
     finally:
         conn.close()
 
 
-@app.route("/api/orders/review", methods=["POST"])
-def api_clear_review():
-    """OP 確認過異動後把警示燈關掉。動作本身也記歷程。"""
+# ---------------------------------------------------------------- PO 層級
+
+def log_po_change(conn, po_number, field, label, old, new, operator,
+                  source="manual", note=""):
+    """整張 PO 的變更只記一筆，sku_id 留空代表『這是整張單的事』。"""
+    conn.execute(
+        """INSERT INTO edit_logs
+           (order_id, po_number, sku_id, field, field_label, old_value,
+            new_value, operator, source, note, changed_at)
+           VALUES (0,?,'',?,?,?,?,?,?,?,?)""",
+        (po_number, field, label,
+         "" if old is None else str(old), "" if new is None else str(new),
+         operator, source, note, now()),
+    )
+
+
+def po_summary_sql(clause):
+    """把 SKU 收攏成一列一張 PO。
+
+    交期／倉別在同一張 PO 底下本來就一致（實際資料驗證過），用 MIN 取值
+    即可；品牌則可能混多個，用逗號串起來，這樣首頁篩品牌時混單也篩得到。
+
+    篩選條件只用來決定「哪幾張 PO 入選」，統計值一律涵蓋該 PO 底下的
+    全部品項。否則搜「whiskas」時，那張含 5 個品牌的單會只顯示 whiskas、
+    品項數與數量也只算到符合的那幾項，資訊是錯的。
+    """
+    return f"""
+        SELECT po_number,
+               MIN(order_type)      AS order_type,
+               MIN(parent_po)       AS parent_po,
+               MIN(po_status)       AS po_status,
+               MIN(receiving_status) AS receiving_status,
+               MAX(is_pulled)       AS is_pulled,
+               MIN(pulled_at)       AS pulled_at,
+               MIN(pulled_by)       AS pulled_by,
+               MIN(filed_date)      AS filed_date,
+               MIN(delivery_date)   AS delivery_date,
+               MIN(warehouse)       AS warehouse,
+               GROUP_CONCAT(DISTINCT line)  AS lines_csv,
+               GROUP_CONCAT(DISTINCT brand) AS brands_csv,
+               COUNT(*)             AS sku_count,
+               COALESCE(SUM(qty_coupang),0) AS qty_coupang,
+               COALESCE(SUM(qty_ship),0)    AS qty_ship,
+               SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review_count,
+               SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END)
+                                            AS after_pull_count,
+               MIN(po_version)      AS po_version
+        FROM order_rows
+        WHERE po_number IN (SELECT po_number FROM order_rows{clause})
+        GROUP BY po_number
+    """
+
+
+def _csv_clean(value):
+    """GROUP_CONCAT 出來的字串去掉空值、排序後用逗號串好。"""
+    if not value:
+        return ""
+    parts = sorted({p.strip() for p in value.split(",") if p.strip()})
+    return ", ".join(parts)
+
+
+@app.route("/api/pos")
+def api_pos():
+    """首頁：一列一張 PO。"""
+    clause, params = build_filter(request.args)
+    page = max(1, norm_int(request.args.get("page")) or 1)
+    size = min(500, max(10, norm_int(request.args.get("page_size")) or 50))
+
+    conn = get_conn()
+    try:
+        base = po_summary_sql(clause)
+        total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM ({base})", params).fetchone()["c"]
+
+        summary = conn.execute(
+            f"""SELECT COALESCE(SUM(qty_ship),0) AS qty,
+                       SUM(CASE WHEN review_count>0 THEN 1 ELSE 0 END) AS review,
+                       SUM(CASE WHEN after_pull_count>0 THEN 1 ELSE 0 END) AS after_pull,
+                       SUM(CASE WHEN is_pulled=1 THEN 1 ELSE 0 END) AS pulled
+                FROM ({base})""", params).fetchone()
+
+        rows = conn.execute(
+            f"""SELECT * FROM ({base})
+                ORDER BY after_pull_count DESC, review_count DESC,
+                         delivery_date, po_number
+                LIMIT ? OFFSET ?""",
+            params + [size, (page - 1) * size]).fetchall()
+
+        out = []
+        for r in rows:
+            item = dict(r)
+            item["brands"] = _csv_clean(item.pop("brands_csv"))
+            item["lines"] = _csv_clean(item.pop("lines_csv"))
+            out.append(item)
+
+        return jsonify({
+            "total": total, "page": page, "page_size": size,
+            "summary": {
+                "qty_ship": summary["qty"] or 0,
+                "needs_review": summary["review"] or 0,
+                "changed_after_pull": summary["after_pull"] or 0,
+                "pulled": summary["pulled"] or 0,
+            },
+            "rows": out,
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/<po_number>")
+def api_po_detail(po_number):
+    """點開一張 PO：表頭 + 這張單所有 SKU + 整張單的歷程。"""
+    po_number = norm_key(po_number)
+    conn = get_conn()
+    try:
+        header = conn.execute(
+            "SELECT * FROM po_headers WHERE po_number = ?", (po_number,)).fetchone()
+        if header is None:
+            return jsonify({"error": "找不到這張 PO。"}), 404
+
+        skus = conn.execute(
+            """SELECT * FROM order_rows WHERE po_number = ?
+               ORDER BY seq_no, sku_id""", (po_number,)).fetchall()
+        logs = conn.execute(
+            """SELECT * FROM edit_logs WHERE po_number = ?
+               ORDER BY changed_at DESC, id DESC LIMIT 300""", (po_number,)).fetchall()
+
+        skus = [dict(s) for s in skus]
+        return jsonify({
+            "header": dict(header),
+            "brands": _csv_clean(",".join(s["brand"] or "" for s in skus)),
+            "lines": _csv_clean(",".join(s["line"] or "" for s in skus)),
+            "delivery_date": skus[0]["delivery_date"] if skus else "",
+            "warehouse": skus[0]["warehouse"] if skus else "",
+            "skus": skus,
+            "logs": [dict(l) for l in logs],
+        })
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/<po_number>", methods=["PUT"])
+def api_update_po(po_number):
+    """改整張 PO：狀態類欄位寫 po_headers，交期／倉別套用到全部 SKU。"""
+    po_number = norm_key(po_number)
     payload = request.get_json(silent=True) or {}
     operator = norm_text(payload.get("operator"))
-    ids = [i for i in (norm_int(x) for x in payload.get("ids", [])) if i]
+    if not operator:
+        return jsonify({"error": "請先在右上角選擇操作人員，才能編輯訂單。"}), 400
+
+    client_version = norm_int(payload.get("po_version"))
+    if client_version is None:
+        return jsonify({"error": "缺少版本資訊，請重新整理後再試。"}), 400
+
+    conn = get_conn()
+    try:
+        header = conn.execute(
+            "SELECT * FROM po_headers WHERE po_number = ?", (po_number,)).fetchone()
+        if header is None:
+            return jsonify({"error": "找不到這張 PO。"}), 404
+        header = dict(header)
+
+        if header["version"] != client_version:
+            return jsonify({
+                "error": "conflict",
+                "message": (f"這張單剛剛被另一次儲存修改過（{header['updated_at']}），"
+                            "你看到的不是最新版本，請重新載入後再編輯。"),
+            }), 409
+
+        if header["is_pulled"] and not payload.get("force_edit"):
+            return jsonify({
+                "error": "locked",
+                "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
+            }), 423
+
+        stamp = now()
+        head_changes = []
+        for field, label in PO_EDITABLE_FIELDS.items():
+            if field not in payload:
+                continue
+            new_val = (norm_date(payload[field]) if field == "filed_date"
+                       else norm_text(payload[field]))
+            if _same(header[field], new_val):
+                continue
+            head_changes.append((field, label, header[field], new_val))
+
+        # 交期／倉別存在每一列 SKU 上（要參與匯入比對），但 OP 是整張單一起改
+        row_changes = []
+        first = conn.execute(
+            "SELECT delivery_date, warehouse FROM orders WHERE po_number = ? LIMIT 1",
+            (po_number,)).fetchone()
+        if first is not None:
+            for field, label in PO_COUPANG_FIELDS.items():
+                if field not in payload:
+                    continue
+                new_val = (norm_date(payload[field]) if field == "delivery_date"
+                           else norm_warehouse(payload[field]))
+                if _same(first[field], new_val):
+                    continue
+                row_changes.append((field, label, first[field], new_val))
+
+        if not head_changes and not row_changes:
+            return jsonify({"ok": True, "changed": 0})
+
+        if head_changes:
+            sets = ", ".join(f"{f} = ?" for f, _, _, _ in head_changes)
+            cur = conn.execute(
+                f"""UPDATE po_headers SET {sets}, updated_at = ?, version = version + 1
+                    WHERE po_number = ? AND version = ?""",
+                [v for _, _, _, v in head_changes] + [stamp, po_number, client_version])
+            if cur.rowcount == 0:
+                conn.rollback()
+                return jsonify({"error": "conflict",
+                                "message": "儲存瞬間有其他人也改了這張單，請重新載入。"}), 409
+
+        for field, label, old_val, new_val in row_changes:
+            conn.execute(
+                f"""UPDATE orders SET {field} = ?, updated_at = ?, version = version + 1
+                    WHERE po_number = ?""", (new_val, stamp, po_number))
+
+        for field, label, old_val, new_val in head_changes + row_changes:
+            log_po_change(conn, po_number, field, label, old_val, new_val, operator)
+        conn.commit()
+        return jsonify({"ok": True, "changed": len(head_changes) + len(row_changes)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/review", methods=["POST"])
+def api_clear_review():
+    """OP 確認過異動後把整張單的警示燈關掉，每張單各記一筆歷程。"""
+    payload = request.get_json(silent=True) or {}
+    operator = norm_text(payload.get("operator"))
+    pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
     if not operator:
         return jsonify({"error": "請先選擇操作人員。"}), 400
-    if not ids:
+    if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
 
     conn = get_conn()
     try:
-        placeholders = ",".join("?" * len(ids))
+        placeholders = ",".join("?" * len(pos))
         rows = conn.execute(
-            f"SELECT * FROM orders WHERE id IN ({placeholders}) AND needs_review = 1",
-            ids,
-        ).fetchall()
+            f"""SELECT po_number, COUNT(*) AS n FROM orders
+                WHERE po_number IN ({placeholders}) AND needs_review = 1
+                GROUP BY po_number""", pos).fetchall()
         for row in rows:
-            order = dict(row)
-            log_change(conn, order, "needs_review", "異動確認",
-                       order["review_reason"] or "待確認", "已確認",
-                       operator, "manual")
+            log_po_change(conn, row["po_number"], "needs_review", "異動確認",
+                          f"{row['n']} 項待確認", "已確認", operator)
         conn.execute(
             f"""UPDATE orders SET needs_review = 0, alert_level = '',
                    review_reason = '', updated_at = ?, version = version + 1
-                WHERE id IN ({placeholders})""",
-            [now()] + ids,
-        )
+                WHERE po_number IN ({placeholders}) AND needs_review = 1""",
+            [now()] + pos)
         conn.commit()
         return jsonify({"ok": True, "count": len(rows)})
     finally:
         conn.close()
 
 
-@app.route("/api/orders/unpull", methods=["POST"])
-def api_unpull():
-    """解除拉單鎖定。必須填理由，因為倉庫可能已經拿到舊資料了。"""
+@app.route("/api/pos/pull", methods=["POST"])
+def api_set_pulled():
+    """手動調整整張單的拉單狀態。
+
+    拉單代表「已經正式拋 ERP、交給倉庫」，是對外承諾，所以不管是標記
+    還是解除，都必須填原因並寫進歷程——事後倉庫拿到的是哪一版、為什麼
+    重出，要查得到。
+    """
     payload = request.get_json(silent=True) or {}
     operator = norm_text(payload.get("operator"))
     reason = norm_text(payload.get("reason"))
-    ids = [i for i in (norm_int(x) for x in payload.get("ids", [])) if i]
+    pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
+    target = 1 if payload.get("pulled") else 0
     if not operator:
         return jsonify({"error": "請先選擇操作人員。"}), 400
     if not reason:
-        return jsonify({"error": "解除拉單鎖定必須填寫原因。"}), 400
-    if not ids:
+        return jsonify({"error": "調整拉單狀態必須填寫原因。"}), 400
+    if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
 
     conn = get_conn()
     try:
-        placeholders = ",".join("?" * len(ids))
+        placeholders = ",".join("?" * len(pos))
         rows = conn.execute(
-            f"SELECT * FROM orders WHERE id IN ({placeholders}) AND is_pulled = 1", ids
-        ).fetchall()
+            f"""SELECT po_number, is_pulled FROM po_headers
+                WHERE po_number IN ({placeholders}) AND is_pulled != ?""",
+            pos + [target]).fetchall()
+        stamp = now()
         for row in rows:
-            order = dict(row)
-            log_change(conn, order, "is_pulled", "拉單狀態", "已拉單", "解除鎖定",
-                       operator, "manual", reason)
+            log_po_change(conn, row["po_number"], "is_pulled", "拉單狀態",
+                          "已拉單" if row["is_pulled"] else "未拉單",
+                          "已拉單" if target else "未拉單",
+                          operator, "manual", reason)
+        if target:
+            conn.execute(
+                f"""UPDATE po_headers SET is_pulled = 1, pulled_at = ?, pulled_by = ?,
+                       updated_at = ?, version = version + 1
+                    WHERE po_number IN ({placeholders}) AND is_pulled = 0""",
+                [stamp, operator, stamp] + pos)
+        else:
+            conn.execute(
+                f"""UPDATE po_headers SET is_pulled = 0, pulled_at = '', pulled_by = '',
+                       pulled_batch_id = NULL, updated_at = ?, version = version + 1
+                    WHERE po_number IN ({placeholders}) AND is_pulled = 1""",
+                [stamp] + pos)
+        conn.commit()
+        return jsonify({"ok": True, "count": len(rows)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/status", methods=["POST"])
+def api_batch_status():
+    """批次改整批 PO 的狀態，每張單各記一筆歷程（不是只記一筆批次）。"""
+    payload = request.get_json(silent=True) or {}
+    operator = norm_text(payload.get("operator"))
+    pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
+    field = norm_text(payload.get("field"))
+    value = norm_text(payload.get("value"))
+    if not operator:
+        return jsonify({"error": "請先選擇操作人員。"}), 400
+    if not pos:
+        return jsonify({"error": "沒有選取任何訂單。"}), 400
+    if field not in ("po_status", "receiving_status"):
+        return jsonify({"error": "只能批次修改 PO 狀態或驗收狀態。"}), 400
+    if not value:
+        return jsonify({"error": "請選擇要改成什麼狀態。"}), 400
+
+    label = PO_EDITABLE_FIELDS[field]
+    conn = get_conn()
+    try:
+        placeholders = ",".join("?" * len(pos))
+        rows = conn.execute(
+            f"""SELECT po_number, {field} AS old FROM po_headers
+                WHERE po_number IN ({placeholders}) AND {field} != ?""",
+            pos + [value]).fetchall()
+        for row in rows:
+            log_po_change(conn, row["po_number"], field, label,
+                          row["old"], value, operator)
         conn.execute(
-            f"""UPDATE orders SET is_pulled = 0, pulled_at = '', pulled_by = '',
-                   pulled_batch_id = NULL, updated_at = ?, version = version + 1
-                WHERE id IN ({placeholders})""",
-            [now()] + ids,
-        )
+            f"""UPDATE po_headers SET {field} = ?, updated_at = ?, version = version + 1
+                WHERE po_number IN ({placeholders})""",
+            [value, now()] + pos)
         conn.commit()
         return jsonify({"ok": True, "count": len(rows)})
     finally:
@@ -534,16 +818,26 @@ def api_import_commit():
         stamp = now()
         inserted = updated = 0
 
+        today = _dt.date.today().isoformat()
         for row in preview["new"]:
+            # PO 表頭只在第一次見到這張單時建立。之後同一張單再上傳，
+            # 這裡什麼都不做——狀態與建檔日一律以系統為準，不被 Excel 覆蓋。
+            conn.execute(
+                """INSERT OR IGNORE INTO po_headers
+                   (po_number, po_status, receiving_status, is_pulled,
+                    filed_date, created_at, updated_at)
+                   VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)""",
+                (row["po_number"], today, stamp, stamp))
+
             columns = ", ".join(INSERT_FIELDS)
             marks = ", ".join("?" * len(INSERT_FIELDS))
             values = [row.get(f) for f in INSERT_FIELDS]
             cur = conn.execute(
-                f"""INSERT INTO orders ({columns}, qty_ship, po_status,
+                f"""INSERT INTO orders ({columns}, qty_ship,
                         source_file, first_seen_at, last_seen_at,
                         created_at, updated_at)
-                    VALUES ({marks}, ?, ?, ?, ?, ?, ?, ?)""",
-                values + [row.get("qty_coupang"), "已建立",
+                    VALUES ({marks}, ?, ?, ?, ?, ?, ?)""",
+                values + [row.get("qty_coupang"),
                           preview["filename"], stamp, stamp, stamp, stamp],
             )
             order = {"id": cur.lastrowid, "po_number": row["po_number"],
@@ -556,7 +850,7 @@ def api_import_commit():
         for item in preview["updated"]:
             row = item["row"]
             order_id = item["order_id"]
-            current = conn.execute("SELECT * FROM orders WHERE id = ?",
+            current = conn.execute("SELECT * FROM order_rows WHERE id = ?",
                                    (order_id,)).fetchone()
             if current is None:
                 continue
@@ -656,7 +950,7 @@ def api_export():
     profile_key = norm_text(payload.get("profile")) or "warehouse"
     mark_pulled = bool(payload.get("mark_pulled"))
     filters = payload.get("filters") or {}
-    selected_ids = [i for i in (norm_int(x) for x in payload.get("ids", [])) if i]
+    selected_pos = [norm_key(x) for x in payload.get("po_numbers", []) if norm_key(x)]
 
     if not operator:
         return jsonify({"error": "請先選擇操作人員。"}), 400
@@ -668,18 +962,18 @@ def api_export():
 
     conn = get_conn()
     try:
-        if selected_ids:
-            placeholders = ",".join("?" * len(selected_ids))
+        if selected_pos:
+            placeholders = ",".join("?" * len(selected_pos))
             rows = conn.execute(
-                f"SELECT * FROM orders WHERE id IN ({placeholders}) "
+                f"SELECT * FROM order_rows WHERE po_number IN ({placeholders}) "
                 f"ORDER BY delivery_date, po_number, seq_no, sku_id",
-                selected_ids,
+                selected_pos,
             ).fetchall()
-            filter_desc = {"ids": selected_ids}
+            filter_desc = {"po_numbers": selected_pos}
         else:
             clause, params = build_filter(filters)
             rows = conn.execute(
-                f"SELECT * FROM orders{clause} "
+                f"SELECT * FROM order_rows{clause} "
                 f"ORDER BY delivery_date, po_number, seq_no, sku_id", params
             ).fetchall()
             filter_desc = filters
@@ -745,21 +1039,22 @@ def api_export():
         )
 
         if mark_pulled:
+            # 拉單是整張 PO 的事：匯出裡只要有這張單的任何一個品項，
+            # 整張單就算交出去了。
             stamp_now = now()
-            ids = [r["id"] for r in rows if not r["is_pulled"]]
-            for r in rows:
-                if r["is_pulled"]:
-                    continue
-                log_change(conn, dict(r), "is_pulled", "拉單狀態", "未拉單",
-                           "已拉單", operator, "system",
-                           f"匯出批次 #{batch_id}／{profile.get('label', profile_key)}")
-            if ids:
-                placeholders = ",".join("?" * len(ids))
+            pos = sorted({r["po_number"] for r in rows if not r["is_pulled"]})
+            note = f"匯出批次 #{batch_id}／{profile.get('label', profile_key)}"
+            for po in pos:
+                log_po_change(conn, po, "is_pulled", "拉單狀態", "未拉單",
+                              "已拉單", operator, "system", note)
+            if pos:
+                placeholders = ",".join("?" * len(pos))
                 conn.execute(
-                    f"""UPDATE orders SET is_pulled = 1, pulled_at = ?, pulled_by = ?,
-                            pulled_batch_id = ?, updated_at = ?, version = version + 1
-                        WHERE id IN ({placeholders})""",
-                    [stamp_now, operator, batch_id, stamp_now] + ids,
+                    f"""UPDATE po_headers SET is_pulled = 1, pulled_at = ?,
+                            pulled_by = ?, pulled_batch_id = ?, updated_at = ?,
+                            version = version + 1
+                        WHERE po_number IN ({placeholders})""",
+                    [stamp_now, operator, batch_id, stamp_now] + pos,
                 )
         conn.commit()
     finally:

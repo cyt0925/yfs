@@ -220,7 +220,7 @@ def diff_rows(conn, rows):
         placeholders = ",".join(["(?,?)"] * len(chunk))
         flat = [v for pair in chunk for v in pair]
         cur.execute(
-            f"SELECT * FROM orders WHERE (po_number, sku_id) IN ({placeholders})",
+            f"SELECT * FROM order_rows WHERE (po_number, sku_id) IN ({placeholders})",
             flat,
         )
         for db_row in cur.fetchall():

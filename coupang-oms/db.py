@@ -59,15 +59,10 @@ CREATE TABLE IF NOT EXISTS orders (
     -- === OP 自有欄位：匯入永不覆蓋 ===
     qty_ship          INTEGER,              -- 出貨數量（實際要出的）
     qty_ship_overridden INTEGER NOT NULL DEFAULT 0,
-    po_status         TEXT DEFAULT '已建立',
-    receiving_status  TEXT DEFAULT '',
     remarks           TEXT DEFAULT '',
+    receiving_note    TEXT DEFAULT '',      -- 這個品項的驗收註記（短驗/溢收…）
 
-    -- === 拉單與警示 ===
-    is_pulled         INTEGER NOT NULL DEFAULT 0,
-    pulled_at         TEXT DEFAULT '',
-    pulled_by         TEXT DEFAULT '',
-    pulled_batch_id   INTEGER,
+    -- === 警示（掛在 SKU 上：酷澎是逐品項改的）===
     needs_review      INTEGER NOT NULL DEFAULT 0,
     alert_level       TEXT DEFAULT '',      -- '' / changed / changed_after_pull / missing
     review_reason     TEXT DEFAULT '',
@@ -89,7 +84,47 @@ CREATE INDEX IF NOT EXISTS idx_orders_brand     ON orders(brand);
 CREATE INDEX IF NOT EXISTS idx_orders_line      ON orders(line);
 CREATE INDEX IF NOT EXISTS idx_orders_wh        ON orders(warehouse);
 CREATE INDEX IF NOT EXISTS idx_orders_review    ON orders(needs_review);
-CREATE INDEX IF NOT EXISTS idx_orders_pulled    ON orders(is_pulled);
+
+-- PO 層級的狀態。OP 是「整張單一起」拋 ERP、一起交倉庫、一起確認的，
+-- 所以這三個狀態天生屬於整張 PO，不屬於個別 SKU。存成一張獨立的表
+-- 而不是複製到每個 SKU 上，就不會有「同一張單的 29 個品項狀態不一致」
+-- 這種資料矛盾的可能。
+CREATE TABLE IF NOT EXISTS po_headers (
+    po_number        TEXT PRIMARY KEY,
+    po_status        TEXT NOT NULL DEFAULT '已建立',
+    receiving_status TEXT NOT NULL DEFAULT '未驗收',
+    is_pulled        INTEGER NOT NULL DEFAULT 0,
+    pulled_at        TEXT DEFAULT '',
+    pulled_by        TEXT DEFAULT '',
+    pulled_batch_id  INTEGER,
+    -- 建檔日：整合表沒有酷澎的實際開單日，這裡記的是「我們第一次看到
+    -- 這張單的日期」，第一次匯入時填當天，之後匯入一律不再更動。
+    filed_date       TEXT DEFAULT '',
+    version          INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT DEFAULT '',
+    updated_at       TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_poh_status   ON po_headers(po_status);
+CREATE INDEX IF NOT EXISTS idx_poh_pulled   ON po_headers(is_pulled);
+CREATE INDEX IF NOT EXISTS idx_poh_recv     ON po_headers(receiving_status);
+
+-- 讀取用的扁平檢視：把 PO 層級狀態接回每一列 SKU，讓查詢、篩選、匯出
+-- 都能像以前一樣當成一張大表來用。寫入一律針對底層的兩張實體表，
+-- 各自負責自己該負責的欄位。
+CREATE VIEW IF NOT EXISTS order_rows AS
+SELECT
+    o.*,
+    h.po_status,
+    h.receiving_status,
+    h.is_pulled,
+    h.pulled_at,
+    h.pulled_by,
+    h.pulled_batch_id,
+    h.filed_date,
+    h.version AS po_version
+FROM orders o
+JOIN po_headers h ON h.po_number = o.po_number;
 
 -- 欄位級 append-only 歷程。只新增，永不修改刪除：它最終是拿去跟酷澎
 -- 對帳、釐清倉庫出錯責任的證據。
