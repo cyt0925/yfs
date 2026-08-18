@@ -147,43 +147,47 @@
   <!-- ── 列表 ───────────────────────────────────────── -->
   <section class="bg-white rounded-xl shadow-sm border border-ink-100">
     <div class="scroll-x" style="max-height:65vh; overflow-y:auto;">
-      <table class="grid w-full text-sm border-collapse">
+      <!-- 表格不用 w-full 硬塞進畫面寬度：螢幕較窄時 w-full 會強迫瀏覽器把每欄
+           等比例壓扁，連「下單數量」都會被擠成兩行。改成表格用自己實際需要
+           的寬度（min-width，各欄加總），畫面裝不下就交給外層 .scroll-x 橫向
+           捲動，欄位本身永遠不被壓縮、不會換行造成視覺上的錯位。 -->
+      <table class="grid text-sm border-collapse" style="min-width:1720px; width:max-content;">
         <colgroup>
           <col style="width:40px">
-          <col style="width:96px">
-          <col style="width:132px">
-          <col style="width:56px">
-          <col style="width:72px">
-          <col style="width:92px">
-          <col style="width:260px">
-          <col style="width:104px">
-          <col style="width:72px">
           <col style="width:100px">
-          <col style="width:88px">
-          <col style="width:88px">
+          <col style="width:140px">
+          <col style="width:64px">
+          <col style="width:84px">
+          <col style="width:110px">
+          <col style="width:280px">
+          <col style="width:120px">
           <col style="width:80px">
-          <col style="width:72px">
-          <col style="width:180px">
-          <col style="width:44px">
+          <col style="width:110px">
+          <col style="width:100px">
+          <col style="width:100px">
+          <col style="width:90px">
+          <col style="width:80px">
+          <col style="width:200px">
+          <col style="width:48px">
         </colgroup>
         <thead class="bg-ink-900 text-white text-xs">
           <tr>
-            <th class="px-2 py-2"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
-            <th class="px-2 py-2 text-left">狀態</th>
-            <th class="px-2 py-2 text-left">PO 單號</th>
-            <th class="px-2 py-2 text-left">類型</th>
-            <th class="px-2 py-2 text-left">線別</th>
-            <th class="px-2 py-2 text-left">品牌</th>
-            <th class="px-2 py-2 text-left">品名</th>
-            <th class="px-2 py-2 text-left">永豐料號</th>
-            <th class="px-2 py-2 text-left">倉別</th>
-            <th class="px-2 py-2 text-left">交期</th>
-            <th class="px-2 py-2 text-right">下單數量</th>
-            <th class="px-2 py-2 text-right">出貨數量</th>
-            <th class="px-2 py-2 text-left">PO狀態</th>
-            <th class="px-2 py-2 text-left">驗收</th>
-            <th class="px-2 py-2 text-left">備註</th>
-            <th class="px-2 py-2"></th>
+            <th class="px-2 py-2 whitespace-nowrap"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">狀態</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">PO 單號</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">類型</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">線別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">品牌</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">品名</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">永豐料號</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">倉別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">交期</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">下單數量</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">PO狀態</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">驗收</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">備註</th>
+            <th class="px-2 py-2 whitespace-nowrap"></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
