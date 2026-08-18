@@ -426,15 +426,17 @@ function renderRows() {
     const cls = r.alert_level === "changed_after_pull" ? "row-alert"
               : r.needs_review ? "row-warn"
               : r.is_pulled ? "row-pulled" : "";
+    // 狀態欄用「圓點＋文字」而不是有底色的膠囊，膠囊自己的內距會讓文字
+    // 偏離儲存格左邊界、跟表頭「狀態」對不齊。圓點沒有內距，文字永遠貼齊。
     let badge = "";
     if (r.alert_level === "changed_after_pull")
-      badge = `<span class="inline-block bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded" title="${esc(r.review_reason)}">拉單後被改</span>`;
+      badge = `<span class="inline-flex items-center gap-1 text-red-700 font-semibold text-xs whitespace-nowrap" title="${esc(r.review_reason)}"><i class="bi bi-circle-fill text-[7px]"></i>拉單後被改</span>`;
     else if (r.needs_review)
-      badge = `<span class="inline-block bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded" title="${esc(r.review_reason)}">待確認</span>`;
+      badge = `<span class="inline-flex items-center gap-1 text-amber-700 font-semibold text-xs whitespace-nowrap" title="${esc(r.review_reason)}"><i class="bi bi-circle-fill text-[7px]"></i>待確認</span>`;
     else if (r.is_pulled)
-      badge = `<span class="inline-block bg-slate-400 text-white text-[10px] px-1.5 py-0.5 rounded">已拉單</span>`;
+      badge = `<span class="inline-flex items-center gap-1 text-ink-500 text-xs whitespace-nowrap"><i class="bi bi-circle-fill text-[7px]"></i>已拉單</span>`;
     else
-      badge = `<span class="inline-block bg-ink-100 text-ink-700 text-[10px] px-1.5 py-0.5 rounded">未拉單</span>`;
+      badge = `<span class="inline-flex items-center gap-1 text-ink-400 text-xs whitespace-nowrap"><i class="bi bi-circle-fill text-[7px]"></i>未拉單</span>`;
 
     const qtyDiff = r.qty_ship != null && r.qty_coupang != null && r.qty_ship !== r.qty_coupang;
     return `<tr class="${cls} border-b hover:bg-slate-50">
