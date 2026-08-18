@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS orders (
     -- === OP 自有欄位：匯入永不覆蓋 ===
     qty_ship          INTEGER,              -- 出貨數量（實際要出的）
     qty_ship_overridden INTEGER NOT NULL DEFAULT 0,
+    -- OP 跟酷澎談好之後，會先在系統裡把交期／倉別改掉，但酷澎後台通常
+    -- 要過一兩天才更新。標記成「人工調整過」之後，匯入就不再覆蓋這兩個
+    -- 欄位，只會亮燈提醒「酷澎的檔案還是舊值、還沒同步」——既不會洗掉
+    -- OP 談好的結果，也不會讓兩邊不一致這件事被藏起來。
+    delivery_date_overridden INTEGER NOT NULL DEFAULT 0,
+    warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
     remarks           TEXT DEFAULT '',
     receiving_note    TEXT DEFAULT '',      -- 這個品項的驗收註記（短驗/溢收…）
 

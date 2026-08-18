@@ -23,7 +23,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-18.1"
+BUILD_VERSION = "2026-08-18.2"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -256,32 +256,132 @@ def api_order_logs(order_id):
         conn.close()
 
 
+def build_log_filter(args):
+    """歷程查詢條件。日期用 changed_at 前綴比對，避免時分秒干擾。"""
+    where, params = [], []
+
+    def add(clause, *values):
+        where.append(clause)
+        params.extend(values)
+
+    if norm_text(args.get("po_number")):
+        add("po_number LIKE ?", f"%{norm_text(args.get('po_number'))}%")
+    if norm_text(args.get("field")):
+        add("field = ?", norm_text(args.get("field")))
+    if norm_text(args.get("operator")):
+        add("operator = ?", norm_text(args.get("operator")))
+    if norm_text(args.get("source")):
+        add("source = ?", norm_text(args.get("source")))
+    if norm_text(args.get("keyword")):
+        kw = f"%{norm_text(args.get('keyword'))}%"
+        add("(old_value LIKE ? OR new_value LIKE ? OR note LIKE ? OR sku_id LIKE ?)",
+            kw, kw, kw, kw)
+    if norm_date(args.get("date_from")):
+        add("changed_at >= ?", norm_date(args.get("date_from")) + " 00:00:00")
+    if norm_date(args.get("date_to")):
+        add("changed_at <= ?", norm_date(args.get("date_to")) + " 23:59:59")
+
+    return ((" WHERE " + " AND ".join(where)) if where else ""), params
+
+
 @app.route("/api/logs")
 def api_logs():
-    """全域歷程檢視：誰在什麼時候改了什麼，可依欄位/人員/時間篩。"""
-    where, params = [], []
-    if request.args.get("field"):
-        where.append("field = ?")
-        params.append(norm_text(request.args.get("field")))
-    if request.args.get("operator"):
-        where.append("operator = ?")
-        params.append(norm_text(request.args.get("operator")))
-    if request.args.get("source"):
-        where.append("source = ?")
-        params.append(norm_text(request.args.get("source")))
-    if request.args.get("po_number"):
-        where.append("po_number LIKE ?")
-        params.append(f"%{norm_text(request.args.get('po_number'))}%")
-    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    """全域歷程檢視：誰在什麼時候改了什麼，可依單號／欄位／人員／期間篩。"""
+    clause, params = build_log_filter(request.args)
+    page = max(1, norm_int(request.args.get("page")) or 1)
+    size = min(500, max(10, norm_int(request.args.get("page_size")) or 100))
 
     conn = get_conn()
     try:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS c FROM edit_logs{clause}", params).fetchone()["c"]
         rows = conn.execute(
-            f"SELECT * FROM edit_logs{clause} ORDER BY id DESC LIMIT 300", params
+            f"""SELECT * FROM edit_logs{clause}
+                ORDER BY changed_at DESC, id DESC LIMIT ? OFFSET ?""",
+            params + [size, (page - 1) * size]).fetchall()
+
+        # 篩選面板用的選項，只列真的出現過的值
+        fields = conn.execute(
+            "SELECT DISTINCT field, field_label FROM edit_logs ORDER BY field_label"
         ).fetchall()
-        return jsonify([dict(r) for r in rows])
+        operators = conn.execute(
+            "SELECT DISTINCT operator FROM edit_logs WHERE operator != '' ORDER BY operator"
+        ).fetchall()
+
+        return jsonify({
+            "total": total, "page": page, "page_size": size,
+            "rows": [dict(r) for r in rows],
+            "fields": [{"field": f["field"], "label": f["field_label"]} for f in fields],
+            "operators": [o["operator"] for o in operators],
+        })
     finally:
         conn.close()
+
+
+@app.route("/api/logs/export", methods=["POST"])
+def api_logs_export():
+    """把目前篩選出來的歷程匯成 Excel。
+
+    這張表最終是拿去跟酷澎對帳、釐清倉庫出錯責任用的，所以要能整份帶走，
+    不能只留在畫面上一筆一筆看。
+    """
+    payload = request.get_json(silent=True) or {}
+    operator = norm_text(payload.get("operator"))
+    if not operator:
+        return jsonify({"error": "請先選擇操作人員。"}), 400
+
+    clause, params = build_log_filter(payload.get("filters") or {})
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            f"SELECT * FROM edit_logs{clause} ORDER BY changed_at DESC, id DESC "
+            f"LIMIT 50000", params).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return jsonify({"error": "目前的篩選條件沒有任何歷程可以匯出。"}), 400
+
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "修改歷程"
+    headers = ["時間", "PO 單號", "SKU ID", "層級", "欄位", "改前", "改後",
+               "操作人員", "來源", "備註"]
+    ws.append(headers)
+    fill = PatternFill("solid", fgColor="161D29")
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    source_zh = {"import": "匯入", "manual": "手動", "system": "系統"}
+    for r in rows:
+        ws.append([
+            r["changed_at"], r["po_number"], r["sku_id"],
+            "整張單" if not r["sku_id"] else "單一品項",
+            r["field_label"], r["old_value"], r["new_value"],
+            r["operator"], source_zh.get(r["source"], r["source"]), r["note"],
+        ])
+
+    for idx, width in enumerate([19, 18, 18, 10, 12, 22, 22, 10, 8, 30], start=1):
+        letter = ws.cell(row=1, column=idx).column_letter
+        ws.column_dimensions[letter].width = width
+        if idx in (2, 3):                      # 長數字一律當文字，避免科學記號
+            for cell in ws[letter][1:]:
+                cell.number_format = "@"
+    ws.freeze_panes = "A2"
+
+    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return send_file(
+        stream, as_attachment=True, download_name=f"修改歷程_{stamp}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 # ---------------------------------------------------------------- 線上編輯
@@ -595,8 +695,10 @@ def api_update_po(po_number):
                                 "message": "儲存瞬間有其他人也改了這張單，請重新載入。"}), 409
 
         for field, label, old_val, new_val in row_changes:
+            # 一併標記「這個欄位人工調整過」，之後匯入就不再覆蓋它
             conn.execute(
-                f"""UPDATE orders SET {field} = ?, updated_at = ?, version = version + 1
+                f"""UPDATE orders SET {field} = ?, {field}_overridden = 1,
+                        updated_at = ?, version = version + 1
                     WHERE po_number = ?""", (new_val, stamp, po_number))
 
         for field, label, old_val, new_val in head_changes + row_changes:
@@ -858,8 +960,19 @@ def api_import_commit():
 
             sets, values = [], []
             critical_hit = False
+            unsynced = []
             for change in item["changes"]:
                 field = change["field"]
+                # OP 已經人工調整過的交期／倉別不覆蓋——那是跟酷澎談好的
+                # 結果，酷澎後台只是還沒更新。但差異照樣記歷程、照樣亮燈，
+                # 不會把「兩邊還沒同步」這件事藏起來。
+                if current.get(f"{field}_overridden"):
+                    unsynced.append(f"{change['label']}（酷澎仍為 {change['new']}）")
+                    log_change(conn, current, field, change["label"],
+                               change["new"], change["old"], operator, "import",
+                               "酷澎檔案仍是舊值，保留人工調整結果不覆蓋")
+                    critical_hit = critical_hit or field in CRITICAL_FIELDS
+                    continue
                 sets.append(f"{field} = ?")
                 values.append(row.get(field))
                 log_change(conn, current, field, change["label"],
@@ -880,7 +993,11 @@ def api_import_commit():
 
             reason = "、".join(
                 f"{c['label']} {c['old']}→{c['new']}" for c in item["changes"]
+                if not current.get(f"{c['field']}_overridden")
             )
+            if unsynced:
+                reason = ("【與酷澎尚未同步】" + "、".join(unsynced)
+                          + ("；" + reason if reason else ""))
             if current["is_pulled"] and critical_hit:
                 alert = "changed_after_pull"
                 reason = "【已拉單後遭變更】" + reason

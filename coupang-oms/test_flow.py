@@ -336,6 +336,63 @@ def main():
     check("只有那一個品項被標記，其他 28 項不受影響", len(noted) == 1,
           f"實際 {len(noted)} 項")
 
+    print("\n【18】OP 談好的交期，匯入不得覆蓋（但要提醒還沒同步）")
+    sync_po = next(r["po_number"] for r in
+                   client.get("/api/pos?page_size=100").get_json()["rows"]
+                   if not r["is_pulled"] and r["po_number"] != target_po)
+    det = client.get(f"/api/pos/{sync_po}").get_json()
+    orig_date = det["delivery_date"]
+    res = client.put(f"/api/pos/{sync_po}", json={
+        "operator": "小真", "po_version": det["header"]["version"],
+        "delivery_date": "2026-11-11"})
+    check("OP 把整張單交期改成 2026-11-11", res.status_code == 200, res.get_json())
+
+    d = upload(client, SAMPLE).get_json()          # 原始檔的交期還是舊的
+    client.post("/api/import/commit", json={"batch_id": d["batch_id"], "operator": "小真"})
+    after_sync = client.get(f"/api/pos/{sync_po}").get_json()
+    check("重新上傳後，OP 談好的交期沒有被酷澎的舊值蓋回去",
+          all(s["delivery_date"] == "2026-11-11" for s in after_sync["skus"]),
+          f"實際 {[s['delivery_date'] for s in after_sync['skus']][:3]}（原始檔為 {orig_date}）")
+    rows_now = {r["po_number"]: r for r in
+                client.get("/api/pos?page_size=100").get_json()["rows"]}
+    check("但仍然亮燈提醒『與酷澎尚未同步』",
+          rows_now[sync_po]["review_count"] > 0)
+    unsync_log = [l for l in after_sync["logs"] if "尚未" in (l["note"] or "")
+                  or "不覆蓋" in (l["note"] or "")]
+    check("差異照樣寫進歷程，不會把不一致藏起來", len(unsync_log) > 0,
+          f"實際 {len(unsync_log)} 筆")
+
+    print("\n【19】歷程總覽：查詢與匯出")
+    all_logs = client.get("/api/logs?page_size=10").get_json()
+    check("歷程總覽查得到資料", all_logs["total"] > 0, f"共 {all_logs['total']} 筆")
+    check("提供欄位與人員選項供篩選",
+          len(all_logs["fields"]) > 0 and len(all_logs["operators"]) > 0)
+
+    by_op = client.get("/api/logs?operator=Alice&page_size=200").get_json()
+    check("可以只查某個人改過什麼",
+          all(l["operator"] == "Alice" for l in by_op["rows"]) and by_op["total"] > 0,
+          f"Alice 共 {by_op['total']} 筆")
+
+    by_field = client.get("/api/logs?field=delivery_date&page_size=200").get_json()
+    check("可以只查某個欄位被改過的紀錄（例如這個月誰改過交期）",
+          all(l["field"] == "delivery_date" for l in by_field["rows"])
+          and by_field["total"] > 0, f"交期共 {by_field['total']} 筆")
+
+    by_po_log = client.get(f"/api/logs?po_number={sync_po}").get_json()
+    check("可以只查某張單的歷程",
+          all(l["po_number"] == sync_po for l in by_po_log["rows"]))
+
+    res = client.post("/api/logs/export", json={
+        "operator": "小真", "filters": {"field": "delivery_date"}})
+    check("歷程可以匯出成 Excel", res.status_code == 200)
+    wb_log = openpyxl.load_workbook(io.BytesIO(res.data))
+    heads = [c.value for c in wb_log.active[1]]
+    check("匯出的歷程含時間／單號／層級／改前改後／人員",
+          heads[:8] == ["時間", "PO 單號", "SKU ID", "層級", "欄位", "改前", "改後", "操作人員"],
+          heads)
+    check("匯出的內容只有篩選到的欄位",
+          all(r[4].value == "交期" for r in wb_log.active.iter_rows(min_row=2)))
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

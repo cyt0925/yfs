@@ -69,6 +69,9 @@
     <button id="btn-upload" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
       <i class="bi bi-cloud-arrow-up"></i> 上傳整合表
     </button>
+    <button id="btn-logs" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
+      <i class="bi bi-clock-history"></i> 修改歷程
+    </button>
     <button id="btn-export" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-file-earmark-excel"></i> 匯出報表
     </button>
@@ -245,6 +248,61 @@
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-ink-50">
     <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
     <button id="btn-po-save" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">儲存修改</button>
+  </div>
+</dialog>
+
+<!-- ── 歷程總覽 Modal ────────────────────────────────── -->
+<dialog id="dlg-logs" class="rounded-xl p-0 w-[min(1300px,96vw)]">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-clock-history"></i> 修改歷程總覽</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="p-5 space-y-3 max-h-[78vh] overflow-y-auto">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
+        <input id="l-po" class="border rounded px-2 py-1.5" placeholder="模糊搜尋"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">改了哪個欄位</span>
+        <select id="l-field" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">操作人員</span>
+        <select id="l-operator" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">來源</span>
+        <select id="l-source" class="border rounded px-2 py-1.5">
+          <option value="">全部</option><option value="manual">手動</option>
+          <option value="import">匯入</option><option value="system">系統</option>
+        </select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">期間（起）</span>
+        <input id="l-from" type="date" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">期間（迄）</span>
+        <input id="l-to" type="date" class="border rounded px-2 py-1.5"></label>
+    </div>
+    <div class="flex gap-2 items-center">
+      <button id="btn-log-search" class="bg-ink-900 hover:bg-ink-800 text-white px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-search"></i> 查詢</button>
+      <button id="btn-log-reset" class="bg-ink-100 hover:bg-ink-200 text-ink-700 px-4 py-2 rounded-lg text-sm">重設</button>
+      <span id="log-count" class="text-xs text-ink-400"></span>
+      <div class="flex-1"></div>
+      <button id="btn-log-export" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-download"></i> 匯出這些歷程</button>
+    </div>
+    <div class="border border-ink-200 rounded-lg overflow-auto max-h-[52vh]">
+      <table class="w-full text-sm">
+        <thead class="bg-ink-100 text-xs sticky top-0"><tr>
+          <th class="px-2 py-1.5 text-left w-36">時間</th>
+          <th class="px-2 py-1.5 text-left w-32">PO 單號</th>
+          <th class="px-2 py-1.5 text-left w-20">層級</th>
+          <th class="px-2 py-1.5 text-left w-24">欄位</th>
+          <th class="px-2 py-1.5 text-left">改前 → 改後</th>
+          <th class="px-2 py-1.5 text-left w-20">人員</th>
+          <th class="px-2 py-1.5 text-left w-16">來源</th>
+        </tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+    <div class="flex gap-2 items-center text-sm">
+      <button id="btn-log-prev" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50">上一頁</button>
+      <span id="log-page" class="text-ink-500"></span>
+      <button id="btn-log-next" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50">下一頁</button>
+    </div>
   </div>
 </dialog>
 
@@ -782,6 +840,85 @@ async function togglePull() {
   loadOrders();
 }
 
+
+// ── 歷程總覽 ────────────────────────────────────────────
+let LOG_PAGE = 1;
+
+function logFilters() {
+  return {
+    po_number: $("#l-po").value.trim(),
+    field: $("#l-field").value,
+    operator: $("#l-operator").value,
+    source: $("#l-source").value,
+    date_from: $("#l-from").value,
+    date_to: $("#l-to").value,
+  };
+}
+
+async function loadLogs() {
+  const params = new URLSearchParams(
+    Object.entries(logFilters()).filter(([, v]) => v !== "" && v != null));
+  params.set("page", LOG_PAGE);
+  params.set("page_size", 100);
+  const d = await (await fetch("/api/logs?" + params)).json();
+
+  // 篩選選項只填一次，避免每次查詢都把使用者選的值洗掉
+  if (!$("#l-field").dataset.filled && d.fields.length) {
+    $("#l-field").innerHTML = '<option value="">全部</option>' +
+      d.fields.map(f => `<option value="${esc(f.field)}">${esc(f.label)}</option>`).join("");
+    $("#l-operator").innerHTML = '<option value="">全部</option>' +
+      d.operators.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join("");
+    $("#l-field").dataset.filled = "1";
+  }
+
+  const zh = { import: "匯入", manual: "手動", system: "系統" };
+  $("#log-body").innerHTML = d.rows.length ? d.rows.map(l => `
+    <tr class="border-b border-ink-100">
+      <td class="px-2 py-1.5 font-mono text-[11px] text-ink-500 whitespace-nowrap">${esc(l.changed_at)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px] whitespace-nowrap">${esc(l.po_number)}</td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${l.sku_id
+        ? `<span class="text-ink-500">單一品項</span>` : `<b>整張單</b>`}</td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(l.field_label)}</td>
+      <td class="px-2 py-1.5 text-xs">
+        <span class="text-ink-400 line-through">${esc(l.old_value) || "（空白）"}</span>
+        → <span class="font-semibold">${esc(l.new_value) || "（空白）"}</span>
+        ${l.note ? `<span class="block text-[10px] text-ink-300">${esc(l.note)}</span>` : ""}
+        ${l.sku_id ? `<span class="block text-[10px] text-ink-300 font-mono">${esc(l.sku_id)}</span>` : ""}
+      </td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(l.operator)}</td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${zh[l.source] || esc(l.source)}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="7" class="text-center py-12 text-ink-300">沒有符合條件的歷程。</td></tr>`;
+
+  const pages = Math.max(1, Math.ceil(d.total / d.page_size));
+  $("#log-count").textContent = `共 ${d.total.toLocaleString()} 筆`;
+  $("#log-page").textContent = `第 ${d.page} / ${pages} 頁`;
+  $("#btn-log-prev").disabled = d.page <= 1;
+  $("#btn-log-next").disabled = d.page >= pages;
+}
+
+async function exportLogs() {
+  if (!requireOperator()) return;
+  const res = await fetch("/api/logs/export", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), filters: logFilters() }),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({ error: "匯出失敗" }));
+    toast(d.error, "err");
+    return;
+  }
+  const blob = await res.blob();
+  const disp = res.headers.get("Content-Disposition") || "";
+  const m = /filename\*=UTF-8''([^;]+)/.exec(disp) || /filename="?([^";]+)"?/.exec(disp);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = m ? decodeURIComponent(m[1]) : "修改歷程.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("已匯出修改歷程。");
+}
+
 // ── 事件綁定 ────────────────────────────────────────────
 document.addEventListener("click", e => {
   const close = e.target.closest("[data-close]");
@@ -826,6 +963,17 @@ $("#stat-alert-card").addEventListener("click", () => {
 });
 $("#btn-upload").addEventListener("click", () => { if (requireOperator()) $("#dlg-upload").showModal(); });
 $("#btn-export").addEventListener("click", () => { if (requireOperator()) $("#dlg-export").showModal(); });
+$("#btn-logs").addEventListener("click", () => { LOG_PAGE = 1; $("#dlg-logs").showModal(); loadLogs(); });
+$("#btn-log-search").addEventListener("click", () => { LOG_PAGE = 1; loadLogs(); });
+$("#btn-log-reset").addEventListener("click", () => {
+  ["#l-po", "#l-from", "#l-to"].forEach(x => $(x).value = "");
+  ["#l-field", "#l-operator", "#l-source"].forEach(x => $(x).value = "");
+  LOG_PAGE = 1; loadLogs();
+});
+$("#btn-log-prev").addEventListener("click", () => { if (LOG_PAGE > 1) { LOG_PAGE--; loadLogs(); } });
+$("#btn-log-next").addEventListener("click", () => { LOG_PAGE++; loadLogs(); });
+$("#btn-log-export").addEventListener("click", exportLogs);
+$("#l-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-log-search").click(); });
 $("#btn-preview").addEventListener("click", doPreview);
 $("#btn-commit").addEventListener("click", doCommit);
 $("#btn-po-save").addEventListener("click", savePo);
