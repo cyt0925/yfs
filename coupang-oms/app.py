@@ -18,8 +18,19 @@ from importer import (
 from normalize import norm_date, norm_int, norm_key, norm_text, norm_warehouse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 每次改版就手動往上加一號。畫面右下角跟啟動視窗都會印出這個號碼，
+# 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
+# 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
+# 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
+BUILD_VERSION = "2026-08-17.6"
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
+# 模板一律即時讀檔，不要用啟動當下快取的舊版本（debug=False 時 Flask
+# 預設不會自動重讀模板檔，只改 index.html 卻要重開程式才生效，容易
+# 造成「明明換了檔案，畫面卻沒變」的誤判）。
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # OP 可線上編輯的欄位 -> 中文名。匯入永遠不會覆蓋這些欄位。
 EDITABLE_FIELDS = {
@@ -90,7 +101,7 @@ def log_change(conn, order, field, label, old, new, operator, source, note=""):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", build_version=BUILD_VERSION)
 
 
 @app.route("/api/config")
@@ -801,12 +812,39 @@ def lan_ip():
 
 
 if __name__ == "__main__":
+    import socket as _socket
+
+    # 5000 埠被占用最常見的原因：舊視窗沒關乾淨、背景還留著一個沒更新到
+    # 的伺服器在跑。這種狀況畫面通常還打得開（連到舊的那個），怎麼換
+    # 檔案都不會生效，卻完全看不出原因——所以啟動前先檢查一次，寧可
+    # 明確擋下來，也不要讓兩個版本同時活著。
+    probe = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    already_running = probe.connect_ex(("127.0.0.1", 5000)) == 0
+    probe.close()
+    if already_running:
+        print("=" * 62)
+        print(" ⚠ 無法啟動：5000 這個埠已經有別的程式在用了")
+        print()
+        print(" 最常見的原因：還有一個舊的酷澎訂單系統視窗沒關乾淨，")
+        print(" 背景還留著一份沒更新到最新版的伺服器在跑。")
+        print()
+        print(" 解法：")
+        print(" 1. 找找看工作列或工作管理員裡，是不是還有另一個黑視窗")
+        print("    （或另一個 python.exe），把它整個關掉")
+        print(" 2. 打開工作管理員（Ctrl+Shift+Esc），結束所有 python.exe")
+        print(" 3. 再重新雙擊 START 一次")
+        print("=" * 62)
+        input(" 按 Enter 關閉這個視窗...")
+        raise SystemExit(1)
+
     moved = db.ensure_data_dir()
     init_db()
     ip = lan_ip()
 
     print("=" * 62)
     print(" 酷澎訂單管理系統 已啟動")
+    print(f" 版本號： {BUILD_VERSION}　（畫面右下角也會顯示這個號碼，")
+    print("           兩邊對得起來，才代表你看到的是最新版）")
     print()
     print("  你自己用：      http://127.0.0.1:5000")
     if ip and ip != "127.0.0.1":
