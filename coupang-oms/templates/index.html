@@ -15,7 +15,11 @@
   body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
   .scroll-x { overflow-x: auto; }
   table.po-table { table-layout: fixed; }
-  table.po-table th { position: sticky; top: 0; z-index: 10; }
+  /* th 用 position:sticky 固定在頂端時，瀏覽器會把它獨立成一個繪製層，
+     不再套用 <thead> 元素本身的背景色——結果捲動時字看起來「消失」，
+     其實是背景變透明、底下的內容列穿透疊上來。要直接把背景色寫在
+     th 自己身上才會在捲動時維持不透明。 */
+  table.po-table th { position: sticky; top: 0; z-index: 10; background-color: #161d29; }
   /* 做成像 Excel 一樣「每一格四邊都框起來」的完整方格，而不是只有
      直線、沒有格線包住整格。這樣每個儲存格的邊界都是明確畫出來的，
      對不對齊用眼睛就能直接確認，不需要再靠猜或量。 */
