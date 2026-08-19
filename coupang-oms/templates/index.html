@@ -139,18 +139,6 @@
       <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
         <i class="bi bi-search"></i> 搜尋</button>
       <button id="btn-reset" class="bg-ink-100 hover:bg-ink-200 text-ink-700 px-4 py-2 rounded-lg text-sm">重設</button>
-      <div class="flex-1"></div>
-      <select id="batch-field" class="border border-ink-200 rounded px-2 py-2 text-sm">
-        <option value="po_status">PO 狀態</option>
-        <option value="receiving_status">驗收狀態</option>
-      </select>
-      <select id="batch-value" class="border border-ink-200 rounded px-2 py-2 text-sm"></select>
-      <button id="btn-batch-status" class="bg-ink-900 hover:bg-ink-800 text-white px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-lightning-charge"></i> 批次套用</button>
-      <button id="btn-confirm-review" class="bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-check2-circle"></i> 確認異動</button>
-      <button id="btn-pull" class="bg-white border border-ink-200 hover:bg-ink-50 text-ink-700 px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-box-arrow-right"></i> 拉單狀態</button>
     </div>
   </section>
 
@@ -197,12 +185,30 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
+
+    <!-- ── 批次動作列：只在有勾選時浮出，貼著列表下緣，不離開列表視野 ── -->
+    <div id="action-bar" class="hidden border-t border-ink-200 bg-ink-50 px-4 py-3 text-sm">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-semibold text-ink-900">已選 <span id="ab-count">0</span> 張 PO</span>
+        <button id="ab-clear" class="text-ink-400 hover:text-ink-700 text-xs px-2">
+          <i class="bi bi-x-lg"></i> 清除選取</button>
+        <div class="flex-1"></div>
+        <button id="ab-status-toggle" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg">
+          <i class="bi bi-arrow-repeat"></i> 批次改狀態</button>
+        <button id="ab-review" class="bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg">
+          <i class="bi bi-check2-circle"></i> 確認異動</button>
+        <button id="ab-pull-on" class="bg-ink-900 hover:bg-ink-800 text-white px-3 py-1.5 rounded-lg">
+          <i class="bi bi-box-arrow-right"></i> 標記已拉單</button>
+        <button id="ab-pull-off" class="bg-white border border-red-300 text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg">
+          <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
+      </div>
+      <div id="ab-panel" class="hidden mt-3 bg-white border border-ink-200 rounded-lg p-3"></div>
+    </div>
+
     <div class="flex items-center gap-3 px-4 py-3 border-t border-ink-100 text-sm">
       <button id="btn-prev" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">上一頁</button>
       <span id="page-info" class="text-ink-500"></span>
       <button id="btn-next" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">下一頁</button>
-      <div class="flex-1"></div>
-      <span id="selected-info" class="text-ink-400"></span>
     </div>
   </section>
 
@@ -396,7 +402,6 @@ async function loadConfig() {
   fillSelect($("#f-ordertype"), CONFIG.order_types);
   fillSelect($("#f-status"), CONFIG.po_statuses);
   fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
-  syncBatchValues();
 
   const xp = $("#x-profile");
   xp.innerHTML = "";
@@ -492,7 +497,7 @@ function renderRows() {
 }
 
 function updateSelectedInfo() {
-  $("#selected-info").textContent = selected.size ? `已勾選 ${selected.size} 張 PO` : "";
+  updateActionBar();
 }
 
 // ── 編輯 ────────────────────────────────────────────────
@@ -783,17 +788,34 @@ async function doExport() {
   loadOrders();
 }
 
-// ── 批次動作 ────────────────────────────────────────────
-function syncBatchValues() {
-  const field = $("#batch-field").value;
-  const list = field === "po_status" ? CONFIG.po_statuses : CONFIG.receiving_statuses;
-  $("#batch-value").innerHTML = (list || []).filter(Boolean)
-    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+// ── 批次動作列 ──────────────────────────────────────────
+// 動作列只在有勾選時浮出，貼著列表下緣；需要二次確認或填原因的動作
+// 一律用「原地展開的面板」處理，不用瀏覽器原生 confirm()/prompt()——
+// 那種對話框的按鈕文字改不動，一旦拿來表達「兩個方向都會動到資料」的
+// 選擇，取消鍵就會失去「什麼都不做」的意思，容易誤觸。
+function updateActionBar() {
+  $("#action-bar").classList.toggle("hidden", selected.size === 0);
+  $("#ab-count").textContent = selected.size;
+  closePanel();
 }
 
-async function confirmReview() {
+function closePanel() {
+  $("#ab-panel").classList.add("hidden");
+  $("#ab-panel").innerHTML = "";
+}
+
+function openPanel(html) {
+  $("#ab-panel").innerHTML = html;
+  $("#ab-panel").classList.remove("hidden");
+}
+
+function clearSelection() {
+  selected.clear();
+  renderRows();
+}
+
+async function abReview() {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要確認的 PO。", "warn"); return; }
   const res = await fetch("/api/pos/review", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ operator: operator(), po_numbers: [...selected] }),
@@ -801,45 +823,87 @@ async function confirmReview() {
   const data = await res.json();
   if (!res.ok) { toast(data.error, "err"); return; }
   toast(`已確認 ${data.count} 張單的異動。`);
-  selected.clear();
+  clearSelection();
   loadOrders();
 }
 
-async function batchStatus() {
+function openStatusPanel() {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要修改的 PO。", "warn"); return; }
-  const field = $("#batch-field").value, value = $("#batch-value").value;
-  const label = field === "po_status" ? "PO 狀態" : "驗收狀態";
-  if (!confirm(`要把勾選的 ${selected.size} 張單，${label}都改成「${value}」嗎？`)) return;
-  const res = await fetch("/api/pos/status", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operator: operator(), po_numbers: [...selected], field, value }),
+  const statusOpts = (CONFIG.po_statuses || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  const recvOpts = (CONFIG.receiving_statuses || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  openPanel(`
+    <div class="flex items-center gap-4 flex-wrap text-sm">
+      <label class="flex items-center gap-1.5">
+        <input type="radio" name="abp-field" value="po_status" checked> PO 狀態</label>
+      <label class="flex items-center gap-1.5">
+        <input type="radio" name="abp-field" value="receiving_status"> 驗收狀態</label>
+      <span class="text-ink-400">改成</span>
+      <select id="abp-value" class="border rounded px-2 py-1.5">${statusOpts}</select>
+      <div class="flex-1"></div>
+      <button id="abp-cancel" class="px-3 py-1.5 rounded text-ink-600 hover:bg-ink-100">取消</button>
+      <button id="abp-apply" class="bg-ink-900 hover:bg-ink-800 text-white px-3 py-1.5 rounded-lg">
+        套用到 ${selected.size} 張</button>
+    </div>`);
+  const valueSelect = $("#abp-value");
+  document.querySelectorAll('input[name="abp-field"]').forEach(r => {
+    r.addEventListener("change", () => {
+      valueSelect.innerHTML = r.value === "po_status" ? statusOpts : recvOpts;
+    });
   });
-  const data = await res.json();
-  if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`已把 ${data.count} 張單的${label}改成「${value}」。`);
-  selected.clear();
-  loadOrders();
+  $("#abp-cancel").addEventListener("click", closePanel);
+  $("#abp-apply").addEventListener("click", async () => {
+    const field = document.querySelector('input[name="abp-field"]:checked').value;
+    const value = $("#abp-value").value;
+    const label = field === "po_status" ? "PO 狀態" : "驗收狀態";
+    const res = await fetch("/api/pos/status", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: operator(), po_numbers: [...selected], field, value }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error, "err"); return; }
+    toast(`已把 ${data.count} 張單的${label}改成「${value}」。`);
+    clearSelection();
+    loadOrders();
+  });
 }
 
-async function togglePull() {
+function openPullPanel(pulled) {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要調整的 PO。", "warn"); return; }
-  const pulled = confirm(
-    `勾選了 ${selected.size} 張單。\n\n按「確定」＝標記為已拉單（已交倉庫）\n按「取消」＝解除拉單鎖定`);
-  const reason = prompt(
-    pulled ? "請填寫標記為已拉單的原因："
-           : "倉庫可能已經拿到這批資料了。請填寫解除拉單鎖定的原因：");
-  if (!reason) return;
-  const res = await fetch("/api/pos/pull", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operator: operator(), po_numbers: [...selected], pulled, reason }),
+  const warn = pulled
+    ? `標記為已拉單後，這 ${selected.size} 張單將被鎖定，需先解鎖才能編輯。`
+    : `解鎖後這 ${selected.size} 張單可再被編輯——倉庫可能已經拿到這批資料，請確認再解鎖。`;
+  const applyLabel = pulled ? "標記為已拉單" : "解除拉單鎖定";
+  const applyCls = pulled ? "bg-ink-900 hover:bg-ink-800" : "bg-red-600 hover:bg-red-500";
+  openPanel(`
+    <div class="text-sm space-y-2">
+      <p class="text-amber-700"><i class="bi bi-exclamation-triangle-fill"></i> ${esc(warn)}</p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <input id="abp-reason" class="border rounded px-2 py-1.5 flex-1 min-w-[240px]"
+               placeholder="請填寫原因（必填）">
+        <button id="abp-cancel" class="px-3 py-1.5 rounded text-ink-600 hover:bg-ink-100">取消</button>
+        <button id="abp-apply" disabled
+                class="${applyCls} text-white px-3 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+          ${applyLabel}（${selected.size} 張）</button>
+      </div>
+    </div>`);
+  const reasonInput = $("#abp-reason"), applyBtn = $("#abp-apply");
+  reasonInput.addEventListener("input", () => { applyBtn.disabled = !reasonInput.value.trim(); });
+  $("#abp-cancel").addEventListener("click", closePanel);
+  applyBtn.addEventListener("click", async () => {
+    const reason = reasonInput.value.trim();
+    if (!reason) return;
+    const res = await fetch("/api/pos/pull", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: operator(), po_numbers: [...selected], pulled, reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error, "err"); return; }
+    toast(`已調整 ${data.count} 張單的拉單狀態。`);
+    clearSelection();
+    loadOrders();
   });
-  const data = await res.json();
-  if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`已調整 ${data.count} 張單的拉單狀態。`);
-  selected.clear();
-  loadOrders();
 }
 
 
@@ -981,10 +1045,11 @@ $("#btn-commit").addEventListener("click", doCommit);
 $("#btn-po-save").addEventListener("click", savePo);
 $("#btn-do-export").addEventListener("click", doExport);
 $("#x-profile").addEventListener("change", syncProfileNote);
-$("#btn-confirm-review").addEventListener("click", confirmReview);
-$("#btn-pull").addEventListener("click", togglePull);
-$("#btn-batch-status").addEventListener("click", batchStatus);
-$("#batch-field").addEventListener("change", syncBatchValues);
+$("#ab-clear").addEventListener("click", clearSelection);
+$("#ab-review").addEventListener("click", abReview);
+$("#ab-status-toggle").addEventListener("click", openStatusPanel);
+$("#ab-pull-on").addEventListener("click", () => openPullPanel(true));
+$("#ab-pull-off").addEventListener("click", () => openPullPanel(false));
 $("#f-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 $("#f-keyword").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 
