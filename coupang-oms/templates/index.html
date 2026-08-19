@@ -4,44 +4,39 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>酷澎訂單管理系統</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-  // 品牌色系：深藍灰為結構色（頁首、表頭、主要按鈕），紅色是唯一的強調色
-  // （logo、上傳這個核心動作），避免紅色跟「異動警示」的紅搶戲。
-  tailwind.config = {
-    theme: {
-      extend: {
-        colors: {
-          ink: {
-            50: "#f2f4f7", 100: "#e3e7ee", 200: "#c3cbda", 300: "#9aa7bd",
-            400: "#69789a", 500: "#4b5975", 600: "#38455d", 700: "#2c374b",
-            800: "#212a3a", 900: "#161d29", 950: "#0e131c",
-          },
-          brand: {
-            50: "#fdf2f2", 100: "#fbe1e1", 200: "#f6c2c3", 300: "#ec9598",
-            400: "#df6569", 500: "#cc373d", 600: "#b1222b", 700: "#921922",
-            800: "#77161e", 900: "#63151c",
-          },
-        },
-      },
-    },
-  };
-</script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<!-- Tailwind 跟圖示字型都改成本機檔案，不再連國外 CDN——這個系統本來就
+     要求完全不碰雲端，之前每次開頁面都連去抓樣式表，違反了這個前提，
+     公司網路一擋或那個服務掛掉，畫面會直接爛掉變純文字。編譯方式見
+     .build-tools/README.md，品牌色系（ink 結構色／brand 紅色強調色）
+     設定在 .build-tools/tailwind.config.js。 -->
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
   body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
   .scroll-x { overflow-x: auto; }
-  table.grid { table-layout: fixed; }
-  table.grid th { position: sticky; top: 0; z-index: 10; }
+  table.po-table { table-layout: fixed; }
+  table.po-table th { position: sticky; top: 0; z-index: 10; }
   /* 做成像 Excel 一樣「每一格四邊都框起來」的完整方格，而不是只有
      直線、沒有格線包住整格。這樣每個儲存格的邊界都是明確畫出來的，
      對不對齊用眼睛就能直接確認，不需要再靠猜或量。 */
-  table.grid th, table.grid td { border: 1px solid #3a4b66; }
-  table.grid tbody td { border-color: #c3cbda; }
-  table.grid tbody tr:first-child td { border-top: none; }
+  table.po-table th, table.po-table td { border: 1px solid #3a4b66; }
+  table.po-table tbody td { border-color: #c3cbda; }
+  table.po-table tbody tr:first-child td { border-top: none; }
+  /* 表頭底部一條紅線，呼應頁首 header 的紅色收邊，統一紅黑主題。 */
+  table.po-table thead tr { box-shadow: inset 0 -2px 0 #b1222b; }
   .row-alert { background-color: #fdf2f2; }
   .row-warn  { background-color: #fffbeb; }
   .row-pulled { color: #69789a; }
+  /* 滑鼠移過的列：淡紅底，跟藍灰色系的其他狀態列（異動/警示）區分開，
+     一眼看得出游標在哪一列。 */
+  table.po-table tbody tr:hover { background-color: #fdf2f2; }
+  /* 已勾選的列：左邊一條紅色直條 + 淡紅底，跟純 hover 的列區分開來——
+     hover 放開滑鼠就消失，這個要維持到取消勾選為止。 */
+  .row-selected { background-color: #fbe1e1 !important; box-shadow: inset 3px 0 0 #b1222b; }
+  /* 可以點了直接改的格子：平常完全乾淨不干擾，滑鼠移上去才浮出淡紅底
+     跟虛線框，暗示「這格能點」。 */
+  .inline-cell:not(.inline-locked) { cursor: pointer; }
+  .inline-cell:not(.inline-locked):hover { background-color: #fbe1e1; outline: 1px dashed #cc373d; outline-offset: -1px; }
   dialog::backdrop { background: rgba(14,19,28,.6); }
 </style>
 </head>
@@ -145,11 +140,10 @@
   <!-- ── 列表 ───────────────────────────────────────── -->
   <section class="bg-white rounded-xl shadow-sm border border-ink-100">
     <div class="scroll-x" style="max-height:65vh; overflow-y:auto;">
-      <!-- 表格不用 w-full 硬塞進畫面寬度：螢幕較窄時 w-full 會強迫瀏覽器把每欄
-           等比例壓扁，連「下單數量」都會被擠成兩行。改成表格用自己實際需要
-           的寬度（min-width，各欄加總），畫面裝不下就交給外層 .scroll-x 橫向
-           捲動，欄位本身永遠不被壓縮、不會換行造成視覺上的錯位。 -->
-      <table class="grid text-sm border-collapse" style="min-width:1380px; width:max-content;">
+      <!-- min-width 是各欄加總的下限：螢幕比這個窄，欄位維持原寬、交給外層
+           .scroll-x 橫向捲動，不會被壓扁換行；螢幕比這個寬，width:100% 讓
+           table-layout:fixed 把多出來的空間依各欄比例撐開，不會在右邊留白。 -->
+      <table class="po-table text-sm border-collapse" style="min-width:1380px; width:100%;">
         <colgroup>
           <col style="width:40px">
           <col style="width:150px">
@@ -467,16 +461,20 @@ function renderRows() {
   tb.innerHTML = ROWS.map(r => {
     // 警示掛在整張單上：只要底下任何一個品項被酷澎改過，整列就亮燈，
     // 進去彈窗才看是哪幾項。OP 要處理的單位本來就是整張單。
-    const cls = r.after_pull_count > 0 ? "row-alert"
-              : r.review_count > 0 ? "row-warn"
-              : r.is_pulled ? "row-pulled" : "";
+    const cls = [
+      r.after_pull_count > 0 ? "row-alert"
+        : r.review_count > 0 ? "row-warn"
+        : r.is_pulled ? "row-pulled" : "",
+      selected.has(r.po_number) ? "row-selected" : "",
+    ].filter(Boolean).join(" ");
+    const lockedCls = r.is_pulled ? "inline-locked" : "";
     let alert = `<span class="text-ink-300">—</span>`;
     if (r.after_pull_count > 0)
       alert = `<span class="text-red-700 font-semibold whitespace-nowrap">拉單後被改 ${r.after_pull_count} 項</span>`;
     else if (r.review_count > 0)
       alert = `<span class="text-amber-700 font-semibold whitespace-nowrap">${r.review_count} 項有異動</span>`;
 
-    return `<tr class="${cls} hover:bg-ink-50">
+    return `<tr class="${cls}">
       <td class="px-2 py-2 text-center"><input type="checkbox" data-po="${esc(r.po_number)}"
           class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
       <td class="px-2 py-2 whitespace-nowrap"><button data-open="${esc(r.po_number)}"
@@ -484,7 +482,7 @@ function renderRows() {
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
       <td class="px-2 py-2 text-xs">${alert}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.order_type)}</td>
-      <td class="px-2 py-2 whitespace-nowrap inline-cell ${r.is_pulled ? "" : "cursor-pointer hover:bg-ink-100"}"
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="po_status" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.po_status)}</td>
       <td class="px-2 py-2 whitespace-nowrap">
@@ -493,12 +491,12 @@ function renderRows() {
             title="${r.is_pulled ? "點一下開啟解除拉單鎖定" : "點一下開啟標記已拉單"}">
           <i class="bi ${r.is_pulled ? "bi-lock-fill" : "bi-unlock"}"></i> ${r.is_pulled ? "已拉單" : "未拉單"}
         </button></td>
-      <td class="px-2 py-2 whitespace-nowrap inline-cell ${r.is_pulled ? "" : "cursor-pointer hover:bg-ink-100"}"
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="receiving_status" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.receiving_status)}</td>
       <td class="px-2 py-2 truncate" title="${esc(r.brands)} / ${esc(r.lines)}">${esc(r.brands) || "—"}
         <span class="block text-[10px] text-ink-400">${esc(r.lines) || "線別待補"}</span></td>
-      <td class="px-2 py-2 whitespace-nowrap inline-cell ${r.is_pulled ? "" : "cursor-pointer hover:bg-ink-100"}"
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="filed_date" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
