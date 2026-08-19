@@ -484,12 +484,23 @@ function renderRows() {
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
       <td class="px-2 py-2 text-xs">${alert}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.order_type)}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.po_status)}</td>
-      <td class="px-2 py-2 whitespace-nowrap ${r.is_pulled ? "text-ink-500" : "text-ink-900"}">${r.is_pulled ? "已拉單" : "未拉單"}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.receiving_status)}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${r.is_pulled ? "" : "cursor-pointer hover:bg-ink-100"}"
+          data-inline="po_status" data-po="${esc(r.po_number)}"
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.po_status)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">
+        <button data-quick-pull="${esc(r.po_number)}" data-pulled="${r.is_pulled ? 1 : 0}"
+            class="inline-flex items-center gap-1 hover:text-brand-600 ${r.is_pulled ? "text-ink-500" : "text-ink-900"}"
+            title="${r.is_pulled ? "點一下開啟解除拉單鎖定" : "點一下開啟標記已拉單"}">
+          <i class="bi ${r.is_pulled ? "bi-lock-fill" : "bi-unlock"}"></i> ${r.is_pulled ? "已拉單" : "未拉單"}
+        </button></td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${r.is_pulled ? "" : "cursor-pointer hover:bg-ink-100"}"
+          data-inline="receiving_status" data-po="${esc(r.po_number)}"
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.receiving_status)}</td>
       <td class="px-2 py-2 truncate" title="${esc(r.brands)} / ${esc(r.lines)}">${esc(r.brands) || "—"}
         <span class="block text-[10px] text-ink-400">${esc(r.lines) || "線別待補"}</span></td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.filed_date)}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${r.is_pulled ? "" : "cursor-pointer hover:bg-ink-100"}"
+          data-inline="filed_date" data-po="${esc(r.po_number)}"
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
       <td class="px-2 py-2 text-right">${r.sku_count}</td>
@@ -1025,7 +1036,92 @@ document.addEventListener("click", e => {
   const close = e.target.closest("[data-close]");
   if (close) { close.closest("dialog").close(); return; }
   const open = e.target.closest("[data-open]");
-  if (open) openPo(open.dataset.open);
+  if (open) { openPo(open.dataset.open); return; }
+
+  // 拉單欄位的鎖頭圖示：直接把這張單單獨選起來，跳出跟批次動作列
+  // 同一套面板（該填原因、該顯示警語都不會少），省掉手動勾選那一步。
+  const quickPull = e.target.closest("[data-quick-pull]");
+  if (quickPull) {
+    if (!requireOperator()) return;
+    const po = quickPull.dataset.quickPull;
+    const pulled = quickPull.dataset.pulled === "1";
+    selected.clear();
+    selected.add(po);
+    renderRows();
+    openPullPanel(!pulled);
+  }
+});
+
+// ── 表格內直接編輯 ──────────────────────────────────────
+// PO 狀態／驗收狀態／建檔日這三個欄位是「整張 PO 單一值」，改錯了
+// 重點一次就能修正、沒有連帶後果，適合直接在表格上點了就改。
+// 出貨數量／備註等 SKU 層級欄位刻意不做在這裡——首頁那一格顯示的是
+// 底下所有品項的加總，不對應單一真實欄位，還是要進 PO 彈窗逐項改。
+async function saveInlineField(po, field, value) {
+  const info = rowInfo.get(po);
+  const res = await fetch(`/api/pos/${encodeURIComponent(po)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      operator: operator(), po_version: info ? info.po_version : 0, [field]: value,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.message || data.error, "err"); return false; }
+  return true;
+}
+
+async function finishInlineEdit(cell, po, field, value) {
+  cell.innerHTML = `<span class="text-ink-300">儲存中…</span>`;
+  await saveInlineField(po, field, value);
+  delete cell.dataset.editing;
+  loadOrders();
+}
+
+function startInlineEdit(cell) {
+  if (!requireOperator()) return;
+  const po = cell.dataset.po;
+  const field = cell.dataset.inline;
+  const info = rowInfo.get(po);
+  if (info && info.is_pulled) {
+    toast("這張單已拉單並鎖定，請先解除拉單鎖定才能修改。", "warn");
+    return;
+  }
+  cell.dataset.editing = "1";
+  const current = info ? (info[field] || "") : cell.textContent.trim();
+  let committed = false;
+
+  if (field === "filed_date") {
+    cell.innerHTML = `<input type="date" class="border rounded px-1 py-0.5 text-xs w-full" value="${esc(current)}">`;
+    const input = cell.querySelector("input");
+    input.focus();
+    input.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") input.blur();
+      if (ev.key === "Escape") { committed = true; delete cell.dataset.editing; renderRows(); }
+    });
+    input.addEventListener("blur", () => {
+      if (committed) return;
+      if (input.value && input.value !== current) { committed = true; finishInlineEdit(cell, po, field, input.value); }
+      else { delete cell.dataset.editing; renderRows(); }
+    });
+    return;
+  }
+
+  const list = field === "po_status" ? CONFIG.po_statuses : CONFIG.receiving_statuses;
+  const opts = (list || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}" ${v === current ? "selected" : ""}>${esc(v)}</option>`).join("");
+  cell.innerHTML = `<select class="border rounded px-1 py-0.5 text-xs w-full">${opts}</select>`;
+  const select = cell.querySelector("select");
+  select.focus();
+  select.addEventListener("change", () => { committed = true; finishInlineEdit(cell, po, field, select.value); });
+  select.addEventListener("blur", () => {
+    setTimeout(() => { if (!committed && cell.dataset.editing) { delete cell.dataset.editing; renderRows(); } }, 0);
+  });
+}
+
+$("#tbody").addEventListener("click", e => {
+  const cell = e.target.closest(".inline-cell");
+  if (!cell || cell.dataset.editing) return;
+  startInlineEdit(cell);
 });
 
 // Shift+勾選＝選取一段範圍（像 Gmail、檔案總管那樣）。checkbox 的
