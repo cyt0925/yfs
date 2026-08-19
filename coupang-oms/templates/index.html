@@ -354,6 +354,7 @@ const esc = s => (s ?? "").toString()
 
 let CONFIG = {}, PAGE = 1, PAGE_SIZE = 100, TOTAL = 0, ROWS = [], CURRENT = null, BATCH = null;
 const selected = new Set();
+const rowInfo = new Map(); // po_number -> 最近一次看到的列資料，用來判斷動作列按鈕該不該可按
 
 function toast(msg, kind = "ok") {
   const el = $("#toast");
@@ -454,6 +455,7 @@ async function loadOrders() {
 
 function renderRows() {
   const tb = $("#tbody");
+  ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
     tb.innerHTML = `<tr><td colspan="13" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
@@ -793,10 +795,41 @@ async function doExport() {
 // 一律用「原地展開的面板」處理，不用瀏覽器原生 confirm()/prompt()——
 // 那種對話框的按鈕文字改不動，一旦拿來表達「兩個方向都會動到資料」的
 // 選擇，取消鍵就會失去「什麼都不做」的意思，容易誤觸。
+function selectionStats() {
+  // 只算「有勾選且我們曾經看過這列資料」的部分——rowInfo 只在渲染
+  // 到那一列的當下更新，換頁後沒再看到的列會用最後看到的舊資料判斷，
+  // 最終還是由後端把關，這裡只是避免按下去完全沒作用的按鈕可以被按。
+  let pulled = 0, unpulled = 0, review = 0;
+  selected.forEach(po => {
+    const info = rowInfo.get(po);
+    if (!info) { unpulled++; review++; return; } // 沒看過資料時保守放行，交給後端判斷
+    info.is_pulled ? pulled++ : unpulled++;
+    if (info.review_count > 0) review++;
+  });
+  return { pulled, unpulled, review };
+}
+
+function setActionDisabled(id, disabled, reason) {
+  const btn = $(id);
+  btn.disabled = disabled;
+  btn.classList.toggle("opacity-40", disabled);
+  btn.classList.toggle("cursor-not-allowed", disabled);
+  btn.title = disabled ? reason : "";
+}
+
 function updateActionBar() {
   $("#action-bar").classList.toggle("hidden", selected.size === 0);
   $("#ab-count").textContent = selected.size;
   closePanel();
+  if (selected.size === 0) return;
+
+  const { pulled, unpulled, review } = selectionStats();
+  setActionDisabled("#ab-pull-on", unpulled === 0,
+    "勾選的單都已經是已拉單，不需要再標記一次。");
+  setActionDisabled("#ab-pull-off", pulled === 0,
+    "勾選的單都還沒拉單，沒有鎖定可以解除。");
+  setActionDisabled("#ab-review", review === 0,
+    "勾選的單都沒有待確認的異動。");
 }
 
 function closePanel() {
