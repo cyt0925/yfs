@@ -82,7 +82,7 @@
   <i class="bi bi-exclamation-triangle-fill"></i> 請先選擇操作人員，否則無法上傳、編輯或匯出（修改歷程需要記錄是誰改的）。
 </div>
 
-<main class="max-w-[1800px] mx-auto px-5 py-5 space-y-4">
+<main class="max-w-[1800px] mx-auto px-5 py-5 pb-24 space-y-4">
 
   <!-- ── 統計 ───────────────────────────────────────── -->
   <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -186,25 +186,6 @@
       </table>
     </div>
 
-    <!-- ── 批次動作列：只在有勾選時浮出，貼著列表下緣，不離開列表視野 ── -->
-    <div id="action-bar" class="hidden border-t border-ink-200 bg-ink-50 px-4 py-3 text-sm">
-      <div class="flex items-center gap-2 flex-wrap">
-        <span class="font-semibold text-ink-900">已選 <span id="ab-count">0</span> 張 PO</span>
-        <button id="ab-clear" class="text-ink-400 hover:text-ink-700 text-xs px-2">
-          <i class="bi bi-x-lg"></i> 清除選取</button>
-        <div class="flex-1"></div>
-        <button id="ab-status-toggle" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg">
-          <i class="bi bi-arrow-repeat"></i> 批次改狀態</button>
-        <button id="ab-review" class="bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg">
-          <i class="bi bi-check2-circle"></i> 確認異動</button>
-        <button id="ab-pull-on" class="bg-ink-900 hover:bg-ink-800 text-white px-3 py-1.5 rounded-lg">
-          <i class="bi bi-box-arrow-right"></i> 標記已拉單</button>
-        <button id="ab-pull-off" class="bg-white border border-red-300 text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg">
-          <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
-      </div>
-      <div id="ab-panel" class="hidden mt-3 bg-white border border-ink-200 rounded-lg p-3"></div>
-    </div>
-
     <div class="flex items-center gap-3 px-4 py-3 border-t border-ink-100 text-sm">
       <button id="btn-prev" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">上一頁</button>
       <span id="page-info" class="text-ink-500"></span>
@@ -216,6 +197,27 @@
     版本 {{ build_version }}　·　跟啟動視窗上印出來的號碼對不起來，代表看到的不是最新版，先重開程式
   </p>
 </main>
+
+<!-- ── 批次動作列：只在有勾選時浮出，釘在瀏覽器視窗最下方，
+     不隨頁面內容捲動，不管畫面捲到哪都看得到 ── -->
+<div id="action-bar" class="hidden fixed left-1/2 -translate-x-1/2 bottom-4 z-40
+     w-[min(1000px,94vw)] rounded-xl border border-ink-200 bg-white shadow-2xl px-4 py-3 text-sm">
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="font-semibold text-ink-900">已選 <span id="ab-count">0</span> 張 PO</span>
+    <button id="ab-clear" class="text-ink-400 hover:text-ink-700 text-xs px-2">
+      <i class="bi bi-x-lg"></i> 清除選取</button>
+    <div class="flex-1"></div>
+    <button id="ab-status-toggle" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg">
+      <i class="bi bi-arrow-repeat"></i> 批次改狀態</button>
+    <button id="ab-review" class="bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg">
+      <i class="bi bi-check2-circle"></i> 確認異動</button>
+    <button id="ab-pull-on" class="bg-ink-900 hover:bg-ink-800 text-white px-3 py-1.5 rounded-lg">
+      <i class="bi bi-box-arrow-right"></i> 標記已拉單</button>
+    <button id="ab-pull-off" class="bg-white border border-red-300 text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg">
+      <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
+  </div>
+  <div id="ab-panel" class="hidden mt-3 bg-white border border-ink-200 rounded-lg p-3"></div>
+</div>
 
 <!-- ── 上傳 Modal ─────────────────────────────────────── -->
 <dialog id="dlg-upload" class="rounded-xl p-0 w-[min(1100px,94vw)] backdrop:bg-ink-950/70">
@@ -1026,11 +1028,40 @@ document.addEventListener("click", e => {
   if (open) openPo(open.dataset.open);
 });
 
+// Shift+勾選＝選取一段範圍（像 Gmail、檔案總管那樣）。checkbox 的
+// click 事件會帶 shiftKey，但 click 觸發時畫面還沒重繪，等到 change
+// 事件才是最終勾選狀態，所以先在 mousedown 記下 shiftKey，change 時
+// 再讀出來用——這樣重繪 tbody（把原本的 checkbox 換掉）也不會有問題，
+// 因為 change 已經是這次互動最後一個事件了。
+let lastCheckedRow = null;
+let shiftHeld = false;
+
+$("#tbody").addEventListener("mousedown", e => {
+  if (e.target.closest(".row-check")) shiftHeld = e.shiftKey;
+});
+
 $("#tbody").addEventListener("change", e => {
   const cb = e.target.closest(".row-check");
   if (!cb) return;
   const po = cb.dataset.po;
+
+  if (shiftHeld && lastCheckedRow && lastCheckedRow !== po) {
+    const idxCur = ROWS.findIndex(r => r.po_number === po);
+    const idxLast = ROWS.findIndex(r => r.po_number === lastCheckedRow);
+    if (idxCur !== -1 && idxLast !== -1) {
+      const [from, to] = idxCur < idxLast ? [idxCur, idxLast] : [idxLast, idxCur];
+      const checked = cb.checked;
+      for (let i = from; i <= to; i++) {
+        checked ? selected.add(ROWS[i].po_number) : selected.delete(ROWS[i].po_number);
+      }
+      lastCheckedRow = po;
+      renderRows();
+      return;
+    }
+  }
+
   cb.checked ? selected.add(po) : selected.delete(po);
+  lastCheckedRow = po;
   updateSelectedInfo();
 });
 
