@@ -521,7 +521,8 @@ async function openPo(poNumber) {
       <td class="px-2 py-1.5 text-xs">${s.needs_review
         ? `<span class="${s.alert_level === "changed_after_pull" ? "text-red-700" : "text-amber-700"} font-semibold whitespace-nowrap"
              title="${esc(s.review_reason)}">已改</span>` : ""}</td>
-      <td class="px-2 py-1.5 font-mono text-[11px]">${esc(s.yf_sku)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px]" title="酷澎的商品編號">${esc(s.sku_id)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px]" title="永豐內部料號">${esc(s.yf_sku)}</td>
       <td class="px-2 py-1.5 text-xs">${esc(s.product_name)}</td>
       <td class="px-2 py-1.5 text-xs">${esc(s.brand)}</td>
       <td class="px-2 py-1.5 text-right text-xs">${s.qty_coupang ?? ""}</td>
@@ -588,7 +589,8 @@ async function openPo(poNumber) {
         <table class="w-full text-sm">
           <thead class="bg-ink-100 text-xs sticky top-0"><tr>
             <th class="px-2 py-1.5 text-left w-12">警示</th>
-            <th class="px-2 py-1.5 text-left w-24">永豐料號</th>
+            <th class="px-2 py-1.5 text-left w-32">SKU ID<span class="block font-normal text-[10px] text-ink-400">酷澎編號</span></th>
+            <th class="px-2 py-1.5 text-left w-24">永豐料號<span class="block font-normal text-[10px] text-ink-400">內部料號</span></th>
             <th class="px-2 py-1.5 text-left">品名</th>
             <th class="px-2 py-1.5 text-left w-24">品牌</th>
             <th class="px-2 py-1.5 text-right w-20">下單數量</th>
