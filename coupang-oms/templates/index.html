@@ -14,34 +14,95 @@
 <style>
   body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
   .scroll-x { overflow-x: auto; }
-  table.po-table { table-layout: fixed; }
-  /* th 用 position:sticky 固定在頂端時，瀏覽器會把它獨立成一個繪製層，
-     不再套用 <thead> 元素本身的背景色——結果捲動時字看起來「消失」，
-     其實是背景變透明、底下的內容列穿透疊上來。要直接把背景色寫在
-     th 自己身上才會在捲動時維持不透明。 */
-  table.po-table th { position: sticky; top: 0; z-index: 10; background-color: #161d29; }
-  /* 做成像 Excel 一樣「每一格四邊都框起來」的完整方格，而不是只有
-     直線、沒有格線包住整格。這樣每個儲存格的邊界都是明確畫出來的，
-     對不對齊用眼睛就能直接確認，不需要再靠猜或量。 */
-  table.po-table th, table.po-table td { border: 1px solid #3a4b66; }
-  table.po-table tbody td { border-color: #c3cbda; }
-  table.po-table tbody tr:first-child td { border-top: none; }
-  /* 表頭底部一條紅線，呼應頁首 header 的紅色收邊，統一紅黑主題。 */
+
+  /* ── 表格：只留橫線，不再是滿版田字格 ──────────────────
+     田字格是當初對齊除錯期間刻意加的，現在對齊病灶（class 撞名）已經
+     修掉、實測 0px 誤差，滿版框線就只剩壓迫感，拿掉。 */
+  table.po-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+  table.po-table th {
+    position: sticky; top: 0; z-index: 10; background-color: #161d29;
+    font-weight: 600; letter-spacing: .02em;
+  }
   table.po-table thead tr { box-shadow: inset 0 -2px 0 #b1222b; }
-  .row-alert { background-color: #fdf2f2; }
-  .row-warn  { background-color: #fffbeb; }
+  table.po-table tbody td { border-bottom: 1px solid #eef1f5; vertical-align: middle; }
+  table.po-table tbody tr:last-child td { border-bottom: none; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* 警示不再獨佔一整欄，改成列最左邊一條色帶，省下的寬度還給
+     「品牌 / 線別」，長品牌串不再被切掉。 */
+  td.edge { border-left: 3px solid transparent; transition: border-color .2s ease; }
+  tr.row-warn  td.edge { border-left-color: #f59e0b; }
+  tr.row-alert td.edge { border-left-color: #b1222b; }
+  tr.row-warn  td { background-color: #fffdf5; }
+  tr.row-alert td { background-color: #fdf5f5; }
   .row-pulled { color: #69789a; }
-  /* 滑鼠移過的列：淡紅底，跟藍灰色系的其他狀態列（異動/警示）區分開，
-     一眼看得出游標在哪一列。 */
-  table.po-table tbody tr:hover { background-color: #fdf2f2; }
-  /* 已勾選的列：左邊一條紅色直條 + 淡紅底，跟純 hover 的列區分開來——
-     hover 放開滑鼠就消失，這個要維持到取消勾選為止。 */
-  .row-selected { background-color: #fbe1e1 !important; box-shadow: inset 3px 0 0 #b1222b; }
-  /* 可以點了直接改的格子：平常完全乾淨不干擾，滑鼠移上去才浮出淡紅底
-     跟虛線框，暗示「這格能點」。 */
+
+  /* 狀態彩色標籤 */
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 9999px;
+    font-size: 11px; font-weight: 600; line-height: 1.6; white-space: nowrap;
+    transition: transform .15s ease;
+  }
+  .b-gray  { background: #eef1f5; color: #4b5975; }
+  .b-blue  { background: #e0edff; color: #1d4ed8; }
+  .b-green { background: #dcfce7; color: #15803d; }
+  .b-red   { background: #fee2e2; color: #b91c1c; }
+  .b-amber { background: #fef3c7; color: #b45309; }
+
+  /* ── 動畫 ──────────────────────────────────────────
+     整體原則：狀態變化要「看得到」但不能干擾操作——時間都壓在
+     150–250ms，緩動用 ease-out（快進慢出），符合手感直覺。 */
+  table.po-table tbody tr { transition: background-color .15s ease; }
+  table.po-table tbody tr:hover td { background-color: #fdf2f2; }
+  .row-selected td { background-color: #fbe1e1 !important; }
+  .row-selected td.edge { border-left-color: #b1222b; }
+
   .inline-cell:not(.inline-locked) { cursor: pointer; }
-  .inline-cell:not(.inline-locked):hover { background-color: #fbe1e1; outline: 1px dashed #cc373d; outline-offset: -1px; }
-  dialog::backdrop { background: rgba(14,19,28,.6); }
+  .inline-cell:not(.inline-locked) { transition: background-color .15s ease, outline-color .15s ease; outline: 1px dashed transparent; outline-offset: -1px; }
+  .inline-cell:not(.inline-locked):hover { background-color: #fbe1e1; outline-color: #cc373d; }
+
+  /* 就地編輯存檔成功：格子閃一下綠色再淡出，給一個「確實存到了」的
+     視覺回饋，不用等 toast 才知道。 */
+  @keyframes save-flash {
+    0%   { background-color: #dcfce7; }
+    100% { background-color: transparent; }
+  }
+  .save-flash { animation: save-flash 900ms ease-out; }
+
+  /* 批次動作列：從螢幕下緣滑入滑出，而不是硬切 display:none。 */
+  #action-bar {
+    transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+    transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
+  }
+  #action-bar.ab-show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+  /* 面板（批次改狀態／拉單原因）用高度展開，感覺是從動作列長出來的。 */
+  #ab-panel {
+    max-height: 0; opacity: 0; overflow: hidden; border: 1px solid transparent; padding: 0;
+    transition: max-height .2s ease, opacity .15s ease, margin-top .2s ease, padding .2s ease;
+  }
+  #ab-panel.ab-panel-open { max-height: 160px; opacity: 1; margin-top: .75rem; padding: .75rem; border-color: #e3e7ee; }
+
+  /* Modal：淡入 + 輕微放大，取代原生 <dialog> 生硬的瞬間出現。 */
+  dialog::backdrop { background: rgba(14,19,28,.6); opacity: 0; transition: opacity .18s ease; }
+  dialog[open]::backdrop { opacity: 1; }
+  dialog { opacity: 1; transform: scale(1) translateY(0); transition: opacity .16s ease, transform .16s ease; }
+  /* @starting-style 讓「從 display:none 變成顯示」這個瞬間也能有起始狀態
+     可以補間動畫（沒有它，瀏覽器不知道要從哪個狀態淡入）。舊版瀏覽器
+     不支援時，就單純沒有淡入動畫、直接顯示，不影響功能。 */
+  @starting-style {
+    dialog[open] { opacity: 0; transform: scale(.97) translateY(6px); }
+  }
+
+  /* Toast：從右上角滑入，跟批次動作列（螢幕下方）分開，不會疊在一起。 */
+  #toast {
+    transform: translateX(24px); opacity: 0;
+    transition: transform .2s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
+  }
+  #toast.toast-show { transform: translateX(0); opacity: 1; }
+
+  /* 按鈕：輕微上浮 + 陰影，滑鼠互動更有回饋，但幅度很小不浮誇。 */
+  button:not(:disabled) { transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease; }
+  button:not(:disabled):active { transform: translateY(1px); }
 </style>
 </head>
 <body class="bg-ink-50 text-ink-900">
@@ -149,25 +210,23 @@
            table-layout:fixed 把多出來的空間依各欄比例撐開，不會在右邊留白。 -->
       <table class="po-table text-sm border-collapse" style="min-width:1380px; width:100%;">
         <colgroup>
-          <col style="width:40px">
+          <col style="width:36px">
           <col style="width:150px">
-          <col style="width:130px">
           <col style="width:64px">
           <col style="width:100px">
           <col style="width:90px">
           <col style="width:80px">
-          <col style="width:200px">
-          <col style="width:110px">
-          <col style="width:110px">
-          <col style="width:80px">
-          <col style="width:88px">
-          <col style="width:88px">
+          <col style="width:280px">
+          <col style="width:106px">
+          <col style="width:106px">
+          <col style="width:86px">
+          <col style="width:72px">
+          <col style="width:96px">
         </colgroup>
         <thead class="bg-ink-900 text-white text-xs">
           <tr>
             <th class="px-2 py-2 whitespace-nowrap"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
             <th class="px-2 py-2 text-left whitespace-nowrap">PO 單號</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">警示</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">類型</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">PO 狀態</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">拉單</th>
@@ -198,7 +257,7 @@
 
 <!-- ── 批次動作列：只在有勾選時浮出，釘在瀏覽器視窗最下方，
      不隨頁面內容捲動，不管畫面捲到哪都看得到 ── -->
-<div id="action-bar" class="hidden fixed left-1/2 -translate-x-1/2 bottom-4 z-40
+<div id="action-bar" class="fixed left-1/2 bottom-4 z-40
      w-[min(1000px,94vw)] rounded-xl border border-ink-200 bg-white shadow-2xl px-4 py-3 text-sm">
   <div class="flex items-center gap-2 flex-wrap">
     <span class="font-semibold text-ink-900">已選 <span id="ab-count">0</span> 張 PO</span>
@@ -214,7 +273,7 @@
     <button id="ab-pull-off" class="bg-white border border-red-300 text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg">
       <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
   </div>
-  <div id="ab-panel" class="hidden mt-3 bg-white border border-ink-200 rounded-lg p-3"></div>
+  <div id="ab-panel" class="bg-white rounded-lg"></div>
 </div>
 
 <!-- ── 上傳 Modal ─────────────────────────────────────── -->
@@ -345,7 +404,7 @@
   </div>
 </dialog>
 
-<div id="toast" class="hidden fixed bottom-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50"></div>
+<div id="toast" class="fixed top-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50"></div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -358,12 +417,16 @@ const rowInfo = new Map(); // po_number -> 最近一次看到的列資料，用�
 
 function toast(msg, kind = "ok") {
   const el = $("#toast");
-  el.className = "fixed bottom-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50 " +
+  el.className = "fixed top-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50 " +
     (kind === "err" ? "bg-red-600" : kind === "warn" ? "bg-amber-600" : "bg-emerald-600");
   el.textContent = msg;
-  el.classList.remove("hidden");
+  // 先讓瀏覽器畫一次「還沒展開」的狀態，下一影格再加 show，
+  // 這樣才會真的觸發滑入動畫，而不是直接跳出成品。
+  el.classList.remove("toast-show");
+  void el.offsetWidth;
+  requestAnimationFrame(() => el.classList.add("toast-show"));
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hidden"), 4200);
+  toast._t = setTimeout(() => el.classList.remove("toast-show"), 4200);
 }
 
 function operator() { return $("#operator").value; }
@@ -457,14 +520,15 @@ function renderRows() {
   const tb = $("#tbody");
   ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="13" class="text-center py-16 text-ink-300">
+    tb.innerHTML = `<tr><td colspan="12" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
   }
   tb.innerHTML = ROWS.map(r => {
     // 警示掛在整張單上：只要底下任何一個品項被酷澎改過，整列就亮燈，
-    // 進去彈窗才看是哪幾項。OP 要處理的單位本來就是整張單。
+    // 進去彈窗才看是哪幾項。OP 要處理的單位本來就是整張單。改成列最
+    // 左邊一條色帶，不再獨佔一整欄——詳細字樣移到 PO 單號底下顯示。
     const cls = [
       r.after_pull_count > 0 ? "row-alert"
         : r.review_count > 0 ? "row-warn"
@@ -472,23 +536,23 @@ function renderRows() {
       selected.has(r.po_number) ? "row-selected" : "",
     ].filter(Boolean).join(" ");
     const lockedCls = r.is_pulled ? "inline-locked" : "";
-    let alert = `<span class="text-ink-300">—</span>`;
+    let alert = "";
     if (r.after_pull_count > 0)
-      alert = `<span class="text-red-700 font-semibold whitespace-nowrap">拉單後被改 ${r.after_pull_count} 項</span>`;
+      alert = `<span class="block text-[10px] text-brand-700 font-semibold mt-0.5">拉單後被改 ${r.after_pull_count} 項</span>`;
     else if (r.review_count > 0)
-      alert = `<span class="text-amber-700 font-semibold whitespace-nowrap">${r.review_count} 項有異動</span>`;
+      alert = `<span class="block text-[10px] text-amber-700 font-semibold mt-0.5">${r.review_count} 項有異動</span>`;
 
     return `<tr class="${cls}">
-      <td class="px-2 py-2 text-center"><input type="checkbox" data-po="${esc(r.po_number)}"
+      <td class="edge px-2 py-2 text-center"><input type="checkbox" data-po="${esc(r.po_number)}"
           class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
       <td class="px-2 py-2 whitespace-nowrap"><button data-open="${esc(r.po_number)}"
           class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>
-        ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
-      <td class="px-2 py-2 text-xs">${alert}</td>
+        ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}
+        ${alert}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.order_type)}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="po_status" data-po="${esc(r.po_number)}"
-          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.po_status)}</td>
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.po_status)}">${esc(r.po_status)}</span></td>
       <td class="px-2 py-2 whitespace-nowrap">
         <button data-quick-pull="${esc(r.po_number)}" data-pulled="${r.is_pulled ? 1 : 0}"
             class="inline-flex items-center gap-1 hover:text-brand-600 ${r.is_pulled ? "text-ink-500" : "text-ink-900"}"
@@ -497,7 +561,7 @@ function renderRows() {
         </button></td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="receiving_status" data-po="${esc(r.po_number)}"
-          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.receiving_status)}</td>
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.receiving_status)}">${esc(r.receiving_status)}</span></td>
       <td class="px-2 py-2 truncate" title="${esc(r.brands)} / ${esc(r.lines)}">${esc(r.brands) || "—"}
         <span class="block text-[10px] text-ink-400">${esc(r.lines) || "線別待補"}</span></td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
@@ -505,12 +569,21 @@ function renderRows() {
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
-      <td class="px-2 py-2 text-right">${r.sku_count}</td>
-      <td class="px-2 py-2 text-right ${r.qty_ship !== r.qty_coupang ? "text-red-600 font-bold" : ""}"
+      <td class="px-2 py-2 text-right num">${r.sku_count}</td>
+      <td class="px-2 py-2 text-right num ${r.qty_ship !== r.qty_coupang ? "text-red-600 font-bold" : ""}"
           title="${r.qty_ship !== r.qty_coupang ? "出貨數量與酷澎下單數量不一致" : ""}">${(r.qty_ship || 0).toLocaleString()}</td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
+}
+
+function badgeClass(value) {
+  const v = (value || "").trim();
+  if (["已取消", "異常"].includes(v)) return "b-red";
+  if (["已完成", "完成"].includes(v)) return "b-green";
+  if (["處理中", "已回覆"].includes(v)) return "b-blue";
+  if (["修改中", "重啟"].includes(v)) return "b-amber";
+  return "b-gray";
 }
 
 function updateSelectedInfo() {
@@ -833,7 +906,7 @@ function setActionDisabled(id, disabled, reason) {
 }
 
 function updateActionBar() {
-  $("#action-bar").classList.toggle("hidden", selected.size === 0);
+  $("#action-bar").classList.toggle("ab-show", selected.size > 0);
   $("#ab-count").textContent = selected.size;
   closePanel();
   if (selected.size === 0) return;
@@ -848,13 +921,20 @@ function updateActionBar() {
 }
 
 function closePanel() {
-  $("#ab-panel").classList.add("hidden");
-  $("#ab-panel").innerHTML = "";
+  const panel = $("#ab-panel");
+  panel.classList.remove("ab-panel-open");
+  // 等收合動畫播完才清空內容，不然文字會在還沒縮起來前就先消失，
+  // 看起來像瞬間跳掉而不是收合。
+  clearTimeout(closePanel._t);
+  closePanel._t = setTimeout(() => { if (!panel.classList.contains("ab-panel-open")) panel.innerHTML = ""; }, 200);
 }
 
 function openPanel(html) {
-  $("#ab-panel").innerHTML = html;
-  $("#ab-panel").classList.remove("hidden");
+  clearTimeout(closePanel._t);
+  const panel = $("#ab-panel");
+  panel.innerHTML = html;
+  void panel.offsetWidth;
+  requestAnimationFrame(() => panel.classList.add("ab-panel-open"));
 }
 
 function clearSelection() {
@@ -1074,9 +1154,21 @@ async function saveInlineField(po, field, value) {
 
 async function finishInlineEdit(cell, po, field, value) {
   cell.innerHTML = `<span class="text-ink-300">儲存中…</span>`;
-  await saveInlineField(po, field, value);
+  const ok = await saveInlineField(po, field, value);
   delete cell.dataset.editing;
-  loadOrders();
+  await loadOrders();
+  // 存檔成功後那一格閃一下綠色再淡出，馬上給個「確實存到了」的回饋，
+  // 不用等使用者自己注意到 toast。loadOrders 已經把 tbody 重繪過，
+  // 所以要在重繪完之後才找得到新的格子元素。
+  if (ok) {
+    const target = document.querySelector(
+      `.inline-cell[data-po="${CSS.escape(po)}"][data-inline="${CSS.escape(field)}"]`);
+    if (target) {
+      target.classList.remove("save-flash");
+      void target.offsetWidth;
+      target.classList.add("save-flash");
+    }
+  }
 }
 
 function startInlineEdit(cell) {
