@@ -228,17 +228,20 @@ def main():
     check("該筆被標記為最高警示 changed_after_pull",
           client.get("/api/pos").get_json()["summary"]["changed_after_pull"] >= 1)
 
-    print("\n【10】解除拉單鎖定必須留下原因")
+    print("\n【10】拉單狀態調整：理由選填，但有填一定進歷程")
     res = client.post("/api/pos/pull", json={
-        "operator": "小真", "po_numbers": [locked_po], "pulled": False, "reason": ""})
-    check("沒填原因會被擋下", res.status_code == 400)
+        "operator": "小真", "po_numbers": [locked_po], "pulled": False})
+    check("不填理由也能解鎖（例行操作，不強制填）", res.status_code == 200, res.get_json())
     res = client.post("/api/pos/pull", json={
-        "operator": "小真", "po_numbers": [locked_po], "pulled": False,
+        "operator": "小真", "po_numbers": [locked_po], "pulled": True,
         "reason": "酷澎拉單後改量，需重出"})
-    check("填了原因才能解鎖", res.status_code == 200, res.get_json())
+    check("填了理由的話照樣寫進歷程", res.status_code == 200, res.get_json())
     logs = client.get(f"/api/pos/{locked_po}").get_json()["logs"]
-    check("解鎖原因寫進歷程",
+    check("填過的理由查得到",
           any(l["field"] == "is_pulled" and "重出" in l["note"] for l in logs))
+    res = client.post("/api/pos/pull", json={
+        "operator": "小真", "po_numbers": [locked_po], "pulled": False})
+    check("解鎖回去，恢復成後面測試需要的狀態", res.status_code == 200, res.get_json())
 
     print("\n【11】線別／品牌：空白可補，有值不可改")
     all_rows = client.get("/api/orders?page_size=500").get_json()["rows"]

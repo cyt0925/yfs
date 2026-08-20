@@ -28,7 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-20.6"
+BUILD_VERSION = "2026-08-20.7"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -1096,17 +1096,15 @@ def api_clear_review():
 def api_set_pulled():
     """手動調整整張單的拉單狀態。
 
-    標記已拉單是例行操作，不強制填理由。解除拉單鎖定則不同——東西可能
-    已經拋給倉庫了，卻要把鎖打開讓人可以再改，風險比較高，所以這個
-    方向仍然強制填原因並寫進歷程，事後才查得到是誰、為什麼解鎖。
+    標記／解除都不強制填理由——OP 反映這一步是例行操作，強制填理由
+    反而拖慢流程。理由欄位保留、有填就照樣寫進歷程，只是不再擋下
+    沒填理由的操作；誰在什麼時候改了拉單狀態，還是查得到。
     """
     payload = request.get_json(silent=True) or {}
     operator = current_operator()
     reason = norm_text(payload.get("reason"))
     pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
     target = 1 if payload.get("pulled") else 0
-    if not target and not reason:
-        return jsonify({"error": "解除拉單鎖定必須填寫原因。"}), 400
     if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
 

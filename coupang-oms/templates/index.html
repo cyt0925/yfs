@@ -1103,29 +1103,24 @@ function openPullPanel(pulled) {
     : `解鎖後這 ${selected.size} 張單可再被編輯——倉庫可能已經拿到這批資料，請確認再解鎖。`;
   const applyLabel = pulled ? "標記為已拉單" : "解除拉單鎖定";
   const applyCls = pulled ? "bg-ink-900 hover:bg-ink-800" : "bg-red-600 hover:bg-red-500";
-  // 標記已拉單是例行操作，不強制填理由；解除拉單鎖定風險較高（東西可能
-  // 已經給倉庫了卻要把鎖打開），這個方向仍然強制填原因。
-  const reasonRequired = !pulled;
+  // 標記／解除都不強制填理由——例行操作，不要求填理由才不會拖慢流程。
+  // 欄位還在，填了照樣進歷程，只是不再擋下沒填的情況。
   openPanel(`
     <div class="text-sm space-y-2">
       <p class="text-amber-700"><i class="bi bi-exclamation-triangle-fill"></i> ${esc(warn)}</p>
       <div class="flex items-center gap-2 flex-wrap">
         <input id="abp-reason" class="border rounded px-2 py-1.5 flex-1 min-w-[240px]"
-               placeholder="${reasonRequired ? "請填寫原因（必填）" : "備註（選填）"}">
+               placeholder="備註（選填）">
         <button id="abp-cancel" class="px-3 py-1.5 rounded text-ink-600 hover:bg-ink-100">取消</button>
-        <button id="abp-apply" ${reasonRequired ? "disabled" : ""}
+        <button id="abp-apply"
                 class="${applyCls} text-white px-3 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
           ${applyLabel}（${selected.size} 張）</button>
       </div>
     </div>`);
   const reasonInput = $("#abp-reason"), applyBtn = $("#abp-apply");
-  if (reasonRequired) {
-    reasonInput.addEventListener("input", () => { applyBtn.disabled = !reasonInput.value.trim(); });
-  }
   $("#abp-cancel").addEventListener("click", closePanel);
   applyBtn.addEventListener("click", async () => {
     const reason = reasonInput.value.trim();
-    if (reasonRequired && !reason) return;
     const res = await fetch("/api/pos/pull", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ operator: operator(), po_numbers: [...selected], pulled, reason }),
