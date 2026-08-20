@@ -45,10 +45,21 @@ def upload(client, path, operator="小真"):
     return res
 
 
+def sign_in(client, username="小真", password="changeme123"):
+    """所有 API 都在登入後面，測試也得先登入。
+
+    順帶一提：操作人員現在一律取自登入身分，各處呼叫仍然傳
+    operator 參數只是還沒清掉的殘留，後端不會採用——所以這裡登入
+    誰，歷程上記的就是誰。"""
+    res = client.post("/login", data={"username": username, "password": password})
+    assert res.status_code == 302, f"測試帳號登入失敗：{username}"
+
+
 def main():
     db.init_db()
     app_module.app.config["TESTING"] = True
     client = app_module.app.test_client()
+    sign_in(client)
 
     print("\n【1】首次匯入真實整合表")
     res = upload(client, SAMPLE)
@@ -261,17 +272,19 @@ def main():
           and os.path.exists(os.path.join(db.DATA_DIR, "export_profiles.json")))
 
     # 模擬使用者改過設定後又更新版本：ensure_data_dir 會再跑一次
+    # 拿驗收狀態當樣本：操作人員名單已經廢掉了（改成登入者），這裡要測的
+    # 是「使用者改過的 config.json 不會在下次啟動時被預設值蓋回去」。
+    custom = ["未驗收", "完成", "異常", "重啟", "待補件"]
     cfg_path = os.path.join(db.DATA_DIR, "config.json")
     with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump({"operators": ["小真", "Alice", "Jerry"]}, fh, ensure_ascii=False)
+        json.dump({"receiving_statuses": custom}, fh, ensure_ascii=False)
     db.ensure_data_dir()
     with open(cfg_path, encoding="utf-8") as fh:
         after = json.load(fh)
     check("重新啟動不會把使用者改過的設定蓋回預設值",
-          after["operators"] == ["小真", "Alice", "Jerry"], after["operators"])
-    check("API 讀得到使用者改過的操作人員",
-          client.get("/api/config").get_json()["operators"]
-          == ["小真", "Alice", "Jerry"])
+          after["receiving_statuses"] == custom, after["receiving_statuses"])
+    check("API 讀得到使用者改過的下拉選項",
+          client.get("/api/config").get_json()["receiving_statuses"] == custom)
 
     print("\n【13】首頁改成一列一張 PO")
     pos_data = client.get("/api/pos?page_size=100").get_json()
@@ -297,10 +310,15 @@ def main():
     target_po = big["po_number"]
     detail = client.get(f"/api/pos/{target_po}").get_json()
     check("明細帶出 29 個品項", len(detail["skus"]) == 29)
+    # 換 Alice 登入來改這一張，等一下【19】才驗得到「歷程確實照登入
+    # 身分分開記」——payload 裡的 operator 後端已經不看了，唯一能決定
+    # 記在誰頭上的就是登入的人。
+    sign_in(client, "Alice")
     res = client.put(f"/api/pos/{target_po}", json={
-        "operator": "Alice", "po_version": detail["header"]["version"],
+        "po_version": detail["header"]["version"],
         "delivery_date": "2026-12-25", "warehouse": " tao9 "})
     check("整張單改交期／倉別成功", res.status_code == 200, res.get_json())
+    sign_in(client)  # 換回小真，後面的檢查沿用原本的預期
     after_po = client.get(f"/api/pos/{target_po}").get_json()
     check("29 個品項的交期全部一起被改",
           all(s["delivery_date"] == "2026-12-25" for s in after_po["skus"]))

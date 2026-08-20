@@ -119,13 +119,6 @@
       </div>
     </div>
     <div class="flex-1"></div>
-    <div class="flex items-center gap-2 bg-ink-800/70 rounded-lg px-3 py-1.5 border border-ink-700">
-      <i class="bi bi-person-badge text-brand-300"></i>
-      <span class="text-xs text-ink-300">操作人員</span>
-      <select id="operator" class="bg-ink-950 text-white text-sm rounded px-2 py-1 border border-ink-600">
-        <option value="">— 請選擇 —</option>
-      </select>
-    </div>
     <button id="btn-upload" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
       <i class="bi bi-cloud-arrow-up"></i> 上傳整合表
     </button>
@@ -136,17 +129,18 @@
       <i class="bi bi-file-earmark-excel"></i> 匯出報表
     </button>
     {% if logged_in_user %}
-    <form action="{{ url_for('logout') }}" method="post" class="flex items-center gap-2 pl-2 border-l border-ink-700">
-      <span class="text-xs text-ink-300"><i class="bi bi-check-circle-fill text-emerald-400"></i> {{ logged_in_user }}</span>
-      <button type="submit" class="text-xs text-ink-300 hover:text-white underline underline-offset-2">登出</button>
-    </form>
+    <div class="flex items-center gap-2 pl-2 border-l border-ink-700">
+      <span class="text-xs text-ink-300" title="所有修改都會記在這個名字下">
+        <i class="bi bi-person-check-fill text-emerald-400"></i> {{ logged_in_user }}</span>
+      <button id="btn-settings" type="button" title="設定"
+              class="text-ink-300 hover:text-white text-sm px-1"><i class="bi bi-gear-fill"></i></button>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="text-xs text-ink-300 hover:text-white underline underline-offset-2">登出</button>
+      </form>
+    </div>
     {% endif %}
   </div>
 </header>
-
-<div id="operator-warning" class="hidden bg-amber-400 text-amber-950 text-sm text-center py-2 font-medium">
-  <i class="bi bi-exclamation-triangle-fill"></i> 請先選擇操作人員，否則無法上傳、編輯或匯出（修改歷程需要記錄是誰改的）。
-</div>
 
 <main class="max-w-[1800px] mx-auto px-5 py-5 pb-24 space-y-4">
 
@@ -410,6 +404,83 @@
   </div>
 </dialog>
 
+<dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
+    <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">改密碼</button>
+    <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
+    <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清除資料</button>
+  </div>
+
+  <!-- 改密碼：每個人都看得到，改自己的 -->
+  <div data-pane="password" class="st-pane p-5 space-y-3 text-sm">
+    <p class="text-xs text-ink-500">修改 <b id="st-me"></b> 的登入密碼。</p>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">目前密碼</span>
+      <input id="st-old" type="password" autocomplete="current-password" class="border rounded px-2 py-2"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">新密碼（至少 6 個字）</span>
+      <input id="st-new" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">再輸入一次新密碼</span>
+      <input id="st-new2" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
+    <div class="pt-1">
+      <button id="btn-save-password"
+              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+        <i class="bi bi-key-fill"></i> 更新密碼</button>
+    </div>
+  </div>
+
+  <!-- 帳號管理：只有管理員 -->
+  <div data-pane="users" class="st-pane p-5 space-y-4 text-sm hidden">
+    <div>
+      <p class="text-xs text-ink-400 mb-2">目前帳號</p>
+      <div id="st-userlist" class="border rounded-lg divide-y"></div>
+    </div>
+    <div class="border-t pt-4 space-y-3">
+      <p class="text-xs text-ink-400">新增帳號</p>
+      <div class="flex gap-2">
+        <input id="st-newuser" placeholder="帳號名稱" class="border rounded px-2 py-2 flex-1">
+        <input id="st-newpass" type="text" placeholder="密碼（至少 6 個字）" class="border rounded px-2 py-2 flex-1">
+      </div>
+      <label class="flex items-center gap-2 text-xs">
+        <input id="st-newadmin" type="checkbox" class="w-4 h-4"> 設為管理員（可以加人、改別人密碼、清資料）
+      </label>
+      <button id="btn-add-user"
+              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+        <i class="bi bi-person-plus-fill"></i> 新增</button>
+    </div>
+  </div>
+
+  <!-- 清除資料：只有管理員 -->
+  <div data-pane="data" class="st-pane p-5 space-y-4 text-sm hidden">
+    <div class="bg-red-50 border border-red-300 rounded-lg p-3 text-red-800">
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 這個操作會刪掉所有訂單資料</b>
+      <p class="text-xs mt-1">
+        清空前系統會自動備份一份，但備份放在伺服器上，你不一定拿得回來。
+        正式資料請先用「匯出報表」存一份 Excel 再清。
+      </p>
+    </div>
+    <label class="flex items-start gap-2">
+      <input id="st-keeplogs" type="checkbox" class="w-4 h-4 mt-0.5">
+      <span>保留修改歷程
+        <span class="block text-xs text-ink-400 mt-0.5">
+          不勾＝連歷程一起清乾淨（測試完要正式上線時選這個）。
+          勾起來＝訂單清掉但誰改過什麼還查得到。
+        </span>
+      </span>
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">請輸入「清空資料」四個字以確認</span>
+      <input id="st-confirm" placeholder="清空資料" class="border rounded px-2 py-2">
+    </label>
+    <button id="btn-reset-data"
+            class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold">
+      <i class="bi bi-trash3-fill"></i> 清空訂單資料</button>
+  </div>
+</dialog>
+
 <div id="toast" class="fixed top-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50"></div>
 
 <script>
@@ -435,17 +506,11 @@ function toast(msg, kind = "ok") {
   toast._t = setTimeout(() => el.classList.remove("toast-show"), 4200);
 }
 
-function operator() { return $("#operator").value; }
-
-function requireOperator() {
-  if (!operator()) {
-    $("#operator-warning").classList.remove("hidden");
-    toast("請先在右上角選擇操作人員。", "warn");
-    return false;
-  }
-  $("#operator-warning").classList.add("hidden");
-  return true;
-}
+// 操作人員＝登入者，後端一律以 session 為準，前端不再傳也不用檢查。
+// 這兩個函式留著只是為了不用改動十幾處呼叫點。
+const LOGGED_IN_USER = {{ logged_in_user | tojson }};
+function operator() { return LOGGED_IN_USER; }
+function requireOperator() { return true; }
 
 function fillSelect(el, values, keepAll = true) {
   const current = el.value;
@@ -460,12 +525,6 @@ function fillSelect(el, values, keepAll = true) {
 
 async function loadConfig() {
   CONFIG = await (await fetch("/api/config")).json();
-  const op = $("#operator");
-  op.innerHTML = '<option value="">— 請選擇 —</option>';
-  CONFIG.operators.forEach(o => op.insertAdjacentHTML("beforeend", `<option>${esc(o)}</option>`));
-  const saved = localStorage.getItem("oms_operator");
-  if (saved && CONFIG.operators.includes(saved)) op.value = saved;
-
   fillSelect($("#f-line"), CONFIG.lines);
   fillSelect($("#f-brand"), CONFIG.brands);
   fillSelect($("#f-warehouse"), CONFIG.warehouses);
@@ -1266,11 +1325,6 @@ $("#check-all").addEventListener("change", e => {
   renderRows();
 });
 
-$("#operator").addEventListener("change", e => {
-  localStorage.setItem("oms_operator", e.target.value);
-  if (e.target.value) $("#operator-warning").classList.add("hidden");
-});
-
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to"].forEach(s => $(s).value = "");
@@ -1287,6 +1341,135 @@ $("#stat-review-card").addEventListener("click", () => {
 $("#stat-alert-card").addEventListener("click", () => {
   filters._alert = "changed_after_pull"; $("#f-review").checked = false; PAGE = 1; loadOrders();
 });
+// ---------------------------------------------------------------- 設定
+let ACCOUNT = { user: "", is_admin: false, users: [], admins: [] };
+
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+
+function switchSettingsTab(name) {
+  document.querySelectorAll(".st-tab").forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("border-brand-600", on);
+    b.classList.toggle("text-brand-700", on);
+    b.classList.toggle("border-transparent", !on);
+    b.classList.toggle("text-ink-500", !on);
+  });
+  document.querySelectorAll(".st-pane").forEach(p => {
+    p.classList.toggle("hidden", p.dataset.pane !== name);
+  });
+}
+
+function renderUserList() {
+  const box = $("#st-userlist");
+  box.innerHTML = ACCOUNT.users.map(u => {
+    const admin = ACCOUNT.admins.includes(u);
+    const isMe = u === ACCOUNT.user;
+    return `<div class="flex items-center gap-2 px-3 py-2">
+      <span class="flex-1">${esc(u)}${isMe ? '<span class="text-xs text-ink-400">（你）</span>' : ""}
+        ${admin ? '<span class="ml-1 text-[10px] bg-brand-100 text-brand-700 rounded px-1.5 py-0.5">管理員</span>' : ""}</span>
+      <button data-reset="${esc(u)}" class="text-xs text-brand-700 hover:underline">重設密碼</button>
+      <button data-admin="${esc(u)}" data-make="${admin ? "0" : "1"}"
+              class="text-xs text-ink-500 hover:underline">${admin ? "取消管理員" : "設為管理員"}</button>
+      ${isMe ? "" : `<button data-del="${esc(u)}" class="text-xs text-red-600 hover:underline">刪除</button>`}
+    </div>`;
+  }).join("");
+}
+
+async function loadAccount() {
+  ACCOUNT = await (await fetch("/api/account")).json();
+  $("#st-me").textContent = ACCOUNT.user;
+  document.querySelectorAll('[data-tab="users"], [data-tab="data"]')
+    .forEach(b => b.classList.toggle("hidden", !ACCOUNT.is_admin));
+  if (ACCOUNT.is_admin) renderUserList();
+}
+
+$("#btn-settings").addEventListener("click", async () => {
+  await loadAccount();
+  switchSettingsTab("password");
+  ["#st-old", "#st-new", "#st-new2", "#st-confirm"].forEach(s => $(s).value = "");
+  $("#dlg-settings").showModal();
+});
+
+document.querySelectorAll(".st-tab").forEach(b => {
+  b.addEventListener("click", () => switchSettingsTab(b.dataset.tab));
+});
+
+$("#btn-save-password").addEventListener("click", async () => {
+  const nw = $("#st-new").value;
+  if (nw !== $("#st-new2").value) { toast("兩次新密碼不一樣。", "warn"); return; }
+  const { ok, data } = await postJSON("/api/account/password",
+    { old_password: $("#st-old").value, new_password: nw });
+  if (!ok) { toast(data.error || "改密碼失敗。", "err"); return; }
+  ["#st-old", "#st-new", "#st-new2"].forEach(s => $(s).value = "");
+  toast(data.message, "ok");
+});
+
+$("#btn-add-user").addEventListener("click", async () => {
+  const { ok, data } = await postJSON("/api/account/users", {
+    username: $("#st-newuser").value,
+    password: $("#st-newpass").value,
+    is_admin: $("#st-newadmin").checked,
+  });
+  if (!ok) { toast(data.error || "新增失敗。", "err"); return; }
+  $("#st-newuser").value = ""; $("#st-newpass").value = ""; $("#st-newadmin").checked = false;
+  await loadAccount();
+  toast(data.message, "ok");
+});
+
+$("#st-userlist").addEventListener("click", async e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  if (btn.dataset.reset) {
+    const pw = prompt(`要把「${btn.dataset.reset}」的密碼重設成什麼？（至少 6 個字）`);
+    if (!pw) return;
+    const { ok, data } = await postJSON("/api/account/password",
+      { username: btn.dataset.reset, new_password: pw });
+    toast(ok ? data.message : (data.error || "重設失敗。"), ok ? "ok" : "err");
+    return;
+  }
+
+  if (btn.dataset.admin) {
+    const { ok, data } = await postJSON("/api/account/admin",
+      { username: btn.dataset.admin, is_admin: btn.dataset.make === "1" });
+    if (!ok) { toast(data.error || "調整失敗。", "err"); return; }
+    await loadAccount();
+    toast(data.message, "ok");
+    return;
+  }
+
+  if (btn.dataset.del) {
+    if (!confirm(`確定要刪除帳號「${btn.dataset.del}」？\n他做過的修改歷程會保留。`)) return;
+    const { ok, data } = await postJSON("/api/account/users/delete",
+      { username: btn.dataset.del });
+    if (!ok) { toast(data.error || "刪除失敗。", "err"); return; }
+    await loadAccount();
+    toast(data.message, "ok");
+  }
+});
+
+$("#btn-reset-data").addEventListener("click", async () => {
+  if (!confirm("最後確認：所有訂單資料都會被刪除，確定要繼續？")) return;
+  const { ok, data } = await postJSON("/api/account/reset-data", {
+    confirm: $("#st-confirm").value,
+    keep_logs: $("#st-keeplogs").checked,
+  });
+  if (!ok) { toast(data.error || "清除失敗。", "err"); return; }
+  $("#st-confirm").value = "";
+  $("#dlg-settings").close();
+  toast(data.message, "ok");
+  PAGE = 1;
+  loadOrders();
+});
+
 $("#btn-upload").addEventListener("click", () => { if (requireOperator()) $("#dlg-upload").showModal(); });
 $("#btn-export").addEventListener("click", () => { if (requireOperator()) $("#dlg-export").showModal(); });
 $("#btn-logs").addEventListener("click", () => { LOG_PAGE = 1; $("#dlg-logs").showModal(); loadLogs(); });
