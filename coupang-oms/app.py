@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-20.1"
+BUILD_VERSION = "2026-08-20.2"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -151,6 +151,43 @@ def get_users():
     return {k: v for k, v in raw.items() if not k.startswith("_")}
 
 
+def save_json(name, data):
+    """寫設定檔。先寫暫存檔再換過去，中途斷電也不會留下半個壞掉的
+    JSON——設定檔壞掉會讓所有人登不進來，這個險不值得冒。"""
+    path = os.path.join(db.DATA_DIR, name)
+    tmp = path + ".tmp"
+    os.makedirs(db.DATA_DIR, exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def verify_password(stored, given):
+    """比對密碼，同時支援明碼與 werkzeug 雜湊。
+
+    不要寫死判斷 "pbkdf2:" 前綴：werkzeug 換過預設演算法（pbkdf2 →
+    scrypt），寫死前綴會讓新設的密碼被當成明碼去比對，於是「在設定頁
+    改完密碼 → 再也登不進來」，而且錯得無聲無息。改看有沒有 `$`——
+    werkzeug 的雜湊一律是 method$salt$hash，人手打的明碼不會長這樣。"""
+    if not stored:
+        return False
+    if "$" in stored:
+        try:
+            return check_password_hash(stored, given)
+        except (ValueError, TypeError):
+            return False
+    return secrets.compare_digest(stored, given)
+
+
+def current_operator():
+    """操作人員一律取登入者，不再由前端傳。
+
+    以前是右上角自己挑名字，等於誰都能把自己做的修改掛到別人頭上，
+    稽核歷程就失去意義了；有了登入之後，session 裡的身分才是唯一
+    可信的來源。所有 API 都在 require_login 後面，這裡必有值。"""
+    return session.get("user", "")
+
+
 # ---------------------------------------------------------------- 登入
 # 這系統本來只跑在辦公室內網，沒有密碼也還好；一旦放到外網，網址誰都
 # 能打開、誰都能看到全部訂單、誰都能改，所以只要走外網就一定要有登入。
@@ -179,18 +216,9 @@ def login():
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
     users = get_users()
-    stored = users.get(username)
-
-    ok = False
-    if stored:
-        # 支援兩種寫法：一開始給的是明碼方便你自己改，一旦有人手動
-        # 換成 werkzeug 產生的雜湊值（pbkdf2: 開頭）就自動改用比對雜湊。
-        if stored.startswith("pbkdf2:"):
-            ok = check_password_hash(stored, password)
-        else:
-            ok = secrets.compare_digest(stored, password)
-
-    if not ok:
+    # 支援兩種寫法：一開始給的是明碼方便你自己改，透過設定頁改過的
+    # 就是雜湊值，verify_password 兩種都認得。
+    if not verify_password(users.get(username, ""), password):
         return render_template(
             "login.html", error="帳號或密碼不對，再檢查一次",
             build_version=BUILD_VERSION,
@@ -209,6 +237,194 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+# ---------------------------------------------------------------- 帳號管理
+# 部署到 Render 之後就沒有「用記事本打開設定檔」這個選項了——雲端機器
+# 上沒有檔案總管。加人、改密碼、清資料這三件事只能在系統裡面做完，
+# 否則密碼永遠停在預設值。
+
+def get_admins():
+    """管理員名單放 users.json 的 `_admins`。底線開頭的鍵本來就會被
+    get_users() 濾掉，不會被誤認成帳號，剛好拿來放這種設定。
+
+    名單空的時候一律當成「所有人都是管理員」——不然升級上來的舊檔案
+    沒有這個欄位，就會變成沒有人能進設定頁，自己把自己鎖在門外。"""
+    raw = load_json("users.json", {})
+    admins = raw.get("_admins")
+    if isinstance(admins, list) and admins:
+        return {str(a) for a in admins}
+    return set(get_users().keys())
+
+
+def is_admin(name=None):
+    return (name or current_operator()) in get_admins()
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not is_admin():
+            return jsonify({"error": "只有管理員可以做這個操作。"}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def _write_users(users, admins):
+    save_json("users.json", {
+        "_說明": ("登入帳號密碼。請用系統裡的「設定」頁面修改，"
+                  "手動改這個檔案也可以，密碼支援明碼或 pbkdf2 雜湊。"),
+        "_admins": sorted(admins),
+        **users,
+    })
+
+
+@app.route("/api/account")
+def api_account():
+    """畫面要知道「我是誰、我是不是管理員」才決定設定頁顯示到哪。"""
+    me = current_operator()
+    return jsonify({
+        "user": me,
+        "is_admin": is_admin(me),
+        "users": sorted(get_users().keys()) if is_admin(me) else [],
+        "admins": sorted(get_admins()) if is_admin(me) else [],
+    })
+
+
+@app.route("/api/account/password", methods=["POST"])
+def api_change_password():
+    """改密碼。改自己的要驗舊密碼；管理員可以直接重設別人的（有人忘記
+    密碼時總要有人能救），但不必也不能藉此看到對方原本的密碼。"""
+    payload = request.get_json(silent=True) or {}
+    me = current_operator()
+    target = norm_text(payload.get("username")) or me
+    new_password = payload.get("new_password") or ""
+    old_password = payload.get("old_password") or ""
+
+    if len(new_password) < 6:
+        return jsonify({"error": "新密碼至少 6 個字。"}), 400
+
+    users = get_users()
+    if target not in users:
+        return jsonify({"error": f"找不到帳號「{target}」。"}), 404
+
+    if target != me:
+        if not is_admin(me):
+            return jsonify({"error": "只有管理員可以重設別人的密碼。"}), 403
+    elif not verify_password(users[target], old_password):
+        return jsonify({"error": "舊密碼不對。"}), 400
+
+    users[target] = generate_password_hash(new_password)
+    _write_users(users, get_admins())
+    return jsonify({"ok": True, "message": f"「{target}」的密碼已更新。"})
+
+
+@app.route("/api/account/users", methods=["POST"])
+@admin_required
+def api_add_user():
+    payload = request.get_json(silent=True) or {}
+    name = norm_text(payload.get("username"))
+    password = payload.get("password") or ""
+    make_admin = bool(payload.get("is_admin"))
+
+    if not name:
+        return jsonify({"error": "請填帳號名稱。"}), 400
+    if name.startswith("_"):
+        return jsonify({"error": "帳號名稱不能用底線開頭。"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "密碼至少 6 個字。"}), 400
+
+    users = get_users()
+    if name in users:
+        return jsonify({"error": f"帳號「{name}」已經存在。"}), 400
+
+    users[name] = generate_password_hash(password)
+    admins = get_admins()
+    if make_admin:
+        admins.add(name)
+    _write_users(users, admins)
+    return jsonify({"ok": True, "message": f"已新增帳號「{name}」。"})
+
+
+@app.route("/api/account/users/delete", methods=["POST"])
+@admin_required
+def api_delete_user():
+    payload = request.get_json(silent=True) or {}
+    name = norm_text(payload.get("username"))
+    users = get_users()
+
+    if name not in users:
+        return jsonify({"error": f"找不到帳號「{name}」。"}), 404
+    if name == current_operator():
+        return jsonify({"error": "不能刪除自己的帳號。"}), 400
+    if len(users) <= 1:
+        return jsonify({"error": "至少要保留一個帳號。"}), 400
+
+    admins = get_admins() - {name}
+    if not admins:
+        return jsonify({"error": "刪掉他就沒有管理員了，請先指定其他管理員。"}), 400
+
+    del users[name]
+    _write_users(users, admins & set(users.keys()))
+    # 帳號刪掉，但 edit_logs 裡他做過的修改一律保留——歷程是對帳用的
+    # 證據，不能因為人離職就消失。
+    return jsonify({"ok": True, "message": f"已刪除帳號「{name}」。"})
+
+
+@app.route("/api/account/admin", methods=["POST"])
+@admin_required
+def api_set_admin():
+    payload = request.get_json(silent=True) or {}
+    name = norm_text(payload.get("username"))
+    make_admin = bool(payload.get("is_admin"))
+    users = get_users()
+
+    if name not in users:
+        return jsonify({"error": f"找不到帳號「{name}」。"}), 404
+
+    admins = get_admins()
+    if make_admin:
+        admins.add(name)
+    else:
+        admins.discard(name)
+        if not admins:
+            return jsonify({"error": "至少要保留一個管理員。"}), 400
+
+    _write_users(users, admins)
+    word = "設為管理員" if make_admin else "取消管理員"
+    return jsonify({"ok": True, "message": f"已將「{name}」{word}。"})
+
+
+@app.route("/api/account/reset-data", methods=["POST"])
+@admin_required
+def api_reset_data():
+    """清空訂單資料。帳號、設定、修改歷程要不要一起清，分開讓人選——
+    最常見的情況是「測試資料清掉、正式開始用」，那時歷程也該一起清；
+    但也有「只想重來一次匯入」的情況，歷程留著才查得到之前發生什麼。"""
+    payload = request.get_json(silent=True) or {}
+    if norm_text(payload.get("confirm")) != "清空資料":
+        return jsonify({"error": "請照著輸入「清空資料」四個字再確認。"}), 400
+
+    keep_logs = bool(payload.get("keep_logs"))
+    backup = db.backup_db("reset")
+
+    conn = get_conn()
+    try:
+        # 先刪子表再刪主表，順序反了會踩到外鍵
+        conn.execute("DELETE FROM export_batch_items")
+        conn.execute("DELETE FROM export_batches")
+        conn.execute("DELETE FROM import_batches")
+        conn.execute("DELETE FROM orders")
+        conn.execute("DELETE FROM po_headers")
+        if not keep_logs:
+            conn.execute("DELETE FROM edit_logs")
+        conn.commit()
+    finally:
+        conn.close()
+
+    tail = "，修改歷程保留" if keep_logs else "，修改歷程一併清除"
+    note = f"（清空前已自動備份：{os.path.basename(backup)}）" if backup else ""
+    return jsonify({"ok": True, "message": f"訂單資料已清空{tail}。{note}"})
 
 
 # ---------------------------------------------------------------- 歷程
@@ -248,8 +464,10 @@ def api_config():
             ).fetchall()
             return [r["v"] for r in rows]
 
+        # 這裡不再回傳 operators：操作人員已經改成「登入的是誰就是誰」，
+        # config.json 裡那份名單既不影響登入、也不影響歷程，留著只會讓人
+        # 以為改了就有用（之前就發生過「為什麼名單裡看不到某人」的誤會）。
         return jsonify({
-            "operators": cfg.get("operators", ["OP"]),
             "po_statuses": cfg.get("po_statuses", []),
             "receiving_statuses": cfg.get("receiving_statuses", []),
             "order_types": cfg.get("order_types", []),
@@ -444,9 +662,7 @@ def api_logs_export():
     不能只留在畫面上一筆一筆看。
     """
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
-    if not operator:
-        return jsonify({"error": "請先選擇操作人員。"}), 400
+    operator = current_operator()
 
     clause, params = build_log_filter(payload.get("filters") or {})
     conn = get_conn()
@@ -507,9 +723,7 @@ def api_logs_export():
 @app.route("/api/orders/<int:order_id>", methods=["PUT"])
 def api_update_order(order_id):
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
-    if not operator:
-        return jsonify({"error": "請先在右上角選擇操作人員，才能編輯訂單。"}), 400
+    operator = current_operator()
 
     client_version = norm_int(payload.get("version"))
     if client_version is None:
@@ -743,9 +957,7 @@ def api_update_po(po_number):
     """改整張 PO：狀態類欄位寫 po_headers，交期／倉別套用到全部 SKU。"""
     po_number = norm_key(po_number)
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
-    if not operator:
-        return jsonify({"error": "請先在右上角選擇操作人員，才能編輯訂單。"}), 400
+    operator = current_operator()
 
     client_version = norm_int(payload.get("po_version"))
     if client_version is None:
@@ -831,10 +1043,8 @@ def api_update_po(po_number):
 def api_clear_review():
     """OP 確認過異動後把整張單的警示燈關掉，每張單各記一筆歷程。"""
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
+    operator = current_operator()
     pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
-    if not operator:
-        return jsonify({"error": "請先選擇操作人員。"}), 400
     if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
 
@@ -868,12 +1078,10 @@ def api_set_pulled():
     重出，要查得到。
     """
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
+    operator = current_operator()
     reason = norm_text(payload.get("reason"))
     pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
     target = 1 if payload.get("pulled") else 0
-    if not operator:
-        return jsonify({"error": "請先選擇操作人員。"}), 400
     if not reason:
         return jsonify({"error": "調整拉單狀態必須填寫原因。"}), 400
     if not pos:
@@ -914,12 +1122,10 @@ def api_set_pulled():
 def api_batch_status():
     """批次改整批 PO 的狀態，每張單各記一筆歷程（不是只記一筆批次）。"""
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
+    operator = current_operator()
     pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
     field = norm_text(payload.get("field"))
     value = norm_text(payload.get("value"))
-    if not operator:
-        return jsonify({"error": "請先選擇操作人員。"}), 400
     if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
     if field not in ("po_status", "receiving_status"):
@@ -953,9 +1159,7 @@ def api_batch_status():
 @app.route("/api/import/preview", methods=["POST"])
 def api_import_preview():
     """第一階段：只解析與比對，不寫入 orders。OP 看完報告才決定。"""
-    operator = norm_text(request.form.get("operator"))
-    if not operator:
-        return jsonify({"error": "請先在右上角選擇操作人員，才能上傳。"}), 400
+    operator = current_operator()
     upload = request.files.get("file")
     if upload is None or not upload.filename:
         return jsonify({"error": "沒有收到檔案。"}), 400
@@ -1013,9 +1217,9 @@ def api_import_commit():
     """第二階段：全有全無寫入。中間任何一列出錯就整批 rollback。"""
     payload = request.get_json(silent=True) or {}
     batch_id = norm_int(payload.get("batch_id"))
-    operator = norm_text(payload.get("operator"))
-    if not batch_id or not operator:
-        return jsonify({"error": "缺少批次或操作人員資訊。"}), 400
+    operator = current_operator()
+    if not batch_id:
+        return jsonify({"error": "缺少批次資訊，請重新上傳。"}), 400
 
     conn = get_conn()
     try:
@@ -1181,14 +1385,12 @@ def api_export():
     是否標記為「已拉單」由 OP 明確決定：試算用的匯出不該把單鎖掉。
     """
     payload = request.get_json(silent=True) or {}
-    operator = norm_text(payload.get("operator"))
+    operator = current_operator()
     profile_key = norm_text(payload.get("profile")) or "warehouse"
     mark_pulled = bool(payload.get("mark_pulled"))
     filters = payload.get("filters") or {}
     selected_pos = [norm_key(x) for x in payload.get("po_numbers", []) if norm_key(x)]
 
-    if not operator:
-        return jsonify({"error": "請先選擇操作人員。"}), 400
 
     profiles = get_profiles()
     profile = profiles.get(profile_key)
