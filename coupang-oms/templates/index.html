@@ -1103,24 +1103,29 @@ function openPullPanel(pulled) {
     : `解鎖後這 ${selected.size} 張單可再被編輯——倉庫可能已經拿到這批資料，請確認再解鎖。`;
   const applyLabel = pulled ? "標記為已拉單" : "解除拉單鎖定";
   const applyCls = pulled ? "bg-ink-900 hover:bg-ink-800" : "bg-red-600 hover:bg-red-500";
+  // 標記已拉單是例行操作，不強制填理由；解除拉單鎖定風險較高（東西可能
+  // 已經給倉庫了卻要把鎖打開），這個方向仍然強制填原因。
+  const reasonRequired = !pulled;
   openPanel(`
     <div class="text-sm space-y-2">
       <p class="text-amber-700"><i class="bi bi-exclamation-triangle-fill"></i> ${esc(warn)}</p>
       <div class="flex items-center gap-2 flex-wrap">
         <input id="abp-reason" class="border rounded px-2 py-1.5 flex-1 min-w-[240px]"
-               placeholder="請填寫原因（必填）">
+               placeholder="${reasonRequired ? "請填寫原因（必填）" : "備註（選填）"}">
         <button id="abp-cancel" class="px-3 py-1.5 rounded text-ink-600 hover:bg-ink-100">取消</button>
-        <button id="abp-apply" disabled
+        <button id="abp-apply" ${reasonRequired ? "disabled" : ""}
                 class="${applyCls} text-white px-3 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
           ${applyLabel}（${selected.size} 張）</button>
       </div>
     </div>`);
   const reasonInput = $("#abp-reason"), applyBtn = $("#abp-apply");
-  reasonInput.addEventListener("input", () => { applyBtn.disabled = !reasonInput.value.trim(); });
+  if (reasonRequired) {
+    reasonInput.addEventListener("input", () => { applyBtn.disabled = !reasonInput.value.trim(); });
+  }
   $("#abp-cancel").addEventListener("click", closePanel);
   applyBtn.addEventListener("click", async () => {
     const reason = reasonInput.value.trim();
-    if (!reason) return;
+    if (reasonRequired && !reason) return;
     const res = await fetch("/api/pos/pull", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ operator: operator(), po_numbers: [...selected], pulled, reason }),
@@ -1220,7 +1225,8 @@ document.addEventListener("click", e => {
   if (open) { openPo(open.dataset.open); return; }
 
   // 拉單欄位的鎖頭圖示：直接把這張單單獨選起來，跳出跟批次動作列
-  // 同一套面板（該填原因、該顯示警語都不會少），省掉手動勾選那一步。
+  // 同一套面板（該顯示的警語不會少，解鎖仍然強制填原因），省掉手動
+  // 勾選那一步。
   const quickPull = e.target.closest("[data-quick-pull]");
   if (quickPull) {
     if (!requireOperator()) return;
