@@ -673,6 +673,16 @@ async function openPo(poNumber) {
   const opt = (list, cur) => list.map(v =>
     `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v) || "（空白）"}</option>`).join("");
 
+  // 箱數是算出來的，不存進資料庫，也不能手動改——一旦讓人同時改
+  // 「出貨數量」「箱入數」又能改「箱數」，三個數字要聽誰的就打架，
+  // 這是之前討論過一定會出 bug 的做法，所以箱數永遠只能看。
+  function boxCount(qty, boxSize) {
+    if (qty == null || qty === "" || !boxSize) return "—";
+    const n = Number(qty) / Number(boxSize);
+    if (!isFinite(n)) return "—";
+    return (Math.round(n * 100) / 100).toString();
+  }
+
   const skuRows = d.skus.map(s => {
     const cls = s.alert_level === "changed_after_pull" ? "bg-red-50"
               : s.needs_review ? "bg-amber-50" : "";
@@ -688,7 +698,14 @@ async function openPo(poNumber) {
       <td class="px-2 py-1.5 text-right text-xs">${s.qty_coupang ?? ""}</td>
       <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="qty_ship"
           value="${s.qty_ship ?? ""}" ${locked ? "disabled" : ""}
-          class="w-20 border border-ink-200 rounded px-1 py-0.5 text-xs text-right ${diff ? "text-red-600 font-bold" : ""}"></td>
+          class="w-20 border border-ink-200 rounded px-1 py-0.5 text-xs text-right box-calc ${diff ? "text-red-600 font-bold" : ""}"></td>
+      <td class="px-2 py-1.5 text-xs text-ink-500">${esc(s.unit)}</td>
+      <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="box_size"
+          value="${s.box_size ?? ""}" ${locked ? "disabled" : ""}
+          title="${s.box_size_overridden ? "人工調整過，匯入不會覆蓋" : ""}"
+          class="w-16 border border-ink-200 rounded px-1 py-0.5 text-xs text-right box-calc ${s.box_size_overridden ? "bg-amber-50" : ""}"></td>
+      <td class="px-2 py-1.5 text-right text-xs font-mono" data-box-count="${s.id}">${boxCount(s.qty_ship, s.box_size)}</td>
+      <td class="px-2 py-1.5 text-xs text-ink-500">${esc(s.expiry_note)}</td>
       <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="receiving_note"
           value="${esc(s.receiving_note)}" ${locked ? "disabled" : ""} placeholder="短驗 / 溢收…"
           class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
@@ -755,6 +772,10 @@ async function openPo(poNumber) {
             <th class="px-2 py-1.5 text-left w-24">品牌</th>
             <th class="px-2 py-1.5 text-right w-20">下單數量</th>
             <th class="px-2 py-1.5 text-left w-24">出貨數量</th>
+            <th class="px-2 py-1.5 text-left w-16">單位</th>
+            <th class="px-2 py-1.5 text-left w-20">箱入數</th>
+            <th class="px-2 py-1.5 text-right w-16">箱數<span class="block font-normal text-[10px] text-ink-400">自動算</span></th>
+            <th class="px-2 py-1.5 text-left w-24">允收效期</th>
             <th class="px-2 py-1.5 text-left w-32">驗收註記</th>
             <th class="px-2 py-1.5 text-left w-32">備註</th>
           </tr></thead>
@@ -768,6 +789,19 @@ async function openPo(poNumber) {
         <span class="text-xs font-normal text-ink-400">（整張單的所有異動，含各品項）</span></h3>
       <div class="border border-ink-200 rounded-lg max-h-56 overflow-y-auto">${logRows}</div>
     </div>`;
+
+  // 出貨數量／箱入數改變時，箱數要立刻跟著重算——純畫面計算，
+  // 不送出任何請求，兩個欄位真的存檔時才會各自呼叫 savePo()。
+  document.querySelectorAll("#po-body .box-calc").forEach(el => {
+    el.addEventListener("input", () => {
+      const skuId = el.dataset.sku;
+      const row = el.closest("tr");
+      const qtyEl = row.querySelector(`[data-f="qty_ship"]`);
+      const boxEl = row.querySelector(`[data-f="box_size"]`);
+      const out = row.querySelector(`[data-box-count="${skuId}"]`);
+      if (out) out.textContent = boxCount(qtyEl.value, boxEl.value);
+    });
+  });
 
   $("#btn-po-save").disabled = locked;
 }
@@ -794,7 +828,7 @@ async function savePo() {
   // 再存每個品項自己的欄位（只送真的改過的）
   for (const sku of CURRENT.skus) {
     const body = {};
-    ["qty_ship", "receiving_note", "remarks"].forEach(f => {
+    ["qty_ship", "box_size", "receiving_note", "remarks"].forEach(f => {
       const el = document.querySelector(`[data-sku="${sku.id}"][data-f="${f}"]`);
       if (!el) return;
       const now = el.value;

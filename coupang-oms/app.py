@@ -7,7 +7,6 @@ import io
 import json
 import os
 import secrets
-import datetime as _dt
 from functools import wraps
 
 from flask import (
@@ -29,7 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-20.2"
+BUILD_VERSION = "2026-08-20.4"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -84,7 +83,13 @@ EDITABLE_FIELDS = {
     "qty_ship":       "出貨數量",
     "remarks":        "備註",
     "receiving_note": "驗收註記",
+    "box_size":       "箱入數",
 }
+
+# 改這些欄位時，順便標記「人工調整過」，下次匯入酷澎的檔案就不再覆蓋
+# ——跟交期／倉別是同一套邏輯，只是這兩個是每筆 SKU 各自的值，不是
+# 整張單一起改。
+SKU_OVERRIDE_FIELDS = ("qty_ship", "box_size")
 
 # 整張 PO 共用的欄位，改了就是整張單一起改（OP 拋 ERP、交倉庫都是整張
 # 單一起行動，不會拆開）。存在 po_headers，匯入一律不覆蓋。
@@ -708,7 +713,7 @@ def api_logs_export():
                 cell.number_format = "@"
     ws.freeze_panes = "A2"
 
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = db.file_stamp()
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
@@ -758,7 +763,7 @@ def api_update_order(order_id):
             if field not in payload:
                 continue
             raw = payload[field]
-            new_val = norm_int(raw) if field == "qty_ship" else norm_text(raw)
+            new_val = norm_int(raw) if field in ("qty_ship", "box_size") else norm_text(raw)
 
             old_val = order[field]
             if _same(old_val, new_val):
@@ -799,8 +804,8 @@ def api_update_order(order_id):
 
         for field, label, old_val, new_val in changes:
             log_change(conn, order, field, label, old_val, new_val, operator, "manual")
-            if field == "qty_ship":
-                conn.execute("UPDATE orders SET qty_ship_overridden = 1 WHERE id = ?",
+            if field in SKU_OVERRIDE_FIELDS:
+                conn.execute(f"UPDATE orders SET {field}_overridden = 1 WHERE id = ?",
                              (order_id,))
         conn.commit()
 
@@ -1242,7 +1247,7 @@ def api_import_commit():
         stamp = now()
         inserted = updated = 0
 
-        today = _dt.date.today().isoformat()
+        today = db.today()
         for row in preview["new"]:
             # PO 表頭只在第一次見到這張單時建立。之後同一張單再上傳，
             # 這裡什麼都不做——狀態與建檔日一律以系統為準，不被 Excel 覆蓋。
@@ -1455,7 +1460,7 @@ def api_export():
             ws.column_dimensions[letter].width = widths.get(col.get("format"), 16)
         ws.freeze_panes = "A2"
 
-        stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp = db.file_stamp()
         filename = f"酷澎出貨表_{profile_key}_{stamp}.xlsx"
 
         cur = conn.execute(

@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS orders (
     -- OP 談好的結果，也不會讓兩邊不一致這件事被藏起來。
     delivery_date_overridden INTEGER NOT NULL DEFAULT 0,
     warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
+    box_size_overridden      INTEGER NOT NULL DEFAULT 0,
     remarks           TEXT DEFAULT '',
     receiving_note    TEXT DEFAULT '',      -- 這個品項的驗收註記（短驗/溢收…）
 
@@ -195,8 +196,31 @@ CREATE INDEX IF NOT EXISTS idx_expitems_order ON export_batch_items(order_id);
 """
 
 
+# 時間一律綁台灣時區，不要用機器的本地時間。
+#
+# 在自己電腦上跑時兩者剛好一樣，看不出差別；一搬到雲端主機（Render 的
+# 機器跑 UTC）就會整整慢 8 小時——下午兩點改的單，修改歷程寫成早上六點。
+# 這份歷程是拿去跟酷澎對帳、釐清倉庫責任的證據，時間錯掉等於作廢，
+# 所以寫死成 UTC+8，程式擺到哪台機器上記的都是同一個時間。
+TAIPEI_TZ = _dt.timezone(_dt.timedelta(hours=8), "Asia/Taipei")
+
+
+def _local_now():
+    return _dt.datetime.now(TAIPEI_TZ)
+
+
 def now():
-    return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return _local_now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def today():
+    """今天的日期（台灣），ISO 格式。建檔日這類「日」欄位用這個。"""
+    return _local_now().date().isoformat()
+
+
+def file_stamp():
+    """檔名用的時間戳，例如備份檔、匯出檔。"""
+    return _local_now().strftime("%Y%m%d_%H%M%S")
 
 
 def get_conn():
@@ -243,9 +267,21 @@ def init_db():
     conn = get_conn()
     try:
         conn.executescript(SCHEMA)
+        _migrate_columns(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_columns(conn):
+    """CREATE TABLE IF NOT EXISTS 不會幫既有的表補新欄位——資料庫檔案
+    是使用者手上舊版跑出來的，每次新增欄位都要在這裡手動補一次
+    ALTER TABLE，不然舊資料庫升級後會直接炸在「no such column」。"""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+    if "box_size_overridden" not in existing:
+        conn.execute(
+            "ALTER TABLE orders ADD COLUMN box_size_overridden "
+            "INTEGER NOT NULL DEFAULT 0")
 
 
 def backup_db(tag="import"):
@@ -253,7 +289,7 @@ def backup_db(tag="import"):
     if not os.path.exists(DB_PATH):
         return ""
     os.makedirs(BACKUP_DIR, exist_ok=True)
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = file_stamp()
     dest = os.path.join(BACKUP_DIR, f"database_{tag}_{stamp}.db")
     shutil.copy2(DB_PATH, dest)
     _prune_backups(keep=30)
