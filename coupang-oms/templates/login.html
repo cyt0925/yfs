@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登入 — 酷澎訂單管理系統</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+</style>
+</head>
+<body class="bg-ink-950 text-ink-900 min-h-screen flex items-center justify-center px-4">
+
+<div class="w-full max-w-sm">
+  <div class="flex flex-col items-center gap-2 mb-6">
+    <img src="{{ url_for('static', filename='logo.png') }}" width="48" height="42" class="h-11 w-auto" alt="永豐商店 logo">
+    <div class="text-center">
+      <h1 class="text-white text-lg font-bold leading-tight">酷澎訂單管理系統</h1>
+      <p class="text-ink-400 text-xs">永豐商店 OP 中繼站</p>
+    </div>
+  </div>
+
+  <form method="post" class="bg-white rounded-xl shadow-lg border border-ink-100 p-6 space-y-4">
+    <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+
+    {% if error %}
+    <div class="bg-brand-50 border border-brand-200 text-brand-700 text-sm rounded-lg px-3 py-2 flex items-center gap-2">
+      <i class="bi bi-exclamation-triangle-fill"></i> {{ error }}
+    </div>
+    {% endif %}
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-500">帳號</span>
+      <input name="username" required autofocus autocomplete="username"
+             class="border border-ink-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-500">密碼</span>
+      <input name="password" type="password" required autocomplete="current-password"
+             class="border border-ink-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+    </label>
+
+    <button type="submit"
+            class="w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-lg px-4 py-2.5 text-sm shadow-sm">
+      登入
+    </button>
+  </form>
+
+  <p class="text-center text-[11px] text-ink-500 pt-4">版本 {{ build_version }}</p>
+</div>
+
+</body>
+</html>

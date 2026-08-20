@@ -6,9 +6,15 @@
 import io
 import json
 import os
+import secrets
 import datetime as _dt
+from functools import wraps
 
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import (
+    Flask, jsonify, redirect, render_template, request, send_file, session,
+    url_for,
+)
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 from db import get_conn, init_db, now
@@ -23,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-19.7"
+BUILD_VERSION = "2026-08-20.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -31,6 +37,46 @@ app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 # 預設不會自動重讀模板檔，只改 index.html 卻要重開程式才生效，容易
 # 造成「明明換了檔案，畫面卻沒變」的誤判）。
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+# 只要「開了資料資料夾、建了資料庫表」這件事，不管是 python app.py
+# 直接跑，還是 gunicorn 匯入 app 物件來跑，都要做——之前這兩行只寫
+# 在最底下 `if __name__ == "__main__":` 裡，gunicorn 用 import 的方式
+# 啟動時完全不會執行到那段，資料夾、資料庫表都不會被建出來，一部署
+# 上 Render 就整個掛掉。搬到這裡，模組被 import 的當下就一定會跑到。
+moved_on_start = db.ensure_data_dir()
+init_db()
+
+
+def _load_or_create_secret_key():
+    # 沒設 SECRET_KEY 環境變數的話，把 session 簽章金鑰存進資料資料夾，
+    # 一次產生、之後重複使用——不然每次重開程式（或 Render 重新部署）
+    # 金鑰都換一把，所有人都會被登出。
+    env_key = os.environ.get("SECRET_KEY")
+    if env_key:
+        return env_key
+    path = os.path.join(db.DATA_DIR, ".secret_key")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            key = fh.read().strip()
+            if key:
+                return key
+    except OSError:
+        pass
+    key = secrets.token_hex(32)
+    try:
+        os.makedirs(db.DATA_DIR, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(key)
+    except OSError:
+        pass
+    return key
+
+
+app.secret_key = _load_or_create_secret_key()
+# 部署在外網時 Render 是走 HTTPS，這樣 cookie 只會經加密連線傳送；
+# 本機用 http://127.0.0.1 開發一樣有效，Flask 不會因此擋掉本機測試。
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # 單一 SKU 自己的欄位，改一個品項不影響同張單的其他品項。
 # 匯入永遠不會覆蓋這些欄位。
@@ -96,6 +142,75 @@ def get_profiles():
     return load_json("export_profiles.json", {"profiles": {}}).get("profiles", {})
 
 
+def get_users():
+    """帳號密碼放 users.json，跟 config.json 一樣住在資料資料夾，改完
+    存檔、使用者重新登入就生效，不用改程式、不用重新部署。"""
+    raw = load_json("users.json", {})
+    # 檔案裡的 "_說明" 那行是給人看的註解，不是帳號，過濾掉——不然
+    # 有人把使用者名稱打成「_說明」，密碼打那串說明文字，就真的能登入。
+    return {k: v for k, v in raw.items() if not k.startswith("_")}
+
+
+# ---------------------------------------------------------------- 登入
+# 這系統本來只跑在辦公室內網，沒有密碼也還好；一旦放到外網，網址誰都
+# 能打開、誰都能看到全部訂單、誰都能改，所以只要走外網就一定要有登入。
+
+PUBLIC_ENDPOINTS = {"login", "static"}
+
+
+@app.before_request
+def require_login():
+    if request.endpoint in PUBLIC_ENDPOINTS or request.endpoint is None:
+        return
+    if session.get("user"):
+        return
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "未登入，請重新整理頁面登入"}), 401
+    return redirect(url_for("login", next=request.path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        if session.get("user"):
+            return redirect(url_for("index"))
+        return render_template("login.html", error=None, build_version=BUILD_VERSION)
+
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    users = get_users()
+    stored = users.get(username)
+
+    ok = False
+    if stored:
+        # 支援兩種寫法：一開始給的是明碼方便你自己改，一旦有人手動
+        # 換成 werkzeug 產生的雜湊值（pbkdf2: 開頭）就自動改用比對雜湊。
+        if stored.startswith("pbkdf2:"):
+            ok = check_password_hash(stored, password)
+        else:
+            ok = secrets.compare_digest(stored, password)
+
+    if not ok:
+        return render_template(
+            "login.html", error="帳號或密碼不對，再檢查一次",
+            build_version=BUILD_VERSION,
+        ), 401
+
+    session.clear()
+    session["user"] = username
+    session.permanent = True
+    nxt = request.args.get("next") or request.form.get("next") or "/"
+    if not nxt.startswith("/"):
+        nxt = "/"
+    return redirect(nxt)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 # ---------------------------------------------------------------- 歷程
 
 def log_change(conn, order, field, label, old, new, operator, source, note=""):
@@ -114,7 +229,10 @@ def log_change(conn, order, field, label, old, new, operator, source, note=""):
 
 @app.route("/")
 def index():
-    return render_template("index.html", build_version=BUILD_VERSION)
+    return render_template(
+        "index.html", build_version=BUILD_VERSION,
+        logged_in_user=session.get("user", ""),
+    )
 
 
 @app.route("/api/config")
@@ -1249,8 +1367,7 @@ if __name__ == "__main__":
         input(" 按 Enter 關閉這個視窗...")
         raise SystemExit(1)
 
-    moved = db.ensure_data_dir()
-    init_db()
+    moved = moved_on_start
     ip = lan_ip()
 
     print("=" * 62)

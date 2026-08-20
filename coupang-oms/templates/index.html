@@ -135,6 +135,12 @@
     <button id="btn-export" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-file-earmark-excel"></i> 匯出報表
     </button>
+    {% if logged_in_user %}
+    <form action="{{ url_for('logout') }}" method="post" class="flex items-center gap-2 pl-2 border-l border-ink-700">
+      <span class="text-xs text-ink-300"><i class="bi bi-check-circle-fill text-emerald-400"></i> {{ logged_in_user }}</span>
+      <button type="submit" class="text-xs text-ink-300 hover:text-white underline underline-offset-2">登出</button>
+    </form>
+    {% endif %}
   </div>
 </header>
 

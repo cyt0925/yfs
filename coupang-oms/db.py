@@ -28,7 +28,7 @@ BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
 # 舊版把這些檔案放在程式資料夾裡，第一次啟動時自動搬過去
 _MIGRATE = ("database.db", "config.json", "export_profiles.json")
-_SEED = ("config.json", "export_profiles.json")
+_SEED = ("config.json", "export_profiles.json", "users.json")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
