@@ -28,7 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-20.4"
+BUILD_VERSION = "2026-08-20.5"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -124,7 +124,18 @@ INSERT_FIELDS = [
 
 # ---------------------------------------------------------------- 設定檔
 
+# PostgreSQL 模式下這三個設定檔改存進資料庫（見 db.load_setting／
+# save_setting）；SQLite 模式維持原本放檔案的做法。
+_SETTINGS_KEY = {
+    "config.json": "config",
+    "users.json": "users",
+    "export_profiles.json": "export_profiles",
+}
+
+
 def load_json(name, default):
+    if db.IS_POSTGRES:
+        return db.load_setting(_SETTINGS_KEY[name], default)
     # 設定檔住在資料資料夾，不在程式資料夾——更新版本時不會被覆蓋
     path = os.path.join(db.DATA_DIR, name)
     try:
@@ -159,6 +170,9 @@ def get_users():
 def save_json(name, data):
     """寫設定檔。先寫暫存檔再換過去，中途斷電也不會留下半個壞掉的
     JSON——設定檔壞掉會讓所有人登不進來，這個險不值得冒。"""
+    if db.IS_POSTGRES:
+        db.save_setting(_SETTINGS_KEY[name], data)
+        return
     path = os.path.join(db.DATA_DIR, name)
     tmp = path + ".tmp"
     os.makedirs(db.DATA_DIR, exist_ok=True)
@@ -842,6 +856,10 @@ def po_summary_sql(clause):
     全部品項。否則搜「whiskas」時，那張含 5 個品牌的單會只顯示 whiskas、
     品項數與數量也只算到符合的那幾項，資訊是錯的。
     """
+    # GROUP_CONCAT 是 SQLite 的寫法，PostgreSQL 要用 STRING_AGG，
+    # 兩邊語法不同、但效果一樣（DISTINCT 值用逗號串起來）。
+    concat = (lambda col: f"STRING_AGG(DISTINCT {col}, ',')") if db.IS_POSTGRES \
+        else (lambda col: f"GROUP_CONCAT(DISTINCT {col})")
     return f"""
         SELECT po_number,
                MIN(order_type)      AS order_type,
@@ -854,8 +872,8 @@ def po_summary_sql(clause):
                MIN(filed_date)      AS filed_date,
                MIN(delivery_date)   AS delivery_date,
                MIN(warehouse)       AS warehouse,
-               GROUP_CONCAT(DISTINCT line)  AS lines_csv,
-               GROUP_CONCAT(DISTINCT brand) AS brands_csv,
+               {concat("line")}  AS lines_csv,
+               {concat("brand")} AS brands_csv,
                COUNT(*)             AS sku_count,
                COALESCE(SUM(qty_coupang),0) AS qty_coupang,
                COALESCE(SUM(qty_ship),0)    AS qty_ship,
@@ -1243,20 +1261,33 @@ def api_import_commit():
 
     conn = get_conn()
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        # BEGIN IMMEDIATE 是 SQLite 專屬語法，搶先拿寫入鎖避免之後升級
+        # 鎖時撞死結；PostgreSQL 沒有這個問題（MVCC），且每個敘述本來
+        # 就已經在交易裡，不需要也不能下這行。
+        if not db.IS_POSTGRES:
+            conn.execute("BEGIN IMMEDIATE")
         stamp = now()
         inserted = updated = 0
 
         today = db.today()
+        # INSERT OR IGNORE 是 SQLite 寫法，PostgreSQL 要用 ON CONFLICT
+        # DO NOTHING，效果一樣：這張 PO 表頭已經存在就什麼都不做。
+        insert_po_header = (
+            """INSERT INTO po_headers
+               (po_number, po_status, receiving_status, is_pulled,
+                filed_date, created_at, updated_at)
+               VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)
+               ON CONFLICT (po_number) DO NOTHING"""
+            if db.IS_POSTGRES else
+            """INSERT OR IGNORE INTO po_headers
+               (po_number, po_status, receiving_status, is_pulled,
+                filed_date, created_at, updated_at)
+               VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)"""
+        )
         for row in preview["new"]:
             # PO 表頭只在第一次見到這張單時建立。之後同一張單再上傳，
             # 這裡什麼都不做——狀態與建檔日一律以系統為準，不被 Excel 覆蓋。
-            conn.execute(
-                """INSERT OR IGNORE INTO po_headers
-                   (po_number, po_status, receiving_status, is_pulled,
-                    filed_date, created_at, updated_at)
-                   VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)""",
-                (row["po_number"], today, stamp, stamp))
+            conn.execute(insert_po_header, (row["po_number"], today, stamp, stamp))
 
             columns = ", ".join(INSERT_FIELDS)
             marks = ", ".join("?" * len(INSERT_FIELDS))

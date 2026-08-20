@@ -1,24 +1,46 @@
-"""SQLite 連線與 schema。
+"""資料庫連線與 schema。
+
+支援兩種後端：
+1. SQLite（預設）——沒設 DATABASE_URL 環境變數時使用，檔案存在本機，
+   給自己電腦上單機測試用。
+2. PostgreSQL（Supabase）——設了 DATABASE_URL 就切過去，資料存在雲端，
+   不管程式部署到哪台機器、重新部署幾次，資料都不會不見，多人也能
+   同時連到同一份。正式讓同事共用時走這條路。
+
+兩種後端共用同一套呼叫方式（`conn.execute(sql, params)`、`row["欄位"]`、
+`?` 佔位符），呼叫端（app.py／importer.py）完全不用管現在接的是哪個
+資料庫——差異全部封裝在這個檔案裡的 _PgConnection／_PgCursor。
 
 設計重點：
 1. UNIQUE(po_number, sku_id) 才是真正的防重鍵。一張 PO 有多個 SKU，
    若把 po_number 設成 UNIQUE，一張 29 個 SKU 的單只會留下 1 列。
 2. delivery_date / warehouse 是「整張 PO 共用、而且會被改」的欄位，
    絕對不能進主鍵，否則酷澎改倉改期會被誤判成全新單而產生幽靈列。
-3. WAL 模式讓多人同時讀寫不互卡；業務層的覆蓋另外用 version 樂觀鎖擋。
+3. SQLite 用 WAL 模式讓多人同時讀寫不互卡；PostgreSQL 本來就是多人
+   資料庫，不需要這個。業務層的覆蓋另外用 version 樂觀鎖擋，兩邊都靠
+   這一層，不依賴資料庫層的鎖。
 """
 
+import json
 import os
 import shutil
 import sqlite3
 import datetime as _dt
 
+import psycopg2
+import psycopg2.extras
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+IS_POSTGRES = bool(DATABASE_URL)
 
 # 資料與設定放在程式資料夾「外面」的兄弟資料夾。
 #
 # 這樣更新版本時只要把整個 coupang-oms 解壓縮覆蓋掉就好，不必挑檔案、
 # 也不會洗掉已匯入的訂單和改好的設定。程式碼歸程式碼，資料歸資料。
+# （PostgreSQL 模式下訂單資料跟帳號設定都在雲端資料庫裡，這個資料夾
+# 只剩備份檔還會用到。）
 DATA_DIR = os.environ.get("COUPANG_OMS_DATA") or os.path.join(
     os.path.dirname(BASE_DIR), "資料與設定")
 DEFAULTS_DIR = os.path.join(BASE_DIR, "defaults")
@@ -30,7 +52,9 @@ BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 _MIGRATE = ("database.db", "config.json", "export_profiles.json")
 _SEED = ("config.json", "export_profiles.json", "users.json")
 
-SCHEMA = """
+# ---------------------------------------------------------------- SQLite schema
+
+SCHEMA_SQLITE = """
 CREATE TABLE IF NOT EXISTS orders (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
 
@@ -193,8 +217,180 @@ CREATE TABLE IF NOT EXISTS export_batch_items (
 
 CREATE INDEX IF NOT EXISTS idx_expitems_batch ON export_batch_items(batch_id);
 CREATE INDEX IF NOT EXISTS idx_expitems_order ON export_batch_items(order_id);
+
+-- app_settings 只有 PostgreSQL 模式會用到（帳號密碼、下拉選單設定移進
+-- 資料庫，不再放檔案）；SQLite 模式建這張表但不會有人寫入，留著純粹
+-- 是為了讓兩邊 schema 盡量長一樣，之後改起來比較不會漏改一邊。
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT DEFAULT ''
+);
 """
 
+# ---------------------------------------------------------------- PostgreSQL schema
+#
+# 跟 SQLite 版本結構完全對應，只有兩處語法不一樣：
+# 1. AUTOINCREMENT 主鍵改用 SERIAL。
+# 2. CREATE VIEW 沒有 IF NOT EXISTS 這個寫法，改用 OR REPLACE。
+
+SCHEMA_POSTGRES = """
+CREATE TABLE IF NOT EXISTS orders (
+    id                SERIAL PRIMARY KEY,
+
+    po_number         TEXT NOT NULL,
+    sku_id            TEXT NOT NULL,
+
+    order_type        TEXT DEFAULT '',
+    parent_po         TEXT DEFAULT '',
+    line              TEXT DEFAULT '',
+    brand             TEXT DEFAULT '',
+    product_name      TEXT DEFAULT '',
+    barcode           TEXT DEFAULT '',
+    yf_sku            TEXT DEFAULT '',
+    warehouse         TEXT DEFAULT '',
+    address           TEXT DEFAULT '',
+    delivery_date     TEXT DEFAULT '',
+    qty_coupang       INTEGER,
+    unit              TEXT DEFAULT '',
+    box_size          INTEGER,
+    unit_price        REAL,
+    expiry_note       TEXT DEFAULT '',
+    seq_no            INTEGER,
+
+    qty_ship          INTEGER,
+    qty_ship_overridden INTEGER NOT NULL DEFAULT 0,
+    delivery_date_overridden INTEGER NOT NULL DEFAULT 0,
+    warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
+    box_size_overridden      INTEGER NOT NULL DEFAULT 0,
+    remarks           TEXT DEFAULT '',
+    receiving_note    TEXT DEFAULT '',
+
+    needs_review      INTEGER NOT NULL DEFAULT 0,
+    alert_level       TEXT DEFAULT '',
+    review_reason     TEXT DEFAULT '',
+
+    version           INTEGER NOT NULL DEFAULT 1,
+    source_file       TEXT DEFAULT '',
+    first_seen_at     TEXT DEFAULT '',
+    last_seen_at      TEXT DEFAULT '',
+    created_at        TEXT DEFAULT '',
+    updated_at        TEXT DEFAULT '',
+
+    UNIQUE (po_number, sku_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_po        ON orders(po_number);
+CREATE INDEX IF NOT EXISTS idx_orders_delivery  ON orders(delivery_date);
+CREATE INDEX IF NOT EXISTS idx_orders_brand     ON orders(brand);
+CREATE INDEX IF NOT EXISTS idx_orders_line      ON orders(line);
+CREATE INDEX IF NOT EXISTS idx_orders_wh        ON orders(warehouse);
+CREATE INDEX IF NOT EXISTS idx_orders_review    ON orders(needs_review);
+
+CREATE TABLE IF NOT EXISTS po_headers (
+    po_number        TEXT PRIMARY KEY,
+    po_status        TEXT NOT NULL DEFAULT '已建立',
+    receiving_status TEXT NOT NULL DEFAULT '未驗收',
+    is_pulled        INTEGER NOT NULL DEFAULT 0,
+    pulled_at        TEXT DEFAULT '',
+    pulled_by        TEXT DEFAULT '',
+    pulled_batch_id  INTEGER,
+    filed_date       TEXT DEFAULT '',
+    version          INTEGER NOT NULL DEFAULT 1,
+    created_at       TEXT DEFAULT '',
+    updated_at       TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_poh_status   ON po_headers(po_status);
+CREATE INDEX IF NOT EXISTS idx_poh_pulled   ON po_headers(is_pulled);
+CREATE INDEX IF NOT EXISTS idx_poh_recv     ON po_headers(receiving_status);
+
+CREATE OR REPLACE VIEW order_rows AS
+SELECT
+    o.*,
+    h.po_status,
+    h.receiving_status,
+    h.is_pulled,
+    h.pulled_at,
+    h.pulled_by,
+    h.pulled_batch_id,
+    h.filed_date,
+    h.version AS po_version
+FROM orders o
+JOIN po_headers h ON h.po_number = o.po_number;
+
+CREATE TABLE IF NOT EXISTS edit_logs (
+    id          SERIAL PRIMARY KEY,
+    order_id    INTEGER NOT NULL,
+    po_number   TEXT NOT NULL,
+    sku_id      TEXT NOT NULL,
+    field       TEXT NOT NULL,
+    field_label TEXT NOT NULL,
+    old_value   TEXT DEFAULT '',
+    new_value   TEXT DEFAULT '',
+    operator    TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    note        TEXT DEFAULT '',
+    changed_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_order ON edit_logs(order_id);
+CREATE INDEX IF NOT EXISTS idx_logs_po    ON edit_logs(po_number);
+CREATE INDEX IF NOT EXISTS idx_logs_field ON edit_logs(field);
+CREATE INDEX IF NOT EXISTS idx_logs_time  ON edit_logs(changed_at);
+
+CREATE TABLE IF NOT EXISTS import_batches (
+    id             SERIAL PRIMARY KEY,
+    filename       TEXT DEFAULT '',
+    operator       TEXT DEFAULT '',
+    rows_total     INTEGER DEFAULT 0,
+    rows_new       INTEGER DEFAULT 0,
+    rows_updated   INTEGER DEFAULT 0,
+    rows_identical INTEGER DEFAULT 0,
+    rows_error     INTEGER DEFAULT 0,
+    committed      INTEGER NOT NULL DEFAULT 0,
+    preview_json   TEXT DEFAULT '',
+    created_at     TEXT DEFAULT '',
+    committed_at   TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS export_batches (
+    id          SERIAL PRIMARY KEY,
+    operator    TEXT DEFAULT '',
+    profile     TEXT DEFAULT '',
+    filename    TEXT DEFAULT '',
+    row_count   INTEGER DEFAULT 0,
+    mark_pulled INTEGER NOT NULL DEFAULT 0,
+    filter_json TEXT DEFAULT '',
+    created_at  TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS export_batch_items (
+    batch_id  INTEGER NOT NULL,
+    order_id  INTEGER NOT NULL,
+    po_number TEXT NOT NULL,
+    sku_id    TEXT NOT NULL,
+    qty_ship  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_expitems_batch ON export_batch_items(batch_id);
+CREATE INDEX IF NOT EXISTS idx_expitems_order ON export_batch_items(order_id);
+
+-- 帳號密碼、下拉選單設定（原本的 config.json / users.json /
+-- export_profiles.json）改存這裡——Render 每次重新部署都會把程式資料夾
+-- 換成全新的，檔案放在裡面就跟訂單資料一樣，改過的東西一次就洗光。
+-- 放進資料庫，就跟訂單資料一樣安全。
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT DEFAULT ''
+);
+"""
+
+SCHEMA = SCHEMA_SQLITE  # 保留舊名字，避免漏改到還在引用它的地方
+
+
+# ---------------------------------------------------------------- 時間
 
 # 時間一律綁台灣時區，不要用機器的本地時間。
 #
@@ -223,7 +419,102 @@ def file_stamp():
     return _local_now().strftime("%Y%m%d_%H%M%S")
 
 
+# ---------------------------------------------------------------- PostgreSQL 相容層
+#
+# 呼叫端（app.py／importer.py）全部是照 sqlite3 的用法寫的：
+# conn.execute(sql, params)、cur.lastrowid、row["欄位"]、dict(row)。
+# 這一層把 psycopg2 包成同樣的用法，這樣不用把整個專案的 SQL 呼叫
+# 全部重寫一次，也不會因為漏改某一處而炸掉。
+
+# 這三張表的 INSERT 會用到 cur.lastrowid 拿新產生的 id，其他表
+# （例如 export_batch_items）沒有 id 欄位，硬加 RETURNING id 會直接
+# 出錯，所以只白名單這三張。
+_LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES")
+
+
+def _wants_returning_id(sql):
+    s = sql.strip().upper()
+    if "RETURNING" in s:
+        return False
+    return any(s.startswith(f"INSERT INTO {t}") for t in _LASTROWID_TABLES)
+
+
+class _PgCursor:
+    def __init__(self, cur):
+        self._cur = cur
+        self.lastrowid = None
+
+    def execute(self, sql, params=()):
+        sql2 = sql.replace("?", "%s")
+        add_returning = _wants_returning_id(sql)
+        if add_returning:
+            sql2 = sql2.rstrip().rstrip(";") + " RETURNING id"
+        self._cur.execute(sql2, params)
+        if add_returning:
+            row = self._cur.fetchone()
+            self.lastrowid = row["id"] if row else None
+        return self
+
+    def executemany(self, sql, seq):
+        self._cur.executemany(sql.replace("?", "%s"), list(seq))
+        return self
+
+    def fetchone(self):
+        return self._cur.fetchone()
+
+    def fetchall(self):
+        return self._cur.fetchall()
+
+    def __iter__(self):
+        return iter(self._cur)
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+
+class _PgConnection:
+    """包住 psycopg2 的連線，讓外面呼叫起來跟 sqlite3.Connection 一樣。"""
+
+    def __init__(self, raw):
+        self._raw = raw
+
+    def _new_cursor(self):
+        return _PgCursor(
+            self._raw.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+
+    def execute(self, sql, params=()):
+        return self._new_cursor().execute(sql, params)
+
+    def executemany(self, sql, seq):
+        return self._new_cursor().executemany(sql, seq)
+
+    def executescript(self, script):
+        # psycopg2 的 cursor.execute 本來就能一次跑一整段用分號分隔的
+        # 多條敘述（走 simple query protocol），不需要 sqlite3 才有的
+        # executescript 額外處理。
+        cur = self._raw.cursor()
+        cur.execute(script)
+        cur.close()
+
+    def cursor(self):
+        return self._new_cursor()
+
+    def commit(self):
+        self._raw.commit()
+
+    def rollback(self):
+        self._raw.rollback()
+
+    def close(self):
+        self._raw.close()
+
+
 def get_conn():
+    if IS_POSTGRES:
+        raw = psycopg2.connect(DATABASE_URL)
+        return _PgConnection(raw)
+
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")      # 多人同時讀寫不互卡
@@ -235,10 +526,13 @@ def get_conn():
 def ensure_data_dir():
     """建立資料資料夾、從舊位置搬檔、補上預設設定檔。
 
-    每次啟動都跑，但都是冪等的：已經存在的東西一律不動，
-    所以使用者改過的 config.json 永遠不會被預設值蓋掉。
+    PostgreSQL 模式下設定檔改存資料庫，這裡只需要確保備份資料夾存在；
+    SQLite 模式維持原本的搬檔／補檔行為，冪等、不會洗掉使用者改過的
+    設定。
     """
     os.makedirs(DATA_DIR, exist_ok=True)
+    if IS_POSTGRES:
+        return []
 
     moved = []
     for name in _MIGRATE:
@@ -266,7 +560,7 @@ def init_db():
     ensure_data_dir()
     conn = get_conn()
     try:
-        conn.executescript(SCHEMA)
+        conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
         _migrate_columns(conn)
         conn.commit()
     finally:
@@ -274,18 +568,86 @@ def init_db():
 
 
 def _migrate_columns(conn):
-    """CREATE TABLE IF NOT EXISTS 不會幫既有的表補新欄位——資料庫檔案
-    是使用者手上舊版跑出來的，每次新增欄位都要在這裡手動補一次
-    ALTER TABLE，不然舊資料庫升級後會直接炸在「no such column」。"""
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(orders)")}
+    """CREATE TABLE IF NOT EXISTS 不會幫既有的表補新欄位——資料庫是
+    使用者手上舊版跑出來的，每次新增欄位都要在這裡手動補一次
+    ALTER TABLE，不然舊資料庫升級後會直接炸在「no such column」
+    （PostgreSQL 則是 undefined column）。"""
+    if IS_POSTGRES:
+        existing = {r["column_name"] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'orders'")}
+    else:
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(orders)")}
+
     if "box_size_overridden" not in existing:
         conn.execute(
             "ALTER TABLE orders ADD COLUMN box_size_overridden "
             "INTEGER NOT NULL DEFAULT 0")
 
 
+# ---------------------------------------------------------------- 設定值（僅 PostgreSQL 模式）
+#
+# config.json / users.json / export_profiles.json 在 PostgreSQL 模式下
+# 改存進 app_settings 表，不再放檔案——理由跟訂單資料要搬進資料庫一樣：
+# Render 每次重新部署都會把程式資料夾換成全新的，檔案放在裡面就跟訂單
+# 資料一樣，改過的密碼、加過的人、調過的下拉選單，一次就洗光。
+
+_SETTINGS_DEFAULT_FILE = {
+    "config": "config.json",
+    "users": "users.json",
+    "export_profiles": "export_profiles.json",
+}
+
+
+def load_setting(key, default):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+        if row is not None:
+            return json.loads(row["value"])
+
+        # 第一次啟動，資料庫裡還沒有這個設定：從程式內建的預設檔種一份
+        # 進去，之後就都從資料庫讀了。
+        fname = _SETTINGS_DEFAULT_FILE.get(key)
+        seeded = default
+        if fname:
+            path = os.path.join(DEFAULTS_DIR, fname)
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    seeded = json.load(fh)
+            except (OSError, ValueError):
+                seeded = default
+        save_setting(key, seeded)
+        return seeded
+    finally:
+        conn.close()
+
+
+def save_setting(key, value):
+    conn = get_conn()
+    try:
+        payload = json.dumps(value, ensure_ascii=False)
+        conn.execute(
+            """INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT (key) DO UPDATE
+                   SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at""",
+            (key, payload, now()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------- 備份
+
 def backup_db(tag="import"):
-    """資料庫檔就是全部身家，誤刪等於歸零。每次寫入前先留一份。"""
+    """資料庫檔就是全部身家，誤刪等於歸零。每次寫入前先留一份。
+
+    PostgreSQL 模式下資料不是本機檔案，這裡沒有東西好複製——Supabase
+    本身有每日備份；本機這份函式在雲端模式下直接跳過，不當一回事地
+    假裝成功。"""
+    if IS_POSTGRES:
+        return ""
     if not os.path.exists(DB_PATH):
         return ""
     os.makedirs(BACKUP_DIR, exist_ok=True)
