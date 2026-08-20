@@ -1,0 +1,280 @@
+{
+  "_說明": [
+    "這個檔案控制匯出 Excel 的欄位名稱、順序與格式，改完存檔、重新整理網頁即可生效，不需要動任何程式碼。",
+    "columns 內每一項：header = 匯出檔的欄位標題（想叫什麼就叫什麼），field = 系統內部欄位代碼。",
+    "field 可用值：po_number, sku_id, order_type, parent_po, line, brand, product_name, barcode,",
+    "  yf_sku, warehouse, address, delivery_date, qty_coupang, qty_ship, unit, box_size, unit_price,",
+    "  po_status, receiving_status, remarks, expiry_note, seq_no, is_pulled, pulled_at, pulled_by,",
+    "  needs_review, alert_level, updated_at",
+    "format 可省略，可選 text / int / date / decimal。",
+    "const 可用來輸出固定值（ERP 常見的常數欄位，例如公司別、單別）。",
+    "mark_pulled_default 只是畫面上的預設勾選狀態，OP 匯出時仍可自行決定。",
+    "新增可用欄位：filed_date（建檔日）、receiving_note（該品項的驗收註記）"
+  ],
+  "profiles": {
+    "warehouse": {
+      "label": "倉庫出貨表",
+      "note": "給管廳工廠安排實體出貨用",
+      "mark_pulled_default": true,
+      "columns": [
+        {
+          "header": "PO單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "訂單類型",
+          "field": "order_type"
+        },
+        {
+          "header": "線別",
+          "field": "line"
+        },
+        {
+          "header": "品牌",
+          "field": "brand"
+        },
+        {
+          "header": "SKU ID",
+          "field": "sku_id",
+          "format": "text"
+        },
+        {
+          "header": "永豐料號",
+          "field": "yf_sku",
+          "format": "text"
+        },
+        {
+          "header": "品名",
+          "field": "product_name"
+        },
+        {
+          "header": "倉別",
+          "field": "warehouse"
+        },
+        {
+          "header": "地址",
+          "field": "address"
+        },
+        {
+          "header": "交期",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "下單數量",
+          "field": "qty_coupang",
+          "format": "int"
+        },
+        {
+          "header": "出貨數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "單位",
+          "field": "unit"
+        },
+        {
+          "header": "箱入數",
+          "field": "box_size",
+          "format": "int"
+        },
+        {
+          "header": "允收效期",
+          "field": "expiry_note"
+        },
+        {
+          "header": "PO狀態",
+          "field": "po_status"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        }
+      ]
+    },
+    "erp": {
+      "label": "ERP 匯入格式（欄位待對齊）",
+      "note": "欄位名稱與順序請依公司 ERP 匯入規範直接修改本檔案的 columns，不需改程式",
+      "mark_pulled_default": true,
+      "columns": [
+        {
+          "header": "採購單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "料號",
+          "field": "yf_sku",
+          "format": "text"
+        },
+        {
+          "header": "品名",
+          "field": "product_name"
+        },
+        {
+          "header": "數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "單位",
+          "field": "unit"
+        },
+        {
+          "header": "交貨日期",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "收貨倉",
+          "field": "warehouse"
+        },
+        {
+          "header": "單價",
+          "field": "unit_price",
+          "format": "decimal"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        }
+      ]
+    },
+    "full": {
+      "label": "完整欄位（對帳／備份用）",
+      "note": "所有欄位全開，出問題時拿來查",
+      "mark_pulled_default": false,
+      "columns": [
+        {
+          "header": "建檔日",
+          "field": "filed_date",
+          "format": "date"
+        },
+        {
+          "header": "PO單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "SKU ID",
+          "field": "sku_id",
+          "format": "text"
+        },
+        {
+          "header": "訂單類型",
+          "field": "order_type"
+        },
+        {
+          "header": "原訂單",
+          "field": "parent_po",
+          "format": "text"
+        },
+        {
+          "header": "線別",
+          "field": "line"
+        },
+        {
+          "header": "品牌",
+          "field": "brand"
+        },
+        {
+          "header": "品名",
+          "field": "product_name"
+        },
+        {
+          "header": "條碼",
+          "field": "barcode",
+          "format": "text"
+        },
+        {
+          "header": "永豐料號",
+          "field": "yf_sku",
+          "format": "text"
+        },
+        {
+          "header": "倉別",
+          "field": "warehouse"
+        },
+        {
+          "header": "地址",
+          "field": "address"
+        },
+        {
+          "header": "交期",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "下單數量",
+          "field": "qty_coupang",
+          "format": "int"
+        },
+        {
+          "header": "出貨數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "單位",
+          "field": "unit"
+        },
+        {
+          "header": "箱入數",
+          "field": "box_size",
+          "format": "int"
+        },
+        {
+          "header": "下單單價",
+          "field": "unit_price",
+          "format": "decimal"
+        },
+        {
+          "header": "PO狀態",
+          "field": "po_status"
+        },
+        {
+          "header": "驗收狀態",
+          "field": "receiving_status"
+        },
+        {
+          "header": "允收效期",
+          "field": "expiry_note"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        },
+        {
+          "header": "已拉單",
+          "field": "is_pulled"
+        },
+        {
+          "header": "拉單時間",
+          "field": "pulled_at"
+        },
+        {
+          "header": "拉單人",
+          "field": "pulled_by"
+        },
+        {
+          "header": "待確認",
+          "field": "needs_review"
+        },
+        {
+          "header": "警示層級",
+          "field": "alert_level"
+        },
+        {
+          "header": "最後更新",
+          "field": "updated_at"
+        },
+        {
+          "header": "驗收註記",
+          "field": "receiving_note"
+        }
+      ]
+    }
+  }
+}
