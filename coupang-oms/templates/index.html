@@ -93,9 +93,13 @@
     dialog[open] { opacity: 0; transform: scale(.97) translateY(6px); }
   }
 
-  /* Toast：從右上角滑入，跟批次動作列（螢幕下方）分開，不會疊在一起。 */
+  /* Toast：從右上角滑入，跟批次動作列（螢幕下方）分開，不會疊在一起。
+     這只是個純顯示的提示框、不接受任何點擊，所以 pointer-events 直接
+     關掉——opacity:0 不會讓元素真的消失，還是會擋住底下的點擊。之前
+     漏了這行，跳出過一次 toast 之後，剛好疊在右上角設定按鈕上面的
+     那塊區域就再也點不到，要重新整理才會恢復。 */
   #toast {
-    transform: translateX(24px); opacity: 0;
+    transform: translateX(24px); opacity: 0; pointer-events: none;
     transition: transform .2s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
   }
   #toast.toast-show { transform: translateX(0); opacity: 1; }
@@ -618,12 +622,10 @@ function renderRows() {
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="po_status" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.po_status)}">${esc(r.po_status)}</span></td>
-      <td class="px-2 py-2 whitespace-nowrap">
-        <button data-quick-pull="${esc(r.po_number)}" data-pulled="${r.is_pulled ? 1 : 0}"
-            class="inline-flex items-center gap-1 hover:text-brand-600 ${r.is_pulled ? "text-ink-500" : "text-ink-900"}"
-            title="${r.is_pulled ? "點一下開啟解除拉單鎖定" : "點一下開啟標記已拉單"}">
-          <i class="bi ${r.is_pulled ? "bi-lock-fill" : "bi-unlock"}"></i> ${r.is_pulled ? "已拉單" : "未拉單"}
-        </button></td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell"
+          data-inline="is_pulled" data-po="${esc(r.po_number)}"
+          title="點一下可直接切換"><span class="badge ${r.is_pulled ? "b-amber" : "b-gray"}">
+          <i class="bi ${r.is_pulled ? "bi-lock-fill" : "bi-unlock"}"></i> ${r.is_pulled ? "已拉單" : "未拉單"}</span></td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="receiving_status" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.receiving_status)}">${esc(r.receiving_status)}</span></td>
@@ -1218,20 +1220,6 @@ document.addEventListener("click", e => {
   if (close) { close.closest("dialog").close(); return; }
   const open = e.target.closest("[data-open]");
   if (open) { openPo(open.dataset.open); return; }
-
-  // 拉單欄位的鎖頭圖示：直接把這張單單獨選起來，跳出跟批次動作列
-  // 同一套面板（該顯示的警語不會少，解鎖仍然強制填原因），省掉手動
-  // 勾選那一步。
-  const quickPull = e.target.closest("[data-quick-pull]");
-  if (quickPull) {
-    if (!requireOperator()) return;
-    const po = quickPull.dataset.quickPull;
-    const pulled = quickPull.dataset.pulled === "1";
-    selected.clear();
-    selected.add(po);
-    renderRows();
-    openPullPanel(!pulled);
-  }
 });
 
 // ── 表格內直接編輯 ──────────────────────────────────────
@@ -1252,9 +1240,24 @@ async function saveInlineField(po, field, value) {
   return true;
 }
 
+// 拉單狀態不是 PO_EDITABLE_FIELDS 的一員——它有自己的鎖定／解鎖副作用
+// （寫 pulled_at／pulled_by、鎖住其他欄位），走專門的 /api/pos/pull，
+// 不能跟其他欄位一樣直接 PUT 整張單。
+async function saveInlinePull(po, pulled) {
+  const res = await fetch("/api/pos/pull", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), po_numbers: [po], pulled }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return false; }
+  return true;
+}
+
 async function finishInlineEdit(cell, po, field, value) {
   cell.innerHTML = `<span class="text-ink-300">儲存中…</span>`;
-  const ok = await saveInlineField(po, field, value);
+  const ok = field === "is_pulled"
+    ? await saveInlinePull(po, value === "1")
+    : await saveInlineField(po, field, value);
   delete cell.dataset.editing;
   await loadOrders();
   // 存檔成功後那一格閃一下綠色再淡出，馬上給個「確實存到了」的回饋，
@@ -1276,13 +1279,30 @@ function startInlineEdit(cell) {
   const po = cell.dataset.po;
   const field = cell.dataset.inline;
   const info = rowInfo.get(po);
-  if (info && info.is_pulled) {
+  // 拉單狀態本身不受「已拉單鎖定」擋——那個鎖擋的是拉單以外的其他
+  // 欄位，拉單狀態自己就是控制那個鎖的開關，當然要能一直點。
+  if (field !== "is_pulled" && info && info.is_pulled) {
     toast("這張單已拉單並鎖定，請先解除拉單鎖定才能修改。", "warn");
     return;
   }
   cell.dataset.editing = "1";
   const current = info ? (info[field] || "") : cell.textContent.trim();
   let committed = false;
+
+  if (field === "is_pulled") {
+    const isPulled = !!(info && info.is_pulled);
+    cell.innerHTML = `<select class="border rounded px-1 py-0.5 text-xs w-full">
+      <option value="0" ${!isPulled ? "selected" : ""}>未拉單</option>
+      <option value="1" ${isPulled ? "selected" : ""}>已拉單</option>
+    </select>`;
+    const select = cell.querySelector("select");
+    select.focus();
+    select.addEventListener("change", () => { committed = true; finishInlineEdit(cell, po, field, select.value); });
+    select.addEventListener("blur", () => {
+      setTimeout(() => { if (!committed && cell.dataset.editing) { delete cell.dataset.editing; renderRows(); } }, 0);
+    });
+    return;
+  }
 
   if (field === "filed_date") {
     cell.innerHTML = `<input type="date" class="border rounded px-1 py-0.5 text-xs w-full" value="${esc(current)}">`;
