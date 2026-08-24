@@ -177,8 +177,6 @@
         <input id="f-keyword" class="border rounded px-2 py-2" placeholder="關鍵字"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
         <select id="f-line" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品牌</span>
-        <select id="f-brand" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">倉別</span>
         <select id="f-warehouse" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型</span>
@@ -235,7 +233,7 @@
             <th class="px-2 py-2 text-left whitespace-nowrap">PO 狀態</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">拉單</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">驗收</th>
-            <th class="px-2 py-2 text-left whitespace-nowrap">品牌 / 線別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">線別</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">建檔日</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨日</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨倉別</th>
@@ -527,10 +525,17 @@ function fillSelect(el, values, keepAll = true) {
   if (values.includes(current)) el.value = current;
 }
 
+// 「CPG-潔品」「CPG-紙品」這類 CPG 開頭的線別，篩選選單裡合併成一個
+// 「CPG」選項——選了這個，兩種都撈得到，不用分開選兩次。
+function groupCpgLines(lines) {
+  const rest = lines.filter(v => !v.startsWith("CPG-"));
+  const hasCpg = lines.some(v => v.startsWith("CPG-"));
+  return hasCpg ? ["CPG", ...rest] : rest;
+}
+
 async function loadConfig() {
   CONFIG = await (await fetch("/api/config")).json();
-  fillSelect($("#f-line"), CONFIG.lines);
-  fillSelect($("#f-brand"), CONFIG.brands);
+  fillSelect($("#f-line"), groupCpgLines(CONFIG.lines));
   fillSelect($("#f-warehouse"), CONFIG.warehouses);
   fillSelect($("#f-ordertype"), CONFIG.order_types);
   fillSelect($("#f-status"), CONFIG.po_statuses);
@@ -551,7 +556,6 @@ function filters() {
     po_number: $("#f-po").value.trim(),
     keyword: $("#f-keyword").value.trim(),
     line: $("#f-line").value,
-    brand: $("#f-brand").value,
     warehouse: $("#f-warehouse").value,
     order_type: $("#f-ordertype").value,
     date_from: $("#f-from").value,
@@ -629,8 +633,7 @@ function renderRows() {
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="receiving_status" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.receiving_status)}">${esc(r.receiving_status)}</span></td>
-      <td class="px-2 py-2 truncate" title="${esc(r.brands)} / ${esc(r.lines)}">${esc(r.brands) || "—"}
-        <span class="block text-[10px] text-ink-400">${esc(r.lines) || "線別待補"}</span></td>
+      <td class="px-2 py-2 truncate">${esc(r.lines) || "線別待補"}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="filed_date" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
@@ -696,23 +699,18 @@ async function openPo(poNumber) {
       <td class="px-2 py-1.5 font-mono text-[11px]" title="酷澎的商品編號">${esc(s.sku_id)}</td>
       <td class="px-2 py-1.5 font-mono text-[11px]" title="永豐內部料號">${esc(s.yf_sku)}</td>
       <td class="px-2 py-1.5 text-xs">${esc(s.product_name)}</td>
-      <td class="px-2 py-1.5 text-xs">${esc(s.brand)}</td>
       <td class="px-2 py-1.5 text-right text-xs">${s.qty_coupang ?? ""}</td>
       <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="qty_ship"
           value="${s.qty_ship ?? ""}" ${locked ? "disabled" : ""}
           class="w-20 border border-ink-200 rounded px-1 py-0.5 text-xs text-right box-calc ${diff ? "text-red-600 font-bold" : ""}"></td>
       <td class="px-2 py-1.5 text-xs text-ink-500">${esc(s.unit)}</td>
-      <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="box_size"
-          value="${s.box_size ?? ""}" ${locked ? "disabled" : ""}
-          title="${s.box_size_overridden ? "人工調整過，匯入不會覆蓋" : ""}"
-          class="w-16 border border-ink-200 rounded px-1 py-0.5 text-xs text-right box-calc ${s.box_size_overridden ? "bg-amber-50" : ""}"></td>
+      <td class="px-2 py-1.5 text-right text-xs text-ink-500">${s.box_size ?? ""}</td>
       <td class="px-2 py-1.5 text-right text-xs font-mono" data-box-count="${s.id}">${boxCount(s.qty_ship, s.box_size)}</td>
-      <td class="px-2 py-1.5 text-xs text-ink-500">${esc(s.expiry_note)}</td>
       <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="receiving_note"
-          value="${esc(s.receiving_note)}" ${locked ? "disabled" : ""} placeholder="短驗 / 溢收…"
+          value="${esc(s.receiving_note)}" placeholder="短驗 / 溢收…"
           class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
       <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="remarks"
-          value="${esc(s.remarks)}" ${locked ? "disabled" : ""}
+          value="${esc(s.remarks)}"
           class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
     </tr>`;
   }).join("");
@@ -755,8 +753,8 @@ async function openPo(poNumber) {
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨倉別（整張單）</span>
         <input id="p-wh" value="${esc(d.warehouse)}" ${locked ? "disabled" : ""}
           class="border rounded px-2 py-1.5"></label>
-      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">品牌 / 線別</span>
-        <span class="text-sm py-1.5">${esc(d.brands) || "—"} <span class="text-ink-400">/ ${esc(d.lines) || "待補"}</span></span></div>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
+        <span class="text-sm py-1.5">${esc(d.lines) || "待補"}</span></div>
       <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">類型</span>
         <span class="text-sm py-1.5">${esc(d.skus[0]?.order_type || "")}</span></div>
     </div>
@@ -771,13 +769,11 @@ async function openPo(poNumber) {
             <th class="px-2 py-1.5 text-left w-32">SKU ID<span class="block font-normal text-[10px] text-ink-400">酷澎編號</span></th>
             <th class="px-2 py-1.5 text-left w-24">永豐料號<span class="block font-normal text-[10px] text-ink-400">內部料號</span></th>
             <th class="px-2 py-1.5 text-left">品名</th>
-            <th class="px-2 py-1.5 text-left w-24">品牌</th>
             <th class="px-2 py-1.5 text-right w-20">下單數量</th>
             <th class="px-2 py-1.5 text-left w-24">出貨數量</th>
             <th class="px-2 py-1.5 text-left w-16">單位</th>
-            <th class="px-2 py-1.5 text-left w-20">箱入數</th>
+            <th class="px-2 py-1.5 text-right w-20">箱入數</th>
             <th class="px-2 py-1.5 text-right w-16">箱數<span class="block font-normal text-[10px] text-ink-400">自動算</span></th>
-            <th class="px-2 py-1.5 text-left w-24">允收效期</th>
             <th class="px-2 py-1.5 text-left w-32">驗收註記</th>
             <th class="px-2 py-1.5 text-left w-32">備註</th>
           </tr></thead>
@@ -792,20 +788,22 @@ async function openPo(poNumber) {
       <div class="border border-ink-200 rounded-lg max-h-56 overflow-y-auto">${logRows}</div>
     </div>`;
 
-  // 出貨數量／箱入數改變時，箱數要立刻跟著重算——純畫面計算，
-  // 不送出任何請求，兩個欄位真的存檔時才會各自呼叫 savePo()。
+  // 出貨數量改變時，箱數要立刻跟著重算——箱入數是固定值、不會變，
+  // 純畫面計算，不送出任何請求，真的存檔時才會呼叫 savePo()。
   document.querySelectorAll("#po-body .box-calc").forEach(el => {
     el.addEventListener("input", () => {
       const skuId = el.dataset.sku;
       const row = el.closest("tr");
-      const qtyEl = row.querySelector(`[data-f="qty_ship"]`);
-      const boxEl = row.querySelector(`[data-f="box_size"]`);
+      const boxSize = d.skus.find(x => String(x.id) === String(skuId))?.box_size;
       const out = row.querySelector(`[data-box-count="${skuId}"]`);
-      if (out) out.textContent = boxCount(qtyEl.value, boxEl.value);
+      if (out) out.textContent = boxCount(el.value, boxSize);
     });
   });
 
-  $("#btn-po-save").disabled = locked;
+  // 拉單鎖定後，出貨數量那個輸入格本身就 disabled 了（改不了值），
+  // 但驗收註記／備註不受鎖定限制，所以存檔按鈕不能整個鎖死，否則
+  // 連這兩個允許的欄位都存不了。
+  $("#btn-po-save").disabled = false;
 }
 
 async function savePo() {
@@ -830,7 +828,7 @@ async function savePo() {
   // 再存每個品項自己的欄位（只送真的改過的）
   for (const sku of CURRENT.skus) {
     const body = {};
-    ["qty_ship", "box_size", "receiving_note", "remarks"].forEach(f => {
+    ["qty_ship", "receiving_note", "remarks"].forEach(f => {
       const el = document.querySelector(`[data-sku="${sku.id}"][data-f="${f}"]`);
       if (!el) return;
       const now = el.value;
@@ -1383,7 +1381,7 @@ $("#check-all").addEventListener("change", e => {
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to"].forEach(s => $(s).value = "");
-  ["#f-line", "#f-brand", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-pulled"]
+  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-pulled"]
     .forEach(s => $(s).value = "");
   $("#f-review").checked = false;
   filters._alert = ""; PAGE = 1; loadOrders();

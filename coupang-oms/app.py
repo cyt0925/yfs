@@ -28,7 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-21.1"
+BUILD_VERSION = "2026-08-24.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -83,13 +83,17 @@ EDITABLE_FIELDS = {
     "qty_ship":       "出貨數量",
     "remarks":        "備註",
     "receiving_note": "驗收註記",
-    "box_size":       "箱入數",
 }
 
-# 改這些欄位時，順便標記「人工調整過」，下次匯入酷澎的檔案就不再覆蓋
-# ——跟交期／倉別是同一套邏輯，只是這兩個是每筆 SKU 各自的值，不是
-# 整張單一起改。
-SKU_OVERRIDE_FIELDS = ("qty_ship", "box_size")
+# 改這個欄位時，順便標記「人工調整過」，下次匯入酷澎的檔案就不再覆蓋
+# ——跟交期／倉別是同一套邏輯，只是這是每筆 SKU 各自的值，不是整張
+# 單一起改。箱入數目前是唯讀欄位，不開放編輯，不在這個清單裡。
+SKU_OVERRIDE_FIELDS = ("qty_ship",)
+
+# 拉單鎖定要擋的是「會影響倉庫出貨的數字」；備註和驗收註記是事後才
+# 填的資訊（短驗、溢收…都是貨到了才知道），鎖住反而擋住正常作業，
+# 所以這兩個欄位不受拉單鎖定限制，任何時候都能改。
+ALWAYS_EDITABLE_FIELDS = {"remarks", "receiving_note"}
 
 # 整張 PO 共用的欄位，改了就是整張單一起改（OP 拋 ERP、交倉庫都是整張
 # 單一起行動，不會拆開）。存在 po_headers，匯入一律不覆蓋。
@@ -522,8 +526,16 @@ def build_filter(args):
         add("(product_name LIKE ? OR yf_sku LIKE ? OR sku_id LIKE ? OR barcode LIKE ?)",
             *[f"%{keyword}%"] * 4)
 
-    for column, key in (("brand", "brand"), ("line", "line"),
-                        ("warehouse", "warehouse"), ("po_status", "po_status"),
+    # 篩選選單把「CPG-潔品」「CPG-紙品」這類 CPG 開頭的線別合併成一個
+    # 「CPG」選項，選了它要撈出所有 CPG- 開頭的線別，不是精準比對。
+    line = norm_text(args.get("line"))
+    if line == "CPG":
+        add("line LIKE 'CPG-%'")
+    elif line:
+        add("line = ?", line)
+
+    for column, key in (("brand", "brand"), ("warehouse", "warehouse"),
+                        ("po_status", "po_status"),
                         ("receiving_status", "receiving_status"),
                         ("order_type", "order_type")):
         value = norm_text(args.get(key))
@@ -766,7 +778,11 @@ def api_update_order(order_id):
                 "current": order,
             }), 409
 
-        if order["is_pulled"] and not payload.get("force_edit"):
+        # 拉單鎖定只擋「會影響倉庫出貨的數字」（目前只有出貨數量）；
+        # 備註／驗收註記是事後才填的資訊，永遠不受這個鎖影響，所以只看
+        # 這次要改的欄位裡，扣掉那兩個豁免欄位後還有沒有剩下的。
+        locked_fields = (set(payload) & set(EDITABLE_FIELDS)) - ALWAYS_EDITABLE_FIELDS
+        if order["is_pulled"] and locked_fields and not payload.get("force_edit"):
             return jsonify({
                 "error": "locked",
                 "message": "這筆訂單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
@@ -777,7 +793,7 @@ def api_update_order(order_id):
             if field not in payload:
                 continue
             raw = payload[field]
-            new_val = norm_int(raw) if field in ("qty_ship", "box_size") else norm_text(raw)
+            new_val = norm_int(raw) if field == "qty_ship" else norm_text(raw)
 
             old_val = order[field]
             if _same(old_val, new_val):
