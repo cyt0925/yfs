@@ -7,7 +7,6 @@ import io
 import json
 import os
 import secrets
-import datetime as _dt
 from functools import wraps
 
 from flask import (
@@ -19,7 +18,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 from db import get_conn, init_db, now
 from importer import (
-    COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, diff_rows, parse_workbook,
+    COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, desired_ship, diff_rows,
+    parse_workbook,
 )
 from normalize import norm_date, norm_int, norm_key, norm_text, norm_warehouse
 
@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-20.2"
+BUILD_VERSION = "2026-08-24.5"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -72,6 +72,29 @@ def _load_or_create_secret_key():
     return key
 
 
+def _load_or_create_sync_token():
+    """外部同步（酷澎後台驗收工具）用的通行碼，不是給人登入用的密碼，
+    是給那支瀏覽器腳本證明「這個請求真的是我們授權的來源」用的。
+    存在資料庫的 app_settings，不用檔案——Postgres 模式下（Render）
+    重新部署，本機檔案會被換成全新的，token 跟著換一把，腳本那邊
+    存的舊 token 就失效了，同事還得回來重貼一次。存進資料庫才會
+    跟訂單資料一樣，重新部署也不會變。"""
+    env_val = os.environ.get("SYNC_TOKEN")
+    if env_val:
+        return env_val
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", ("sync_token",)).fetchone()
+        if row is not None:
+            return json.loads(row["value"])
+    finally:
+        conn.close()
+    token = secrets.token_hex(20)
+    db.save_setting("sync_token", token)
+    return token
+
+
 app.secret_key = _load_or_create_secret_key()
 # 部署在外網時 Render 是走 HTTPS，這樣 cookie 只會經加密連線傳送；
 # 本機用 http://127.0.0.1 開發一樣有效，Flask 不會因此擋掉本機測試。
@@ -85,6 +108,16 @@ EDITABLE_FIELDS = {
     "remarks":        "備註",
     "receiving_note": "驗收註記",
 }
+
+# 改這個欄位時，順便標記「人工調整過」，下次匯入酷澎的檔案就不再覆蓋
+# ——跟交期／倉別是同一套邏輯，只是這是每筆 SKU 各自的值，不是整張
+# 單一起改。箱入數目前是唯讀欄位，不開放編輯，不在這個清單裡。
+SKU_OVERRIDE_FIELDS = ("qty_ship",)
+
+# 拉單鎖定要擋的是「會影響倉庫出貨的數字」；備註和驗收註記是事後才
+# 填的資訊（短驗、溢收…都是貨到了才知道），鎖住反而擋住正常作業，
+# 所以這兩個欄位不受拉單鎖定限制，任何時候都能改。
+ALWAYS_EDITABLE_FIELDS = {"remarks", "receiving_note"}
 
 # 整張 PO 共用的欄位，改了就是整張單一起改（OP 拋 ERP、交倉庫都是整張
 # 單一起行動，不會拆開）。存在 po_headers，匯入一律不覆蓋。
@@ -119,7 +152,18 @@ INSERT_FIELDS = [
 
 # ---------------------------------------------------------------- 設定檔
 
+# PostgreSQL 模式下這三個設定檔改存進資料庫（見 db.load_setting／
+# save_setting）；SQLite 模式維持原本放檔案的做法。
+_SETTINGS_KEY = {
+    "config.json": "config",
+    "users.json": "users",
+    "export_profiles.json": "export_profiles",
+}
+
+
 def load_json(name, default):
+    if db.IS_POSTGRES:
+        return db.load_setting(_SETTINGS_KEY[name], default)
     # 設定檔住在資料資料夾，不在程式資料夾——更新版本時不會被覆蓋
     path = os.path.join(db.DATA_DIR, name)
     try:
@@ -154,6 +198,9 @@ def get_users():
 def save_json(name, data):
     """寫設定檔。先寫暫存檔再換過去，中途斷電也不會留下半個壞掉的
     JSON——設定檔壞掉會讓所有人登不進來，這個險不值得冒。"""
+    if db.IS_POSTGRES:
+        db.save_setting(_SETTINGS_KEY[name], data)
+        return
     path = os.path.join(db.DATA_DIR, name)
     tmp = path + ".tmp"
     os.makedirs(db.DATA_DIR, exist_ok=True)
@@ -427,6 +474,116 @@ def api_reset_data():
     return jsonify({"ok": True, "message": f"訂單資料已清空{tail}。{note}"})
 
 
+@app.route("/api/account/sync-token")
+@admin_required
+def api_get_sync_token():
+    return jsonify({"token": _load_or_create_sync_token()})
+
+
+@app.route("/api/account/sync-token/regenerate", methods=["POST"])
+@admin_required
+def api_regenerate_sync_token():
+    """換一把新的，舊的立刻失效——外部工具那邊要記得跟著改，不然
+    會開始被 401 擋下來。"""
+    token = secrets.token_hex(20)
+    db.save_setting("sync_token", token)
+    return jsonify({"ok": True, "token": token})
+
+
+# ---------------------------------------------------------------- 外部同步：
+# 酷澎後台驗收工具（瀏覽器腳本）主動把「實際驗入數量」推進來，取代
+# 「匯出 Excel 再手動上傳」那一步。跟一般 API 不一樣，呼叫的人不是
+# 登入的使用者、是一支跑在酷澎網域裡的腳本，所以不能用 session 驗證，
+# 改用一把只有這支腳本知道的 token；也因為呼叫來源是不同網域
+# （supplier.tw.coupang.com），瀏覽器會先送一個 OPTIONS 預檢請求，
+# 要主動回應 CORS 標頭，不然瀏覽器直接擋掉，連 POST 都不會送出。
+
+SYNC_ALLOWED_ORIGIN = "https://supplier.tw.coupang.com"
+PUBLIC_ENDPOINTS.add("api_sync_verified_qty")
+
+
+@app.after_request
+def _cors_for_sync(resp):
+    if request.path.startswith("/api/sync/"):
+        resp.headers["Access-Control-Allow-Origin"] = SYNC_ALLOWED_ORIGIN
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Sync-Token"
+        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    return resp
+
+
+@app.route("/api/sync/verified-qty", methods=["POST", "OPTIONS"])
+def api_sync_verified_qty():
+    if request.method == "OPTIONS":
+        return "", 204
+
+    token = request.headers.get("X-Sync-Token", "")
+    if not token or not secrets.compare_digest(token, _load_or_create_sync_token()):
+        return jsonify({"error": "同步碼不對，請確認腳本設定的 token。"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "沒有帶任何品項資料。"}), 400
+    operator = norm_text(payload.get("operator")) or "酷澎驗收同步"
+
+    stamp = now()
+    matched = 0
+    not_found = []
+
+    conn = get_conn()
+    try:
+        for item in items:
+            po_number = norm_key(item.get("po_number"))
+            sku_id = norm_key(item.get("sku_id"))
+            qty = norm_int(item.get("confirmed_qty"))
+            if not po_number or not sku_id or qty is None:
+                continue
+
+            order = conn.execute(
+                "SELECT * FROM order_rows WHERE po_number = ? AND sku_id = ?",
+                (po_number, sku_id)).fetchone()
+            if order is None:
+                not_found.append(f"{po_number} / {sku_id}")
+                continue
+            order = dict(order)
+            matched += 1
+
+            if not _same(order["actual_verified_qty"], qty):
+                conn.execute(
+                    """UPDATE orders SET actual_verified_qty = ?, actual_verified_at = ?,
+                           updated_at = ?, version = version + 1
+                       WHERE id = ?""",
+                    (qty, stamp, stamp, order["id"]))
+                log_change(conn, order, "actual_verified_qty", "實際驗入數量",
+                           order["actual_verified_qty"], qty, operator, "system",
+                           "酷澎後台驗收工具同步")
+
+            # 出貨數量 − 實際驗入數量 > 0，代表少到貨，自動把「短驗 差額」
+            # 補進驗收註記——已經有內容就接在後面補一行，不覆蓋原本寫的；
+            # 同一句話已經出現過就不再重複補，不然每次跑工具都會多一行。
+            shortfall = (order["qty_ship"] or 0) - qty
+            if shortfall > 0:
+                note_text = f"短驗 {shortfall}"
+                old_note = order["receiving_note"] or ""
+                if note_text not in old_note:
+                    new_note = f"{old_note}；{note_text}" if old_note else note_text
+                    conn.execute(
+                        "UPDATE orders SET receiving_note = ?, updated_at = ? WHERE id = ?",
+                        (new_note, stamp, order["id"]))
+                    log_change(conn, order, "receiving_note", "驗收註記",
+                               old_note, new_note, operator, "system",
+                               "系統依實際驗入數量自動判斷")
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        "ok": True, "matched": matched, "not_found": not_found,
+        "message": f"同步完成，比對到 {matched} 個品項"
+                   + (f"，{len(not_found)} 個系統裡還沒有、略過" if not_found else ""),
+    })
+
+
 # ---------------------------------------------------------------- 歷程
 
 def log_change(conn, order, field, label, old, new, operator, source, note=""):
@@ -503,8 +660,16 @@ def build_filter(args):
         add("(product_name LIKE ? OR yf_sku LIKE ? OR sku_id LIKE ? OR barcode LIKE ?)",
             *[f"%{keyword}%"] * 4)
 
-    for column, key in (("brand", "brand"), ("line", "line"),
-                        ("warehouse", "warehouse"), ("po_status", "po_status"),
+    # 篩選選單把「CPG-潔品」「CPG-紙品」這類 CPG 開頭的線別合併成一個
+    # 「CPG」選項，選了它要撈出所有 CPG- 開頭的線別，不是精準比對。
+    line = norm_text(args.get("line"))
+    if line == "CPG":
+        add("line LIKE ?", "CPG-%")
+    elif line:
+        add("line = ?", line)
+
+    for column, key in (("brand", "brand"), ("warehouse", "warehouse"),
+                        ("po_status", "po_status"),
                         ("receiving_status", "receiving_status"),
                         ("order_type", "order_type")):
         value = norm_text(args.get(key))
@@ -708,7 +873,7 @@ def api_logs_export():
                 cell.number_format = "@"
     ws.freeze_panes = "A2"
 
-    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = db.file_stamp()
     stream = io.BytesIO()
     wb.save(stream)
     stream.seek(0)
@@ -747,7 +912,11 @@ def api_update_order(order_id):
                 "current": order,
             }), 409
 
-        if order["is_pulled"] and not payload.get("force_edit"):
+        # 拉單鎖定只擋「會影響倉庫出貨的數字」（目前只有出貨數量）；
+        # 備註／驗收註記是事後才填的資訊，永遠不受這個鎖影響，所以只看
+        # 這次要改的欄位裡，扣掉那兩個豁免欄位後還有沒有剩下的。
+        locked_fields = (set(payload) & set(EDITABLE_FIELDS)) - ALWAYS_EDITABLE_FIELDS
+        if order["is_pulled"] and locked_fields and not payload.get("force_edit"):
             return jsonify({
                 "error": "locked",
                 "message": "這筆訂單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
@@ -799,8 +968,8 @@ def api_update_order(order_id):
 
         for field, label, old_val, new_val in changes:
             log_change(conn, order, field, label, old_val, new_val, operator, "manual")
-            if field == "qty_ship":
-                conn.execute("UPDATE orders SET qty_ship_overridden = 1 WHERE id = ?",
+            if field in SKU_OVERRIDE_FIELDS:
+                conn.execute(f"UPDATE orders SET {field}_overridden = 1 WHERE id = ?",
                              (order_id,))
         conn.commit()
 
@@ -837,6 +1006,10 @@ def po_summary_sql(clause):
     全部品項。否則搜「whiskas」時，那張含 5 個品牌的單會只顯示 whiskas、
     品項數與數量也只算到符合的那幾項，資訊是錯的。
     """
+    # GROUP_CONCAT 是 SQLite 的寫法，PostgreSQL 要用 STRING_AGG，
+    # 兩邊語法不同、但效果一樣（DISTINCT 值用逗號串起來）。
+    concat = (lambda col: f"STRING_AGG(DISTINCT {col}, ',')") if db.IS_POSTGRES \
+        else (lambda col: f"GROUP_CONCAT(DISTINCT {col})")
     return f"""
         SELECT po_number,
                MIN(order_type)      AS order_type,
@@ -849,11 +1022,15 @@ def po_summary_sql(clause):
                MIN(filed_date)      AS filed_date,
                MIN(delivery_date)   AS delivery_date,
                MIN(warehouse)       AS warehouse,
-               GROUP_CONCAT(DISTINCT line)  AS lines_csv,
-               GROUP_CONCAT(DISTINCT brand) AS brands_csv,
+               {concat("line")}  AS lines_csv,
+               {concat("brand")} AS brands_csv,
                COUNT(*)             AS sku_count,
                COALESCE(SUM(qty_coupang),0) AS qty_coupang,
                COALESCE(SUM(qty_ship),0)    AS qty_ship,
+               -- 這裡故意不 COALESCE 成 0：一個品項都還沒同步過的單，
+               -- 總和該是「還沒有數字」（畫面上顯示 —），不是「驗入 0 件」，
+               -- 兩者意思差很多，混在一起會誤導人。
+               SUM(actual_verified_qty)     AS actual_verified_qty,
                SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review_count,
                SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END)
                                             AS after_pull_count,
@@ -978,12 +1155,6 @@ def api_update_po(po_number):
                             "你看到的不是最新版本，請重新載入後再編輯。"),
             }), 409
 
-        if header["is_pulled"] and not payload.get("force_edit"):
-            return jsonify({
-                "error": "locked",
-                "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
-            }), 423
-
         stamp = now()
         head_changes = []
         for field, label in PO_EDITABLE_FIELDS.items():
@@ -1012,6 +1183,16 @@ def api_update_po(po_number):
 
         if not head_changes and not row_changes:
             return jsonify({"ok": True, "changed": 0})
+
+        # 鎖定檢查放在算完「真的有沒有異動」之後——這些欄位在畫面上鎖單
+        # 時本來就是 disabled，正常不會送出真的改變；只有真的想繞過鎖定
+        # 硬改時才擋下來。放在最前面會連「這張單其實什麼都沒改、只是
+        # 品項明細裡動了驗收註記」這種情況也一起誤擋，导致存檔整包失敗。
+        if header["is_pulled"] and not payload.get("force_edit"):
+            return jsonify({
+                "error": "locked",
+                "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
+            }), 423
 
         if head_changes:
             sets = ", ".join(f"{f} = ?" for f, _, _, _ in head_changes)
@@ -1073,17 +1254,15 @@ def api_clear_review():
 def api_set_pulled():
     """手動調整整張單的拉單狀態。
 
-    拉單代表「已經正式拋 ERP、交給倉庫」，是對外承諾，所以不管是標記
-    還是解除，都必須填原因並寫進歷程——事後倉庫拿到的是哪一版、為什麼
-    重出，要查得到。
+    標記／解除都不強制填理由——OP 反映這一步是例行操作，強制填理由
+    反而拖慢流程。理由欄位保留、有填就照樣寫進歷程，只是不再擋下
+    沒填理由的操作；誰在什麼時候改了拉單狀態，還是查得到。
     """
     payload = request.get_json(silent=True) or {}
     operator = current_operator()
     reason = norm_text(payload.get("reason"))
     pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
     target = 1 if payload.get("pulled") else 0
-    if not reason:
-        return jsonify({"error": "調整拉單狀態必須填寫原因。"}), 400
     if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
 
@@ -1238,20 +1417,33 @@ def api_import_commit():
 
     conn = get_conn()
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        # BEGIN IMMEDIATE 是 SQLite 專屬語法，搶先拿寫入鎖避免之後升級
+        # 鎖時撞死結；PostgreSQL 沒有這個問題（MVCC），且每個敘述本來
+        # 就已經在交易裡，不需要也不能下這行。
+        if not db.IS_POSTGRES:
+            conn.execute("BEGIN IMMEDIATE")
         stamp = now()
         inserted = updated = 0
 
-        today = _dt.date.today().isoformat()
+        today = db.today()
+        # INSERT OR IGNORE 是 SQLite 寫法，PostgreSQL 要用 ON CONFLICT
+        # DO NOTHING，效果一樣：這張 PO 表頭已經存在就什麼都不做。
+        insert_po_header = (
+            """INSERT INTO po_headers
+               (po_number, po_status, receiving_status, is_pulled,
+                filed_date, created_at, updated_at)
+               VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)
+               ON CONFLICT (po_number) DO NOTHING"""
+            if db.IS_POSTGRES else
+            """INSERT OR IGNORE INTO po_headers
+               (po_number, po_status, receiving_status, is_pulled,
+                filed_date, created_at, updated_at)
+               VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)"""
+        )
         for row in preview["new"]:
             # PO 表頭只在第一次見到這張單時建立。之後同一張單再上傳，
             # 這裡什麼都不做——狀態與建檔日一律以系統為準，不被 Excel 覆蓋。
-            conn.execute(
-                """INSERT OR IGNORE INTO po_headers
-                   (po_number, po_status, receiving_status, is_pulled,
-                    filed_date, created_at, updated_at)
-                   VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)""",
-                (row["po_number"], today, stamp, stamp))
+            conn.execute(insert_po_header, (row["po_number"], today, stamp, stamp))
 
             columns = ", ".join(INSERT_FIELDS)
             marks = ", ".join("?" * len(INSERT_FIELDS))
@@ -1261,7 +1453,7 @@ def api_import_commit():
                         source_file, first_seen_at, last_seen_at,
                         created_at, updated_at)
                     VALUES ({marks}, ?, ?, ?, ?, ?, ?)""",
-                values + [row.get("qty_coupang"),
+                values + [desired_ship(row),
                           preview["filename"], stamp, stamp, stamp, stamp],
             )
             order = {"id": cur.lastrowid, "po_number": row["po_number"],
@@ -1303,20 +1495,38 @@ def api_import_commit():
                 if field in CRITICAL_FIELDS:
                     critical_hit = True
 
-            # 出貨數量若 OP 從未手動改過，就跟著酷澎的下單數量走；
-            # 一旦手動調整過，匯入永遠不再碰它。
-            qty_changed = any(c["field"] == "qty_coupang" for c in item["changes"])
-            if qty_changed and not current["qty_ship_overridden"]:
-                sets.append("qty_ship = ?")
-                values.append(row.get("qty_coupang"))
-                log_change(conn, current, "qty_ship", "出貨數量",
-                           current["qty_ship"], row.get("qty_coupang"),
-                           operator, "import", "隨下單數量連動")
+            # 出貨數量若 OP 從未手動改過，就跟著整合表走——整合表如果
+            # 自己就帶了「出貨數量」欄，那才是真正要出的量，比死板地
+            # 拿下單數量複製過去準；檔案沒帶這欄才退回用下單數量頂著
+            # （desired_ship 已經處理這個順序）。一旦手動調整過，匯入
+            # 永遠不再碰它，但差異照樣要記歷程、要亮燈，不能藏起來。
+            if item.get("ship_changed"):
+                ship_note = ("隨整合表出貨數量連動" if row.get("qty_file_ship") is not None
+                             else "隨下單數量連動")
+                new_ship = item["desired_ship"]
+                if not current["qty_ship_overridden"]:
+                    sets.append("qty_ship = ?")
+                    values.append(new_ship)
+                    log_change(conn, current, "qty_ship", "出貨數量",
+                               current["qty_ship"], new_ship,
+                               operator, "import", ship_note)
+                else:
+                    unsynced.append(f"出貨數量（整合表為 {new_ship}）")
+                    log_change(conn, current, "qty_ship", "出貨數量",
+                               new_ship, current["qty_ship"], operator, "import",
+                               "整合表出貨數量已變，保留人工調整結果不覆蓋")
+                critical_hit = True
 
-            reason = "、".join(
+            reason_parts = [
                 f"{c['label']} {c['old']}→{c['new']}" for c in item["changes"]
                 if not current.get(f"{c['field']}_overridden")
-            )
+            ]
+            # 出貨數量沒有現成的「舊值→新值」文字（它不是 item["changes"]
+            # 裡的一員），只有真的同步了才需要另外補一句，不然一張單只有
+            # 出貨數量變動時，警示燈亮了但理由欄卻是空的，看不出為什麼。
+            if item.get("ship_changed") and not current["qty_ship_overridden"]:
+                reason_parts.append(f"出貨數量 {current['qty_ship']}→{item['desired_ship']}")
+            reason = "、".join(reason_parts)
             if unsynced:
                 reason = ("【與酷澎尚未同步】" + "、".join(unsynced)
                           + ("；" + reason if reason else ""))
@@ -1455,7 +1665,7 @@ def api_export():
             ws.column_dimensions[letter].width = widths.get(col.get("format"), 16)
         ws.freeze_panes = "A2"
 
-        stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        stamp = db.file_stamp()
         filename = f"酷澎出貨表_{profile_key}_{stamp}.xlsx"
 
         cur = conn.execute(

@@ -209,6 +209,15 @@ def _display(field, value):
     return str(value)
 
 
+def desired_ship(row):
+    """整合表如果自己就帶了「出貨數量」欄，那才是 OP 真正要出的量，
+    比死板地拿「下單數量」複製過去準——酷澎談好折讓、少出貨這些，
+    整合表裡的出貨數量欄位會先反映出來。檔案沒帶這欄（None）才退回
+    用下單數量頂著。"""
+    file_ship = row.get("qty_file_ship")
+    return file_ship if file_ship is not None else row.get("qty_coupang")
+
+
 def diff_rows(conn, rows):
     """比對檔案與資料庫，回傳分類結果。此函式不寫任何資料。"""
     keys = [(r["po_number"], r["sku_id"]) for r in rows]
@@ -253,7 +262,14 @@ def diff_rows(conn, rows):
                 "critical": field in CRITICAL_FIELDS,
             })
 
-        if not changes:
+        # 出貨數量不是酷澎欄位（COUPANG_FIELDS 沒有它，因為資料庫裡的
+        # qty_ship 名稱跟整合表的「出貨數量」欄不是同一件事、不能直接
+        # 拿同名比對），所以獨立算一次：現在整合表算出來「應該要出多少」
+        # 跟資料庫現在存的出貨數量，兩者是否不一樣。
+        ship = desired_ship(row)
+        ship_changed = ship is not None and not _same(old.get("qty_ship"), ship)
+
+        if not changes and not ship_changed:
             identical.append(row)
         else:
             updated.append({
@@ -264,7 +280,10 @@ def diff_rows(conn, rows):
                 "qty_ship": old["qty_ship"],
                 "qty_ship_overridden": bool(old["qty_ship_overridden"]),
                 "changes": changes,
-                "after_pull": bool(old["is_pulled"]) and any(c["critical"] for c in changes),
+                "desired_ship": ship,
+                "ship_changed": ship_changed,
+                "after_pull": bool(old["is_pulled"]) and (
+                    any(c["critical"] for c in changes) or ship_changed),
             })
 
     return {"new": new_rows, "updated": updated, "identical": identical}
