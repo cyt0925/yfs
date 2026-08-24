@@ -18,7 +18,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 from db import get_conn, init_db, now
 from importer import (
-    COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, diff_rows, parse_workbook,
+    COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, desired_ship, diff_rows,
+    parse_workbook,
 )
 from normalize import norm_date, norm_int, norm_key, norm_text, norm_warehouse
 
@@ -28,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-24.1"
+BUILD_VERSION = "2026-08-24.3"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -530,7 +531,7 @@ def build_filter(args):
     # 「CPG」選項，選了它要撈出所有 CPG- 開頭的線別，不是精準比對。
     line = norm_text(args.get("line"))
     if line == "CPG":
-        add("line LIKE 'CPG-%'")
+        add("line LIKE ?", "CPG-%")
     elif line:
         add("line = ?", line)
 
@@ -1311,7 +1312,7 @@ def api_import_commit():
                         source_file, first_seen_at, last_seen_at,
                         created_at, updated_at)
                     VALUES ({marks}, ?, ?, ?, ?, ?, ?)""",
-                values + [row.get("qty_coupang"),
+                values + [desired_ship(row),
                           preview["filename"], stamp, stamp, stamp, stamp],
             )
             order = {"id": cur.lastrowid, "po_number": row["po_number"],
@@ -1353,20 +1354,38 @@ def api_import_commit():
                 if field in CRITICAL_FIELDS:
                     critical_hit = True
 
-            # 出貨數量若 OP 從未手動改過，就跟著酷澎的下單數量走；
-            # 一旦手動調整過，匯入永遠不再碰它。
-            qty_changed = any(c["field"] == "qty_coupang" for c in item["changes"])
-            if qty_changed and not current["qty_ship_overridden"]:
-                sets.append("qty_ship = ?")
-                values.append(row.get("qty_coupang"))
-                log_change(conn, current, "qty_ship", "出貨數量",
-                           current["qty_ship"], row.get("qty_coupang"),
-                           operator, "import", "隨下單數量連動")
+            # 出貨數量若 OP 從未手動改過，就跟著整合表走——整合表如果
+            # 自己就帶了「出貨數量」欄，那才是真正要出的量，比死板地
+            # 拿下單數量複製過去準；檔案沒帶這欄才退回用下單數量頂著
+            # （desired_ship 已經處理這個順序）。一旦手動調整過，匯入
+            # 永遠不再碰它，但差異照樣要記歷程、要亮燈，不能藏起來。
+            if item.get("ship_changed"):
+                ship_note = ("隨整合表出貨數量連動" if row.get("qty_file_ship") is not None
+                             else "隨下單數量連動")
+                new_ship = item["desired_ship"]
+                if not current["qty_ship_overridden"]:
+                    sets.append("qty_ship = ?")
+                    values.append(new_ship)
+                    log_change(conn, current, "qty_ship", "出貨數量",
+                               current["qty_ship"], new_ship,
+                               operator, "import", ship_note)
+                else:
+                    unsynced.append(f"出貨數量（整合表為 {new_ship}）")
+                    log_change(conn, current, "qty_ship", "出貨數量",
+                               new_ship, current["qty_ship"], operator, "import",
+                               "整合表出貨數量已變，保留人工調整結果不覆蓋")
+                critical_hit = True
 
-            reason = "、".join(
+            reason_parts = [
                 f"{c['label']} {c['old']}→{c['new']}" for c in item["changes"]
                 if not current.get(f"{c['field']}_overridden")
-            )
+            ]
+            # 出貨數量沒有現成的「舊值→新值」文字（它不是 item["changes"]
+            # 裡的一員），只有真的同步了才需要另外補一句，不然一張單只有
+            # 出貨數量變動時，警示燈亮了但理由欄卻是空的，看不出為什麼。
+            if item.get("ship_changed") and not current["qty_ship_overridden"]:
+                reason_parts.append(f"出貨數量 {current['qty_ship']}→{item['desired_ship']}")
+            reason = "、".join(reason_parts)
             if unsynced:
                 reason = ("【與酷澎尚未同步】" + "、".join(unsynced)
                           + ("；" + reason if reason else ""))

@@ -104,6 +104,7 @@ def main():
     hdr = [c.value for c in ws[1]]
     col = {h: i + 1 for i, h in enumerate(hdr)}
     ws.cell(row=2, column=col["下單數量(酷澎單位)"]).value = 999      # 改量
+    ws.cell(row=2, column=col["出貨數量"]).value = 999                # 整合表出貨數量欄同步改，才是真實情境
     ws.cell(row=3, column=col["交付日期"]).value = "2026/9/1"        # 改期（且格式不同）
     ws.cell(row=4, column=col["到貨倉別"]).value = " tao3 "          # 改倉（且大小寫+空白）
     wb.save(modified)
@@ -144,8 +145,30 @@ def main():
           and qty_log[0]["source"] == "import"
           and qty_log[0]["operator"] == "小真",
           qty_log[0] if qty_log else "")
-    check("出貨數量未被手動改過時，跟著下單數量連動",
+    check("出貨數量未被手動改過時，跟著整合表的出貨數量欄連動",
           target["qty_ship"] == 999, f"實際 {target['qty_ship']}")
+
+    print("\n【4b】整合表自己的出貨數量欄跟下單數量不一樣時，以出貨數量欄為準")
+    diverge = os.path.join(_tmp, "diverge.xlsx")
+    shutil.copy(SAMPLE, diverge)
+    wb = openpyxl.load_workbook(diverge)
+    ws = wb["整合表"]
+    # 挑一列下單數量不變、但出貨數量欄本身就跟下單數量不一樣的情境——
+    # 這正是使用者回報「匯入後加總對不上」的那個 bug：系統之前完全沒
+    # 讀整合表自己的出貨數量欄，一律拿下單數量複製過去。
+    row10_sku = str(ws.cell(row=10, column=col["SKU ID"]).value)
+    row10_qty = ws.cell(row=10, column=col["下單數量(酷澎單位)"]).value
+    ws.cell(row=10, column=col["出貨數量"]).value = row10_qty - 50
+    wb.save(diverge)
+
+    res = upload(client, diverge)
+    diff2 = res.get_json()
+    client.post("/api/import/commit", json={"batch_id": diff2["batch_id"], "operator": "小真"})
+    after2 = client.get("/api/orders?page_size=500").get_json()
+    row10 = next(r for r in after2["rows"] if r["sku_id"] == row10_sku)
+    check("下單數量沒變、只有出貨數量欄不同時，出貨數量照樣跟著整合表更新",
+          row10["qty_ship"] == row10_qty - 50,
+          f"下單={row10['qty_coupang']}，出貨={row10['qty_ship']}，預期出貨={row10_qty - 50}")
 
     print("\n【5】上傳片段檔：消失的單絕不能被當成取消")
     partial = os.path.join(_tmp, "partial.xlsx")
