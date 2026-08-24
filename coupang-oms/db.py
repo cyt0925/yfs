@@ -316,7 +316,8 @@ CREATE INDEX IF NOT EXISTS idx_poh_status   ON po_headers(po_status);
 CREATE INDEX IF NOT EXISTS idx_poh_pulled   ON po_headers(is_pulled);
 CREATE INDEX IF NOT EXISTS idx_poh_recv     ON po_headers(receiving_status);
 
-CREATE OR REPLACE VIEW order_rows AS
+DROP VIEW IF EXISTS order_rows;
+CREATE VIEW order_rows AS
 SELECT
     o.*,
     h.po_status,
@@ -567,12 +568,35 @@ def ensure_data_dir():
     return moved
 
 
+ORDER_ROWS_VIEW_POSTGRES = """
+DROP VIEW IF EXISTS order_rows;
+CREATE VIEW order_rows AS
+SELECT
+    o.*,
+    h.po_status,
+    h.receiving_status,
+    h.is_pulled,
+    h.pulled_at,
+    h.pulled_by,
+    h.pulled_batch_id,
+    h.filed_date,
+    h.version AS po_version
+FROM orders o
+JOIN po_headers h ON h.po_number = o.po_number;
+"""
+
+
 def init_db():
     ensure_data_dir()
     conn = get_conn()
     try:
         conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
         _migrate_columns(conn)
+        if IS_POSTGRES:
+            # orders 表可能剛剛才被 _migrate_columns 補上新欄位，上面
+            # executescript 建出來的 view 是舊欄位版本，要重建一次才會
+            # 抓到新欄位（不然要等下次重啟才會生效）。
+            conn.executescript(ORDER_ROWS_VIEW_POSTGRES)
         conn.commit()
     finally:
         conn.close()
