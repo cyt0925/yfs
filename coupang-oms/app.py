@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-24.7"
+BUILD_VERSION = "2026-08-24.8"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -132,6 +132,15 @@ PO_EDITABLE_FIELDS = {
 PO_COUPANG_FIELDS = {
     "delivery_date": "交期",
     "warehouse":     "倉別",
+    "order_type":    "訂單類型",
+}
+
+# PO_COUPANG_FIELDS 各自要用的正規化函式——倉別要轉大寫、交期要轉
+# ISO 日期，訂單類型只是自由文字，直接照打的存。
+_PO_COUPANG_FIELD_NORM = {
+    "delivery_date": norm_date,
+    "warehouse":     norm_warehouse,
+    "order_type":    norm_text,
 }
 
 # 酷澎來源欄位中，允許 OP「補空白」的欄位。
@@ -177,7 +186,7 @@ def get_config():
     return load_json("config.json", {
         "operators": ["OP"],
         "po_statuses": ["已建立", "已回覆", "處理中", "已完成", "修改中", "已取消"],
-        "receiving_statuses": ["未驗收", "完成", "異常", "重啟"],
+        "receiving_statuses": ["未驗收", "完成", "異常", "重啟", "退貨"],
         "order_types": ["一般", "NS", "補單", "拆單"],
     })
 
@@ -207,6 +216,24 @@ def save_json(name, data):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+def _ensure_receiving_status_option():
+    """新增「退貨」這個驗收狀態選項，補進既有安裝裡。
+
+    PostgreSQL 模式下設定值已經存進資料庫，只有第一次啟動、資料庫裡
+    完全沒有這筆設定時，defaults/config.json 才會被種進去——已經跑
+    過一陣子的正式站不會再吃到新的預設檔，所以這裡要用一次性補寫，
+    只在清單裡沒有「退貨」時才加，不動使用者自己調整過的其他選項。"""
+    cfg = get_config()
+    statuses = list(cfg.get("receiving_statuses") or [])
+    if "退貨" not in statuses:
+        statuses.append("退貨")
+        cfg["receiving_statuses"] = statuses
+        save_json("config.json", cfg)
+
+
+_ensure_receiving_status_option()
 
 
 def verify_password(stored, given):
@@ -1174,14 +1201,13 @@ def api_update_po(po_number):
         # 交期／倉別存在每一列 SKU 上（要參與匯入比對），但 OP 是整張單一起改
         row_changes = []
         first = conn.execute(
-            "SELECT delivery_date, warehouse FROM orders WHERE po_number = ? LIMIT 1",
-            (po_number,)).fetchone()
+            "SELECT delivery_date, warehouse, order_type FROM orders "
+            "WHERE po_number = ? LIMIT 1", (po_number,)).fetchone()
         if first is not None:
             for field, label in PO_COUPANG_FIELDS.items():
                 if field not in payload:
                     continue
-                new_val = (norm_date(payload[field]) if field == "delivery_date"
-                           else norm_warehouse(payload[field]))
+                new_val = _PO_COUPANG_FIELD_NORM[field](payload[field])
                 if _same(first[field], new_val):
                     continue
                 row_changes.append((field, label, first[field], new_val))

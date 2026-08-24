@@ -437,6 +437,48 @@ def main():
     check("匯出的內容只有篩選到的欄位",
           all(r[4].value == "交期" for r in wb_log.active.iter_rows(min_row=2)))
 
+    print("\n【20】訂單類型改成可編輯，跟交期／倉別同一套規則")
+    ot_po = next(r["po_number"] for r in
+                 client.get("/api/pos?page_size=100").get_json()["rows"]
+                 if not r["is_pulled"] and r["po_number"] not in (target_po, sync_po))
+    ot_det = client.get(f"/api/pos/{ot_po}").get_json()
+    res = client.put(f"/api/pos/{ot_po}", json={
+        "po_version": ot_det["header"]["version"], "order_type": "NS"})
+    check("整張單改訂單類型成功", res.status_code == 200, res.get_json())
+    ot_after = client.get(f"/api/pos/{ot_po}").get_json()
+    check("整張單所有品項的訂單類型一起被改",
+          all(s["order_type"] == "NS" for s in ot_after["skus"]))
+    check("改過的欄位標記人工調整過（匯入不再覆蓋）",
+          all(s["order_type_overridden"] for s in ot_after["skus"]))
+    check("整張單的變更只記一筆歷程，不是逐項各記一筆",
+          sum(1 for l in ot_after["logs"]
+              if l["field"] == "order_type" and not l["sku_id"]) == 1)
+
+    # 已拉單鎖定時要擋下來，跟交期／倉別一樣的規則
+    client.post("/api/pos/pull", json={"po_numbers": [ot_po], "pulled": True})
+    pulled_version = client.get(f"/api/pos/{ot_po}").get_json()["header"]["version"]
+    locked_res = client.put(f"/api/pos/{ot_po}", json={
+        "po_version": pulled_version, "order_type": "補單"})
+    check("已拉單鎖定時訂單類型不給改", locked_res.status_code == 423,
+          locked_res.get_json())
+    client.post("/api/pos/pull", json={"po_numbers": [ot_po], "pulled": False})
+
+    print("\n【21】驗收狀態補上「退貨」選項（既有安裝一次性補寫）")
+    old_cfg = dict(app_module.get_config())
+    old_cfg["receiving_statuses"] = ["未驗收", "完成", "異常", "重啟"]
+    app_module.save_json("config.json", old_cfg)
+    check("模擬舊安裝：一開始沒有「退貨」這個選項",
+          "退貨" not in app_module.get_config()["receiving_statuses"])
+    app_module._ensure_receiving_status_option()
+    refilled = app_module.get_config()["receiving_statuses"]
+    check("補寫後「退貨」加進來了", "退貨" in refilled, refilled)
+    check("原本的選項都還在，沒有被洗掉",
+          {"未驗收", "完成", "異常", "重啟"} <= set(refilled))
+    already = list(refilled)
+    app_module._ensure_receiving_status_option()
+    check("已經有「退貨」時再跑一次不會重複加",
+          app_module.get_config()["receiving_statuses"] == already)
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

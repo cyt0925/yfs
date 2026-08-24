@@ -90,13 +90,14 @@ CREATE TABLE IF NOT EXISTS orders (
     delivery_date_overridden INTEGER NOT NULL DEFAULT 0,
     warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
     box_size_overridden      INTEGER NOT NULL DEFAULT 0,
+    order_type_overridden    INTEGER NOT NULL DEFAULT 0,
     remarks           TEXT DEFAULT '',
     receiving_note    TEXT DEFAULT '',      -- 這個品項的驗收註記（短驗/溢收…）
 
-    -- 實際驗入數量：小真在酷澎後台按批次驗收工具抓回來的
-    -- 「供應商可交貨數量」（confirmedQty），跟系統無關的外部資料來源，
-    -- 只能透過 /api/sync/verified-qty 寫入，畫面上唯讀。NULL 代表
-    -- 這個品項還沒同步過，跟「同步回來是 0」要分得開，所以不能用
+    -- 實際驗入數量：小真在酷澎後台按批次驗收工具抓回來的「收貨數量」
+    -- （receivedQty），跟系統無關的外部資料來源，只能透過
+    -- /api/sync/verified-qty 寫入，畫面上唯讀。NULL 代表這個品項還沒
+    -- 同步過，跟「同步回來是 0」要分得開，所以不能用
     -- INTEGER NOT NULL DEFAULT 0。
     actual_verified_qty    INTEGER,
     actual_verified_at     TEXT DEFAULT '',
@@ -271,6 +272,7 @@ CREATE TABLE IF NOT EXISTS orders (
     delivery_date_overridden INTEGER NOT NULL DEFAULT 0,
     warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
     box_size_overridden      INTEGER NOT NULL DEFAULT 0,
+    order_type_overridden    INTEGER NOT NULL DEFAULT 0,
     remarks           TEXT DEFAULT '',
     receiving_note    TEXT DEFAULT '',
 
@@ -624,6 +626,11 @@ def _migrate_columns(conn):
     if "actual_verified_at" not in existing:
         conn.execute(
             "ALTER TABLE orders ADD COLUMN actual_verified_at TEXT DEFAULT ''")
+
+    if "order_type_overridden" not in existing:
+        conn.execute(
+            "ALTER TABLE orders ADD COLUMN order_type_overridden "
+            "INTEGER NOT NULL DEFAULT 0")
 
 
 # ---------------------------------------------------------------- 設定值（僅 PostgreSQL 模式）
