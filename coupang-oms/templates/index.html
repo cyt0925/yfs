@@ -239,6 +239,8 @@
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨倉別</th>
             <th class="px-2 py-2 text-right whitespace-nowrap">品項數</th>
             <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">實際驗入數量
+              <span class="block font-normal text-[10px] text-ink-400">酷澎後台同步</span></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -416,6 +418,7 @@
     <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">改密碼</button>
     <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
     <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清除資料</button>
+    <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium hidden">驗收同步</button>
   </div>
 
   <!-- 改密碼：每個人都看得到，改自己的 -->
@@ -480,6 +483,33 @@
     <button id="btn-reset-data"
             class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold">
       <i class="bi bi-trash3-fill"></i> 清空訂單資料</button>
+  </div>
+
+  <!-- 驗收同步：只有管理員，給酷澎後台批次驗收工具用的通行碼 -->
+  <div data-pane="sync" class="st-pane p-5 space-y-4 text-sm hidden">
+    <p class="text-xs text-ink-500">
+      酷澎後台的「批次驗收工具」用這組網址跟通行碼，把「實際驗入數量」自動送進系統，
+      不用再手動匯出 Excel、上傳。設定一次就好，之後每次跑工具都會自動同步。
+    </p>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">同步網址</span>
+      <input id="st-sync-url" readonly class="border rounded px-2 py-2 font-mono text-xs bg-ink-50"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">通行碼</span>
+      <div class="flex gap-2">
+        <input id="st-sync-token" readonly type="password"
+               class="border rounded px-2 py-2 font-mono text-xs bg-ink-50 flex-1">
+        <button id="btn-sync-token-show" type="button"
+                class="px-3 py-2 rounded-lg border border-ink-300 hover:bg-ink-50">顯示</button>
+      </div>
+    </label>
+    <div class="pt-1 flex gap-2">
+      <button id="btn-sync-token-regen"
+              class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold">
+        <i class="bi bi-arrow-repeat"></i> 換一把新的</button>
+    </div>
+    <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      換新的通行碼之後，舊的立刻失效，記得回去工具那邊也要跟著改，不然會同步失敗。
+    </p>
   </div>
 </dialog>
 
@@ -600,7 +630,7 @@ function renderRows() {
   const tb = $("#tbody");
   ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="12" class="text-center py-16 text-ink-300">
+    tb.innerHTML = `<tr><td colspan="13" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
@@ -649,6 +679,9 @@ function renderRows() {
       <td class="px-2 py-2 text-right num">${r.sku_count}</td>
       <td class="px-2 py-2 text-right num ${r.qty_ship !== r.qty_coupang ? "text-red-600 font-bold" : ""}"
           title="${r.qty_ship !== r.qty_coupang ? "出貨數量與酷澎下單數量不一致" : ""}">${(r.qty_ship || 0).toLocaleString()}</td>
+      <td class="px-2 py-2 text-right num ${r.actual_verified_qty != null && r.actual_verified_qty !== r.qty_ship ? "text-amber-700 font-bold" : ""}"
+          title="${r.actual_verified_qty == null ? "這張單還沒有品項同步過" : r.actual_verified_qty !== r.qty_ship ? "跟出貨數量不一致，可能有短驗" : ""}">
+        ${r.actual_verified_qty == null ? "—" : r.actual_verified_qty.toLocaleString()}</td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
@@ -710,6 +743,9 @@ async function openPo(poNumber) {
       <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="qty_ship"
           value="${s.qty_ship ?? ""}" ${locked ? "disabled" : ""}
           class="w-20 border border-ink-200 rounded px-1 py-0.5 text-xs text-right box-calc ${diff ? "text-red-600 font-bold" : ""}"></td>
+      <td class="px-2 py-1.5 text-right text-xs ${s.actual_verified_qty != null && s.actual_verified_qty !== s.qty_ship ? "text-amber-700 font-bold" : "text-ink-500"}"
+          title="${s.actual_verified_qty == null ? "還沒同步" : s.actual_verified_qty !== s.qty_ship ? "跟出貨數量不一致" : ""}">
+        ${s.actual_verified_qty == null ? "—" : s.actual_verified_qty}</td>
       <td class="px-2 py-1.5 text-xs text-ink-500">${esc(s.unit)}</td>
       <td class="px-2 py-1.5 text-right text-xs text-ink-500">${s.box_size ?? ""}</td>
       <td class="px-2 py-1.5 text-right text-xs font-mono" data-box-count="${s.id}">${boxCount(s.qty_ship, s.box_size)}</td>
@@ -778,6 +814,8 @@ async function openPo(poNumber) {
             <th class="px-2 py-1.5 text-left">品名</th>
             <th class="px-2 py-1.5 text-right w-20">下單數量</th>
             <th class="px-2 py-1.5 text-left w-24">出貨數量</th>
+            <th class="px-2 py-1.5 text-right w-24">實際驗入數量
+              <span class="block font-normal text-[10px] text-ink-400">酷澎後台同步</span></th>
             <th class="px-2 py-1.5 text-left w-16">單位</th>
             <th class="px-2 py-1.5 text-right w-20">箱入數</th>
             <th class="px-2 py-1.5 text-right w-16">箱數<span class="block font-normal text-[10px] text-ink-400">自動算</span></th>
@@ -1446,9 +1484,15 @@ function renderUserList() {
 async function loadAccount() {
   ACCOUNT = await (await fetch("/api/account")).json();
   $("#st-me").textContent = ACCOUNT.user;
-  document.querySelectorAll('[data-tab="users"], [data-tab="data"]')
+  document.querySelectorAll('[data-tab="users"], [data-tab="data"], [data-tab="sync"]')
     .forEach(b => b.classList.toggle("hidden", !ACCOUNT.is_admin));
   if (ACCOUNT.is_admin) renderUserList();
+  if (ACCOUNT.is_admin) {
+    $("#st-sync-url").value = `${location.origin}/api/sync/verified-qty`;
+    const t = await (await fetch("/api/account/sync-token")).json();
+    $("#st-sync-token").dataset.value = t.token;
+    $("#st-sync-token").value = "•".repeat(t.token.length);
+  }
 }
 
 $("#btn-settings").addEventListener("click", async () => {
@@ -1528,6 +1572,25 @@ $("#btn-reset-data").addEventListener("click", async () => {
   toast(data.message, "ok");
   PAGE = 1;
   loadOrders();
+});
+
+$("#btn-sync-token-show").addEventListener("click", () => {
+  const input = $("#st-sync-token");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  input.value = showing ? "•".repeat(input.dataset.value.length) : input.dataset.value;
+  $("#btn-sync-token-show").textContent = showing ? "顯示" : "隱藏";
+});
+
+$("#btn-sync-token-regen").addEventListener("click", async () => {
+  if (!confirm("換一把新的通行碼？換完舊的立刻失效，記得回去工具那邊也要改。")) return;
+  const { ok, data } = await postJSON("/api/account/sync-token/regenerate", {});
+  if (!ok) { toast(data.error || "換新失敗。", "err"); return; }
+  $("#st-sync-token").dataset.value = data.token;
+  $("#st-sync-token").type = "text";
+  $("#st-sync-token").value = data.token;
+  $("#btn-sync-token-show").textContent = "隱藏";
+  toast("已換一把新的通行碼，記得同步更新工具設定。");
 });
 
 $("#btn-upload").addEventListener("click", () => { if (requireOperator()) $("#dlg-upload").showModal(); });

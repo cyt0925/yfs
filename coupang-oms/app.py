@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-24.3"
+BUILD_VERSION = "2026-08-24.5"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -70,6 +70,29 @@ def _load_or_create_secret_key():
     except OSError:
         pass
     return key
+
+
+def _load_or_create_sync_token():
+    """外部同步（酷澎後台驗收工具）用的通行碼，不是給人登入用的密碼，
+    是給那支瀏覽器腳本證明「這個請求真的是我們授權的來源」用的。
+    存在資料庫的 app_settings，不用檔案——Postgres 模式下（Render）
+    重新部署，本機檔案會被換成全新的，token 跟著換一把，腳本那邊
+    存的舊 token 就失效了，同事還得回來重貼一次。存進資料庫才會
+    跟訂單資料一樣，重新部署也不會變。"""
+    env_val = os.environ.get("SYNC_TOKEN")
+    if env_val:
+        return env_val
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", ("sync_token",)).fetchone()
+        if row is not None:
+            return json.loads(row["value"])
+    finally:
+        conn.close()
+    token = secrets.token_hex(20)
+    db.save_setting("sync_token", token)
+    return token
 
 
 app.secret_key = _load_or_create_secret_key()
@@ -449,6 +472,116 @@ def api_reset_data():
     tail = "，修改歷程保留" if keep_logs else "，修改歷程一併清除"
     note = f"（清空前已自動備份：{os.path.basename(backup)}）" if backup else ""
     return jsonify({"ok": True, "message": f"訂單資料已清空{tail}。{note}"})
+
+
+@app.route("/api/account/sync-token")
+@admin_required
+def api_get_sync_token():
+    return jsonify({"token": _load_or_create_sync_token()})
+
+
+@app.route("/api/account/sync-token/regenerate", methods=["POST"])
+@admin_required
+def api_regenerate_sync_token():
+    """換一把新的，舊的立刻失效——外部工具那邊要記得跟著改，不然
+    會開始被 401 擋下來。"""
+    token = secrets.token_hex(20)
+    db.save_setting("sync_token", token)
+    return jsonify({"ok": True, "token": token})
+
+
+# ---------------------------------------------------------------- 外部同步：
+# 酷澎後台驗收工具（瀏覽器腳本）主動把「實際驗入數量」推進來，取代
+# 「匯出 Excel 再手動上傳」那一步。跟一般 API 不一樣，呼叫的人不是
+# 登入的使用者、是一支跑在酷澎網域裡的腳本，所以不能用 session 驗證，
+# 改用一把只有這支腳本知道的 token；也因為呼叫來源是不同網域
+# （supplier.tw.coupang.com），瀏覽器會先送一個 OPTIONS 預檢請求，
+# 要主動回應 CORS 標頭，不然瀏覽器直接擋掉，連 POST 都不會送出。
+
+SYNC_ALLOWED_ORIGIN = "https://supplier.tw.coupang.com"
+PUBLIC_ENDPOINTS.add("api_sync_verified_qty")
+
+
+@app.after_request
+def _cors_for_sync(resp):
+    if request.path.startswith("/api/sync/"):
+        resp.headers["Access-Control-Allow-Origin"] = SYNC_ALLOWED_ORIGIN
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Sync-Token"
+        resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    return resp
+
+
+@app.route("/api/sync/verified-qty", methods=["POST", "OPTIONS"])
+def api_sync_verified_qty():
+    if request.method == "OPTIONS":
+        return "", 204
+
+    token = request.headers.get("X-Sync-Token", "")
+    if not token or not secrets.compare_digest(token, _load_or_create_sync_token()):
+        return jsonify({"error": "同步碼不對，請確認腳本設定的 token。"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "沒有帶任何品項資料。"}), 400
+    operator = norm_text(payload.get("operator")) or "酷澎驗收同步"
+
+    stamp = now()
+    matched = 0
+    not_found = []
+
+    conn = get_conn()
+    try:
+        for item in items:
+            po_number = norm_key(item.get("po_number"))
+            sku_id = norm_key(item.get("sku_id"))
+            qty = norm_int(item.get("confirmed_qty"))
+            if not po_number or not sku_id or qty is None:
+                continue
+
+            order = conn.execute(
+                "SELECT * FROM order_rows WHERE po_number = ? AND sku_id = ?",
+                (po_number, sku_id)).fetchone()
+            if order is None:
+                not_found.append(f"{po_number} / {sku_id}")
+                continue
+            order = dict(order)
+            matched += 1
+
+            if not _same(order["actual_verified_qty"], qty):
+                conn.execute(
+                    """UPDATE orders SET actual_verified_qty = ?, actual_verified_at = ?,
+                           updated_at = ?, version = version + 1
+                       WHERE id = ?""",
+                    (qty, stamp, stamp, order["id"]))
+                log_change(conn, order, "actual_verified_qty", "實際驗入數量",
+                           order["actual_verified_qty"], qty, operator, "system",
+                           "酷澎後台驗收工具同步")
+
+            # 出貨數量 − 實際驗入數量 > 0，代表少到貨，自動把「短驗 差額」
+            # 補進驗收註記——已經有內容就接在後面補一行，不覆蓋原本寫的；
+            # 同一句話已經出現過就不再重複補，不然每次跑工具都會多一行。
+            shortfall = (order["qty_ship"] or 0) - qty
+            if shortfall > 0:
+                note_text = f"短驗 {shortfall}"
+                old_note = order["receiving_note"] or ""
+                if note_text not in old_note:
+                    new_note = f"{old_note}；{note_text}" if old_note else note_text
+                    conn.execute(
+                        "UPDATE orders SET receiving_note = ?, updated_at = ? WHERE id = ?",
+                        (new_note, stamp, order["id"]))
+                    log_change(conn, order, "receiving_note", "驗收註記",
+                               old_note, new_note, operator, "system",
+                               "系統依實際驗入數量自動判斷")
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({
+        "ok": True, "matched": matched, "not_found": not_found,
+        "message": f"同步完成，比對到 {matched} 個品項"
+                   + (f"，{len(not_found)} 個系統裡還沒有、略過" if not_found else ""),
+    })
 
 
 # ---------------------------------------------------------------- 歷程
@@ -894,6 +1027,10 @@ def po_summary_sql(clause):
                COUNT(*)             AS sku_count,
                COALESCE(SUM(qty_coupang),0) AS qty_coupang,
                COALESCE(SUM(qty_ship),0)    AS qty_ship,
+               -- 這裡故意不 COALESCE 成 0：一個品項都還沒同步過的單，
+               -- 總和該是「還沒有數字」（畫面上顯示 —），不是「驗入 0 件」，
+               -- 兩者意思差很多，混在一起會誤導人。
+               SUM(actual_verified_qty)     AS actual_verified_qty,
                SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review_count,
                SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END)
                                             AS after_pull_count,
@@ -1018,12 +1155,6 @@ def api_update_po(po_number):
                             "你看到的不是最新版本，請重新載入後再編輯。"),
             }), 409
 
-        if header["is_pulled"] and not payload.get("force_edit"):
-            return jsonify({
-                "error": "locked",
-                "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
-            }), 423
-
         stamp = now()
         head_changes = []
         for field, label in PO_EDITABLE_FIELDS.items():
@@ -1052,6 +1183,16 @@ def api_update_po(po_number):
 
         if not head_changes and not row_changes:
             return jsonify({"ok": True, "changed": 0})
+
+        # 鎖定檢查放在算完「真的有沒有異動」之後——這些欄位在畫面上鎖單
+        # 時本來就是 disabled，正常不會送出真的改變；只有真的想繞過鎖定
+        # 硬改時才擋下來。放在最前面會連「這張單其實什麼都沒改、只是
+        # 品項明細裡動了驗收註記」這種情況也一起誤擋，导致存檔整包失敗。
+        if header["is_pulled"] and not payload.get("force_edit"):
+            return jsonify({
+                "error": "locked",
+                "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
+            }), 423
 
         if head_changes:
             sets = ", ".join(f"{f} = ?" for f, _, _, _ in head_changes)
