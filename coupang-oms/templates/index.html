@@ -126,6 +126,9 @@
     <button id="btn-upload" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
       <i class="bi bi-cloud-arrow-up"></i> 上傳整合表
     </button>
+    <button id="btn-sign" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
+      <i class="bi bi-pen"></i> 驗收單簽名
+    </button>
     <button id="btn-logs" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-clock-history"></i> 修改歷程
     </button>
@@ -408,6 +411,79 @@
   </div>
 </dialog>
 
+<!-- ── 驗收單簽名 Modal ──────────────────────────────── -->
+<dialog id="dlg-sign" class="rounded-xl p-0 w-[min(1000px,95vw)] backdrop:bg-ink-950/70">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-pen"></i> 驗收單批次簽名</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
+    <button data-sgtab="run" class="sg-tab px-3 py-2 border-b-2 font-medium">簽名</button>
+    <button data-sgtab="history" class="sg-tab px-3 py-2 border-b-2 font-medium">歷史紀錄</button>
+  </div>
+
+  <!-- 簽名 -->
+  <div data-sgpane="run" class="sg-pane p-5 space-y-4 max-h-[72vh] overflow-y-auto text-sm">
+    <div id="sign-nosig" class="hidden bg-amber-50 border border-amber-300 rounded-lg p-3 text-amber-900">
+      <p class="font-semibold mb-1"><i class="bi bi-exclamation-triangle-fill"></i> 你還沒設定簽名圖</p>
+      <p class="text-xs">請先到右上角<b>設定 → 驗收單簽名</b>上傳一次你的簽名圖，之後就不用再傳了。</p>
+    </div>
+
+    <div id="sign-ready" class="hidden bg-ink-50 border border-ink-200 rounded-lg p-3">
+      <div class="flex items-center gap-3">
+        <img id="sign-preview" alt="我的簽名" class="h-10 bg-white border rounded px-2">
+        <div class="text-xs text-ink-600">
+          <p>會蓋上 <b id="sign-owner"></b> 的簽名。</p>
+          <p class="text-ink-400">系統會自動找「<span id="sign-keyword" class="font-mono"></span>」欄位，蓋在它正下方。</p>
+        </div>
+      </div>
+    </div>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">選擇要簽名的驗收單 PDF（可一次選多份）</span>
+      <input id="sign-files" type="file" accept=".pdf" multiple
+             class="block w-full text-sm border rounded-lg p-2">
+    </label>
+
+    <div id="sign-result" class="hidden space-y-3"></div>
+  </div>
+
+  <!-- 歷史紀錄 -->
+  <div data-sgpane="history" class="sg-pane p-5 space-y-3 max-h-[72vh] overflow-y-auto text-sm hidden">
+    <div class="flex gap-2 items-end flex-wrap">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
+        <input id="sgh-po" placeholder="輸入單號可篩選" class="border rounded px-2 py-1.5 w-56"></label>
+      <button id="btn-sgh-search" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-ink-50">
+        <i class="bi bi-search"></i> 查詢</button>
+      <div class="flex-1"></div>
+      <p id="sgh-stored" class="text-xs text-ink-400"></p>
+    </div>
+    <div class="border rounded-lg overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-ink-100 sticky top-0"><tr>
+          <th class="px-2 py-1.5 text-left">簽名時間</th>
+          <th class="px-2 py-1.5 text-left">PO 單號</th>
+          <th class="px-2 py-1.5 text-left">檔名</th>
+          <th class="px-2 py-1.5 text-left">簽名人</th>
+          <th class="px-2 py-1.5 text-right">蓋章處</th>
+          <th class="px-2 py-1.5 text-left">結果</th>
+          <th class="px-2 py-1.5 text-left w-20">下載</th>
+        </tr></thead>
+        <tbody id="sgh-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
+    <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
+    <button id="btn-sign-zip" class="hidden px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
+      <i class="bi bi-file-earmark-zip"></i> 下載全部（ZIP）</button>
+    <button id="btn-sign-run" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+      <i class="bi bi-pen-fill"></i> 開始簽名</button>
+  </div>
+</dialog>
+
 <dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]">
   <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
@@ -416,6 +492,7 @@
 
   <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
     <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">改密碼</button>
+    <button data-tab="signature" class="st-tab px-3 py-2 border-b-2 font-medium">驗收單簽名</button>
     <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
     <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清除資料</button>
     <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium hidden">驗收同步</button>
@@ -434,6 +511,62 @@
       <button id="btn-save-password"
               class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
         <i class="bi bi-key-fill"></i> 更新密碼</button>
+    </div>
+  </div>
+
+  <!-- 驗收單簽名：簽名圖每個人自己傳；下面的尺寸／關鍵字只有管理員能改 -->
+  <div data-pane="signature" class="st-pane p-5 space-y-4 text-sm hidden">
+    <div>
+      <h3 class="font-semibold mb-1">我的簽名圖</h3>
+      <p class="text-xs text-ink-500 mb-2">
+        上傳一次就好，之後每次簽驗收單都會自動用這張。登入誰、蓋的就是誰的章。
+      </p>
+      <div id="sg-current" class="hidden items-center gap-3 mb-2 flex">
+        <img id="sg-img" alt="目前的簽名" class="h-12 bg-white border rounded px-2">
+        <div class="text-xs text-ink-500">
+          <p id="sg-meta"></p>
+          <button id="btn-sg-del" class="text-red-600 hover:underline mt-0.5">移除這張簽名</button>
+        </div>
+      </div>
+      <p id="sg-none" class="hidden text-xs text-amber-700 mb-2">
+        <i class="bi bi-exclamation-triangle-fill"></i> 還沒上傳簽名圖，沒辦法使用批次簽名。</p>
+      <input id="sg-file" type="file" accept="image/png,image/jpeg"
+             class="block w-full text-sm border rounded-lg p-2">
+      <p class="text-[11px] text-ink-400 mt-1">
+        支援 PNG / JPG，建議去背的 PNG、小於 2MB。</p>
+    </div>
+
+    <div id="sg-admin" class="hidden border-t pt-4 space-y-3">
+      <div>
+        <h3 class="font-semibold mb-1">簽名位置與大小</h3>
+        <p class="text-xs text-ink-500">
+          簽名蓋歪了或太大太小，改這裡就好，不用改程式。改完下一次簽名就生效。
+        </p>
+      </div>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-ink-400">要找的欄位文字（必須跟 PDF 上印的一模一樣，含全形括號）</span>
+        <input id="sg-keyword" class="border rounded px-2 py-2 font-mono"></label>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">寬</span>
+          <input id="sg-width" type="number" class="border rounded px-2 py-2"></label>
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">高</span>
+          <input id="sg-height" type="number" class="border rounded px-2 py-2"></label>
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">左右偏移</span>
+          <input id="sg-offx" type="number" class="border rounded px-2 py-2"></label>
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">上下偏移</span>
+          <input id="sg-offy" type="number" class="border rounded px-2 py-2"></label>
+      </div>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-ink-400">簽好的 PDF 保留天數（填 0 表示永久保留）</span>
+        <input id="sg-retention" type="number" class="border rounded px-2 py-2 w-40"></label>
+      <p class="text-[11px] text-ink-400">
+        超過天數後只會清掉 PDF 檔本身，「誰在什麼時候簽了哪張單」的紀錄永久保留。
+      </p>
+      <div class="pt-1">
+        <button id="btn-sg-save"
+                class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+          <i class="bi bi-check-lg"></i> 儲存簽名設定</button>
+      </div>
     </div>
   </div>
 
@@ -691,7 +824,7 @@ function renderRows() {
 
 function badgeClass(value) {
   const v = (value || "").trim();
-  if (["已取消", "異常"].includes(v)) return "b-red";
+  if (["已取消", "異常", "退貨"].includes(v)) return "b-red";
   if (["已完成", "完成"].includes(v)) return "b-green";
   if (["處理中", "已回覆"].includes(v)) return "b-blue";
   if (["修改中", "重啟"].includes(v)) return "b-amber";
@@ -1504,10 +1637,199 @@ async function loadAccount() {
 
 $("#btn-settings").addEventListener("click", async () => {
   await loadAccount();
+  await loadSignSettings();
   switchSettingsTab("password");
   ["#st-old", "#st-new", "#st-new2", "#st-confirm"].forEach(s => $(s).value = "");
   $("#dlg-settings").showModal();
 });
+
+// ── 驗收單簽名 ──────────────────────────────────────────
+// 取代原本要開 Google Colab 貼程式碼的作業方式。簽名圖存在系統裡，
+// 阿姨只要選 PDF、按一顆按鈕就好。
+let SIGN_STATE = { hasSignature: false, settings: null, lastBatch: null };
+
+// 簽名圖預覽帶時間戳，不然換了新簽名瀏覽器還是給你看快取的舊圖，
+// 會以為沒存成功。
+function signaturePreviewUrl() {
+  return `/api/sign/signature/preview?t=${Date.now()}`;
+}
+
+async function loadSignSettings() {
+  const data = await (await fetch("/api/sign/settings")).json();
+  SIGN_STATE.settings = data.settings;
+  SIGN_STATE.hasSignature = !!data.signature;
+
+  $("#sg-current").classList.toggle("hidden", !data.signature);
+  $("#sg-none").classList.toggle("hidden", !!data.signature);
+  if (data.signature) {
+    $("#sg-img").src = signaturePreviewUrl();
+    $("#sg-meta").textContent =
+      `${data.signature.filename}（${Math.round(data.signature.byte_size / 1024)} KB）`
+      + `　上傳於 ${data.signature.updated_at}`;
+  }
+
+  $("#sg-admin").classList.toggle("hidden", !data.is_admin);
+  if (data.is_admin) {
+    $("#sg-keyword").value = data.settings.keyword;
+    $("#sg-width").value = data.settings.width;
+    $("#sg-height").value = data.settings.height;
+    $("#sg-offx").value = data.settings.offset_x;
+    $("#sg-offy").value = data.settings.offset_y;
+    $("#sg-retention").value = data.settings.retention_days;
+  }
+}
+
+$("#sg-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/sign/signature", { method: "POST", body: fd });
+  const data = await res.json();
+  e.target.value = "";
+  if (!res.ok) { toast(data.error || "上傳失敗。", "err"); return; }
+  await loadSignSettings();
+  toast(`${data.message}（${data.width}×${data.height}）`, "ok");
+});
+
+$("#btn-sg-del").addEventListener("click", async () => {
+  if (!confirm("確定要移除你的簽名圖嗎？移除後就不能用批次簽名了。")) return;
+  const res = await fetch("/api/sign/signature", { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error || "移除失敗。", "err"); return; }
+  await loadSignSettings();
+  toast(data.message, "ok");
+});
+
+$("#btn-sg-save").addEventListener("click", async () => {
+  const { ok, data } = await postJSON("/api/sign/settings", {
+    keyword: $("#sg-keyword").value,
+    width: $("#sg-width").value, height: $("#sg-height").value,
+    offset_x: $("#sg-offx").value, offset_y: $("#sg-offy").value,
+    retention_days: $("#sg-retention").value,
+  });
+  if (!ok) { toast(data.error || "儲存失敗。", "err"); return; }
+  SIGN_STATE.settings = data.settings;
+  toast("簽名設定已儲存。", "ok");
+});
+
+function switchSignTab(name) {
+  document.querySelectorAll(".sg-tab").forEach(b => {
+    const on = b.dataset.sgtab === name;
+    b.classList.toggle("border-brand-600", on);
+    b.classList.toggle("text-brand-700", on);
+    b.classList.toggle("border-transparent", !on);
+    b.classList.toggle("text-ink-500", !on);
+  });
+  document.querySelectorAll(".sg-pane").forEach(p => {
+    p.classList.toggle("hidden", p.dataset.sgpane !== name);
+  });
+  // 「開始簽名／下載全部」只在簽名那頁有意義，切到歷史紀錄要收起來
+  const onRun = name === "run";
+  $("#btn-sign-run").classList.toggle("hidden", !onRun);
+  $("#btn-sign-zip").classList.toggle("hidden", !onRun || !SIGN_STATE.lastBatch);
+  if (!onRun) loadSignHistory();
+}
+
+document.querySelectorAll(".sg-tab").forEach(b => {
+  b.addEventListener("click", () => switchSignTab(b.dataset.sgtab));
+});
+
+$("#btn-sign").addEventListener("click", async () => {
+  await loadSignSettings();
+  $("#sign-nosig").classList.toggle("hidden", SIGN_STATE.hasSignature);
+  $("#sign-ready").classList.toggle("hidden", !SIGN_STATE.hasSignature);
+  if (SIGN_STATE.hasSignature) {
+    $("#sign-preview").src = signaturePreviewUrl();
+    $("#sign-owner").textContent = ACCOUNT ? ACCOUNT.user : "";
+    $("#sign-keyword").textContent = SIGN_STATE.settings.keyword;
+  }
+  $("#sign-files").value = "";
+  $("#sign-result").classList.add("hidden");
+  $("#sign-result").innerHTML = "";
+  SIGN_STATE.lastBatch = null;
+  switchSignTab("run");
+  $("#dlg-sign").showModal();
+});
+
+$("#btn-sign-run").addEventListener("click", async () => {
+  const files = $("#sign-files").files;
+  if (!files.length) { toast("請先選要簽名的 PDF。", "warn"); return; }
+
+  const btn = $("#btn-sign-run");
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = `<i class="bi bi-hourglass-split"></i> 簽名中…`;
+
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  try {
+    const res = await fetch("/api/sign/run", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error || "簽名失敗。", "err"); return; }
+
+    SIGN_STATE.lastBatch = data.ok_count ? data.batch_id : null;
+    $("#btn-sign-zip").classList.toggle("hidden", !data.ok_count);
+
+    const rows = data.results.map(r => r.status === "ok"
+      ? `<div class="flex items-center justify-between border-b py-1.5 gap-2">
+           <span class="truncate"><i class="bi bi-check-circle-fill text-emerald-600"></i>
+             ${esc(r.filename)}
+             ${r.po_number ? `<span class="text-ink-400 font-mono text-xs">${esc(r.po_number)}</span>` : ""}</span>
+           <span class="text-xs text-ink-500 whitespace-nowrap">蓋了 ${r.sign_count} 處
+             <a href="/api/sign/docs/${r.doc_id}/download" class="text-brand-600 hover:underline ml-2">下載</a></span>
+         </div>`
+      : `<div class="flex items-center justify-between border-b py-1.5 gap-2">
+           <span class="truncate"><i class="bi bi-x-circle-fill text-red-600"></i> ${esc(r.filename)}</span>
+           <span class="text-xs text-red-700 text-right">${esc(r.message)}</span>
+         </div>`).join("");
+
+    $("#sign-result").innerHTML = `
+      <div class="flex gap-2">
+        <div class="flex-1 text-center py-2 rounded-lg bg-emerald-50 text-emerald-800 font-semibold">
+          簽好 ${data.ok_count} 份</div>
+        <div class="flex-1 text-center py-2 rounded-lg ${data.fail_count ? "bg-red-50 text-red-800" : "bg-ink-50 text-ink-400"} font-semibold">
+          沒處理 ${data.fail_count} 份</div>
+      </div>
+      <div class="border rounded-lg px-3 py-1 max-h-64 overflow-auto">${rows}</div>`;
+    $("#sign-result").classList.remove("hidden");
+    toast(data.message, data.fail_count ? "warn" : "ok");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
+$("#btn-sign-zip").addEventListener("click", () => {
+  if (!SIGN_STATE.lastBatch) return;
+  location.href = `/api/sign/batches/${SIGN_STATE.lastBatch}/download`;
+});
+
+async function loadSignHistory() {
+  const po = encodeURIComponent($("#sgh-po").value.trim());
+  const data = await (await fetch(`/api/sign/history?po_number=${po}`)).json();
+  $("#sgh-stored").textContent =
+    `目前存放 ${(data.stored_bytes / 1048576).toFixed(1)} MB`
+    + (data.retention_days ? `　保留 ${data.retention_days} 天` : "　永久保留");
+  $("#sgh-body").innerHTML = data.rows.length ? data.rows.map(r => `
+    <tr class="border-t">
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.created_at)}</td>
+      <td class="px-2 py-1.5 font-mono">${esc(r.po_number) || "—"}</td>
+      <td class="px-2 py-1.5 truncate max-w-[220px]" title="${esc(r.filename)}">${esc(r.filename)}</td>
+      <td class="px-2 py-1.5">${esc(r.operator)}</td>
+      <td class="px-2 py-1.5 text-right">${r.sign_count || "—"}</td>
+      <td class="px-2 py-1.5">${r.status === "ok"
+        ? `<span class="badge b-green">已簽</span>`
+        : `<span class="badge b-red" title="${esc(r.message)}">失敗</span>`}</td>
+      <td class="px-2 py-1.5">${r.status === "ok" && !r.purged
+        ? `<a href="/api/sign/docs/${r.id}/download" class="text-brand-600 hover:underline">下載</a>`
+        : r.purged ? `<span class="text-ink-300">已清除</span>` : "—"}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="7" class="px-2 py-6 text-center text-ink-300">沒有簽名紀錄。</td></tr>`;
+}
+
+$("#btn-sgh-search").addEventListener("click", loadSignHistory);
+$("#sgh-po").addEventListener("keydown", e => { if (e.key === "Enter") loadSignHistory(); });
 
 document.querySelectorAll(".st-tab").forEach(b => {
   b.addEventListener("click", () => switchSettingsTab(b.dataset.tab));

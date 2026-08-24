@@ -3,10 +3,13 @@
 啟動：python app.py  然後開 http://127.0.0.1:5000
 """
 
+import base64
+import datetime as _dt
 import io
 import json
 import os
 import secrets
+import zipfile
 from functools import wraps
 
 from flask import (
@@ -21,6 +24,7 @@ from importer import (
     COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, desired_ship, diff_rows,
     parse_workbook,
 )
+import pdfsign
 from normalize import norm_date, norm_int, norm_key, norm_text, norm_warehouse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-24.8"
+BUILD_VERSION = "2026-08-24.9"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -515,6 +519,375 @@ def api_regenerate_sync_token():
     token = secrets.token_hex(20)
     db.save_setting("sync_token", token)
     return jsonify({"ok": True, "token": token})
+
+
+# ---------------------------------------------------------------- 驗收單簽名
+#
+# 取代原本要開 Google Colab 貼程式碼跑的作業（SOP-CP-CPG-001）。做的事
+# 情一樣：在驗收單 PDF 上找「出貨確認（廠商簽名）」，蓋上簽名圖。
+#
+# 簽名圖一人一張、存在系統裡：登入誰蓋的就是誰的章，跟修改歷程記登入
+# 身分同一套精神——共用一張圖的話，事後查不出這份驗收單是誰簽的。
+
+SIGN_GEOMETRY_KEYS = ("keyword", "width", "height", "offset_x", "offset_y")
+# PDF 本體佔空間，資料庫容量有限，預設留半年就清掉；但「誰在什麼時候
+# 簽了哪張單」的紀錄永久保留，不跟著被清。
+SIGN_DEFAULT_RETENTION_DAYS = 180
+MAX_SIGNATURE_BYTES = 2 * 1024 * 1024
+MAX_SIGN_PDF_BYTES = 25 * 1024 * 1024
+
+
+def get_sign_settings():
+    saved = db.load_setting("sign_settings", {}) if db.IS_POSTGRES else \
+        load_json("config.json", {}).get("sign_settings", {})
+    geo = dict(pdfsign.DEFAULT_GEOMETRY)
+    geo["retention_days"] = SIGN_DEFAULT_RETENTION_DAYS
+    if isinstance(saved, dict):
+        for key in SIGN_GEOMETRY_KEYS:
+            if key in saved and saved[key] not in (None, ""):
+                geo[key] = saved[key]
+        if saved.get("retention_days") not in (None, ""):
+            geo["retention_days"] = saved["retention_days"]
+    return geo
+
+
+def save_sign_settings(geo):
+    if db.IS_POSTGRES:
+        db.save_setting("sign_settings", geo)
+        return
+    cfg = load_json("config.json", {})
+    cfg["sign_settings"] = geo
+    save_json("config.json", cfg)
+
+
+@app.route("/api/sign/settings")
+def api_sign_settings():
+    geo = get_sign_settings()
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT filename, byte_size, updated_at FROM user_signatures "
+            "WHERE username = ?", (current_operator(),)).fetchone()
+    finally:
+        conn.close()
+    return jsonify({
+        "settings": geo,
+        "signature": dict(row) if row else None,
+        "is_admin": is_admin(),
+    })
+
+
+@app.route("/api/sign/settings", methods=["POST"])
+@admin_required
+def api_save_sign_settings():
+    """尺寸／位移／關鍵字改成設定值，不寫死在程式裡——酷澎哪天改了
+    版面或字，或是簽名蓋歪了要微調，管理員自己就能改，不用等改程式、
+    重新部署。原本 SOP 的異常處理第 4 點就是教人去改程式碼裡那四個
+    數字，那對非技術同事等於做不到。"""
+    payload = request.get_json(silent=True) or {}
+    geo = get_sign_settings()
+
+    # 關鍵字只能去頭尾空白，不能走 norm_text——它會做 NFKC 正規化，把
+    # 全形括號「（）」轉成半形「()」。PDF 裡印的是全形，轉過就再也對不
+    # 上，結果是每份檔案都說「找不到簽名欄位」，而且看起來完全正常，
+    # 極難查。這裡要的是跟 PDF 內文逐字相符，不是好看的正規化結果。
+    keyword = str(payload.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"error": "關鍵字不能空白。"}), 400
+    geo["keyword"] = keyword
+
+    for key in ("width", "height", "offset_x", "offset_y"):
+        if key not in payload:
+            continue
+        value = norm_int(payload.get(key))
+        if value is None:
+            return jsonify({"error": f"{key} 請填數字。"}), 400
+        if key in ("width", "height") and value <= 0:
+            return jsonify({"error": "簽名寬高要大於 0。"}), 400
+        geo[key] = value
+
+    if "retention_days" in payload:
+        days = norm_int(payload.get("retention_days"))
+        if days is None or days < 0:
+            return jsonify({"error": "保留天數請填 0 以上的數字。"}), 400
+        geo["retention_days"] = days
+
+    save_sign_settings(geo)
+    return jsonify({"ok": True, "settings": geo})
+
+
+@app.route("/api/sign/signature", methods=["POST"])
+def api_upload_signature():
+    """上傳自己的簽名圖。存起來之後就不用每次簽名都重傳，也就沒有
+    原本 Colab 版「一次只能傳一個簽名檔」那條要人自己記得的規則。"""
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "沒有收到圖片檔。"}), 400
+
+    raw = upload.read()
+    if not raw:
+        return jsonify({"error": "檔案是空的。"}), 400
+    if len(raw) > MAX_SIGNATURE_BYTES:
+        return jsonify({"error": "簽名圖請小於 2MB。"}), 400
+
+    try:
+        info = pdfsign.validate_signature(raw)
+    except pdfsign.SignError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    me = current_operator()
+    stamp = now()
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM user_signatures WHERE username = ?", (me,))
+        conn.execute(
+            """INSERT INTO user_signatures
+               (username, image_b64, mime, filename, byte_size, updated_at)
+               VALUES (?,?,?,?,?,?)""",
+            (me, base64.b64encode(raw).decode("ascii"),
+             upload.mimetype or "image/png", upload.filename, len(raw), stamp))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True, "message": "簽名圖已儲存。",
+                    "filename": upload.filename, "byte_size": len(raw),
+                    "updated_at": stamp, **info})
+
+
+@app.route("/api/sign/signature", methods=["DELETE"])
+def api_delete_signature():
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM user_signatures WHERE username = ?",
+                     (current_operator(),))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "message": "簽名圖已移除。"})
+
+
+@app.route("/api/sign/signature/preview")
+def api_preview_signature():
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT image_b64, mime FROM user_signatures WHERE username = ?",
+            (current_operator(),)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return jsonify({"error": "還沒上傳簽名圖。"}), 404
+    return send_file(io.BytesIO(base64.b64decode(row["image_b64"])),
+                     mimetype=row["mime"] or "image/png")
+
+
+@app.route("/api/sign/run", methods=["POST"])
+def api_sign_run():
+    """一次簽一批。每份檔案各自回報結果，某一份失敗不影響其他份——
+    Colab 版遇到壞檔會整個中斷，前面簽好的也一起沒了。"""
+    me = current_operator()
+    uploads = request.files.getlist("files")
+    uploads = [u for u in uploads if u and u.filename]
+    if not uploads:
+        return jsonify({"error": "沒有收到任何 PDF。"}), 400
+
+    conn = get_conn()
+    try:
+        sig_row = conn.execute(
+            "SELECT image_b64 FROM user_signatures WHERE username = ?",
+            (me,)).fetchone()
+    finally:
+        conn.close()
+    if sig_row is None:
+        return jsonify({
+            "error": "你還沒上傳簽名圖，請先到「設定 → 驗收單簽名」上傳一次。",
+        }), 400
+    signature = base64.b64decode(sig_row["image_b64"])
+
+    geo = get_sign_settings()
+    stamp = now()
+    results = []
+
+    conn = get_conn()
+    try:
+        cur = conn.execute(
+            """INSERT INTO sign_batches
+               (operator, file_count, signed_count, fail_count, keyword, created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (me, len(uploads), 0, 0, geo["keyword"], stamp))
+        batch_id = cur.lastrowid
+
+        signed_total = 0
+        fail_total = 0
+
+        def record_failure(name, message):
+            """失敗的也要進歸檔——「這份當初傳了但沒簽成功」跟「這份
+            根本沒傳過」是兩件事，事後追查時差很多。"""
+            po = pdfsign.extract_po_number("", name)
+            conn.execute(
+                """INSERT INTO signed_docs
+                   (batch_id, operator, po_number, filename, sign_count,
+                    status, message, pdf_b64, byte_size, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (batch_id, me, po, name, 0, "error", message, "", 0, stamp))
+            results.append({"filename": name, "status": "error",
+                            "message": message, "sign_count": 0,
+                            "po_number": po})
+
+        for upload in uploads:
+            raw = upload.read()
+            name = upload.filename
+            if not name.lower().endswith(".pdf"):
+                record_failure(name, "不是 PDF 檔，已略過。")
+                fail_total += 1
+                continue
+            if len(raw) > MAX_SIGN_PDF_BYTES:
+                record_failure(name, "檔案太大（超過 25MB）。")
+                fail_total += 1
+                continue
+
+            try:
+                out, count, po_number = pdfsign.sign_pdf(raw, signature, geo)
+            except pdfsign.SignError as exc:
+                record_failure(name, str(exc))
+                fail_total += 1
+                continue
+
+            doc_cur = conn.execute(
+                """INSERT INTO signed_docs
+                   (batch_id, operator, po_number, filename, sign_count,
+                    status, message, pdf_b64, byte_size, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (batch_id, me, po_number, name, count, "ok", "",
+                 base64.b64encode(out).decode("ascii"), len(out), stamp))
+            results.append({
+                "filename": name, "status": "ok", "sign_count": count,
+                "po_number": po_number, "doc_id": doc_cur.lastrowid,
+                "byte_size": len(out),
+            })
+            signed_total += count
+
+        conn.execute(
+            "UPDATE sign_batches SET signed_count = ?, fail_count = ? WHERE id = ?",
+            (signed_total, fail_total, batch_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    _purge_old_signed_pdfs()
+    return jsonify({
+        "ok": True, "batch_id": batch_id, "results": results,
+        "ok_count": ok_count, "fail_count": fail_total,
+        "signed_total": signed_total,
+        "message": (f"{ok_count} 份簽好了（共蓋 {signed_total} 處）"
+                    + (f"，{fail_total} 份沒處理成功" if fail_total else "")),
+    })
+
+
+@app.route("/api/sign/batches/<int:batch_id>/download")
+def api_sign_download_zip(batch_id):
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            """SELECT filename, pdf_b64 FROM signed_docs
+               WHERE batch_id = ? AND status = 'ok' AND purged = 0
+               ORDER BY id""", (batch_id,)).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return jsonify({"error": "這個批次沒有可下載的檔案（可能已超過保留期限）。"}), 404
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for row in rows:
+            zf.writestr(f"signed_{row['filename']}",
+                        base64.b64decode(row["pdf_b64"]))
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"已簽名驗收單_{db.file_stamp()}.zip")
+
+
+@app.route("/api/sign/docs/<int:doc_id>/download")
+def api_sign_download_one(doc_id):
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT filename, pdf_b64, purged FROM signed_docs WHERE id = ?",
+            (doc_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None or row["purged"] or not row["pdf_b64"]:
+        return jsonify({"error": "這份檔案不存在或已超過保留期限被清除。"}), 404
+    return send_file(io.BytesIO(base64.b64decode(row["pdf_b64"])),
+                     mimetype="application/pdf", as_attachment=True,
+                     download_name=f"signed_{row['filename']}")
+
+
+@app.route("/api/sign/history")
+def api_sign_history():
+    """歸檔查詢：誰在什麼時候簽了哪張單。可依 PO 單號、操作人員篩。"""
+    args = request.args
+    where, params = [], []
+    po = norm_text(args.get("po_number"))
+    if po:
+        where.append("po_number LIKE ?")
+        params.append(f"%{po}%")
+    operator = norm_text(args.get("operator"))
+    if operator:
+        where.append("operator = ?")
+        params.append(operator)
+    clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+    page_size = min(max(norm_int(args.get("page_size")) or 50, 1), 200)
+    page = max(norm_int(args.get("page")) or 1, 1)
+
+    conn = get_conn()
+    try:
+        total = conn.execute(
+            f"SELECT COUNT(*) AS n FROM signed_docs {clause}",
+            params).fetchone()["n"]
+        rows = conn.execute(
+            f"""SELECT id, batch_id, operator, po_number, filename, sign_count,
+                       status, message, byte_size, purged, created_at
+                FROM signed_docs {clause}
+                ORDER BY id DESC LIMIT ? OFFSET ?""",
+            params + [page_size, (page - 1) * page_size]).fetchall()
+        used = conn.execute(
+            "SELECT COALESCE(SUM(byte_size), 0) AS n FROM signed_docs "
+            "WHERE purged = 0").fetchone()["n"]
+    finally:
+        conn.close()
+
+    return jsonify({
+        "rows": [dict(r) for r in rows], "total": total,
+        "page": page, "page_size": page_size,
+        "stored_bytes": used,
+        "retention_days": get_sign_settings()["retention_days"],
+    })
+
+
+def _purge_old_signed_pdfs():
+    """清掉超過保留天數的 PDF 本體，但保留「誰簽了什麼」的紀錄。
+
+    保留天數設 0 表示不自動清。清的是 pdf_b64 這個大欄位，signed_docs
+    那一列本身留著並標記 purged=1——歸檔查詢查得到這件事發生過，只是
+    檔案本體不在了。
+    """
+    days = get_sign_settings()["retention_days"]
+    if not days:
+        return
+    cutoff = (db._local_now() - _dt.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_conn()
+    try:
+        conn.execute(
+            """UPDATE signed_docs SET pdf_b64 = '', byte_size = 0, purged = 1
+               WHERE purged = 0 AND pdf_b64 != '' AND created_at < ?""",
+            (cutoff,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------- 外部同步：

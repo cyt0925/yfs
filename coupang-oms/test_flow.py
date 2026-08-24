@@ -12,6 +12,8 @@ import sys
 import tempfile
 
 import openpyxl
+import pymupdf
+import zipfile
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAMPLE = os.path.join(BASE_DIR, "samples", "整合表範例.xlsx")
@@ -478,6 +480,115 @@ def main():
     app_module._ensure_receiving_status_option()
     check("已經有「退貨」時再跑一次不會重複加",
           app_module.get_config()["receiving_statuses"] == already)
+
+    def mkpdf(text="出貨確認（廠商簽名）", po="13000000478171", blank=False):
+        d = pymupdf.open(); p = d.new_page()
+        if not blank:
+            p.insert_text((72,120), f"PO {po}", fontsize=12)
+            p.insert_text((72,300), text, fontsize=12, fontname="china-t")
+        b = d.tobytes(); d.close(); return b
+
+    s = pymupdf.open(); sp = s.new_page(width=130,height=44)
+    sp.draw_line(pymupdf.Point(10,30), pymupdf.Point(120,20), color=(0,0,0.6), width=2)
+    sig = sp.get_pixmap(dpi=150).tobytes("png"); s.close()
+
+    print("\n【22】驗收單 PDF 批次簽名")
+    # no signature yet -> must refuse
+    r = client.post("/api/sign/run", data={"files": (io.BytesIO(mkpdf()), "a.pdf")},
+               content_type="multipart/form-data")
+    check("還沒上傳簽名圖時，明確擋下來並說要去哪上傳",
+        r.status_code == 400 and "簽名圖" in r.get_json()["error"], r.get_json())
+
+    r = client.post("/api/sign/signature", data={"file": (io.BytesIO(sig), "sig.png")},
+               content_type="multipart/form-data")
+    check("上傳簽名圖成功", r.status_code == 200, r.get_json())
+
+    r = client.post("/api/sign/signature", data={"file": (io.BytesIO(b"not an image"), "x.png")},
+               content_type="multipart/form-data")
+    check("壞掉的圖檔在存進去之前就被擋下", r.status_code == 400, r.get_json())
+
+    # batch: 1 good, 1 no-keyword, 1 scanned, 1 non-pdf
+    r = client.post("/api/sign/run", data={"files": [
+            (io.BytesIO(mkpdf()), "good.pdf"),
+            (io.BytesIO(mkpdf(text="其他文字")), "nokw.pdf"),
+            (io.BytesIO(mkpdf(blank=True)), "scan.pdf"),
+            (io.BytesIO(b"xx"), "note.txt"),
+        ]}, content_type="multipart/form-data")
+    data = r.get_json()
+    check("一批多份可以一次簽完", r.status_code == 200, data.get("message"))
+    byname = {x["filename"]: x for x in data["results"]}
+    check("正常的那份簽好了、蓋了 1 處",
+        byname["good.pdf"]["status"]=="ok" and byname["good.pdf"]["sign_count"]==1)
+    check("PO 單號有從 PDF 內文抓出來",
+        byname["good.pdf"]["po_number"]=="13000000478171", byname["good.pdf"]["po_number"])
+    check("找不到關鍵字的那份明確報錯，不是靜默略過",
+        byname["nokw.pdf"]["status"]=="error" and "找不到" in byname["nokw.pdf"]["message"],
+        byname["nokw.pdf"]["message"])
+    check("掃描檔（沒有文字層）給的是不同的錯誤訊息",
+        "掃描檔" in byname["scan.pdf"]["message"], byname["scan.pdf"]["message"])
+    check("非 PDF 檔被擋掉但不影響其他份", byname["note.txt"]["status"]=="error")
+    check("一份壞檔不會讓整批中斷（Colab 版會）", data["ok_count"]==1 and data["fail_count"]==3)
+
+    bid = data["batch_id"]
+    r = client.get(f"/api/sign/batches/{bid}/download")
+    check("整批可以打包成 ZIP 下載", r.status_code==200)
+    zf = zipfile.ZipFile(io.BytesIO(r.data))
+    check("ZIP 裡只放簽成功的那份", zf.namelist()==["signed_good.pdf"], zf.namelist())
+    inner = pymupdf.open(stream=zf.read("signed_good.pdf"), filetype="pdf")
+    check("下載回來的 PDF 真的有蓋上簽名圖", len(inner[0].get_images())==1)
+    rect = inner[0].get_image_rects(inner[0].get_images()[0][0])[0]
+    check("簽名蓋在關鍵字正下方、尺寸符合設定",
+        abs(rect.width-65)<1 and abs(rect.height-22)<1, f"{rect.width:.0f}x{rect.height:.0f}")
+    inner.close()
+
+    did = byname["good.pdf"]["doc_id"]
+    check("單一份也能各自下載", client.get(f"/api/sign/docs/{did}/download").status_code==200)
+
+    print("\n【23】簽名歸檔：誰在什麼時候簽了哪張單")
+    h = client.get("/api/sign/history").get_json()
+    check("歸檔查得到這次的紀錄", h["total"]==4, f"共 {h['total']} 筆")
+    check("查得到是誰簽的、簽了哪張單",
+        any(x["operator"]=="小真" and x["po_number"]=="13000000478171" for x in h["rows"]))
+    hp = client.get("/api/sign/history?po_number=13000000478171").get_json()
+    check("可以用 PO 單號查歷史簽名紀錄", hp["total"]>=1, f"{hp['total']} 筆")
+
+    print("\n【24】簽名尺寸／關鍵字可由管理員調整")
+    r = client.post("/api/sign/settings", json={"keyword":"出貨確認（廠商簽名）",
+        "width":50,"height":18,"offset_x":0,"offset_y":2})
+    check("管理員可以調簽名尺寸", r.status_code==200, r.get_json().get("settings"))
+    r = client.post("/api/sign/run", data={"files": (io.BytesIO(mkpdf()), "resize.pdf")},
+               content_type="multipart/form-data")
+    d2 = client.get(f"/api/sign/docs/{r.get_json()['results'][0]['doc_id']}/download")
+    i2 = pymupdf.open(stream=d2.data, filetype="pdf")
+    rc = i2.get_page_images(0); rect2 = i2[0].get_image_rects(rc[0][0])[0]
+    # insert_image 會維持圖片原比例、縮進框內（跟原本 Colab 版一致），
+    # 所以驗的是「不超出設定的框」而不是剛好等於框的長寬。
+    check("調完尺寸後真的照新設定蓋（等比例縮進 50x18 框內）",
+        rect2.width <= 50.5 and rect2.height <= 18.5 and rect2.width > 40,
+        f"{rect2.width:.1f}x{rect2.height:.1f}")
+    i2.close()
+
+    r = client.post("/api/sign/settings", json={"keyword":"廠商簽章處","width":65,"height":22,
+        "offset_x":0,"offset_y":2})
+    r = client.post("/api/sign/run", data={"files": (io.BytesIO(mkpdf(text="廠商簽章處")), "kw.pdf")},
+               content_type="multipart/form-data")
+    check("關鍵字改成別的字也照樣找得到",
+        r.get_json()["results"][0]["status"]=="ok", r.get_json()["results"][0])
+    r = client.post("/api/sign/settings", json={"keyword":"","width":65,"height":22})
+    check("關鍵字不給留空白", r.status_code==400)
+
+    print("\n【25】簽名功能的權限與個人簽名圖")
+    # 預設 users.json 沒有 _admins 名單時「所有人都是管理員」，要驗權限
+    # 就得先真的建一個非管理員帳號出來。
+    app_module._write_users({**app_module.get_users(), "Nicole": "changeme123"}, {"小真"})
+    r = client.post("/login", data={"username":"Nicole","password":"changeme123"})
+    check("非管理員帳號登入成功（確認測試前提成立）", r.status_code==302, r.status_code)
+    r = client.post("/api/sign/settings", json={"keyword":"x","width":10,"height":10})
+    check("非管理員不能改簽名設定", r.status_code==403, r.get_json())
+    r = client.post("/api/sign/run", data={"files": (io.BytesIO(mkpdf()), "n.pdf")},
+               content_type="multipart/form-data")
+    check("每個人用自己的簽名圖：Nicole 還沒傳就不能簽",
+        r.status_code==400 and "簽名圖" in r.get_json()["error"], r.get_json())
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

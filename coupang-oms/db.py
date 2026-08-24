@@ -235,6 +235,51 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value      TEXT NOT NULL,
     updated_at TEXT DEFAULT ''
 );
+
+-- 每個人自己的簽名圖：登入誰、蓋的就是誰的簽名，跟修改歷程記登入身分
+-- 是同一套精神——共用一張圖的話，事後就查不出這份驗收單是誰簽的。
+-- 圖片存成 base64 文字，SQLite 與 PostgreSQL 都通吃，不用處理二進位
+-- 型別在兩邊不一樣的問題。
+CREATE TABLE IF NOT EXISTS user_signatures (
+    username    TEXT PRIMARY KEY,
+    image_b64   TEXT NOT NULL,
+    mime        TEXT DEFAULT 'image/png',
+    filename    TEXT DEFAULT '',
+    byte_size   INTEGER DEFAULT 0,
+    updated_at  TEXT DEFAULT ''
+);
+
+-- 簽名批次與歸檔。metadata（誰、何時、簽了哪張 PO、簽成功幾處）永久
+-- 保留，簽好的 PDF 本體另外存、可依保留天數清掉——PDF 很佔空間，
+-- 資料庫容量有限，但「誰在什麼時候簽了什麼」這筆帳不能跟著被清掉。
+CREATE TABLE IF NOT EXISTS sign_batches (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    operator    TEXT DEFAULT '',
+    file_count  INTEGER DEFAULT 0,
+    signed_count INTEGER DEFAULT 0,
+    fail_count  INTEGER DEFAULT 0,
+    keyword     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS signed_docs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id     INTEGER NOT NULL,
+    operator     TEXT DEFAULT '',
+    po_number    TEXT DEFAULT '',
+    filename     TEXT DEFAULT '',
+    sign_count   INTEGER DEFAULT 0,
+    status       TEXT DEFAULT '',
+    message      TEXT DEFAULT '',
+    pdf_b64      TEXT DEFAULT '',
+    byte_size    INTEGER DEFAULT 0,
+    purged       INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_signdocs_batch ON signed_docs(batch_id);
+CREATE INDEX IF NOT EXISTS idx_signdocs_po    ON signed_docs(po_number);
+CREATE INDEX IF NOT EXISTS idx_signdocs_time  ON signed_docs(created_at);
 """
 
 # ---------------------------------------------------------------- PostgreSQL schema
@@ -399,6 +444,51 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value      TEXT NOT NULL,
     updated_at TEXT DEFAULT ''
 );
+
+-- 每個人自己的簽名圖：登入誰、蓋的就是誰的簽名，跟修改歷程記登入身分
+-- 是同一套精神——共用一張圖的話，事後就查不出這份驗收單是誰簽的。
+-- 圖片存成 base64 文字，SQLite 與 PostgreSQL 都通吃，不用處理二進位
+-- 型別在兩邊不一樣的問題。
+CREATE TABLE IF NOT EXISTS user_signatures (
+    username    TEXT PRIMARY KEY,
+    image_b64   TEXT NOT NULL,
+    mime        TEXT DEFAULT 'image/png',
+    filename    TEXT DEFAULT '',
+    byte_size   INTEGER DEFAULT 0,
+    updated_at  TEXT DEFAULT ''
+);
+
+-- 簽名批次與歸檔。metadata（誰、何時、簽了哪張 PO、簽成功幾處）永久
+-- 保留，簽好的 PDF 本體另外存、可依保留天數清掉——PDF 很佔空間，
+-- 資料庫容量有限，但「誰在什麼時候簽了什麼」這筆帳不能跟著被清掉。
+CREATE TABLE IF NOT EXISTS sign_batches (
+    id          SERIAL PRIMARY KEY,
+    operator    TEXT DEFAULT '',
+    file_count  INTEGER DEFAULT 0,
+    signed_count INTEGER DEFAULT 0,
+    fail_count  INTEGER DEFAULT 0,
+    keyword     TEXT DEFAULT '',
+    created_at  TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS signed_docs (
+    id           SERIAL PRIMARY KEY,
+    batch_id     INTEGER NOT NULL,
+    operator     TEXT DEFAULT '',
+    po_number    TEXT DEFAULT '',
+    filename     TEXT DEFAULT '',
+    sign_count   INTEGER DEFAULT 0,
+    status       TEXT DEFAULT '',
+    message      TEXT DEFAULT '',
+    pdf_b64      TEXT DEFAULT '',
+    byte_size    INTEGER DEFAULT 0,
+    purged       INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_signdocs_batch ON signed_docs(batch_id);
+CREATE INDEX IF NOT EXISTS idx_signdocs_po    ON signed_docs(po_number);
+CREATE INDEX IF NOT EXISTS idx_signdocs_time  ON signed_docs(created_at);
 """
 
 SCHEMA = SCHEMA_SQLITE  # 保留舊名字，避免漏改到還在引用它的地方
@@ -440,10 +530,11 @@ def file_stamp():
 # 這一層把 psycopg2 包成同樣的用法，這樣不用把整個專案的 SQL 呼叫
 # 全部重寫一次，也不會因為漏改某一處而炸掉。
 
-# 這三張表的 INSERT 會用到 cur.lastrowid 拿新產生的 id，其他表
+# 這幾張表的 INSERT 會用到 cur.lastrowid 拿新產生的 id，其他表
 # （例如 export_batch_items）沒有 id 欄位，硬加 RETURNING id 會直接
-# 出錯，所以只白名單這三張。
-_LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES")
+# 出錯，所以只白名單有 id 的這幾張。
+_LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
+                     "SIGN_BATCHES", "SIGNED_DOCS")
 
 
 def _wants_returning_id(sql):
