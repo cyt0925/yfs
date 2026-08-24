@@ -29,7 +29,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-24.6"
+BUILD_VERSION = "2026-08-24.7"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -535,7 +535,12 @@ def api_sync_verified_qty():
         for item in items:
             po_number = norm_key(item.get("po_number"))
             sku_id = norm_key(item.get("sku_id"))
-            qty = norm_int(item.get("confirmed_qty"))
+            # 實際驗入數量＝酷澎後台「收貨數量」(receivedQty)。舊版腳本用
+            # confirmed_qty 這個鍵送，保留相容讀取，避免快取到舊腳本時直接壞掉。
+            raw_qty = item.get("verified_qty")
+            if raw_qty is None:
+                raw_qty = item.get("confirmed_qty")
+            qty = norm_int(raw_qty)
             if not po_number or not sku_id or qty is None:
                 continue
 
