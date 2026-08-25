@@ -274,6 +274,9 @@
     <button id="ab-clear" class="text-ink-400 hover:text-ink-700 text-xs px-2">
       <i class="bi bi-x-lg"></i> 清除選取</button>
     <div class="flex-1"></div>
+    <button id="ab-copy-po" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg"
+            title="複製選取的 PO 單號，貼到酷澎後台驗收工具指定要驗哪幾張">
+      <i class="bi bi-clipboard-check"></i> 複製 PO 單號給驗收工具</button>
     <button id="ab-status-toggle" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg">
       <i class="bi bi-arrow-repeat"></i> 批次改狀態</button>
     <button id="ab-review" class="bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg">
@@ -2279,6 +2282,35 @@ $("#btn-commit").addEventListener("click", doCommit);
 $("#btn-po-save").addEventListener("click", savePo);
 $("#btn-do-export").addEventListener("click", doExport);
 $("#x-profile").addEventListener("change", syncProfileNote);
+// 複製選取的 PO 單號給酷澎後台的驗收工具貼上——不只一個人在上傳整合表、
+// 誰都可能是那批單的負責人，用「畫面上看到、勾了什麼」當依據最直觀，
+// 不用去猜規則（哪些單該驗、哪些不用）。
+async function copySelectedPoNumbers() {
+  const pos = [...selected];
+  if (!pos.length) return;
+  const text = pos.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`已複製 ${pos.length} 張 PO 單號，到酷澎後台驗收工具貼上即可。`, "ok");
+  } catch (e) {
+    // Clipboard API 在非 HTTPS 或被瀏覽器政策擋住的環境會直接丟例外，
+    // 退回用隱藏 textarea + execCommand 這個舊招式再試一次。
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (e2) { /* 兩種都失敗 */ }
+    document.body.removeChild(ta);
+    if (copied) {
+      toast(`已複製 ${pos.length} 張 PO 單號，到酷澎後台驗收工具貼上即可。`, "ok");
+    } else {
+      toast("自動複製被瀏覽器擋住了，請從跳出的視窗手動複製。", "warn");
+      window.prompt(`手動複製以下 ${pos.length} 個 PO 單號（Ctrl+C）：`, text);
+    }
+  }
+}
+
+$("#ab-copy-po").addEventListener("click", copySelectedPoNumbers);
 $("#ab-clear").addEventListener("click", clearSelection);
 $("#ab-review").addEventListener("click", abReview);
 $("#ab-status-toggle").addEventListener("click", openStatusPanel);
