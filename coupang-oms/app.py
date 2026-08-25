@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-24.9"
+BUILD_VERSION = "2026-08-25.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -529,7 +529,6 @@ def api_regenerate_sync_token():
 # 簽名圖一人一張、存在系統裡：登入誰蓋的就是誰的章，跟修改歷程記登入
 # 身分同一套精神——共用一張圖的話，事後查不出這份驗收單是誰簽的。
 
-SIGN_GEOMETRY_KEYS = ("keyword", "width", "height", "offset_x", "offset_y")
 # PDF 本體佔空間，資料庫容量有限，預設留半年就清掉；但「誰在什麼時候
 # 簽了哪張單」的紀錄永久保留，不跟著被清。
 SIGN_DEFAULT_RETENTION_DAYS = 180
@@ -538,16 +537,15 @@ MAX_SIGN_PDF_BYTES = 25 * 1024 * 1024
 
 
 def get_sign_settings():
+    """除了尺寸／位移／關鍵字／保留天數，也可能存著校正精靈上次用過
+    的範例 PDF（calibration_pdf_b64／calibration_filename）——這裡直接
+    整包合併回傳，不逐欄位篩選，不然這兩個欄位會在讀回來時被濾掉。"""
     saved = db.load_setting("sign_settings", {}) if db.IS_POSTGRES else \
         load_json("config.json", {}).get("sign_settings", {})
     geo = dict(pdfsign.DEFAULT_GEOMETRY)
     geo["retention_days"] = SIGN_DEFAULT_RETENTION_DAYS
     if isinstance(saved, dict):
-        for key in SIGN_GEOMETRY_KEYS:
-            if key in saved and saved[key] not in (None, ""):
-                geo[key] = saved[key]
-        if saved.get("retention_days") not in (None, ""):
-            geo["retention_days"] = saved["retention_days"]
+        geo.update({k: v for k, v in saved.items() if v not in (None, "")})
     return geo
 
 
@@ -614,6 +612,65 @@ def api_save_sign_settings():
 
     save_sign_settings(geo)
     return jsonify({"ok": True, "settings": geo})
+
+
+@app.route("/api/sign/calibrate/upload", methods=["POST"])
+@admin_required
+def api_sign_calibrate_upload():
+    """上傳一份真的驗收單，找到關鍵字所在頁渲染成圖，讓管理員用拖曳
+    的方式校正簽名要蓋在哪——取代原本要填四個數字用猜的。這份範例
+    PDF 會存起來，下次要重新校正不用再傳一次（見 current 那支）。"""
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "沒有收到 PDF 檔。"}), 400
+    raw = upload.read()
+    if len(raw) > MAX_SIGN_PDF_BYTES:
+        return jsonify({"error": "檔案太大（超過 25MB）。"}), 400
+
+    keyword = str(request.form.get("keyword") or "").strip() \
+        or get_sign_settings()["keyword"]
+    try:
+        info = pdfsign.render_for_calibration(raw, keyword)
+    except pdfsign.SignError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    geo = get_sign_settings()
+    geo["calibration_pdf_b64"] = base64.b64encode(raw).decode("ascii")
+    geo["calibration_filename"] = upload.filename
+    save_sign_settings(geo)
+
+    return jsonify({
+        "ok": True, "keyword": keyword,
+        "image_b64": base64.b64encode(info["image_bytes"]).decode("ascii"),
+        "dpi": info["dpi"], "image_width": info["image_width"],
+        "image_height": info["image_height"],
+        "keyword_rect_px": info["keyword_rect_px"],
+    })
+
+
+@app.route("/api/sign/calibrate/current")
+@admin_required
+def api_sign_calibrate_current():
+    """重新打開校正畫面時，用上次存的範例 PDF 重新渲染一次，不用
+    使用者再傳一次檔案。"""
+    geo = get_sign_settings()
+    pdf_b64 = geo.get("calibration_pdf_b64")
+    if not pdf_b64:
+        return jsonify({"error": "還沒有校正過的範例 PDF。"}), 404
+
+    keyword = str(request.args.get("keyword") or "").strip() or geo["keyword"]
+    try:
+        info = pdfsign.render_for_calibration(base64.b64decode(pdf_b64), keyword)
+    except pdfsign.SignError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({
+        "ok": True, "keyword": keyword, "filename": geo.get("calibration_filename", ""),
+        "image_b64": base64.b64encode(info["image_bytes"]).decode("ascii"),
+        "dpi": info["dpi"], "image_width": info["image_width"],
+        "image_height": info["image_height"],
+        "keyword_rect_px": info["keyword_rect_px"],
+    })
 
 
 @app.route("/api/sign/signature", methods=["POST"])
@@ -868,24 +925,61 @@ def api_sign_history():
     })
 
 
-def _purge_old_signed_pdfs():
+@app.route("/api/sign/history/delete", methods=["POST"])
+@admin_required
+def api_sign_history_delete():
+    """整筆刪掉，連紀錄一起消失——這是拿來對帳、釐清驗收責任的稽核
+    資料，隨手就能刪會讓紀錄失去意義，所以限管理員才能做。跟「清除
+    檔案」不一樣：那個只清 PDF 本體，這個是真的整筆刪除。"""
+    payload = request.get_json(silent=True) or {}
+    ids = [i for i in (norm_int(x) for x in payload.get("doc_ids", [])) if i]
+    if not ids:
+        return jsonify({"error": "沒有選取任何紀錄。"}), 400
+
+    conn = get_conn()
+    try:
+        placeholders = ",".join("?" * len(ids))
+        conn.execute(f"DELETE FROM signed_docs WHERE id IN ({placeholders})", ids)
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "message": f"已刪除 {len(ids)} 筆紀錄。"})
+
+
+@app.route("/api/sign/history/purge", methods=["POST"])
+@admin_required
+def api_sign_history_purge():
+    """手動清除超過指定天數的 PDF 檔案本體，紀錄留著。跟自動清除
+    （用設定頁的保留天數）共用同一個函式，差別只在天數哪裡來的。"""
+    payload = request.get_json(silent=True) or {}
+    days = norm_int(payload.get("days"))
+    if days is None or days < 0:
+        return jsonify({"error": "天數請填 0 以上的數字。"}), 400
+    count = _purge_old_signed_pdfs(days)
+    return jsonify({"ok": True, "message": f"已清除 {count} 份超過 {days} 天的檔案。"})
+
+
+def _purge_old_signed_pdfs(days=None):
     """清掉超過保留天數的 PDF 本體，但保留「誰簽了什麼」的紀錄。
 
     保留天數設 0 表示不自動清。清的是 pdf_b64 這個大欄位，signed_docs
     那一列本身留著並標記 purged=1——歸檔查詢查得到這件事發生過，只是
-    檔案本體不在了。
+    檔案本體不在了。回傳實際清了幾筆，手動清除時要回報給使用者看。
     """
-    days = get_sign_settings()["retention_days"]
+    if days is None:
+        days = get_sign_settings()["retention_days"]
     if not days:
-        return
+        return 0
     cutoff = (db._local_now() - _dt.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_conn()
     try:
-        conn.execute(
+        cur = conn.execute(
             """UPDATE signed_docs SET pdf_b64 = '', byte_size = 0, purged = 1
                WHERE purged = 0 AND pdf_b64 != '' AND created_at < ?""",
             (cutoff,))
+        count = cur.rowcount
         conn.commit()
+        return count
     finally:
         conn.close()
 

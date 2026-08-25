@@ -100,6 +100,53 @@ def sign_pdf(pdf_bytes, signature_bytes, geometry=None):
         doc.close()
 
 
+# DPI 用來把 PDF 座標（點，pt）跟畫面上顯示的圖片像素互換。校正時
+# 前端會秀出這張渲染圖，管理員拖曳簽名框、存檔前再依這個 DPI 換算回
+# pt——渲染跟簽名蓋章用的是同一套點/像素換算比例，拖出來的位置才會
+# 跟實際簽名時完全對得上。
+CALIBRATE_DPI = 150
+
+
+def render_for_calibration(pdf_bytes, keyword):
+    """找出關鍵字所在的那一頁，渲染成圖片，回傳給前端讓人用拖曳的
+    方式校正簽名要蓋在哪裡——比要求非技術同事去猜四個數字直觀得多。
+    """
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:
+        raise SignError(f"打不開這個 PDF（{exc}）") from exc
+
+    try:
+        if doc.needs_pass:
+            raise SignError("這份 PDF 有密碼保護，請先解除密碼再試一次。")
+
+        page_index, rect = None, None
+        for i, page in enumerate(doc):
+            areas = page.search_for(keyword)
+            if areas:
+                page_index, rect = i, areas[0]
+                break
+
+        if page_index is None:
+            raise SignError(
+                f"這份 PDF 裡找不到「{keyword}」這個欄位，換一份範例，"
+                "或先把上面的關鍵字改對再試一次。")
+
+        page = doc[page_index]
+        pix = page.get_pixmap(dpi=CALIBRATE_DPI)
+        scale = CALIBRATE_DPI / 72  # PDF 座標單位是 72 dpi 的「點」
+        return {
+            "image_bytes": pix.tobytes("png"),
+            "dpi": CALIBRATE_DPI,
+            "image_width": pix.width,
+            "image_height": pix.height,
+            "keyword_rect_px": [rect.x0 * scale, rect.y0 * scale,
+                                rect.x1 * scale, rect.y1 * scale],
+        }
+    finally:
+        doc.close()
+
+
 def validate_signature(image_bytes):
     """確認上傳的簽名圖真的是張圖，順便回報尺寸給畫面顯示。
 

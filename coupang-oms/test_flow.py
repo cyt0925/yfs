@@ -577,7 +577,63 @@ def main():
     r = client.post("/api/sign/settings", json={"keyword":"","width":65,"height":22})
     check("關鍵字不給留空白", r.status_code==400)
 
-    print("\n【25】簽名功能的權限與個人簽名圖")
+    print("\n【25】校正精靈：拖曳範例 PDF 上的位置，取代填四個數字用猜的")
+    # 前面【24】改過關鍵字設定，這裡明確帶自己的關鍵字，不依賴前一段
+    # 測試留下的狀態，測試才不會因為執行順序而變得脆弱。
+    r = client.post("/api/sign/calibrate/upload",
+        data={"file": (io.BytesIO(mkpdf()), "cal.pdf"), "keyword": "出貨確認（廠商簽名）"},
+        content_type="multipart/form-data")
+    cal = r.get_json()
+    check("上傳範例 PDF 找到關鍵字並渲染成圖", r.status_code==200 and cal.get("keyword_rect_px"), cal)
+    check("回傳的圖片不是空的", len(cal.get("image_b64",""))>1000)
+
+    r2 = client.get("/api/sign/calibrate/current",
+                     query_string={"keyword": "出貨確認（廠商簽名）"})
+    check("重新打開校正不用再傳一次檔案", r2.status_code==200 and r2.get_json()["filename"]=="cal.pdf")
+
+    r3 = client.post("/api/sign/calibrate/upload",
+        data={"file": (io.BytesIO(mkpdf("跟關鍵字對不上的文字")), "bad.pdf"),
+              "keyword": "出貨確認（廠商簽名）"},
+        content_type="multipart/form-data")
+    check("範例裡找不到關鍵字時明確報錯，不是靜默失敗", r3.status_code==400, r3.get_json())
+
+    print("\n【26】歷史紀錄可以清除：清檔案（留紀錄）或整筆刪除")
+    # 【24】把關鍵字改成了「廠商簽章處」，這裡改回預設值，不依賴前面
+    # 測試留下的狀態。
+    client.post("/api/sign/settings", json={"keyword":"出貨確認（廠商簽名）",
+        "width":65,"height":22,"offset_x":0,"offset_y":2})
+    r = client.post("/api/sign/run", data={"files": (io.BytesIO(mkpdf()), "h1.pdf")},
+               content_type="multipart/form-data")
+    doc_id = r.get_json()["results"][0]["doc_id"]
+    before = client.get("/api/sign/history").get_json()["total"]
+
+    rp = client.post("/api/sign/history/purge", json={"days": 9999})
+    check("天數設很大時清不到任何最近的檔案", rp.status_code==200 and "清除 0" in rp.get_json()["message"])
+
+    # days=0 是「永久保留、不自動清」的意思（跟保留天數欄位同一套語意），
+    # 不是「馬上清空」——要驗證真的能清掉，得先把這筆紀錄的時間往前
+    # 撥，模擬它已經超過保留期限。
+    conn = db.get_conn()
+    conn.execute("UPDATE signed_docs SET created_at = ? WHERE id = ?",
+                 ("2000-01-01 00:00:00", doc_id))
+    conn.commit(); conn.close()
+    rp2 = client.post("/api/sign/history/purge", json={"days": 1})
+    check("超過保留天數的檔案本體真的被清掉了",
+          rp2.status_code==200 and "已清除 1 份" in rp2.get_json()["message"], rp2.get_json())
+    after_purge = client.get("/api/sign/history").get_json()
+    row = next(r for r in after_purge["rows"] if r["id"] == doc_id)
+    check("清完之後那一列標記已清除，紀錄還在，只是檔案不在了",
+          row["purged"] == 1, row)
+    check("已清除的檔案下載會被擋下",
+          client.get(f"/api/sign/docs/{doc_id}/download").status_code == 404)
+
+    rd = client.post("/api/sign/history/delete", json={"doc_ids": [doc_id]})
+    check("整筆刪除歷史紀錄成功", rd.status_code==200, rd.get_json())
+    after_delete = client.get("/api/sign/history").get_json()
+    check("刪除後總筆數確實少了一筆", after_delete["total"] == before - 1,
+          f"刪前 {before}／刪後 {after_delete['total']}")
+
+    print("\n【27】簽名功能的權限與個人簽名圖")
     # 預設 users.json 沒有 _admins 名單時「所有人都是管理員」，要驗權限
     # 就得先真的建一個非管理員帳號出來。
     app_module._write_users({**app_module.get_users(), "Nicole": "changeme123"}, {"小真"})
@@ -589,6 +645,12 @@ def main():
                content_type="multipart/form-data")
     check("每個人用自己的簽名圖：Nicole 還沒傳就不能簽",
         r.status_code==400 and "簽名圖" in r.get_json()["error"], r.get_json())
+    check("非管理員不能做校正精靈",
+        client.post("/api/sign/calibrate/upload",
+            data={"file": (io.BytesIO(mkpdf()), "x.pdf")},
+            content_type="multipart/form-data").status_code == 403)
+    check("非管理員不能刪除歷史紀錄",
+        client.post("/api/sign/history/delete", json={"doc_ids": [1]}).status_code == 403)
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
