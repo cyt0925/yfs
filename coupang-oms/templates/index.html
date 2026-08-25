@@ -107,6 +107,9 @@
   /* 按鈕：輕微上浮 + 陰影，滑鼠互動更有回饋，但幅度很小不浮誇。 */
   button:not(:disabled) { transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease; }
   button:not(:disabled):active { transform: translateY(1px); }
+
+  /* 拖曳上傳：檔案拖進框框時整塊亮起來，放開才知道丟對地方了。 */
+  .dropzone.dz-active { border-color: #b1222b; background: #fdf2f2; }
 </style>
 </head>
 <body class="bg-ink-50 text-ink-900">
@@ -299,7 +302,10 @@
         <li>資料庫有、這份檔案沒有的 → <b>完全不動</b>（上傳片段不會誤判成取消）</li>
       </ul>
     </div>
-    <input id="file-input" type="file" accept=".xlsx,.xlsm" class="block w-full text-sm border rounded-lg p-2">
+    <div id="dz-file-input" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+      <input id="file-input" type="file" accept=".xlsx,.xlsm" class="block w-full text-sm border rounded-lg p-2">
+      <p class="text-[11px] text-ink-400 mt-1">也可以直接把檔案拖曳到這個框框裡</p>
+    </div>
     <div id="upload-result" class="hidden space-y-3"></div>
   </div>
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
@@ -442,15 +448,21 @@
       <div id="sign-nosig" class="hidden bg-amber-50 border border-amber-300 rounded-lg p-2 text-amber-900 text-xs">
         <i class="bi bi-exclamation-triangle-fill"></i> 還沒有簽名圖，先在下面上傳一張才能簽名。
       </div>
-      <input id="sign-sig-file" type="file" accept="image/png,image/jpeg"
-             class="block w-full text-sm border rounded-lg p-2">
+      <div id="dz-sign-sig-file" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+        <input id="sign-sig-file" type="file" accept="image/png,image/jpeg"
+               class="block w-full text-sm border rounded-lg p-2">
+        <p class="text-[11px] text-ink-400 mt-1">也可以直接拖曳圖片到這個框框裡</p>
+      </div>
       <p class="text-[11px] text-ink-400">上傳一次就好，之後每次簽名都會自動用這張。支援 PNG / JPG，小於 2MB。</p>
     </div>
 
     <label class="flex flex-col gap-1">
       <span class="text-xs text-ink-400">選擇要簽名的驗收單 PDF（可一次選多份）</span>
-      <input id="sign-files" type="file" accept=".pdf" multiple
-             class="block w-full text-sm border rounded-lg p-2">
+      <div id="dz-sign-files" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+        <input id="sign-files" type="file" accept=".pdf" multiple
+               class="block w-full text-sm border rounded-lg p-2">
+        <p class="text-[11px] text-ink-400 mt-1">也可以直接把多份 PDF 一起拖曳到這個框框裡</p>
+      </div>
     </label>
 
     <div id="sign-result" class="hidden space-y-3"></div>
@@ -510,7 +522,10 @@
 
     <label class="flex flex-col gap-1">
       <span class="text-xs text-ink-400">上傳一份範例驗收單 PDF 開始校正</span>
-      <input id="sg-cal-file" type="file" accept=".pdf" class="block w-full text-sm border rounded-lg p-2">
+      <div id="dz-sg-cal-file" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+        <input id="sg-cal-file" type="file" accept=".pdf" class="block w-full text-sm border rounded-lg p-2">
+        <p class="text-[11px] text-ink-400 mt-1">也可以直接把 PDF 拖曳到這個框框裡</p>
+      </div>
     </label>
 
     <div id="sg-cal-empty" class="hidden text-xs text-ink-400 bg-ink-50 border border-dashed rounded-lg p-4 text-center">
@@ -684,6 +699,53 @@
 const $ = s => document.querySelector(s);
 const esc = s => (s ?? "").toString()
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+// 拖曳上傳：把丟進框框的檔案塞回原本的 <input type=file>，再手動觸發
+// change 事件——這樣既有的上傳邏輯（每個 input 各自的 change handler）
+// 完全不用改，拖曳只是「用另一種方式把檔案放進同一個 input」。
+// 用 DataTransfer 組 FileList 是唯一能寫回 input.files 的方法，瀏覽器
+// 不允許直接指派陣列。
+function enableDropzone(zoneId, inputId) {
+  const zone = $(`#${zoneId}`), input = $(`#${inputId}`);
+  if (!zone || !input) return;
+  let depth = 0; // 拖過內部子元素（例如那行提示文字）會連續觸發
+                 // dragenter/dragleave，用計數器才不會一進子元素就誤判離開。
+  zone.addEventListener("dragenter", e => {
+    e.preventDefault();
+    depth++;
+    zone.classList.add("dz-active");
+  });
+  zone.addEventListener("dragover", e => e.preventDefault());
+  zone.addEventListener("dragleave", e => {
+    e.preventDefault();
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) zone.classList.remove("dz-active");
+  });
+  zone.addEventListener("drop", e => {
+    e.preventDefault();
+    depth = 0;
+    zone.classList.remove("dz-active");
+    const dropped = e.dataTransfer.files;
+    if (!dropped || !dropped.length) return;
+    const dt = new DataTransfer();
+    const files = input.multiple ? dropped : [dropped[0]];
+    for (const f of files) dt.items.add(f);
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+enableDropzone("dz-file-input", "file-input");
+enableDropzone("dz-sign-sig-file", "sign-sig-file");
+enableDropzone("dz-sign-files", "sign-files");
+enableDropzone("dz-sg-cal-file", "sg-cal-file");
+
+// 沒有這兩行的話，使用者手滑把檔案拖到框框外面放開，瀏覽器預設動作
+// 是直接把那個檔案打開取代掉整個網頁畫面——拖曳上傳最經典的地雷。
+// 框框內的 drop 已經各自 preventDefault 過了，這裡擋的是「沒接住」
+// 的情況。
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
 
 let CONFIG = {}, PAGE = 1, PAGE_SIZE = 100, TOTAL = 0, ROWS = [], CURRENT = null, BATCH = null;
 const selected = new Set();
