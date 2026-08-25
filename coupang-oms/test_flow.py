@@ -667,6 +667,45 @@ def main():
             json={"doc_ids": [hist_before["rows"][0]["id"]]})
         check("非管理員也能刪除歷史紀錄", rd.status_code==200, rd.get_json())
 
+    print("\n【28】_same() 不能把 None 跟 0 當成一樣（Python 的 0 or \"\" 陷阱）")
+    # Python 裡 `0 or ""` 會變成 ""，之前 _same() 拿這招判斷 None／0
+    # 誰跟誰一樣，結果 None 和 0 被誤判成相同值，UPDATE 永遠不會被
+    # 執行到——實際驗入數量同步回來剛好是 0（全部短驗）時，資料庫
+    # 卡在 NULL，畫面顯示「—」，看起來像沒同步過，其實已經同步了。
+    sign_in(client)
+    zero_po = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                    if not r["is_pulled"])
+    zero_det = client.get(f"/api/pos/{zero_po['po_number']}").get_json()
+    zero_sku = zero_det["skus"][0]
+    check("這個品項一開始還沒同步過實際驗入數量", zero_sku["actual_verified_qty"] is None)
+
+    token = client.get("/api/account/sync-token").get_json()["token"]
+    rz = client.post("/api/sync/verified-qty",
+        json={"operator": "test", "items": [
+            {"po_number": zero_po["po_number"], "sku_id": zero_sku["sku_id"], "verified_qty": 0}]},
+        headers={"X-Sync-Token": token})
+    check("同步「實際驗入數量＝0」這個請求本身成功", rz.status_code==200, rz.get_json())
+
+    after_zero = client.get(f"/api/pos/{zero_po['po_number']}").get_json()
+    after_sku = next(s for s in after_zero["skus"] if s["sku_id"] == zero_sku["sku_id"])
+    check("同步後的值真的存成 0，不是卡在 None／顯示成「還沒同步」",
+        after_sku["actual_verified_qty"] == 0, after_sku["actual_verified_qty"])
+
+    po_summary = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                       if r["po_number"] == zero_po["po_number"])
+    check("PO 層級的加總也看得到這個 0（不是被當成沒有資料）",
+        po_summary["actual_verified_qty"] is not None, po_summary["actual_verified_qty"])
+
+    # 同一個 bug 也會讓「出貨數量」從沒填過（None）改成 0 時被誤判成
+    # 沒改動，存檔按了但實際上什麼都沒發生。
+    blank_row = next((r for r in client.get("/api/orders?page_size=500").get_json()["rows"]
+                       if r["qty_ship"] is None), None)
+    if blank_row:
+        rq = client.put(f"/api/orders/{blank_row['id']}", json={
+            "operator": "小真", "version": blank_row["version"], "qty_ship": 0})
+        check("出貨數量從空白改成 0 也能存得進去", rq.status_code==200 and rq.get_json()["changed"]==1,
+              rq.get_json())
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

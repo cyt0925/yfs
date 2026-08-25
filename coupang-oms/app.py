@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-25.4"
+BUILD_VERSION = "2026-08-25.5"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -2233,8 +2233,13 @@ def api_export_batches():
 def _same(a, b):
     if a is None and b is None:
         return True
-    if (a is None) != (b is None):
-        return str(a or "") == str(b or "")
+    if a is None or b is None:
+        # 這裡不能寫成 `str(a or "") == str(b or "")`——0 在 Python 是
+        # falsy，`0 or ""` 會變成 ""，導致 None 和 0 被誤判成「一樣」。
+        # 對「還沒同步過」（None）跟「同步回來是 0」（真的算出來是 0）
+        # 這種一定要分得開的欄位（實際驗入數量、出貨數量…）來說，這個
+        # bug 會讓資料庫的值卡死在 None，UPDATE 語句永遠不會被執行到。
+        return False
     return str(a).strip() == str(b).strip()
 
 
