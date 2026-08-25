@@ -789,6 +789,77 @@ def main():
     check("SKU 層級的 remarks 已經不是可編輯欄位，PUT 不報錯但不影響任何東西",
           r30b.status_code == 200 and r30b.get_json().get("changed", 0) == 0, r30b.get_json())
 
+    print("\n【31】酷澎把數量下修到 0：整合表整列消失，不能被當成沒改")
+    # 酷澎後台把某個品項的下單數量下修到 0 之後，後台匯出的整合表會
+    # 直接整列消失，不會留一列數量 0——用真實範例表模擬：PO
+    # 13000000448759 原本有 3 個品項，這裡把其中一列刪掉，其餘兩列跟
+    # PO 本身都還在檔案裡，藉此跟「OP 只上傳片段檔」的情況區分開。
+    target_po = "13000000448759"
+    removed_sku = "153706884481024"
+    still_here_sku = "154360315068420"
+    before_skus = client.get(f"/api/pos/{target_po}").get_json()["skus"]
+    check("測試前提：這張單原本有 3 個品項", len(before_skus) == 3, len(before_skus))
+
+    reduced_path = os.path.join(_tmp, "reduced.xlsx")
+    wb = openpyxl.load_workbook(SAMPLE)
+    ws = wb["整合表"]
+    for row in list(ws.iter_rows(min_row=2)):
+        if str(row[7].value) == removed_sku and str(row[2].value) == target_po:
+            ws.delete_rows(row[0].row, 1)
+            break
+    wb.save(reduced_path)
+
+    res = upload(client, reduced_path)
+    prev = res.get_json()
+    check("預覽階段就抓到 1 個被酷澎移除的品項",
+          prev["removed_count"] >= 1, prev["removed_count"])
+    removed_hit = next((r for r in prev["removed"] if r["sku_id"] == removed_sku), None)
+    check("被移除的正是那個從整合表刪掉的 SKU", removed_hit is not None)
+
+    commit = client.post("/api/import/commit",
+                          json={"batch_id": prev["batch_id"], "operator": "小真"}).get_json()
+    check("commit 回傳也帶了移除筆數", commit.get("removed") == prev["removed_count"], commit)
+
+    after_skus = client.get(f"/api/pos/{target_po}").get_json()["skus"]
+    check("品項不會被刪除，還是 3 筆（只是標記，不是真的消失）",
+          len(after_skus) == 3, len(after_skus))
+    removed_row = next(s for s in after_skus if s["sku_id"] == removed_sku)
+    check("被移除的品項標記了 removed_from_coupang",
+          removed_row["removed_from_coupang"] in (1, True), removed_row)
+    check("出貨數量歸零", removed_row["qty_ship"] == 0, removed_row["qty_ship"])
+    check("進了待確認佇列", removed_row["needs_review"] in (1, True))
+    # 這張單如果已經拉單，警示等級要跟既有「已拉單後遭變更」同一個
+    # 等級，不能比較弱；沒拉單就是新的 missing 等級，總之不能是空白
+    # （空白代表被靜默略過，完全違背這個功能存在的目的）。
+    expected_alert = "changed_after_pull" if removed_row["is_pulled"] else "missing"
+    check("警示等級符合拉單狀態對應的等級（沒有被靜默略過）",
+          removed_row["alert_level"] == expected_alert, removed_row["alert_level"])
+    kept_row = next(s for s in after_skus if s["sku_id"] == still_here_sku)
+    check("同一張單裡沒被動到的品項數量不受影響",
+          kept_row["qty_ship"] == 110, kept_row["qty_ship"])
+
+    po_after = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                     if r["po_number"] == target_po)
+    check("PO 層級總數量不再把被移除的品項算進去",
+          po_after["qty_ship"] == 70 + 110, po_after["qty_ship"])
+
+    # 之後如果這個品項又出現在整合表裡（酷澎恢復、或原本是誤刪），
+    # 要能自動解除標記，不能永遠卡住。
+    res2 = upload(client, SAMPLE)
+    prev2 = res2.get_json()
+    revived_hit = next((u for u in prev2["updated"]
+                         if u["row"]["sku_id"] == removed_sku
+                         and u["row"]["po_number"] == target_po), None)
+    check("重新出現時被歸進『需要更新』而不是『完全相同』", revived_hit is not None)
+    if revived_hit:
+        check("重新出現的異動有標記 revived", revived_hit.get("revived") is True, revived_hit)
+    client.post("/api/import/commit",
+                json={"batch_id": prev2["batch_id"], "operator": "小真"})
+    revived_row = next(s for s in client.get(f"/api/pos/{target_po}").get_json()["skus"]
+                        if s["sku_id"] == removed_sku)
+    check("解除移除標記", revived_row["removed_from_coupang"] in (0, False), revived_row)
+    check("出貨數量重新同步回原本的值", revived_row["qty_ship"] == 20, revived_row["qty_ship"])
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

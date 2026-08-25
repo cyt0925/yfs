@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-25.7"
+BUILD_VERSION = "2026-08-25.8"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -1912,6 +1912,7 @@ def api_import_preview():
             "warnings": warnings,
             "new": result["new"],
             "updated": result["updated"],
+            "removed": result["removed"],
             "identical_count": len(result["identical"]),
             "identical_keys": [[r["po_number"], r["sku_id"]]
                                for r in result["identical"]],
@@ -1939,9 +1940,11 @@ def api_import_preview():
         "updated_count": len(result["updated"]),
         "identical_count": len(result["identical"]),
         "after_pull_count": len(after_pull),
+        "removed_count": len(result["removed"]),
         "warnings": warnings,
         "new_preview": result["new"][:200],
         "updated": result["updated"][:200],
+        "removed": result["removed"][:200],
     })
 
 
@@ -2080,6 +2083,15 @@ def api_import_commit():
             # 出貨數量變動時，警示燈亮了但理由欄卻是空的，看不出為什麼。
             if item.get("ship_changed") and not current["qty_ship_overridden"]:
                 reason_parts.append(f"出貨數量 {current['qty_ship']}→{item['desired_ship']}")
+            # 這個品項之前被判定「酷澎移除」，這次匯入又出現了——解除標記，
+            # 讓它之後照正常的異動流程走，不再排除於 PO 總數之外。
+            if item.get("revived"):
+                sets.append("removed_from_coupang = 0")
+                log_change(conn, current, "removed_from_coupang", "酷澎移除狀態",
+                           "已從酷澎移除", "重新出現在整合表", operator, "import",
+                           preview["filename"])
+                reason_parts.append("這個品項先前被判定已從酷澎移除，這次匯入重新出現")
+                critical_hit = True
             reason = "、".join(reason_parts)
             if unsynced:
                 reason = ("【與酷澎尚未同步】" + "、".join(unsynced)
@@ -2098,6 +2110,42 @@ def api_import_commit():
             conn.execute(f"UPDATE orders SET {', '.join(sets)} WHERE id = ?",
                          values + [order_id])
             updated += 1
+
+        removed_count = 0
+        for rrow in preview.get("removed", []):
+            order_id = rrow["id"]
+            current = conn.execute("SELECT * FROM order_rows WHERE id = ?",
+                                   (order_id,)).fetchone()
+            # 上一批次可能已經處理過同一筆（同一個檔案裡本來就不該重複，
+            # 但保險起見還是查一次現況，避免 UPDATE 到不存在或已經改過
+            # 標記的列）。
+            if current is None or current["removed_from_coupang"]:
+                continue
+            current = dict(current)
+
+            log_change(conn, current, "qty_ship", "出貨數量",
+                       current["qty_ship"], 0, operator, "import",
+                       "酷澎後台已移除此品項（下單數量歸零後，整合表不會再帶這一列），"
+                       "出貨數量歸零、不計入 PO 總數，保留成稽核紀錄")
+
+            reason = ("這個品項已在酷澎後台被移除，本次上傳的整合表已找不到這筆資料，"
+                      "出貨數量已歸零、不計入 PO 總數")
+            if current["is_pulled"]:
+                alert = "changed_after_pull"
+                reason = "【已拉單後遭變更】" + reason
+            else:
+                alert = "missing"
+
+            conn.execute(
+                """UPDATE orders SET qty_ship = 0, qty_ship_overridden = 0,
+                       removed_from_coupang = 1, needs_review = 1,
+                       alert_level = ?, review_reason = ?,
+                       last_seen_at = ?, updated_at = ?, source_file = ?,
+                       version = version + 1
+                   WHERE id = ?""",
+                (alert, reason[:900], stamp, stamp, preview["filename"], order_id),
+            )
+            removed_count += 1
 
         # 內容完全相同的列只更新「最後出現時間」，不動任何業務欄位、
         # 不寫歷程、不改 version —— 這就是「靜默去重」。
@@ -2122,6 +2170,7 @@ def api_import_commit():
         "inserted": inserted,
         "updated": updated,
         "identical": preview["identical_count"],
+        "removed": removed_count,
     })
 
 

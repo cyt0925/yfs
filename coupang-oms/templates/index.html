@@ -969,16 +969,20 @@ async function openPo(poNumber) {
   }
 
   const skuRows = d.skus.map(s => {
-    const cls = s.alert_level === "changed_after_pull" ? "bg-red-50"
+    const cls = s.removed_from_coupang ? "bg-orange-50"
+              : s.alert_level === "changed_after_pull" ? "bg-red-50"
               : s.needs_review ? "bg-amber-50" : "";
     const diff = s.qty_ship != null && s.qty_coupang != null && s.qty_ship !== s.qty_coupang;
     return `<tr class="${cls} border-b border-ink-100">
-      <td class="px-2 py-1.5 text-xs">${s.needs_review
+      <td class="px-2 py-1.5 text-xs">${s.removed_from_coupang
+        ? `<span class="text-orange-700 font-semibold whitespace-nowrap"
+             title="${esc(s.review_reason)}">已從酷澎移除</span>`
+        : s.needs_review
         ? `<span class="${s.alert_level === "changed_after_pull" ? "text-red-700" : "text-amber-700"} font-semibold whitespace-nowrap"
              title="${esc(s.review_reason)}">已改</span>` : ""}</td>
-      <td class="px-2 py-1.5 font-mono text-[11px]" title="酷澎的商品編號">${esc(s.sku_id)}</td>
-      <td class="px-2 py-1.5 font-mono text-[11px]" title="永豐內部料號">${esc(s.yf_sku)}</td>
-      <td class="px-2 py-1.5 text-xs">${esc(s.product_name)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px] ${s.removed_from_coupang ? "line-through text-ink-400" : ""}" title="酷澎的商品編號">${esc(s.sku_id)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px] ${s.removed_from_coupang ? "line-through text-ink-400" : ""}" title="永豐內部料號">${esc(s.yf_sku)}</td>
+      <td class="px-2 py-1.5 text-xs ${s.removed_from_coupang ? "line-through text-ink-400" : ""}">${esc(s.product_name)}</td>
       <td class="px-2 py-1.5 text-right text-xs">${s.qty_coupang ?? ""}</td>
       <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="qty_ship"
           value="${s.qty_ship ?? ""}" ${locked ? "disabled" : ""}
@@ -1177,13 +1181,24 @@ async function doPreview() {
       <td class="px-2 py-1 text-xs">${esc(u.row.product_name).slice(0, 26)}</td>
       <td class="px-2 py-1">${u.changes.map(c =>
         `<span class="${c.critical ? "text-red-700 font-semibold" : "text-slate-600"}">
-           ${esc(c.label)}：${esc(c.old)} → ${esc(c.new)}</span>`).join("<br>")}</td>
+           ${esc(c.label)}：${esc(c.old)} → ${esc(c.new)}</span>`).join("<br>")}
+        ${u.revived ? `<span class="text-red-700 font-semibold block">先前被判定已從酷澎移除，這次重新出現</span>` : ""}</td>
       <td class="px-2 py-1 text-xs">${u.after_pull
         ? '<span class="text-red-700 font-bold">已拉單後被改</span>' : ""}</td>
     </tr>`).join("");
 
+  const removedRows = data.removed.map(r => `
+    <tr class="border-b ${r.is_pulled ? "bg-red-50" : "bg-amber-50"}">
+      <td class="px-2 py-1 font-mono text-xs">${esc(r.po_number)}</td>
+      <td class="px-2 py-1 font-mono text-xs">${esc(r.sku_id)}</td>
+      <td class="px-2 py-1 text-xs">${esc(r.product_name).slice(0, 26)}</td>
+      <td class="px-2 py-1 text-xs text-right">${r.qty_ship ?? ""}</td>
+      <td class="px-2 py-1 text-xs">${r.is_pulled
+        ? '<span class="text-red-700 font-bold">已拉單後被改</span>' : ""}</td>
+    </tr>`).join("");
+
   $("#upload-result").innerHTML = `
-    <div class="grid grid-cols-4 gap-2 text-center">
+    <div class="grid grid-cols-5 gap-2 text-center">
       <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
         <p class="text-xs text-emerald-700">新增</p>
         <p class="text-2xl font-bold text-emerald-700">${data.new_count}</p></div>
@@ -1196,10 +1211,17 @@ async function doPreview() {
       <div class="bg-red-50 border border-red-300 rounded-lg p-3">
         <p class="text-xs text-red-700">已拉單後被改</p>
         <p class="text-2xl font-bold text-red-700">${data.after_pull_count}</p></div>
+      <div class="bg-orange-50 border border-orange-300 rounded-lg p-3">
+        <p class="text-xs text-orange-700">酷澎移除的品項</p>
+        <p class="text-2xl font-bold text-orange-700">${data.removed_count}</p></div>
     </div>
     ${data.after_pull_count ? `<div class="bg-red-100 border border-red-400 rounded-lg p-3 text-sm text-red-900">
       <b><i class="bi bi-exclamation-octagon-fill"></i> 注意：有 ${data.after_pull_count} 筆是「已經拉單交給倉庫之後」才被酷澎改動的。</b>
       倉庫手上拿到的可能是舊資料，匯入後請立刻處理。</div>` : ""}
+    ${data.removed_count ? `<div class="bg-orange-100 border border-orange-400 rounded-lg p-3 text-sm text-orange-900">
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 注意：有 ${data.removed_count} 個品項，在整合表裡已經找不到、但資料庫還留著資料。</b>
+      通常是酷澎把下單數量下修到 0 之後，這個品項就從後台匯出的整合表整列消失了。
+      確認匯入後，這些品項的出貨數量會歸零、不再計入 PO 總數，但不會被刪除，隨時可以在品項明細裡查到。</div>` : ""}
     ${data.warnings.length ? `<div class="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900">
       <b>解析提醒（${data.warnings.length}）：</b><ul class="list-disc list-inside mt-1">
       ${data.warnings.slice(0, 20).map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
@@ -1210,6 +1232,14 @@ async function doPreview() {
           <th class="px-2 py-1 text-left">PO 單號</th><th class="px-2 py-1 text-left">品名</th>
           <th class="px-2 py-1 text-left">變更內容</th><th class="px-2 py-1"></th></tr></thead>
         <tbody>${updRows}</tbody></table></div></div>` : ""}
+    ${data.removed_count ? `<div>
+      <h3 class="font-semibold text-sm mb-1">整合表裡找不到的品項（前 ${Math.min(200, data.removed_count)} 筆）</h3>
+      <div class="border rounded-lg overflow-auto max-h-64"><table class="w-full text-sm">
+        <thead class="bg-slate-100 text-xs"><tr>
+          <th class="px-2 py-1 text-left">PO 單號</th><th class="px-2 py-1 text-left">SKU ID</th>
+          <th class="px-2 py-1 text-left">品名</th><th class="px-2 py-1 text-right">原出貨數量</th>
+          <th class="px-2 py-1"></th></tr></thead>
+        <tbody>${removedRows}</tbody></table></div></div>` : ""}
     <p class="text-xs text-ink-400">以上都還沒寫進資料庫。按「確認匯入」才會實際寫入，過程中若任何一列出錯會整批還原。</p>`;
 }
 
@@ -1223,7 +1253,8 @@ async function doCommit() {
   const data = await res.json();
   $("#btn-commit").disabled = false;
   if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`匯入完成：新增 ${data.inserted} 筆、更新 ${data.updated} 筆、略過重複 ${data.identical} 筆。`);
+  toast(`匯入完成：新增 ${data.inserted} 筆、更新 ${data.updated} 筆、略過重複 ${data.identical} 筆`
+    + (data.removed ? `、酷澎移除 ${data.removed} 筆` : "") + "。");
   $("#dlg-upload").close();
   BATCH = null;
   $("#btn-commit").classList.add("hidden");

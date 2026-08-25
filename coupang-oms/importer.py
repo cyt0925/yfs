@@ -269,7 +269,12 @@ def diff_rows(conn, rows):
         ship = desired_ship(row)
         ship_changed = ship is not None and not _same(old.get("qty_ship"), ship)
 
-        if not changes and not ship_changed:
+        # 這個品項先前被判定「酷澎移除」過，現在又出現在檔案裡——
+        # 不管其他欄位有沒有變，都要當成一次異動處理，才能在 commit
+        # 階段解除 removed_from_coupang 標記、把出貨數量重新同步回來。
+        revived = bool(old.get("removed_from_coupang"))
+
+        if not changes and not ship_changed and not revived:
             identical.append(row)
         else:
             updated.append({
@@ -282,11 +287,38 @@ def diff_rows(conn, rows):
                 "changes": changes,
                 "desired_ship": ship,
                 "ship_changed": ship_changed,
+                "revived": revived,
                 "after_pull": bool(old["is_pulled"]) and (
-                    any(c["critical"] for c in changes) or ship_changed),
+                    any(c["critical"] for c in changes) or ship_changed or revived),
             })
 
-    return {"new": new_rows, "updated": updated, "identical": identical}
+    # 找出「這次檔案有這張 PO，但資料庫裡這張 PO 底下的某個品項，這次
+    # 檔案卻沒帶到」的品項。酷澎把某個品項的下單數量下修到 0 時，後台
+    # 匯出的整合表會直接整列消失，不會留一列數量 0；只看「這一列有沒有
+    # 出現在檔案裡」沒辦法跟「OP 只上傳片段整合表」分開，所以要縮小範圍
+    # 到「這張 PO 本身確實有出現在這次檔案裡」，才能安全認定是真的被
+    # 移除，而不是誤判成片段上傳。
+    removed = []
+    file_pos = {r["po_number"] for r in rows}
+    file_keys = set(keys)
+    if file_pos:
+        pos_list = list(file_pos)
+        for i in range(0, len(pos_list), 300):
+            chunk = pos_list[i:i + 300]
+            placeholders = ",".join(["?"] * len(chunk))
+            cur.execute(
+                f"""SELECT * FROM order_rows WHERE po_number IN ({placeholders})
+                    AND removed_from_coupang = 0""",
+                chunk,
+            )
+            for db_row in cur.fetchall():
+                dkey = (db_row["po_number"], db_row["sku_id"])
+                if dkey in file_keys:
+                    continue
+                removed.append(dict(db_row))
+
+    return {"new": new_rows, "updated": updated, "identical": identical,
+            "removed": removed}
 
 
 def _same(a, b):

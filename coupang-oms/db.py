@@ -109,6 +109,14 @@ CREATE TABLE IF NOT EXISTS orders (
     alert_level       TEXT DEFAULT '',      -- '' / changed / changed_after_pull / missing
     review_reason     TEXT DEFAULT '',
 
+    -- 酷澎把這個品項的數量下修到 0 時，後台匯出的整合表會直接整列消失，
+    -- 不會留一列數量 0——沒有這個欄位的話，「資料庫有、本次檔案沒有」
+    -- 的既有保護規則會讓這個品項的舊數量永遠卡住，PO 總數就悄悄跟酷澎
+    -- 兜不起來、也沒有任何警示。標記起來但不刪列，出貨數量歸零、不計入
+    -- PO 總數，保留成稽核紀錄；之後如果這個品項又出現在檔案裡，會自動
+    -- 解除標記、當成正常異動重新同步。
+    removed_from_coupang INTEGER NOT NULL DEFAULT 0,
+
     -- === 稽核 ===
     version           INTEGER NOT NULL DEFAULT 1,
     source_file       TEXT DEFAULT '',
@@ -332,6 +340,8 @@ CREATE TABLE IF NOT EXISTS orders (
     needs_review      INTEGER NOT NULL DEFAULT 0,
     alert_level       TEXT DEFAULT '',
     review_reason     TEXT DEFAULT '',
+
+    removed_from_coupang INTEGER NOT NULL DEFAULT 0,
 
     version           INTEGER NOT NULL DEFAULT 1,
     source_file       TEXT DEFAULT '',
@@ -728,6 +738,11 @@ def _migrate_columns(conn):
     if "order_type_overridden" not in existing:
         conn.execute(
             "ALTER TABLE orders ADD COLUMN order_type_overridden "
+            "INTEGER NOT NULL DEFAULT 0")
+
+    if "removed_from_coupang" not in existing:
+        conn.execute(
+            "ALTER TABLE orders ADD COLUMN removed_from_coupang "
             "INTEGER NOT NULL DEFAULT 0")
 
     if IS_POSTGRES:
