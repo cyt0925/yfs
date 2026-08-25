@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-25.5"
+BUILD_VERSION = "2026-08-25.6"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -129,7 +129,14 @@ PO_EDITABLE_FIELDS = {
     "po_status":        "PO狀態",
     "receiving_status": "驗收狀態",
     "filed_date":       "建檔日",
+    "shipping_method":  "配送方式",
 }
+
+# 驗收狀態不受拉單鎖定限制——驗收本來就發生在拉單之後（貨到了才驗），
+# 鎖住它會直接擋住正常作業流程，跟備註／驗收註記不受鎖定是同一個道理。
+# 配送方式是匯入後才由 OP 自己補的內部分類，跟出貨數量無關，一樣不該
+# 被拉單鎖住。
+PO_ALWAYS_EDITABLE_FIELDS = {"receiving_status", "shipping_method"}
 
 # 整張 PO 共用、但屬於酷澎來源的欄位：OP 可以改（跟酷澎談好調整），
 # 改的時候整張單一起改，但它們存在 orders 上、且會參與匯入比對。
@@ -192,6 +199,7 @@ def get_config():
         "po_statuses": ["已建立", "已回覆", "處理中", "已完成", "修改中", "已取消"],
         "receiving_statuses": ["未驗收", "完成", "異常", "重啟", "退貨"],
         "order_types": ["一般", "NS", "補單", "拆單"],
+        "shipping_methods": ["原廠(EM)", "竹運(CUP)"],
     })
 
 
@@ -237,7 +245,18 @@ def _ensure_receiving_status_option():
         save_json("config.json", cfg)
 
 
+def _ensure_shipping_methods_option():
+    """新增「配送方式」選項清單，補進既有安裝裡——道理跟補「退貨」
+    驗收狀態一樣：正式站的設定值已經存進資料庫，只改 defaults 檔案
+    對已經跑起來的安裝沒有用。"""
+    cfg = get_config()
+    if not cfg.get("shipping_methods"):
+        cfg["shipping_methods"] = ["原廠(EM)", "竹運(CUP)"]
+        save_json("config.json", cfg)
+
+
 _ensure_receiving_status_option()
+_ensure_shipping_methods_option()
 
 
 def verify_password(stored, given):
@@ -1131,6 +1150,7 @@ def api_config():
             "po_statuses": cfg.get("po_statuses", []),
             "receiving_statuses": cfg.get("receiving_statuses", []),
             "order_types": cfg.get("order_types", []),
+            "shipping_methods": cfg.get("shipping_methods", []),
             "brands": distinct("brand"),
             "lines": distinct("line"),
             "warehouses": distinct("warehouse"),
@@ -1523,6 +1543,8 @@ def po_summary_sql(clause):
                MIN(pulled_at)       AS pulled_at,
                MIN(pulled_by)       AS pulled_by,
                MIN(filed_date)      AS filed_date,
+               MIN(shipping_method) AS shipping_method,
+               MAX(flagged)         AS flagged,
                MIN(delivery_date)   AS delivery_date,
                MIN(warehouse)       AS warehouse,
                {concat("line")}  AS lines_csv,
@@ -1690,7 +1712,9 @@ def api_update_po(po_number):
         # 時本來就是 disabled，正常不會送出真的改變；只有真的想繞過鎖定
         # 硬改時才擋下來。放在最前面會連「這張單其實什麼都沒改、只是
         # 品項明細裡動了驗收註記」這種情況也一起誤擋，导致存檔整包失敗。
-        if header["is_pulled"] and not payload.get("force_edit"):
+        locked_fields = ({f for f, _, _, _ in head_changes} |
+                         {f for f, _, _, _ in row_changes}) - PO_ALWAYS_EDITABLE_FIELDS
+        if header["is_pulled"] and locked_fields and not payload.get("force_edit"):
             return jsonify({
                 "error": "locked",
                 "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
@@ -1799,6 +1823,32 @@ def api_set_pulled():
         conn.close()
 
 
+@app.route("/api/pos/flag", methods=["POST"])
+def api_set_flagged():
+    """切換個人標記（全公司共用一份、只有開／關兩種狀態）。
+
+    純粹是 OP 自己想特別留意哪張單用的顏色標記，跟出貨、驗收都無關，
+    所以不受拉單鎖定限制，也不記進 edit_logs 歷程（不是業務異動）。
+    """
+    payload = request.get_json(silent=True) or {}
+    pos = [norm_key(p) for p in payload.get("po_numbers", []) if norm_key(p)]
+    target = 1 if payload.get("flagged") else 0
+    if not pos:
+        return jsonify({"error": "沒有選取任何訂單。"}), 400
+
+    conn = get_conn()
+    try:
+        placeholders = ",".join("?" * len(pos))
+        cur = conn.execute(
+            f"""UPDATE po_headers SET flagged = ?, updated_at = ?, version = version + 1
+                WHERE po_number IN ({placeholders}) AND flagged != ?""",
+            [target, now()] + pos + [target])
+        conn.commit()
+        return jsonify({"ok": True, "count": cur.rowcount})
+    finally:
+        conn.close()
+
+
 @app.route("/api/pos/status", methods=["POST"])
 def api_batch_status():
     """批次改整批 PO 的狀態，每張單各記一筆歷程（不是只記一筆批次）。"""
@@ -1809,8 +1859,8 @@ def api_batch_status():
     value = norm_text(payload.get("value"))
     if not pos:
         return jsonify({"error": "沒有選取任何訂單。"}), 400
-    if field not in ("po_status", "receiving_status"):
-        return jsonify({"error": "只能批次修改 PO 狀態或驗收狀態。"}), 400
+    if field not in ("po_status", "receiving_status", "shipping_method"):
+        return jsonify({"error": "只能批次修改 PO 狀態、驗收狀態或配送方式。"}), 400
     if not value:
         return jsonify({"error": "請選擇要改成什麼狀態。"}), 400
 

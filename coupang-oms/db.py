@@ -140,6 +140,12 @@ CREATE TABLE IF NOT EXISTS po_headers (
     -- 建檔日：整合表沒有酷澎的實際開單日，這裡記的是「我們第一次看到
     -- 這張單的日期」，第一次匯入時填當天，之後匯入一律不再更動。
     filed_date       TEXT DEFAULT '',
+    -- 配送方式：整合表沒有這欄，是內部自己要用的分類，一律空白開始，
+    -- 匯入永遠不會覆蓋。
+    shipping_method  TEXT DEFAULT '',
+    -- 個人標記：全公司共用一份，OP 自己想特別留意哪張單就點一下標起來，
+    -- 只有開／關兩種狀態，不分是誰標的。
+    flagged          INTEGER NOT NULL DEFAULT 0,
     version          INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT DEFAULT '',
     updated_at       TEXT DEFAULT ''
@@ -152,19 +158,12 @@ CREATE INDEX IF NOT EXISTS idx_poh_recv     ON po_headers(receiving_status);
 -- 讀取用的扁平檢視：把 PO 層級狀態接回每一列 SKU，讓查詢、篩選、匯出
 -- 都能像以前一樣當成一張大表來用。寫入一律針對底層的兩張實體表，
 -- 各自負責自己該負責的欄位。
-CREATE VIEW IF NOT EXISTS order_rows AS
-SELECT
-    o.*,
-    h.po_status,
-    h.receiving_status,
-    h.is_pulled,
-    h.pulled_at,
-    h.pulled_by,
-    h.pulled_batch_id,
-    h.filed_date,
-    h.version AS po_version
-FROM orders o
-JOIN po_headers h ON h.po_number = o.po_number;
+--
+-- 這裡故意不建 view：新裝機是一張空的 orders／po_headers，這個 schema
+-- 腳本執行完馬上就有新欄位，但既有安裝的表可能還沒補到新欄位（要等
+-- init_db() 稍後跑 _migrate_columns 才會補），如果在這裡就建 view、
+-- 引用到還不存在的欄位，既有安裝會直接炸在「no such column」。
+-- view 統一交給 init_db() 補完欄位之後，用 ORDER_ROWS_VIEW 建一次。
 
 -- 欄位級 append-only 歷程。只新增，永不修改刪除：它最終是拿去跟酷澎
 -- 對帳、釐清倉庫出錯責任的證據。
@@ -354,6 +353,8 @@ CREATE TABLE IF NOT EXISTS po_headers (
     pulled_by        TEXT DEFAULT '',
     pulled_batch_id  INTEGER,
     filed_date       TEXT DEFAULT '',
+    shipping_method  TEXT DEFAULT '',
+    flagged          INTEGER NOT NULL DEFAULT 0,
     version          INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT DEFAULT '',
     updated_at       TEXT DEFAULT ''
@@ -363,20 +364,12 @@ CREATE INDEX IF NOT EXISTS idx_poh_status   ON po_headers(po_status);
 CREATE INDEX IF NOT EXISTS idx_poh_pulled   ON po_headers(is_pulled);
 CREATE INDEX IF NOT EXISTS idx_poh_recv     ON po_headers(receiving_status);
 
-DROP VIEW IF EXISTS order_rows;
-CREATE VIEW order_rows AS
-SELECT
-    o.*,
-    h.po_status,
-    h.receiving_status,
-    h.is_pulled,
-    h.pulled_at,
-    h.pulled_by,
-    h.pulled_batch_id,
-    h.filed_date,
-    h.version AS po_version
-FROM orders o
-JOIN po_headers h ON h.po_number = o.po_number;
+-- view 不在這裡建：既有安裝的 po_headers／orders 可能還沒被
+-- _migrate_columns 補上新欄位，這時如果就在這個 schema 腳本裡建 view
+-- 引用新欄位，會直接炸在 undefined column（這正是新裝機跟既有安裝
+-- 唯一的差異，新裝機的表是空的、剛建就有全部欄位，既有安裝不是）。
+-- 統一交給 init_db() 在 _migrate_columns 跑完之後、用 ORDER_ROWS_VIEW
+-- 建一次。
 
 CREATE TABLE IF NOT EXISTS edit_logs (
     id          SERIAL PRIMARY KEY,
@@ -661,7 +654,7 @@ def ensure_data_dir():
     return moved
 
 
-ORDER_ROWS_VIEW_POSTGRES = """
+ORDER_ROWS_VIEW = """
 DROP VIEW IF EXISTS order_rows;
 CREATE VIEW order_rows AS
 SELECT
@@ -673,10 +666,15 @@ SELECT
     h.pulled_by,
     h.pulled_batch_id,
     h.filed_date,
+    h.shipping_method,
+    h.flagged,
     h.version AS po_version
 FROM orders o
 JOIN po_headers h ON h.po_number = o.po_number;
 """
+
+# 保留舊名字，避免漏改到還在引用它的地方。
+ORDER_ROWS_VIEW_POSTGRES = ORDER_ROWS_VIEW
 
 
 def init_db():
@@ -685,11 +683,12 @@ def init_db():
     try:
         conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
         _migrate_columns(conn)
-        if IS_POSTGRES:
-            # orders 表可能剛剛才被 _migrate_columns 補上新欄位，上面
-            # executescript 建出來的 view 是舊欄位版本，要重建一次才會
-            # 抓到新欄位（不然要等下次重啟才會生效）。
-            conn.executescript(ORDER_ROWS_VIEW_POSTGRES)
+        # orders／po_headers 表可能剛剛才被 _migrate_columns 補上新欄位，
+        # 上面 executescript 建出來的 view 是舊欄位版本，要重建一次才會
+        # 抓到新欄位（不然要等下次重啟才會生效）。SQLite 的
+        # CREATE VIEW IF NOT EXISTS 對既有安裝也不會自動套用新欄位，
+        # 所以兩種資料庫都要重跑，不是只有 PostgreSQL。
+        conn.executescript(ORDER_ROWS_VIEW)
         conn.commit()
     finally:
         conn.close()
@@ -721,6 +720,21 @@ def _migrate_columns(conn):
     if "order_type_overridden" not in existing:
         conn.execute(
             "ALTER TABLE orders ADD COLUMN order_type_overridden "
+            "INTEGER NOT NULL DEFAULT 0")
+
+    if IS_POSTGRES:
+        poh_existing = {r["column_name"] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'po_headers'")}
+    else:
+        poh_existing = {r["name"] for r in conn.execute("PRAGMA table_info(po_headers)")}
+
+    if "shipping_method" not in poh_existing:
+        conn.execute(
+            "ALTER TABLE po_headers ADD COLUMN shipping_method TEXT DEFAULT ''")
+    if "flagged" not in poh_existing:
+        conn.execute(
+            "ALTER TABLE po_headers ADD COLUMN flagged "
             "INTEGER NOT NULL DEFAULT 0")
 
 

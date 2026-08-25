@@ -706,6 +706,68 @@ def main():
         check("出貨數量從空白改成 0 也能存得進去", rq.status_code==200 and rq.get_json()["changed"]==1,
               rq.get_json())
 
+    print("\n【29】已拉單後仍可改驗收狀態／配送方式；顏色標記全公司共用")
+    pulled_po = next((r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                       if r["is_pulled"]), None)
+    if pulled_po is None:
+        pr = client.post("/api/pos/pull", json={
+            "operator": "小真", "po_numbers": [zero_po["po_number"]], "pulled": True})
+        check("先拉一張單起來，測試才有鎖定的單可以測", pr.status_code == 200, pr.get_json())
+        pulled_po = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                          if r["po_number"] == zero_po["po_number"])
+
+    det = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    r29 = client.put(f"/api/pos/{pulled_po['po_number']}", json={
+        "operator": "小真", "po_version": det["header"]["version"],
+        "receiving_status": "異常"})
+    check("已拉單鎖定後仍可直接改驗收狀態，不會被 423 擋下",
+          r29.status_code == 200, r29.get_json())
+
+    det2 = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    r29b = client.put(f"/api/pos/{pulled_po['po_number']}", json={
+        "operator": "小真", "po_version": det2["header"]["version"],
+        "shipping_method": "竹運(CUP)"})
+    check("已拉單鎖定後仍可直接改配送方式",
+          r29b.status_code == 200, r29b.get_json())
+    det3 = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    check("配送方式真的存成竹運(CUP)",
+          det3["header"]["shipping_method"] == "竹運(CUP)", det3["header"])
+
+    # 但真正會影響出貨的欄位（例如 PO 狀態）沒有帶 force_edit 還是要擋下來
+    det4 = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    r29c = client.put(f"/api/pos/{pulled_po['po_number']}", json={
+        "operator": "小真", "po_version": det4["header"]["version"],
+        "po_status": "已取消"})
+    check("已拉單鎖定的 PO 狀態沒有 force_edit 還是會被擋下（423）",
+          r29c.status_code == 423, r29c.get_json())
+
+    rbatch = client.post("/api/pos/status", json={
+        "operator": "小真", "po_numbers": [pulled_po["po_number"]],
+        "field": "shipping_method", "value": "原廠(EM)"})
+    check("配送方式可以批次修改", rbatch.status_code == 200, rbatch.get_json())
+    det5 = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    check("批次修改後配送方式真的變成原廠(EM)",
+          det5["header"]["shipping_method"] == "原廠(EM)", det5["header"])
+
+    row_before = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                       if r["po_number"] == pulled_po["po_number"])
+    check("一開始還沒標記顏色", row_before["flagged"] in (0, False), row_before["flagged"])
+
+    rflag = client.post("/api/pos/flag", json={
+        "operator": "小真", "po_numbers": [pulled_po["po_number"]], "flagged": True})
+    check("標記顏色的請求成功", rflag.status_code == 200, rflag.get_json())
+    row_flagged = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                        if r["po_number"] == pulled_po["po_number"])
+    check("標記後 flagged 真的變成 1（全公司共用一份，不分是誰標的）",
+          row_flagged["flagged"] in (1, True), row_flagged["flagged"])
+
+    runflag = client.post("/api/pos/flag", json={
+        "operator": "小真", "po_numbers": [pulled_po["po_number"]], "flagged": False})
+    check("再點一次可以取消標記", runflag.status_code == 200, runflag.get_json())
+    row_unflagged = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                          if r["po_number"] == pulled_po["po_number"])
+    check("取消後 flagged 變回 0", row_unflagged["flagged"] in (0, False), row_unflagged["flagged"])
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

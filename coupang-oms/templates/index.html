@@ -61,6 +61,9 @@
   .inline-cell:not(.inline-locked) { transition: background-color .15s ease, outline-color .15s ease; outline: 1px dashed transparent; outline-offset: -1px; }
   .inline-cell:not(.inline-locked):hover { background-color: #fbe1e1; outline-color: #cc373d; }
 
+  .flag-cell { cursor: pointer; }
+  .flag-cell:hover { outline: 1px dashed #b45309; outline-offset: -1px; }
+
   /* 就地編輯存檔成功：格子閃一下綠色再淡出，給一個「確實存到了」的
      視覺回饋，不用等 toast 才知道。 */
   @keyframes save-flash {
@@ -243,6 +246,7 @@
             <th class="px-2 py-2 text-left whitespace-nowrap">建檔日</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨日</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨倉別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">配送方式</th>
             <th class="px-2 py-2 text-right whitespace-nowrap">品項數</th>
             <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
             <th class="px-2 py-2 text-right whitespace-nowrap">實際驗入數量
@@ -860,7 +864,7 @@ function renderRows() {
   const tb = $("#tbody");
   ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="13" class="text-center py-16 text-ink-300">
+    tb.innerHTML = `<tr><td colspan="14" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
@@ -885,7 +889,8 @@ function renderRows() {
     return `<tr class="${cls}">
       <td class="edge px-2 py-2 text-center"><input type="checkbox" data-po="${esc(r.po_number)}"
           class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
-      <td class="px-2 py-2 whitespace-nowrap"><button data-open="${esc(r.po_number)}"
+      <td class="px-2 py-2 whitespace-nowrap flag-cell ${r.flagged ? "bg-amber-200" : ""}"
+          data-flag="${esc(r.po_number)}" title="點單號旁的空白處可標記／取消標記顏色"><button data-open="${esc(r.po_number)}"
           class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}
         ${alert}</td>
@@ -899,15 +904,18 @@ function renderRows() {
           data-inline="is_pulled" data-po="${esc(r.po_number)}"
           title="點一下可直接切換"><span class="badge ${r.is_pulled ? "b-amber" : "b-gray"}">
           <i class="bi ${r.is_pulled ? "bi-lock-fill" : "bi-unlock"}"></i> ${r.is_pulled ? "已拉單" : "未拉單"}</span></td>
-      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
+      <td class="px-2 py-2 whitespace-nowrap inline-cell"
           data-inline="receiving_status" data-po="${esc(r.po_number)}"
-          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.receiving_status)}">${esc(r.receiving_status)}</span></td>
+          title="點一下可直接修改（不受拉單鎖定限制）"><span class="badge ${badgeClass(r.receiving_status)}">${esc(r.receiving_status)}</span></td>
       <td class="px-2 py-2 truncate">${esc(displayLines(r.lines)) || "線別待補"}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="filed_date" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell"
+          data-inline="shipping_method" data-po="${esc(r.po_number)}"
+          title="點一下可直接修改（不受拉單鎖定限制）">${esc(r.shipping_method) || "選擇配送方式"}</td>
       <td class="px-2 py-2 text-right num">${r.sku_count}</td>
       <td class="px-2 py-2 text-right num ${r.qty_ship !== r.qty_coupang ? "text-red-600 font-bold" : ""}"
           title="${r.qty_ship !== r.qty_coupang ? "出貨數量與酷澎下單數量不一致" : ""}">${(r.qty_ship || 0).toLocaleString()}</td>
@@ -1015,7 +1023,12 @@ async function openPo(poNumber) {
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
         <select id="p-status" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">${opt(CONFIG.po_statuses, h.po_status)}</select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
-        <select id="p-recv" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">${opt(CONFIG.receiving_statuses, h.receiving_status)}</select></label>
+        <select id="p-recv" class="border rounded px-2 py-1.5">${opt(CONFIG.receiving_statuses, h.receiving_status)}</select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
+        <select id="p-shipping" class="border rounded px-2 py-1.5">
+          ${h.shipping_method ? "" : `<option value="">選擇配送方式</option>`}
+          ${opt(CONFIG.shipping_methods, h.shipping_method)}
+        </select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">建檔日</span>
         <input id="p-filed" type="date" value="${esc(h.filed_date)}" ${locked ? "disabled" : ""}
           class="border rounded px-2 py-1.5"></label>
@@ -1097,6 +1110,7 @@ async function savePo() {
     body: JSON.stringify({
       operator: operator(), po_version: CURRENT.header.version,
       po_status: $("#p-status").value, receiving_status: $("#p-recv").value,
+      shipping_method: $("#p-shipping").value,
       filed_date: $("#p-filed").value, delivery_date: $("#p-date").value,
       warehouse: $("#p-wh").value, order_type: $("#p-ordertype").value,
     }),
@@ -1340,12 +1354,16 @@ function openStatusPanel() {
     .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   const recvOpts = (CONFIG.receiving_statuses || []).filter(Boolean)
     .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  const shippingOpts = (CONFIG.shipping_methods || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   openPanel(`
     <div class="flex items-center gap-4 flex-wrap text-sm">
       <label class="flex items-center gap-1.5">
         <input type="radio" name="abp-field" value="po_status" checked> PO 狀態</label>
       <label class="flex items-center gap-1.5">
         <input type="radio" name="abp-field" value="receiving_status"> 驗收狀態</label>
+      <label class="flex items-center gap-1.5">
+        <input type="radio" name="abp-field" value="shipping_method"> 配送方式</label>
       <span class="text-ink-400">改成</span>
       <select id="abp-value" class="border rounded px-2 py-1.5">${statusOpts}</select>
       <div class="flex-1"></div>
@@ -1356,14 +1374,16 @@ function openStatusPanel() {
   const valueSelect = $("#abp-value");
   document.querySelectorAll('input[name="abp-field"]').forEach(r => {
     r.addEventListener("change", () => {
-      valueSelect.innerHTML = r.value === "po_status" ? statusOpts : recvOpts;
+      valueSelect.innerHTML = r.value === "po_status" ? statusOpts
+        : r.value === "shipping_method" ? shippingOpts : recvOpts;
     });
   });
   $("#abp-cancel").addEventListener("click", closePanel);
   $("#abp-apply").addEventListener("click", async () => {
     const field = document.querySelector('input[name="abp-field"]:checked').value;
     const value = $("#abp-value").value;
-    const label = field === "po_status" ? "PO 狀態" : "驗收狀態";
+    const label = field === "po_status" ? "PO 狀態"
+      : field === "shipping_method" ? "配送方式" : "驗收狀態";
     const res = await fetch("/api/pos/status", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ operator: operator(), po_numbers: [...selected], field, value }),
@@ -1558,8 +1578,10 @@ function startInlineEdit(cell) {
   const field = cell.dataset.inline;
   const info = rowInfo.get(po);
   // 拉單狀態本身不受「已拉單鎖定」擋——那個鎖擋的是拉單以外的其他
-  // 欄位，拉單狀態自己就是控制那個鎖的開關，當然要能一直點。
-  if (field !== "is_pulled" && info && info.is_pulled) {
+  // 欄位，拉單狀態自己就是控制那個鎖的開關，當然要能一直點。驗收狀態
+  // 也不受這個鎖限制：驗收本來就發生在拉單之後（貨到了才驗），鎖住
+  // 反而擋住正常作業流程。
+  if (!["is_pulled", "receiving_status", "shipping_method"].includes(field) && info && info.is_pulled) {
     toast("這張單已拉單並鎖定，請先解除拉單鎖定才能修改。", "warn");
     return;
   }
@@ -1600,6 +1622,7 @@ function startInlineEdit(cell) {
 
   const list = field === "po_status" ? CONFIG.po_statuses
     : field === "order_type" ? CONFIG.order_types
+    : field === "shipping_method" ? CONFIG.shipping_methods
     : CONFIG.receiving_statuses;
   const opts = (list || []).filter(Boolean)
     .map(v => `<option value="${esc(v)}" ${v === current ? "selected" : ""}>${esc(v)}</option>`).join("");
@@ -1616,6 +1639,24 @@ $("#tbody").addEventListener("click", e => {
   const cell = e.target.closest(".inline-cell");
   if (!cell || cell.dataset.editing) return;
   startInlineEdit(cell);
+});
+
+// 顏色標記：點單號旁的空白處切換，點單號本身還是照舊開彈窗。
+$("#tbody").addEventListener("click", async e => {
+  if (e.target.closest("[data-open]")) return;
+  const cell = e.target.closest(".flag-cell");
+  if (!cell) return;
+  if (!requireOperator()) return;
+  const po = cell.dataset.flag;
+  const info = rowInfo.get(po);
+  const next = !(info && info.flagged);
+  const res = await fetch("/api/pos/flag", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), po_numbers: [po], flagged: next }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return; }
+  await loadOrders();
 });
 
 // Shift+勾選＝選取一段範圍（像 Gmail、檔案總管那樣）。checkbox 的
