@@ -188,7 +188,7 @@ def main():
     row = client.get("/api/orders?page_size=500").get_json()["rows"][0]
     res = client.put(f"/api/orders/{row['id']}", json={
         "operator": "小真", "version": row["version"],
-        "qty_ship": 55, "remarks": "跟酷澎談好下修"})
+        "qty_ship": 55})
     check("小真儲存成功", res.status_code == 200, res.get_json())
 
     res = client.put(f"/api/orders/{row['id']}", json={
@@ -767,6 +767,27 @@ def main():
     row_unflagged = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
                           if r["po_number"] == pulled_po["po_number"])
     check("取消後 flagged 變回 0", row_unflagged["flagged"] in (0, False), row_unflagged["flagged"])
+
+    print("\n【30】備註搬到 PO 層級（不再是每個品項各自一份）")
+    det_r = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    r30 = client.put(f"/api/pos/{pulled_po['po_number']}", json={
+        "operator": "小真", "po_version": det_r["header"]["version"],
+        "remarks": "這張單缺貨，晚兩天到"})
+    check("已拉單鎖定後仍可直接改整張單的備註", r30.status_code == 200, r30.get_json())
+    det_r2 = client.get(f"/api/pos/{pulled_po['po_number']}").get_json()
+    check("備註真的存到 po_headers（整張單一份，全形逗號正規化成半形）",
+          det_r2["header"]["remarks"] == "這張單缺貨,晚兩天到", det_r2["header"]["remarks"])
+    check("品項明細每一列看到的都是同一份 PO 層級備註（不是各自獨立）",
+          all(s["remarks"] == det_r2["header"]["remarks"] for s in det_r2["skus"]))
+
+    # 舊的 SKU 層級「補改備註」API 呼叫（可能是舊版前端快取還沒清）不該
+    # 報錯，只是靜默不生效——EDITABLE_FIELDS 已經不認得 remarks 這個
+    # SKU 層級欄位了。
+    sku0 = det_r2["skus"][0]
+    r30b = client.put(f"/api/orders/{sku0['id']}", json={
+        "operator": "小真", "version": sku0["version"], "remarks": "不該生效"})
+    check("SKU 層級的 remarks 已經不是可編輯欄位，PUT 不報錯但不影響任何東西",
+          r30b.status_code == 200 and r30b.get_json().get("changed", 0) == 0, r30b.get_json())
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

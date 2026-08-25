@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-25.6"
+BUILD_VERSION = "2026-08-25.7"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -106,10 +106,10 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # 單一 SKU 自己的欄位，改一個品項不影響同張單的其他品項。
-# 匯入永遠不會覆蓋這些欄位。
+# 匯入永遠不會覆蓋這些欄位。備註已搬到整張 PO 共用（見 PO_EDITABLE_FIELDS），
+# 不再是品項各自一份。
 EDITABLE_FIELDS = {
     "qty_ship":       "出貨數量",
-    "remarks":        "備註",
     "receiving_note": "驗收註記",
 }
 
@@ -118,10 +118,10 @@ EDITABLE_FIELDS = {
 # 單一起改。箱入數目前是唯讀欄位，不開放編輯，不在這個清單裡。
 SKU_OVERRIDE_FIELDS = ("qty_ship",)
 
-# 拉單鎖定要擋的是「會影響倉庫出貨的數字」；備註和驗收註記是事後才
-# 填的資訊（短驗、溢收…都是貨到了才知道），鎖住反而擋住正常作業，
-# 所以這兩個欄位不受拉單鎖定限制，任何時候都能改。
-ALWAYS_EDITABLE_FIELDS = {"remarks", "receiving_note"}
+# 拉單鎖定要擋的是「會影響倉庫出貨的數字」；驗收註記是事後才填的資訊
+# （短驗、溢收…都是貨到了才知道），鎖住反而擋住正常作業，所以不受拉單
+# 鎖定限制，任何時候都能改。
+ALWAYS_EDITABLE_FIELDS = {"receiving_note"}
 
 # 整張 PO 共用的欄位，改了就是整張單一起改（OP 拋 ERP、交倉庫都是整張
 # 單一起行動，不會拆開）。存在 po_headers，匯入一律不覆蓋。
@@ -130,13 +130,15 @@ PO_EDITABLE_FIELDS = {
     "receiving_status": "驗收狀態",
     "filed_date":       "建檔日",
     "shipping_method":  "配送方式",
+    "remarks":          "備註",
 }
 
 # 驗收狀態不受拉單鎖定限制——驗收本來就發生在拉單之後（貨到了才驗），
 # 鎖住它會直接擋住正常作業流程，跟備註／驗收註記不受鎖定是同一個道理。
 # 配送方式是匯入後才由 OP 自己補的內部分類，跟出貨數量無關，一樣不該
-# 被拉單鎖住。
-PO_ALWAYS_EDITABLE_FIELDS = {"receiving_status", "shipping_method"}
+# 被拉單鎖住。備註本來就是整張單事後才寫的資訊，搬到 PO 層級後同樣
+# 不受拉單鎖定影響。
+PO_ALWAYS_EDITABLE_FIELDS = {"receiving_status", "shipping_method", "remarks"}
 
 # 整張 PO 共用、但屬於酷澎來源的欄位：OP 可以改（跟酷澎談好調整），
 # 改的時候整張單一起改，但它們存在 orders 上、且會參與匯入比對。

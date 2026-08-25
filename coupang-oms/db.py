@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS orders (
     warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
     box_size_overridden      INTEGER NOT NULL DEFAULT 0,
     order_type_overridden    INTEGER NOT NULL DEFAULT 0,
-    remarks           TEXT DEFAULT '',
+    -- 備註已搬到 po_headers（整張單共用，不分品項）。這欄改名保留，
+    -- 只是既有資料庫的搬遷來源，程式不會再讀寫它。
+    remarks_legacy    TEXT DEFAULT '',
     receiving_note    TEXT DEFAULT '',      -- 這個品項的驗收註記（短驗/溢收…）
 
     -- 實際驗入數量：小真在酷澎後台按批次驗收工具抓回來的「收貨數量」
@@ -146,6 +148,10 @@ CREATE TABLE IF NOT EXISTS po_headers (
     -- 個人標記：全公司共用一份，OP 自己想特別留意哪張單就點一下標起來，
     -- 只有開／關兩種狀態，不分是誰標的。
     flagged          INTEGER NOT NULL DEFAULT 0,
+    -- 備註：整張單共用一份，不像驗收註記是逐品項各自記錄。原本存在
+    -- orders.remarks（每個品項各自一份），改放這裡，比較符合「這是這
+    -- 張單的備註」的實際用法。
+    remarks          TEXT DEFAULT '',
     version          INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT DEFAULT '',
     updated_at       TEXT DEFAULT ''
@@ -317,7 +323,7 @@ CREATE TABLE IF NOT EXISTS orders (
     warehouse_overridden     INTEGER NOT NULL DEFAULT 0,
     box_size_overridden      INTEGER NOT NULL DEFAULT 0,
     order_type_overridden    INTEGER NOT NULL DEFAULT 0,
-    remarks           TEXT DEFAULT '',
+    remarks_legacy    TEXT DEFAULT '',
     receiving_note    TEXT DEFAULT '',
 
     actual_verified_qty    INTEGER,
@@ -355,6 +361,7 @@ CREATE TABLE IF NOT EXISTS po_headers (
     filed_date       TEXT DEFAULT '',
     shipping_method  TEXT DEFAULT '',
     flagged          INTEGER NOT NULL DEFAULT 0,
+    remarks          TEXT DEFAULT '',
     version          INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT DEFAULT '',
     updated_at       TEXT DEFAULT ''
@@ -668,6 +675,7 @@ SELECT
     h.filed_date,
     h.shipping_method,
     h.flagged,
+    h.remarks,
     h.version AS po_version
 FROM orders o
 JOIN po_headers h ON h.po_number = o.po_number;
@@ -736,6 +744,37 @@ def _migrate_columns(conn):
         conn.execute(
             "ALTER TABLE po_headers ADD COLUMN flagged "
             "INTEGER NOT NULL DEFAULT 0")
+    if "remarks" not in poh_existing:
+        conn.execute("ALTER TABLE po_headers ADD COLUMN remarks TEXT DEFAULT ''")
+
+    # 備註從「每個品項各自一份」搬到「整張單一份」：orders.remarks 改名
+    # remarks_legacy，只在既有資料庫、這個欄位還沒改過名時跑一次——
+    # 改完名之後 "remarks" 就不會再出現在 existing 裡，這個分支永遠只會
+    # 跑這一次，不會每次啟動都重複合併。
+    if "remarks" in existing and "remarks_legacy" not in existing:
+        conn.execute("ALTER TABLE orders RENAME COLUMN remarks TO remarks_legacy")
+        _consolidate_legacy_remarks(conn)
+
+
+def _consolidate_legacy_remarks(conn):
+    """把搬欄位前每個品項各自的備註，合併成整張單一份，不要無聲丟資料。
+
+    同一張單底下可能好幾個品項各自寫了不同的備註，直接只留第一筆會
+    默默丟掉其他人寫的內容；這裡改成把所有不重複、非空白的值用「／」
+    串起來，一個字都不會不見，事後 OP 自己再去整理成一份就好。"""
+    rows = conn.execute(
+        """SELECT po_number, remarks_legacy FROM orders
+           WHERE remarks_legacy IS NOT NULL AND remarks_legacy != ''
+           ORDER BY id""").fetchall()
+    combined = {}
+    for row in rows:
+        po, val = row["po_number"], row["remarks_legacy"]
+        seen = combined.setdefault(po, [])
+        if val not in seen:
+            seen.append(val)
+    for po, vals in combined.items():
+        conn.execute("UPDATE po_headers SET remarks = ? WHERE po_number = ?",
+                     ("／".join(vals), po))
 
 
 # ---------------------------------------------------------------- 設定值（僅 PostgreSQL 模式）

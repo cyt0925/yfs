@@ -992,9 +992,6 @@ async function openPo(poNumber) {
       <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="receiving_note"
           value="${esc(s.receiving_note)}" placeholder="短驗 / 溢收…"
           class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
-      <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="remarks"
-          value="${esc(s.remarks)}"
-          class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
     </tr>`;
   }).join("");
 
@@ -1068,11 +1065,18 @@ async function openPo(poNumber) {
             <th class="px-2 py-1.5 text-right w-20">箱入數</th>
             <th class="px-2 py-1.5 text-right w-16">箱數<span class="block font-normal text-[10px] text-ink-400">自動算</span></th>
             <th class="px-2 py-1.5 text-left w-32">驗收註記</th>
-            <th class="px-2 py-1.5 text-left w-32">備註</th>
           </tr></thead>
           <tbody>${skuRows}</tbody>
         </table>
       </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-sm mb-2">備註
+        <span class="text-xs font-normal text-ink-400">（整張單的備註，不受拉單鎖定限制）</span></h3>
+      <textarea id="p-remarks" rows="3"
+        class="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm"
+        placeholder="這張單的備註…">${esc(h.remarks)}</textarea>
     </div>
 
     <div>
@@ -1110,7 +1114,7 @@ async function savePo() {
     body: JSON.stringify({
       operator: operator(), po_version: CURRENT.header.version,
       po_status: $("#p-status").value, receiving_status: $("#p-recv").value,
-      shipping_method: $("#p-shipping").value,
+      shipping_method: $("#p-shipping").value, remarks: $("#p-remarks").value,
       filed_date: $("#p-filed").value, delivery_date: $("#p-date").value,
       warehouse: $("#p-wh").value, order_type: $("#p-ordertype").value,
     }),
@@ -1122,7 +1126,7 @@ async function savePo() {
   // 再存每個品項自己的欄位（只送真的改過的）
   for (const sku of CURRENT.skus) {
     const body = {};
-    ["qty_ship", "receiving_note", "remarks"].forEach(f => {
+    ["qty_ship", "receiving_note"].forEach(f => {
       const el = document.querySelector(`[data-sku="${sku.id}"][data-f="${f}"]`);
       if (!el) return;
       const now = el.value;
