@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-25.1"
+BUILD_VERSION = "2026-08-25.2"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -576,12 +576,16 @@ def api_sign_settings():
 
 
 @app.route("/api/sign/settings", methods=["POST"])
-@admin_required
 def api_save_sign_settings():
     """尺寸／位移／關鍵字改成設定值，不寫死在程式裡——酷澎哪天改了
-    版面或字，或是簽名蓋歪了要微調，管理員自己就能改，不用等改程式、
+    版面或字，或是簽名蓋歪了要微調，任何人都能自己改，不用等改程式、
     重新部署。原本 SOP 的異常處理第 4 點就是教人去改程式碼裡那四個
-    數字，那對非技術同事等於做不到。"""
+    數字，那對非技術同事等於做不到。
+
+    這是全公司共用一份的設定，開放所有登入的人都能調，不限管理員——
+    改了會影響所有人的簽名位置，但校正介面是所見即所得（拖曳當場就
+    看得到蓋在哪），改錯了重拖一次就好，不是那種盲改。唯一的保險是
+    每次存檔都記下是誰、什麼時候改的，畫面上看得到，出問題不用瞎猜。"""
     payload = request.get_json(silent=True) or {}
     geo = get_sign_settings()
 
@@ -610,15 +614,16 @@ def api_save_sign_settings():
             return jsonify({"error": "保留天數請填 0 以上的數字。"}), 400
         geo["retention_days"] = days
 
+    geo["updated_by"] = current_operator()
+    geo["updated_at"] = now()
     save_sign_settings(geo)
     return jsonify({"ok": True, "settings": geo})
 
 
 @app.route("/api/sign/calibrate/upload", methods=["POST"])
-@admin_required
 def api_sign_calibrate_upload():
-    """上傳一份真的驗收單，找到關鍵字所在頁渲染成圖，讓管理員用拖曳
-    的方式校正簽名要蓋在哪——取代原本要填四個數字用猜的。這份範例
+    """上傳一份真的驗收單，找到關鍵字所在頁渲染成圖，讓人用拖曳的
+    方式校正簽名要蓋在哪——取代原本要填四個數字用猜的。這份範例
     PDF 會存起來，下次要重新校正不用再傳一次（見 current 那支）。"""
     upload = request.files.get("file")
     if upload is None or not upload.filename:
@@ -649,7 +654,6 @@ def api_sign_calibrate_upload():
 
 
 @app.route("/api/sign/calibrate/current")
-@admin_required
 def api_sign_calibrate_current():
     """重新打開校正畫面時，用上次存的範例 PDF 重新渲染一次，不用
     使用者再傳一次檔案。"""
@@ -926,11 +930,11 @@ def api_sign_history():
 
 
 @app.route("/api/sign/history/delete", methods=["POST"])
-@admin_required
 def api_sign_history_delete():
-    """整筆刪掉，連紀錄一起消失——這是拿來對帳、釐清驗收責任的稽核
-    資料，隨手就能刪會讓紀錄失去意義，所以限管理員才能做。跟「清除
-    檔案」不一樣：那個只清 PDF 本體，這個是真的整筆刪除。"""
+    """整筆刪掉，連紀錄一起消失——開放所有登入的人操作，跟位置校正
+    同一個道理：公司就這幾個人，不是對外開放，做錯了也不是不可逆的
+    資料損失（訂單資料才是）。跟「清除檔案」不一樣：那個只清 PDF
+    本體，這個是真的整筆刪除。"""
     payload = request.get_json(silent=True) or {}
     ids = [i for i in (norm_int(x) for x in payload.get("doc_ids", [])) if i]
     if not ids:

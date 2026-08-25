@@ -633,24 +633,39 @@ def main():
     check("刪除後總筆數確實少了一筆", after_delete["total"] == before - 1,
           f"刪前 {before}／刪後 {after_delete['total']}")
 
-    print("\n【27】簽名功能的權限與個人簽名圖")
-    # 預設 users.json 沒有 _admins 名單時「所有人都是管理員」，要驗權限
-    # 就得先真的建一個非管理員帳號出來。
+    print("\n【27】簽名功能的權限：位置校正／歷史刪除開放所有人，簽名圖各自獨立")
+    # 位置校正影響全公司共用的一份設定，歷史刪除也一樣——這兩個都
+    # 刻意開放給所有登入的人操作，不限管理員：公司就這幾個人，校正
+    # 介面又是所見即所得，改錯了重拖一次就好，不值得為了防呆而增加
+    # 一道「找管理員」的手續。只有「自己的簽名圖」是各自獨立、互不
+    # 共用的。
     app_module._write_users({**app_module.get_users(), "Nicole": "changeme123"}, {"小真"})
     r = client.post("/login", data={"username":"Nicole","password":"changeme123"})
     check("非管理員帳號登入成功（確認測試前提成立）", r.status_code==302, r.status_code)
-    r = client.post("/api/sign/settings", json={"keyword":"x","width":10,"height":10})
-    check("非管理員不能改簽名設定", r.status_code==403, r.get_json())
+
+    r = client.post("/api/sign/settings", json={"keyword":"出貨確認（廠商簽名）",
+        "width":65,"height":22,"offset_x":0,"offset_y":0})
+    check("非管理員也能改簽名位置設定（全公司共用一份，不限管理員）",
+        r.status_code==200, r.get_json())
+    check("存檔會記下是誰改的，出問題不用瞎猜",
+        r.get_json()["settings"].get("updated_by") == "Nicole", r.get_json()["settings"])
+
+    r = client.post("/api/sign/calibrate/upload",
+        data={"file": (io.BytesIO(mkpdf()), "x.pdf"),
+              "keyword": "出貨確認（廠商簽名）"},
+        content_type="multipart/form-data")
+    check("非管理員也能用校正精靈", r.status_code==200, r.get_json())
+
     r = client.post("/api/sign/run", data={"files": (io.BytesIO(mkpdf()), "n.pdf")},
                content_type="multipart/form-data")
-    check("每個人用自己的簽名圖：Nicole 還沒傳就不能簽",
+    check("但簽名圖各自獨立：Nicole 還沒傳自己的簽名圖，一樣不能簽",
         r.status_code==400 and "簽名圖" in r.get_json()["error"], r.get_json())
-    check("非管理員不能做校正精靈",
-        client.post("/api/sign/calibrate/upload",
-            data={"file": (io.BytesIO(mkpdf()), "x.pdf")},
-            content_type="multipart/form-data").status_code == 403)
-    check("非管理員不能刪除歷史紀錄",
-        client.post("/api/sign/history/delete", json={"doc_ids": [1]}).status_code == 403)
+
+    hist_before = client.get("/api/sign/history").get_json()
+    if hist_before["rows"]:
+        rd = client.post("/api/sign/history/delete",
+            json={"doc_ids": [hist_before["rows"][0]["id"]]})
+        check("非管理員也能刪除歷史紀錄", rd.status_code==200, rd.get_json())
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

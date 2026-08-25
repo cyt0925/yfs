@@ -421,6 +421,7 @@
   <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
     <button data-sgtab="run" class="sg-tab px-3 py-2 border-b-2 font-medium">簽名</button>
     <button data-sgtab="history" class="sg-tab px-3 py-2 border-b-2 font-medium">歷史紀錄</button>
+    <button data-sgtab="calibrate" class="sg-tab px-3 py-2 border-b-2 font-medium">位置校正</button>
   </div>
 
   <!-- 簽名 -->
@@ -466,19 +467,16 @@
       <div class="flex-1"></div>
       <p id="sgh-stored" class="text-xs text-ink-400"></p>
     </div>
-    <div id="sgh-admin-tools" class="hidden flex gap-2 items-end flex-wrap bg-ink-50 border border-ink-200 rounded-lg p-2">
+    <div class="flex gap-2 items-end flex-wrap bg-ink-50 border border-ink-200 rounded-lg p-2">
       <button id="btn-sgh-delete" class="px-3 py-1.5 rounded-lg border text-red-600 hover:bg-red-50 text-xs" disabled>
         <i class="bi bi-trash"></i> 刪除選取（<span id="sgh-sel-count">0</span>）</button>
-      <div class="flex-1"></div>
-      <label class="flex items-center gap-1 text-xs text-ink-500">清除
-        <input id="sgh-purge-days" type="number" value="180" min="0" class="border rounded px-2 py-1 w-16 text-center">
-        天前的檔案（只清檔案，紀錄留著）</label>
-      <button id="btn-sgh-purge" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-ink-50 text-xs">清除</button>
     </div>
     <div class="border rounded-lg overflow-auto">
       <table class="w-full text-xs">
         <thead class="bg-ink-100 sticky top-0"><tr>
-          <th class="px-2 py-1.5 w-8"><input id="sgh-check-all" type="checkbox" class="w-3.5 h-3.5 hidden"></th>
+          <th class="px-2 py-1.5 w-16 whitespace-nowrap">
+            <label class="flex items-center gap-1 cursor-pointer">
+              <input id="sgh-check-all" type="checkbox" class="w-3.5 h-3.5"> 全選</label></th>
           <th class="px-2 py-1.5 text-left">簽名時間</th>
           <th class="px-2 py-1.5 text-left">PO 單號</th>
           <th class="px-2 py-1.5 text-left">檔名</th>
@@ -492,56 +490,18 @@
     </div>
   </div>
 
-  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
-    <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
-    <button id="btn-sign-zip" class="hidden px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
-      <i class="bi bi-file-earmark-zip"></i> 下載全部（ZIP）</button>
-    <button id="btn-sign-run" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
-      <i class="bi bi-pen-fill"></i> 開始簽名</button>
-  </div>
-</dialog>
-
-<dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]">
-  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
-    <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
-    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
-  </div>
-
-  <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
-    <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">改密碼</button>
-    <button data-tab="signature" class="st-tab px-3 py-2 border-b-2 font-medium hidden">簽名位置校正</button>
-    <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
-    <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清除資料</button>
-    <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium hidden">驗收同步</button>
-  </div>
-
-  <!-- 改密碼：每個人都看得到，改自己的 -->
-  <div data-pane="password" class="st-pane p-5 space-y-3 text-sm">
-    <p class="text-xs text-ink-500">修改 <b id="st-me"></b> 的登入密碼。</p>
-    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">目前密碼</span>
-      <input id="st-old" type="password" autocomplete="current-password" class="border rounded px-2 py-2"></label>
-    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">新密碼（至少 6 個字）</span>
-      <input id="st-new" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
-    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">再輸入一次新密碼</span>
-      <input id="st-new2" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
-    <div class="pt-1">
-      <button id="btn-save-password"
-              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
-        <i class="bi bi-key-fill"></i> 更新密碼</button>
-    </div>
-  </div>
-
-  <!-- 驗收單簽名：簽名圖每個人自己傳；下面的尺寸／關鍵字只有管理員能改 -->
-  <div data-pane="signature" class="st-pane p-5 space-y-4 text-sm hidden">
+  <!-- 位置校正：全公司共用一份設定，改了大家的簽名都會照這裡蓋 -->
+  <div data-sgpane="calibrate" class="sg-pane p-5 space-y-4 max-h-[72vh] overflow-y-auto text-sm hidden">
     <div id="sg-banner" class="hidden border rounded-lg p-3"></div>
 
     <div>
       <h3 class="font-semibold mb-1">簽名位置校正</h3>
       <p class="text-xs text-ink-500">
         上傳一份真的驗收單，直接在圖上把簽名拖到對的位置、拉角落調大小就好。
-        校正一次，之後所有人的簽名都會照這個位置蓋——因為位置是記錄成「相對於
+        校正一次，之後<b>所有人</b>的簽名都會照這個位置蓋——因為位置是記錄成「相對於
         欄位文字的偏移」，不是頁面上的絕對座標，不用每一份都調。
       </p>
+      <p id="sg-cal-lastby" class="hidden text-xs text-ink-400 mt-1"></p>
     </div>
 
     <label class="flex flex-col gap-1">
@@ -558,7 +518,7 @@
     </div>
 
     <div id="sg-cal-area" class="hidden relative border rounded-lg overflow-auto bg-ink-100 select-none"
-         style="max-height: 55vh">
+         style="max-height: 50vh">
       <img id="sg-cal-img" class="block max-w-full" draggable="false">
       <div id="sg-cal-kwbox" class="absolute border-2 border-dashed border-blue-500 pointer-events-none"></div>
       <div id="sg-cal-sigbox" class="absolute border-2 border-brand-600 bg-brand-600/10" style="cursor: move; touch-action: none;">
@@ -603,6 +563,45 @@
     </div>
   </div>
 
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
+    <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
+    <button id="btn-sign-zip" class="hidden px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
+      <i class="bi bi-file-earmark-zip"></i> 下載全部（ZIP）</button>
+    <button id="btn-sign-run" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+      <i class="bi bi-pen-fill"></i> 開始簽名</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
+    <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">改密碼</button>
+    <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
+    <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清除資料</button>
+    <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium hidden">驗收同步</button>
+  </div>
+
+  <!-- 改密碼：每個人都看得到，改自己的 -->
+  <div data-pane="password" class="st-pane p-5 space-y-3 text-sm">
+    <p class="text-xs text-ink-500">修改 <b id="st-me"></b> 的登入密碼。</p>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">目前密碼</span>
+      <input id="st-old" type="password" autocomplete="current-password" class="border rounded px-2 py-2"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">新密碼（至少 6 個字）</span>
+      <input id="st-new" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">再輸入一次新密碼</span>
+      <input id="st-new2" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
+    <div class="pt-1">
+      <button id="btn-save-password"
+              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+        <i class="bi bi-key-fill"></i> 更新密碼</button>
+    </div>
+  </div>
+
+  <!-- 驗收單簽名：簽名圖每個人自己傳；下面的尺寸／關鍵字只有管理員能改 -->
   <!-- 帳號管理：只有管理員 -->
   <div data-pane="users" class="st-pane p-5 space-y-4 text-sm hidden">
     <div>
@@ -1657,7 +1656,7 @@ function renderUserList() {
 async function loadAccount() {
   ACCOUNT = await (await fetch("/api/account")).json();
   $("#st-me").textContent = ACCOUNT.user;
-  document.querySelectorAll('[data-tab="users"], [data-tab="data"], [data-tab="sync"], [data-tab="signature"]')
+  document.querySelectorAll('[data-tab="users"], [data-tab="data"], [data-tab="sync"]')
     .forEach(b => b.classList.toggle("hidden", !ACCOUNT.is_admin));
   if (ACCOUNT.is_admin) renderUserList();
   if (ACCOUNT.is_admin) {
@@ -1760,11 +1759,12 @@ function switchSignTab(name) {
   document.querySelectorAll(".sg-pane").forEach(p => {
     p.classList.toggle("hidden", p.dataset.sgpane !== name);
   });
-  // 「開始簽名／下載全部」只在簽名那頁有意義，切到歷史紀錄要收起來
+  // 「開始簽名／下載全部」只在簽名那頁有意義，切到別頁要收起來
   const onRun = name === "run";
   $("#btn-sign-run").classList.toggle("hidden", !onRun);
   $("#btn-sign-zip").classList.toggle("hidden", !onRun || !SIGN_STATE.lastBatch);
-  if (!onRun) loadSignHistory();
+  if (name === "history") loadSignHistory();
+  if (name === "calibrate") loadSignatureCalibration();
 }
 
 document.querySelectorAll(".sg-tab").forEach(b => {
@@ -1782,8 +1782,6 @@ $("#btn-sign").addEventListener("click", async () => {
   $("#sign-result").classList.add("hidden");
   $("#sign-result").innerHTML = "";
   $("#sign-banner").classList.add("hidden");
-  $("#sgh-admin-tools").classList.toggle("hidden", !SIGN_STATE.isAdmin);
-  $("#sgh-check-all").classList.toggle("hidden", !SIGN_STATE.isAdmin);
   SIGN_STATE.lastBatch = null;
   switchSignTab("run");
   $("#dlg-sign").showModal();
@@ -1852,13 +1850,11 @@ async function loadSignHistory() {
   SGH_SELECTED = new Set([...SGH_SELECTED].filter(id => data.rows.some(r => r.id === id)));
   $("#sgh-stored").textContent =
     `目前存放 ${(data.stored_bytes / 1048576).toFixed(1)} MB`
-    + (data.retention_days ? `　保留 ${data.retention_days} 天` : "　永久保留");
-  $("#sgh-purge-days").value = data.retention_days || 180;
+    + (data.retention_days ? `　保留 ${data.retention_days} 天（到期自動清檔案）` : "　永久保留");
   $("#sgh-body").innerHTML = data.rows.length ? data.rows.map(r => `
     <tr class="border-t">
-      <td class="px-2 py-1.5">${SIGN_STATE.isAdmin
-        ? `<input type="checkbox" class="sgh-check w-3.5 h-3.5" data-id="${r.id}" ${SGH_SELECTED.has(r.id) ? "checked" : ""}>`
-        : ""}</td>
+      <td class="px-2 py-1.5">
+        <input type="checkbox" class="sgh-check w-3.5 h-3.5" data-id="${r.id}" ${SGH_SELECTED.has(r.id) ? "checked" : ""}></td>
       <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.created_at)}</td>
       <td class="px-2 py-1.5 font-mono">${esc(r.po_number) || "—"}</td>
       <td class="px-2 py-1.5 truncate max-w-[220px]" title="${esc(r.filename)}">${esc(r.filename)}</td>
@@ -1908,19 +1904,12 @@ $("#btn-sgh-delete").addEventListener("click", async () => {
   showBanner("#sgh-banner", data.message, "ok");
 });
 
-$("#btn-sgh-purge").addEventListener("click", async () => {
-  const days = $("#sgh-purge-days").value;
-  if (!confirm(`確定要清除 ${days} 天前簽好的 PDF 檔案本體嗎？紀錄會留著，只是檔案不能再下載。`)) return;
-  const { ok, data } = await postJSON("/api/sign/history/purge", { days });
-  if (!ok) { showBanner("#sgh-banner", data.error || "清除失敗。", "err"); return; }
-  await loadSignHistory();
-  showBanner("#sgh-banner", data.message, "ok");
-});
-
 $("#btn-sgh-search").addEventListener("click", loadSignHistory);
 $("#sgh-po").addEventListener("keydown", e => { if (e.key === "Enter") loadSignHistory(); });
 
-// ── 簽名位置校正精靈（設定頁，管理員專用）──────────────────
+// ── 簽名位置校正精靈（「驗收單批次簽名」視窗裡的一個分頁，開放
+// 所有人使用——這是全公司共用一份的設定，改了大家的簽名位置都會
+// 跟著變）──────────────────────────────────────────────
 // 上傳一份真的驗收單，直接在圖上拖曳／縮放調整簽名位置，取代原本
 // SOP 教人去改程式碼裡四個數字的做法。位置存成「相對於關鍵字欄位
 // 的偏移量」（PDF 點數），不是頁面絕對座標，所以校正一次就能套用到
@@ -1929,9 +1918,8 @@ $("#sgh-po").addEventListener("keydown", e => { if (e.key === "Enter") loadSignH
 let CAL = null; // { dpi, image_width, image_height, keyword_rect_px, displayScale }
 let CAL_DRAG = null; // 拖曳／縮放狀態
 
-async function loadSignatureSettingsTab() {
+async function loadSignatureCalibration() {
   const data = await loadSignSettings();
-  if (!data.is_admin) return;
   $("#sg-keyword").value = data.settings.keyword;
   $("#sg-width").value = data.settings.width;
   $("#sg-height").value = data.settings.height;
@@ -1939,6 +1927,11 @@ async function loadSignatureSettingsTab() {
   $("#sg-offy").value = data.settings.offset_y;
   $("#sg-retention").value = data.settings.retention_days;
   $("#sg-banner").classList.add("hidden");
+
+  // 這是全公司共用一份的設定，開放所有人都能調——不是誰的私人東西。
+  // 唯一的保險是讓大家看得到「上次是誰、什麼時候動過」，萬一哪天
+  // 簽名突然蓋歪了，一眼就知道要去問誰，不用瞎猜。
+  renderLastCalibratedBy(data.settings);
 
   // 有校正過的範例就直接重新渲染出來，不用再傳一次檔案
   try {
@@ -1957,6 +1950,16 @@ async function loadSignatureSettingsTab() {
 
 function ptToNativePx(pt) { return pt * (CAL.dpi / 72); }
 function nativePxToPt(px) { return px * (72 / CAL.dpi); }
+
+function renderLastCalibratedBy(settings) {
+  if (settings.updated_by) {
+    $("#sg-cal-lastby").textContent =
+      `上次由 ${settings.updated_by} 於 ${settings.updated_at} 調整過。`;
+    $("#sg-cal-lastby").classList.remove("hidden");
+  } else {
+    $("#sg-cal-lastby").classList.add("hidden");
+  }
+}
 
 function renderCalibration(data) {
   CAL = { dpi: data.dpi, image_width: data.image_width, image_height: data.image_height,
@@ -2088,6 +2091,7 @@ $("#btn-sg-cal-apply").addEventListener("click", async () => {
   SIGN_STATE.settings = data.settings;
   $("#sg-width").value = width; $("#sg-height").value = height;
   $("#sg-offx").value = offsetX; $("#sg-offy").value = offsetY;
+  renderLastCalibratedBy(data.settings);
   showBanner("#sg-banner", "位置已套用，之後每次簽名都會蓋在這裡。", "ok");
 });
 
@@ -2100,14 +2104,12 @@ $("#btn-sg-save").addEventListener("click", async () => {
   });
   if (!ok) { showBanner("#sg-banner", data.error || "儲存失敗。", "err"); return; }
   SIGN_STATE.settings = data.settings;
+  renderLastCalibratedBy(data.settings);
   showBanner("#sg-banner", "簽名設定已儲存。", "ok");
 });
 
 document.querySelectorAll(".st-tab").forEach(b => {
-  b.addEventListener("click", () => {
-    switchSettingsTab(b.dataset.tab);
-    if (b.dataset.tab === "signature") loadSignatureSettingsTab();
-  });
+  b.addEventListener("click", () => switchSettingsTab(b.dataset.tab));
 });
 
 $("#btn-save-password").addEventListener("click", async () => {
