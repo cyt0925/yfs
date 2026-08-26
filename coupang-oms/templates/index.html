@@ -612,17 +612,22 @@
       <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
     </div>
   </div>
-  <div class="bg-ink-100 flex items-center justify-center p-4" style="min-height: min(68vh, 620px);">
+  <div class="bg-ink-100 flex items-center justify-center p-4 relative" style="min-height: min(68vh, 620px);">
     <img id="sop-slide-img" class="max-w-full max-h-[68vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
+    <video id="sop-slide-video" class="hidden max-w-full max-h-[68vh] rounded-lg shadow-lg border border-ink-200"
+           muted loop playsinline controls></video>
   </div>
-  <div class="px-5 py-3 border-t flex items-center justify-between bg-slate-50">
-    <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
+  <div class="px-5 py-3 border-t flex items-center justify-between bg-slate-50 gap-3">
+    <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50 whitespace-nowrap">
       <i class="bi bi-chevron-left"></i> 上一頁</button>
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-3 flex-wrap justify-center">
+      <button id="btn-sop-play"
+              class="px-3 py-1.5 rounded-lg border border-[#D2AB75] text-[#8a6d3f] bg-white hover:bg-[#D2AB75]/10 text-sm font-semibold whitespace-nowrap">
+        <i class="bi bi-play-circle"></i> 播放示範</button>
       <span id="sop-page-label" class="text-sm text-ink-500 font-mono"></span>
-      <div id="sop-dots" class="flex items-center gap-1.5 ml-2"></div>
+      <div id="sop-dots" class="flex items-center gap-1.5"></div>
     </div>
-    <button id="btn-sop-next" class="px-4 py-2 rounded-lg bg-[#D2AB75] hover:bg-[#c19a63] text-ink-900 font-semibold">
+    <button id="btn-sop-next" class="px-4 py-2 rounded-lg bg-[#D2AB75] hover:bg-[#c19a63] text-ink-900 font-semibold whitespace-nowrap">
       下一頁 <i class="bi bi-chevron-right"></i></button>
   </div>
 </dialog>
@@ -1967,27 +1972,76 @@ $("#btn-sign").addEventListener("click", async () => {
 });
 
 // ── 驗收單簽名 SOP：一組固定的投影片圖片，純前端翻頁 ──────
+// clip：那一頁有沒有對應的動態示範影片。純點按鈕的步驟看圖就夠，
+// 只有真的要「看動作」的（拖曳、選檔案、按下去等結果）才配影片。
 const SOP_SLIDES = [
-  "00_cover.png", "01_overview.png", "02_step1_open.png",
-  "03_step2_upload_sig.png", "04_step2b_sig_saved.png",
-  "05_step3_choose_pdf.png", "06_step4_result.png",
-  "07_step5_history.png", "08_appendix_calibration.png",
+  { img: "00_cover.png" },
+  { img: "01_overview.png" },
+  { img: "02_step1_open.png", clip: "01_open" },
+  { img: "03_step2_upload_sig.png", clip: "02_upload_sig" },
+  { img: "04_step2b_sig_saved.png", clip: "02_upload_sig" },
+  { img: "05_step3_choose_pdf.png", clip: "03_sign" },
+  { img: "06_step4_result.png", clip: "03_sign" },
+  { img: "07_step5_history.png", clip: "04_history" },
+  { img: "08_appendix_calibration.png", clip: "05_calibrate" },
 ];
 let sopIndex = 0;
+let sopPlaying = false;
+
+function showSopImage() {
+  const video = $("#sop-slide-video");
+  video.pause();
+  video.classList.add("hidden");
+  video.innerHTML = "";
+  video.load();               // 放掉已經載進來的影片，不然切頁後還在背景緩衝
+  $("#sop-slide-img").classList.remove("hidden");
+  sopPlaying = false;
+}
 
 function renderSopSlide() {
-  $("#sop-slide-img").src = `${STATIC_URL}sop/${SOP_SLIDES[sopIndex]}`;
+  const slide = SOP_SLIDES[sopIndex];
+  showSopImage();
+  $("#sop-slide-img").src = `${STATIC_URL}sop/${slide.img}`;
   $("#sop-page-label").textContent = `${sopIndex + 1} / ${SOP_SLIDES.length}`;
   $("#btn-sop-prev").disabled = sopIndex === 0;
-  $("#btn-sop-next").textContent = "";
   const isLast = sopIndex === SOP_SLIDES.length - 1;
   $("#btn-sop-next").innerHTML = isLast
     ? '<i class="bi bi-check-lg"></i> 看完了'
     : '下一頁 <i class="bi bi-chevron-right"></i>';
+
+  const play = $("#btn-sop-play");
+  play.classList.toggle("invisible", !slide.clip);
+  play.disabled = !slide.clip;
+  play.innerHTML = '<i class="bi bi-play-circle"></i> 播放示範';
+
   document.querySelectorAll("#sop-dots > span").forEach((dot, i) => {
     dot.classList.toggle("bg-[#D2AB75]", i === sopIndex);
     dot.classList.toggle("bg-ink-200", i !== sopIndex);
   });
+}
+
+function toggleSopVideo() {
+  const slide = SOP_SLIDES[sopIndex];
+  if (!slide.clip) return;
+  const video = $("#sop-slide-video");
+  const play = $("#btn-sop-play");
+  if (sopPlaying) {
+    showSopImage();
+    play.innerHTML = '<i class="bi bi-play-circle"></i> 播放示範';
+    return;
+  }
+  // 放兩種格式讓瀏覽器自己選放得動的那個：webm（VP9）免權利金、
+  // 到哪個瀏覽器內建解碼器都吃得下去；mp4（H.264）給不支援 webm
+  // 的瀏覽器（例如較舊的 Safari）當備援。
+  video.innerHTML = `
+    <source src="${STATIC_URL}sop/${slide.clip}.webm" type="video/webm">
+    <source src="${STATIC_URL}sop/${slide.clip}.mp4" type="video/mp4">`;
+  video.load();
+  video.classList.remove("hidden");
+  $("#sop-slide-img").classList.add("hidden");
+  video.play().catch(() => {});
+  sopPlaying = true;
+  play.innerHTML = '<i class="bi bi-image"></i> 看圖說明';
 }
 
 function buildSopDots() {
@@ -2011,10 +2065,18 @@ $("#btn-sop-next").addEventListener("click", () => {
   if (sopIndex < SOP_SLIDES.length - 1) { sopIndex++; renderSopSlide(); }
   else $("#dlg-sign-sop").close();
 });
+$("#btn-sop-play").addEventListener("click", toggleSopVideo);
 $("#dlg-sign-sop").addEventListener("keydown", e => {
   if (e.key === "ArrowRight") $("#btn-sop-next").click();
   if (e.key === "ArrowLeft") $("#btn-sop-prev").click();
+  // 空白鍵播放／暫停，但焦點在按鈕上時要讓按鈕自己處理，不然會兩邊搶
+  if (e.key === " " && !e.target.closest("button")) {
+    e.preventDefault();
+    toggleSopVideo();
+  }
 });
+// 關掉視窗時一定要把影片停掉，不然關了還在背景播
+$("#dlg-sign-sop").addEventListener("close", showSopImage);
 $("#btn-sop-print").addEventListener("click", () => {
   const win = window.open("", "_blank");
   const imgs = SOP_SLIDES.map(f =>
