@@ -135,6 +135,9 @@
     <button id="btn-sign" class="bg-[#D2AB75] hover:bg-[#c19a63] px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm text-ink-900">
       <i class="bi bi-pen"></i> 驗收單簽名
     </button>
+    <button id="btn-sign-sop" class="bg-transparent hover:bg-[#D2AB75]/10 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-[#D2AB75] text-[#D2AB75]">
+      <i class="bi bi-journal-text"></i> 驗收單簽名 SOP
+    </button>
     <button id="btn-logs" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-clock-history"></i> 修改歷程
     </button>
@@ -599,7 +602,32 @@
   </div>
 </dialog>
 
-<dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]">
+<!-- ── 驗收單簽名 SOP ──────────────────────────────────── -->
+<dialog id="dlg-sign-sop" class="rounded-xl p-0 w-[min(1100px,96vw)] backdrop:bg-ink-950/70">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-journal-text"></i> 驗收單簽名 SOP</h2>
+    <div class="flex items-center gap-3">
+      <button id="btn-sop-print" class="text-ink-300 hover:text-white text-sm flex items-center gap-1">
+        <i class="bi bi-printer"></i> 列印／存成 PDF</button>
+      <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    </div>
+  </div>
+  <div class="bg-ink-100 flex items-center justify-center p-4" style="min-height: min(68vh, 620px);">
+    <img id="sop-slide-img" class="max-w-full max-h-[68vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
+  </div>
+  <div class="px-5 py-3 border-t flex items-center justify-between bg-slate-50">
+    <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
+      <i class="bi bi-chevron-left"></i> 上一頁</button>
+    <div class="flex items-center gap-2">
+      <span id="sop-page-label" class="text-sm text-ink-500 font-mono"></span>
+      <div id="sop-dots" class="flex items-center gap-1.5 ml-2"></div>
+    </div>
+    <button id="btn-sop-next" class="px-4 py-2 rounded-lg bg-[#D2AB75] hover:bg-[#c19a63] text-ink-900 font-semibold">
+      下一頁 <i class="bi bi-chevron-right"></i></button>
+  </div>
+</dialog>
+
+<dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]"
   <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
     <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
@@ -760,6 +788,7 @@ window.addEventListener("dragover", e => e.preventDefault());
 window.addEventListener("drop", e => e.preventDefault());
 
 let CONFIG = {}, PAGE = 1, PAGE_SIZE = 100, TOTAL = 0, ROWS = [], CURRENT = null, BATCH = null;
+const STATIC_URL = "{{ url_for('static', filename='') }}";
 const selected = new Set();
 const rowInfo = new Map(); // po_number -> 最近一次看到的列資料，用來判斷動作列按鈕該不該可按
 
@@ -1935,6 +1964,65 @@ $("#btn-sign").addEventListener("click", async () => {
   SIGN_STATE.lastBatch = null;
   switchSignTab("run");
   $("#dlg-sign").showModal();
+});
+
+// ── 驗收單簽名 SOP：一組固定的投影片圖片，純前端翻頁 ──────
+const SOP_SLIDES = [
+  "00_cover.png", "01_overview.png", "02_step1_open.png",
+  "03_step2_upload_sig.png", "04_step2b_sig_saved.png",
+  "05_step3_choose_pdf.png", "06_step4_result.png",
+  "07_step5_history.png", "08_appendix_calibration.png",
+];
+let sopIndex = 0;
+
+function renderSopSlide() {
+  $("#sop-slide-img").src = `${STATIC_URL}sop/${SOP_SLIDES[sopIndex]}`;
+  $("#sop-page-label").textContent = `${sopIndex + 1} / ${SOP_SLIDES.length}`;
+  $("#btn-sop-prev").disabled = sopIndex === 0;
+  $("#btn-sop-next").textContent = "";
+  const isLast = sopIndex === SOP_SLIDES.length - 1;
+  $("#btn-sop-next").innerHTML = isLast
+    ? '<i class="bi bi-check-lg"></i> 看完了'
+    : '下一頁 <i class="bi bi-chevron-right"></i>';
+  document.querySelectorAll("#sop-dots > span").forEach((dot, i) => {
+    dot.classList.toggle("bg-[#D2AB75]", i === sopIndex);
+    dot.classList.toggle("bg-ink-200", i !== sopIndex);
+  });
+}
+
+function buildSopDots() {
+  $("#sop-dots").innerHTML = SOP_SLIDES.map((_, i) =>
+    `<span data-dot="${i}" class="w-2 h-2 rounded-full cursor-pointer bg-ink-200"></span>`).join("");
+  document.querySelectorAll("#sop-dots [data-dot]").forEach(dot => {
+    dot.addEventListener("click", () => { sopIndex = Number(dot.dataset.dot); renderSopSlide(); });
+  });
+}
+
+$("#btn-sign-sop").addEventListener("click", () => {
+  sopIndex = 0;
+  if (!$("#sop-dots").children.length) buildSopDots();
+  renderSopSlide();
+  $("#dlg-sign-sop").showModal();
+});
+$("#btn-sop-prev").addEventListener("click", () => {
+  if (sopIndex > 0) { sopIndex--; renderSopSlide(); }
+});
+$("#btn-sop-next").addEventListener("click", () => {
+  if (sopIndex < SOP_SLIDES.length - 1) { sopIndex++; renderSopSlide(); }
+  else $("#dlg-sign-sop").close();
+});
+$("#dlg-sign-sop").addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") $("#btn-sop-next").click();
+  if (e.key === "ArrowLeft") $("#btn-sop-prev").click();
+});
+$("#btn-sop-print").addEventListener("click", () => {
+  const win = window.open("", "_blank");
+  const imgs = SOP_SLIDES.map(f =>
+    `<img src="${STATIC_URL}sop/${f}" style="width:100%; page-break-after:always; display:block;">`).join("");
+  win.document.write(`<html><head><title>驗收單簽名 SOP</title></head>
+    <body style="margin:0">${imgs}</body></html>`);
+  win.document.close();
+  win.onload = () => win.print();
 });
 
 $("#btn-sign-run").addEventListener("click", async () => {
