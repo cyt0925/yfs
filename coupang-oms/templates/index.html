@@ -548,14 +548,14 @@
          style="max-height: 50vh">
       <img id="sg-cal-img" class="block max-w-full" draggable="false">
       <div id="sg-cal-kwbox" class="absolute border-2 border-dashed border-blue-500 pointer-events-none"></div>
-      <div id="sg-cal-sigbox" class="absolute border-2 border-brand-600 bg-brand-600/10" style="cursor: move; touch-action: none;">
+      <div id="sg-cal-sigbox" class="absolute border-2 border-[#D2AB75] bg-[#D2AB75]/10" style="cursor: move; touch-action: none;">
         <img id="sg-cal-sigimg" class="w-full h-full object-contain pointer-events-none hidden" draggable="false">
-        <div id="sg-cal-handle" class="absolute w-4 h-4 bg-brand-600 rounded-full border-2 border-white"
+        <div id="sg-cal-handle" class="absolute w-4 h-4 bg-[#D2AB75] rounded-full border-2 border-white"
              style="right: -8px; bottom: -8px; cursor: nwse-resize; touch-action: none;"></div>
       </div>
     </div>
     <p id="sg-cal-hint" class="hidden text-xs text-ink-400">
-      拖動藍色方框移動位置，拉右下角圓點調整大小，調好按下面「套用這個位置」。
+      拖動金色方框移動位置，拉右下角圓點調整大小，調好按下面「套用這個位置」。
     </p>
 
     <div class="flex gap-2">
@@ -2172,7 +2172,7 @@ $("#sg-cal-file").addEventListener("change", async e => {
   e.target.value = "";
   if (!res.ok) { showBanner("#sg-banner", data.error || "上傳失敗。", "err"); return; }
   renderCalibration(data);
-  showBanner("#sg-banner", "已找到欄位，拖曳下面的藍色方框調整簽名位置。", "ok");
+  showBanner("#sg-banner", "已找到欄位，拖曳下面的金色方框調整簽名位置。", "ok");
 });
 
 // 拖曳移動、拉右下角圓點縮放——都是滑鼠事件手動算，不依賴任何外部
