@@ -612,10 +612,16 @@
       <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
     </div>
   </div>
-  <div class="bg-ink-100 flex items-center justify-center p-4 relative" style="min-height: min(68vh, 620px);">
-    <img id="sop-slide-img" class="max-w-full max-h-[68vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
-    <video id="sop-slide-video" class="hidden max-w-full max-h-[68vh] rounded-lg shadow-lg border border-ink-200"
-           muted loop playsinline autoplay controls></video>
+  <div class="bg-ink-100 flex flex-col items-center p-4 gap-3 overflow-y-auto" style="max-height: 78vh;">
+    <div class="flex items-center justify-center relative w-full">
+      <img id="sop-slide-img" class="max-w-full max-h-[52vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
+      <video id="sop-slide-video" class="hidden max-w-full max-h-[52vh] rounded-lg shadow-lg border border-ink-200"
+             muted loop playsinline autoplay controls></video>
+    </div>
+    <div id="sop-caption" class="w-full max-w-[860px] bg-white rounded-lg border border-ink-200 px-4 py-3">
+      <div id="sop-caption-title" class="font-bold text-[#8a6d3f] mb-1.5"></div>
+      <ul id="sop-caption-bullets" class="list-disc pl-5 space-y-1 text-sm text-ink-700"></ul>
+    </div>
   </div>
   <div class="px-5 py-3 border-t flex items-center justify-between bg-slate-50 gap-3">
     <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50 whitespace-nowrap">
@@ -1973,14 +1979,76 @@ $("#btn-sign").addEventListener("click", async () => {
 // 只有真的要「看動作」的（拖曳、選檔案、按下去等結果）才配影片。
 const SOP_SLIDES = [
   { img: "00_cover.png" },
-  { img: "01_overview.png" },
-  { img: "02_step1_open.png", clip: "01_open" },
-  { img: "03_step2_upload_sig.png", clip: "02_upload_sig" },
-  { img: "04_step2b_sig_saved.png", clip: "02_upload_sig" },
-  { img: "05_step3_choose_pdf.png", clip: "03_sign" },
-  { img: "06_step4_result.png", clip: "03_sign" },
-  { img: "07_step5_history.png", clip: "04_history" },
-  { img: "08_appendix_calibration.png", clip: "05_calibrate" },
+  {
+    img: "01_overview.png",
+    title: "總覽：簽名怎麼運作",
+    bullets: [
+      "系統會自動找到欄位、蓋上你的簽名，不用每份都手動對位置。",
+      "簽名圖只要上傳一次，之後每次簽名都會自動套用同一張——不用每份都重傳。",
+      "每個人的簽名圖各自獨立，系統會記錄「誰在什麼時候簽了哪張單」。",
+    ],
+  },
+  {
+    img: "02_step1_open.png", clip: "01_open",
+    title: "第 1 步．打開「驗收單簽名」",
+    bullets: [
+      "登入系統後，畫面右上角可以看到「驗收單簽名」按鈕（金色）。",
+      "點一下就會打開簽名視窗。",
+    ],
+  },
+  {
+    img: "03_step2_upload_sig.png", clip: "02_upload_sig",
+    title: "第 2 步．上傳你的簽名圖（只需一次）",
+    bullets: [
+      "還沒上傳過簽名圖時，系統會提醒你先上傳。",
+      "點「Choose File」選一張簽名圖片（PNG／JPG，小於 2MB），或直接拖曳進框框。",
+      "上傳成功後會顯示預覽圖，之後每次簽名都自動套用，不用再傳。",
+    ],
+  },
+  {
+    img: "04_step2b_sig_saved.png", clip: "02_upload_sig",
+    title: "上傳成功：確認一下簽名內容",
+    bullets: [
+      "看到綠色的「簽名圖已儲存」代表上傳成功。",
+      "上面會顯示簽名圖預覽，以及「會蓋上＿的簽名」「找哪個欄位蓋章」的說明。",
+      "簽錯人／簽名圖需要換一張？按右邊「移除簽名」重新上傳即可。",
+    ],
+  },
+  {
+    img: "05_step3_choose_pdf.png", clip: "03_sign",
+    title: "第 3 步．選擇驗收單 PDF，開始簽名",
+    bullets: [
+      "在下方「選擇要簽名的驗收單 PDF」按 Choose Files，可以一次選多份（或直接拖曳整批進去）。",
+      "選好後按右下角紅色「開始簽名」。",
+    ],
+  },
+  {
+    img: "06_step4_result.png", clip: "03_sign",
+    title: "第 4 步．查看結果、下載簽好的檔案",
+    bullets: [
+      "上方綠色訊息會告訴你「幾份簽好了、共蓋了幾處」。",
+      "每一份檔案會列出結果、抓到的 PO 單號、蓋了幾處，右邊可以單份下載。",
+      "簽多份時可以按「下載全部（ZIP）」一次拿到所有簽好的檔案。",
+    ],
+  },
+  {
+    img: "07_step5_history.png", clip: "04_history",
+    title: "第 5 步．事後查詢：誰在什麼時候簽了哪張單",
+    bullets: [
+      "切到「歷史紀錄」分頁，可以用 PO 單號篩選查詢。",
+      "每一筆都記錄簽名時間、PO 單號、檔名、簽名人、蓋了幾處，隨時可以重新下載。",
+      "檔案本體有保留天數（超過就只清檔案本身），但「誰簽了哪張單」這筆帳會永久保留。",
+    ],
+  },
+  {
+    img: "08_appendix_calibration.png", clip: "05_calibrate",
+    title: "附錄．位置校正（管理者專區，一般不用碰）",
+    bullets: [
+      "只有酷澎改版面、或換了新的驗收單樣式時才需要重新校正一次。",
+      "上傳一份真的驗收單，直接拖曳金色方框到簽名要蓋的位置、拉右下角調大小。",
+      "校正一次，之後所有人的簽名都會照這個位置蓋——因為記錄的是「相對於欄位文字的偏移」。",
+    ],
+  },
 ];
 let sopIndex = 0;
 
@@ -2017,6 +2085,13 @@ function renderSopSlide() {
   } else {
     $("#sop-slide-img").src = `${STATIC_URL}sop/${slide.img}`;
     $("#sop-slide-img").classList.remove("hidden");
+  }
+
+  $("#sop-caption").classList.toggle("hidden", !slide.title);
+  if (slide.title) {
+    $("#sop-caption-title").textContent = slide.title;
+    $("#sop-caption-bullets").innerHTML = (slide.bullets || [])
+      .map(b => `<li>${b}</li>`).join("");
   }
 
   document.querySelectorAll("#sop-dots > span").forEach((dot, i) => {
