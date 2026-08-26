@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-25.8"
+BUILD_VERSION = "2026-08-26.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -257,8 +257,35 @@ def _ensure_shipping_methods_option():
         save_json("config.json", cfg)
 
 
+def _ensure_export_profile_columns():
+    """把「配送方式」「個人標記」兩個新欄位補進既有安裝的「完整欄位」
+    匯出格式裡——道理跟上面兩個 _ensure_* 一樣：正式站的匯出格式已經
+    存進資料庫，只改 export_profiles.json 對已經跑起來的安裝沒有用。
+    只補「完整欄位」這個對帳／備份用的格式，不去動倉庫出貨表、ERP
+    格式——那兩個是給外部/工廠看的，OP 自己的顏色標記跟他們無關；
+    也不動 OP 自己在「完整欄位」裡已經調整過的欄位順序或刪掉的欄位，
+    只在確定沒有這個欄位代碼時才補加到最後面。"""
+    data = load_json("export_profiles.json", {"profiles": {}})
+    full = (data.get("profiles") or {}).get("full")
+    if not full:
+        return
+    columns = full.get("columns") or []
+    existing_fields = {c.get("field") for c in columns}
+    changed = False
+    if "shipping_method" not in existing_fields:
+        columns.append({"header": "配送方式", "field": "shipping_method"})
+        changed = True
+    if "flagged" not in existing_fields:
+        columns.append({"header": "個人標記", "field": "flagged", "format": "yesno"})
+        changed = True
+    if changed:
+        full["columns"] = columns
+        save_json("export_profiles.json", data)
+
+
 _ensure_receiving_status_option()
 _ensure_shipping_methods_option()
+_ensure_export_profile_columns()
 
 
 def verify_password(stored, given):
@@ -1196,10 +1223,14 @@ def build_filter(args):
     for column, key in (("brand", "brand"), ("warehouse", "warehouse"),
                         ("po_status", "po_status"),
                         ("receiving_status", "receiving_status"),
-                        ("order_type", "order_type")):
+                        ("order_type", "order_type"),
+                        ("shipping_method", "shipping_method")):
         value = norm_text(args.get(key))
         if value:
             add(f"{column} = ?", value)
+
+    if args.get("flagged") == "1":
+        add("flagged = 1")
 
     date_from = norm_date(args.get("date_from"))
     if date_from:
@@ -2188,6 +2219,8 @@ def _format_cell(value, fmt):
             return ""
     if fmt == "date":
         return norm_date(value)
+    if fmt == "yesno":
+        return "是" if norm_int(value) else "否"
     return value
 
 

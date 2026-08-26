@@ -649,17 +649,23 @@ def ensure_data_dir():
     if IS_POSTGRES:
         return []
 
+    # 這裡故意用 copy 不用 move：Render 每次重新部署都會把 BASE_DIR
+    # （程式資料夾）整個換成全新的，所以複製完留在原地的舊檔案，下次
+    # 部署自然就消失了，不需要自己清。但如果改用 move，任何一次把
+    # DATA_DIR 指到別處執行（本機開發、跑測試、換帳號重跑）都會把
+    # BASE_DIR 底下唯一一份正本直接搬走、洗掉——這正是這幾個檔案唯一
+    # 的正本，一旦被搬到別的地方又被清掉，就真的救不回來了。
     moved = []
     for name in _MIGRATE:
         old = os.path.join(BASE_DIR, name)
         new = os.path.join(DATA_DIR, name)
         if os.path.exists(old) and not os.path.exists(new):
-            shutil.move(old, new)
+            shutil.copy2(old, new)
             moved.append(name)
 
     old_backups = os.path.join(BASE_DIR, "backups")
     if os.path.isdir(old_backups) and not os.path.isdir(BACKUP_DIR):
-        shutil.move(old_backups, BACKUP_DIR)
+        shutil.copytree(old_backups, BACKUP_DIR)
         moved.append("backups")
 
     for name in _SEED:

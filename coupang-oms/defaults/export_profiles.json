@@ -4,12 +4,13 @@
     "columns 內每一項：header = 匯出檔的欄位標題（想叫什麼就叫什麼），field = 系統內部欄位代碼。",
     "field 可用值：po_number, sku_id, order_type, parent_po, line, brand, product_name, barcode,",
     "  yf_sku, warehouse, address, delivery_date, qty_coupang, qty_ship, unit, box_size, unit_price,",
-    "  po_status, receiving_status, remarks, expiry_note, seq_no, is_pulled, pulled_at, pulled_by,",
-    "  needs_review, alert_level, updated_at",
-    "format 可省略，可選 text / int / date / decimal。",
+    "  po_status, receiving_status, shipping_method, remarks, expiry_note, seq_no, is_pulled,",
+    "  pulled_at, pulled_by, needs_review, alert_level, flagged, updated_at",
+    "format 可省略，可選 text / int / date / decimal / yesno（yesno 把 0/1 印成「否/是」，flagged 這種是非欄位適合用）。",
     "const 可用來輸出固定值（ERP 常見的常數欄位，例如公司別、單別）。",
     "mark_pulled_default 只是畫面上的預設勾選狀態，OP 匯出時仍可自行決定。",
-    "新增可用欄位：filed_date（建檔日）、receiving_note（該品項的驗收註記）"
+    "新增可用欄位：filed_date（建檔日）、receiving_note（該品項的驗收註記）、",
+    "  shipping_method（配送方式）、flagged（個人顏色標記，建議搭配 format: yesno）"
   ],
   "profiles": {
     "warehouse": {
@@ -239,6 +240,10 @@
           "field": "receiving_status"
         },
         {
+          "header": "配送方式",
+          "field": "shipping_method"
+        },
+        {
           "header": "允收效期",
           "field": "expiry_note"
         },
@@ -273,6 +278,11 @@
         {
           "header": "驗收註記",
           "field": "receiving_note"
+        },
+        {
+          "header": "個人標記",
+          "field": "flagged",
+          "format": "yesno"
         }
       ]
     }

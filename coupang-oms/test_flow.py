@@ -860,6 +860,41 @@ def main():
     check("解除移除標記", revived_row["removed_from_coupang"] in (0, False), revived_row)
     check("出貨數量重新同步回原本的值", revived_row["qty_ship"] == 20, revived_row["qty_ship"])
 
+    print("\n【32】搜尋欄位要能篩配送方式、只看已標記顏色的單")
+    all_pos = client.get("/api/pos?page_size=100").get_json()["rows"]
+    shipping_po = all_pos[0]["po_number"]
+    client.post("/api/pos/status", json={
+        "operator": "小真", "po_numbers": [shipping_po],
+        "field": "shipping_method", "value": "竹運(CUP)"})
+    hits = client.get("/api/pos?page_size=100&shipping_method=竹運(CUP)").get_json()["rows"]
+    check("配送方式篩選查得到剛設定的那張單",
+          any(r["po_number"] == shipping_po for r in hits), [r["po_number"] for r in hits])
+    check("配送方式篩選不會撈到其他還沒設定的單",
+          all(r["shipping_method"] == "竹運(CUP)" for r in hits))
+
+    flag_po = all_pos[1]["po_number"]
+    client.post("/api/pos/flag", json={
+        "operator": "小真", "po_numbers": [flag_po], "flagged": True})
+    flagged_hits = client.get("/api/pos?page_size=100&flagged=1").get_json()["rows"]
+    check("只看已標記顏色的單，篩得到剛標記的那張",
+          any(r["po_number"] == flag_po for r in flagged_hits))
+    check("只看已標記顏色不會撈到沒標記的單",
+          all(r["flagged"] in (1, True) for r in flagged_hits))
+
+    print("\n【33】顏色標記／配送方式可以匯出（完整欄位格式）")
+    exp = client.post("/api/export", json={
+        "operator": "小真", "profile": "full", "mark_pulled": False,
+        "filters": {}, "po_numbers": [flag_po]})
+    check("完整欄位匯出成功", exp.status_code == 200, exp.status_code)
+    wb_exp = openpyxl.load_workbook(io.BytesIO(exp.data))
+    exp_headers = [c.value for c in wb_exp.active[1]]
+    check("匯出欄位裡有「個人標記」跟「配送方式」",
+          "個人標記" in exp_headers and "配送方式" in exp_headers, exp_headers)
+    flag_col = exp_headers.index("個人標記") + 1
+    exp_vals = [row[flag_col - 1].value for row in wb_exp.active.iter_rows(min_row=2)]
+    check("已標記的單匯出時個人標記欄印「是」，不是原始的 0/1",
+          all(v == "是" for v in exp_vals), exp_vals)
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

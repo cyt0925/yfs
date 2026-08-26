@@ -198,6 +198,8 @@
         <select id="f-status" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
         <select id="f-receiving" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
+        <select id="f-shipping" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
         <select id="f-pulled" class="border rounded px-2 py-2">
           <option value="">全部</option><option value="0">未拉單</option><option value="1">已拉單</option>
@@ -205,6 +207,9 @@
       <label class="flex items-end gap-2 pb-1">
         <input id="f-review" type="checkbox" class="w-4 h-4">
         <span class="text-xs text-ink-600">只看待確認</span></label>
+      <label class="flex items-end gap-2 pb-1">
+        <input id="f-flagged" type="checkbox" class="w-4 h-4">
+        <span class="text-xs text-ink-600">只看已標記顏色</span></label>
     </div>
     <div class="flex gap-2 mt-3">
       <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
@@ -811,6 +816,7 @@ async function loadConfig() {
   fillSelect($("#f-ordertype"), CONFIG.order_types);
   fillSelect($("#f-status"), CONFIG.po_statuses);
   fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
+  fillSelect($("#f-shipping"), CONFIG.shipping_methods);
 
   const xp = $("#x-profile");
   xp.innerHTML = "";
@@ -833,8 +839,10 @@ function filters() {
     date_to: $("#f-to").value,
     po_status: $("#f-status").value,
     receiving_status: $("#f-receiving").value,
+    shipping_method: $("#f-shipping").value,
     is_pulled: $("#f-pulled").value,
     needs_review: $("#f-review").checked ? "1" : "",
+    flagged: $("#f-flagged").checked ? "1" : "",
     alert_level: filters._alert || "",
   };
 }
@@ -1739,9 +1747,10 @@ $("#check-all").addEventListener("change", e => {
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to"].forEach(s => $(s).value = "");
-  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-pulled"]
+  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-shipping", "#f-pulled"]
     .forEach(s => $(s).value = "");
   $("#f-review").checked = false;
+  $("#f-flagged").checked = false;
   filters._alert = ""; PAGE = 1; loadOrders();
 });
 $("#btn-prev").addEventListener("click", () => { if (PAGE > 1) { PAGE--; loadOrders(); } });
