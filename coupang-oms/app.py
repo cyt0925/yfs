@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-26.7"
+BUILD_VERSION = "2026-08-26.8"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -1057,6 +1057,65 @@ def _cors_for_sync(resp):
     return resp
 
 
+def auto_judge_receiving_status(conn, po_number, operator, stamp):
+    """依實際驗入數量自動判定整張單的驗收狀態。
+
+    規則很單純（小真定的）：兩邊數字都有、而且不一樣，就是異常——不管是
+    少驗還是多驗都算。全部品項都同步到數字、而且都對得起來，才算完成。
+
+    還沒同步到數字的品項就是「還沒驗到」，這時候不動狀態：只要有任何一
+    個品項還沒有實際驗入數量，就不能判成完成，不然會提早把整張單標成
+    驗完了。但異常可以提早判——已經對不起來的數字不會因為其他品項還沒
+    驗就變成對的。
+
+    被手動改過的單（receiving_status_overridden）完全跳過，人的判斷優先。
+    """
+    header = conn.execute(
+        "SELECT receiving_status, receiving_status_overridden FROM po_headers "
+        "WHERE po_number = ?", (po_number,)).fetchone()
+    if header is None or header["receiving_status_overridden"]:
+        return None
+
+    # 被酷澎移除的品項不列入比對——它的出貨數量已經歸零、也不會有人去驗，
+    # 拿它來比對只會讓整張單無謂地卡在「還沒驗完」。
+    rows = conn.execute(
+        """SELECT qty_ship, actual_verified_qty FROM orders
+           WHERE po_number = ? AND removed_from_coupang = 0""",
+        (po_number,)).fetchall()
+    if not rows:
+        return None
+
+    mismatch = False
+    all_verified = True
+    for row in rows:
+        verified = row["actual_verified_qty"]
+        if verified is None:
+            all_verified = False
+            continue
+        if (row["qty_ship"] or 0) != verified:
+            mismatch = True
+
+    if mismatch:
+        target = "異常"
+    elif all_verified:
+        target = "完成"
+    else:
+        return None
+
+    if header["receiving_status"] == target:
+        return None
+
+    conn.execute(
+        """UPDATE po_headers SET receiving_status = ?, updated_at = ?,
+               version = version + 1
+           WHERE po_number = ?""",
+        (target, stamp, po_number))
+    log_po_change(conn, po_number, "receiving_status", "驗收狀態",
+                  header["receiving_status"], target, operator, "system",
+                  "系統依實際驗入數量與出貨數量比對後自動判定")
+    return target
+
+
 @app.route("/api/sync/verified-qty", methods=["POST", "OPTIONS"])
 def api_sync_verified_qty():
     if request.method == "OPTIONS":
@@ -1075,6 +1134,9 @@ def api_sync_verified_qty():
     stamp = now()
     matched = 0
     not_found = []
+    touched_pos = []
+    judged_done = 0
+    judged_abnormal = 0
 
     conn = get_conn()
     try:
@@ -1098,6 +1160,8 @@ def api_sync_verified_qty():
                 continue
             order = dict(order)
             matched += 1
+            if po_number not in touched_pos:
+                touched_pos.append(po_number)
 
             if not _same(order["actual_verified_qty"], qty):
                 conn.execute(
@@ -1124,14 +1188,31 @@ def api_sync_verified_qty():
                     log_change(conn, order, "receiving_note", "驗收註記",
                                old_note, new_note, operator, "system",
                                "系統依實際驗入數量自動判斷")
+
+        # 每個品項的數字都寫完了才判狀態——邊寫邊判會拿到只更新到一半的
+        # 資料，可能先判成完成、下一個品項寫進去才發現其實對不起來。
+        for po_number in touched_pos:
+            result = auto_judge_receiving_status(conn, po_number, operator, stamp)
+            if result == "異常":
+                judged_abnormal += 1
+            elif result == "完成":
+                judged_done += 1
         conn.commit()
     finally:
         conn.close()
 
+    judged = []
+    if judged_done:
+        judged.append(f"{judged_done} 張判為完成")
+    if judged_abnormal:
+        judged.append(f"{judged_abnormal} 張判為異常")
+
     return jsonify({
         "ok": True, "matched": matched, "not_found": not_found,
+        "judged_done": judged_done, "judged_abnormal": judged_abnormal,
         "message": f"同步完成，比對到 {matched} 個品項"
-                   + (f"，{len(not_found)} 個系統裡還沒有、略過" if not_found else ""),
+                   + (f"，{len(not_found)} 個系統裡還沒有、略過" if not_found else "")
+                   + (f"；{'、'.join(judged)}" if judged else ""),
     })
 
 
@@ -1755,10 +1836,18 @@ def api_update_po(po_number):
 
         if head_changes:
             sets = ", ".join(f"{f} = ?" for f, _, _, _ in head_changes)
+            values = [v for _, _, _, v in head_changes]
+            # 手動改驗收狀態就等於「我自己判定了」，之後同步實際驗入數量不再
+            # 自動覆蓋。改回「未驗收」視為放掉手動判定，恢復自動判定。
+            recv = next((v for f, _, _, v in head_changes
+                         if f == "receiving_status"), None)
+            if recv is not None:
+                sets += ", receiving_status_overridden = ?"
+                values.append(0 if recv == "未驗收" else 1)
             cur = conn.execute(
                 f"""UPDATE po_headers SET {sets}, updated_at = ?, version = version + 1
                     WHERE po_number = ? AND version = ?""",
-                [v for _, _, _, v in head_changes] + [stamp, po_number, client_version])
+                values + [stamp, po_number, client_version])
             if cur.rowcount == 0:
                 conn.rollback()
                 return jsonify({"error": "conflict",
@@ -1908,10 +1997,18 @@ def api_batch_status():
         for row in rows:
             log_po_change(conn, row["po_number"], field, label,
                           row["old"], value, operator)
+        # 手動改驗收狀態就等於「我自己判定了」，之後同步實際驗入數量不再
+        # 自動覆蓋。改回「未驗收」視為放掉手動判定，恢復自動判定。
+        extra = ""
+        params = [value, now()]
+        if field == "receiving_status":
+            extra = ", receiving_status_overridden = ?"
+            params.append(0 if value == "未驗收" else 1)
         conn.execute(
-            f"""UPDATE po_headers SET {field} = ?, updated_at = ?, version = version + 1
+            f"""UPDATE po_headers SET {field} = ?, updated_at = ?{extra},
+                    version = version + 1
                 WHERE po_number IN ({placeholders})""",
-            [value, now()] + pos)
+            params + pos)
         conn.commit()
         return jsonify({"ok": True, "count": len(rows)})
     finally:

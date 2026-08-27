@@ -720,6 +720,14 @@
       酷澎後台的「批次驗收工具」用這組網址跟通行碼，把「實際驗入數量」自動送進系統，
       不用再手動匯出 Excel、上傳。設定一次就好，之後每次跑工具都會自動同步。
     </p>
+    <p class="text-xs text-ink-500 bg-ink-50 border border-ink-200 rounded-lg p-2">
+      <i class="bi bi-info-circle"></i>
+      同步進來之後會自動比對「實際驗入數量」跟「出貨數量」：全部品項都驗到而且數字都對得起來，
+      整張單判為<b>完成</b>；只要有任何一個品項數字對不起來（不管多驗還是少驗）就判為<b>異常</b>；
+      還有品項沒驗到的維持<b>未驗收</b>。<br>
+      驗收狀態還是可以自己手動改，<b>手動改過的單之後同步就不會再被自動蓋掉</b>；
+      想恢復自動判定的話，把狀態改回「未驗收」就好。
+    </p>
     <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">同步網址</span>
       <input id="st-sync-url" readonly class="border rounded px-2 py-2 font-mono text-xs bg-ink-50"></label>
     <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">通行碼</span>

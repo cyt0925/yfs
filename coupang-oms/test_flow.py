@@ -895,6 +895,93 @@ def main():
     check("已標記的單匯出時個人標記欄印「是」，不是原始的 0/1",
           all(v == "是" for v in exp_vals), exp_vals)
 
+    print("\n【34】同步實際驗入數量後自動判定驗收狀態（完成／異常），但手動可覆蓋")
+    token = client.get("/api/account/sync-token").get_json()["token"]
+
+    def sync_qty(items, operator="test"):
+        return client.post("/api/sync/verified-qty",
+                           json={"operator": operator, "items": items},
+                           headers={"X-Sync-Token": token})
+
+    def recv_status(po):
+        return next(r for r in client.get("/api/pos?page_size=200").get_json()["rows"]
+                    if r["po_number"] == po)["receiving_status"]
+
+    # 挑一張品項不多、而且每個品項都有出貨數量的單來測
+    cand = None
+    for row in client.get("/api/pos?page_size=200").get_json()["rows"]:
+        det = client.get(f"/api/pos/{row['po_number']}").get_json()
+        skus = [s for s in det["skus"] if not s.get("removed_from_coupang")]
+        if 2 <= len(skus) <= 40 and all(s["qty_ship"] is not None for s in skus):
+            cand = (row["po_number"], skus)
+            break
+    check("找得到可以測自動判定的 PO", cand is not None)
+
+    po_no, skus = cand
+    client.post("/api/pos/status", json={
+        "operator": "小真", "po_numbers": [po_no],
+        "field": "receiving_status", "value": "未驗收"})
+
+    # 只同步一部分品項、而且數字都對得起來 → 還不能判成完成
+    sync_qty([{"po_number": po_no, "sku_id": skus[0]["sku_id"],
+               "verified_qty": skus[0]["qty_ship"]}])
+    check("只驗到一部分、數字都對，狀態維持未驗收（不提早判完成）",
+          recv_status(po_no) == "未驗收", recv_status(po_no))
+
+    # 其餘品項也同步、全部相符 → 完成
+    sync_qty([{"po_number": po_no, "sku_id": s["sku_id"],
+               "verified_qty": s["qty_ship"]} for s in skus[1:]])
+    check("全部品項都驗到且數字相符，自動判為完成",
+          recv_status(po_no) == "完成", recv_status(po_no))
+
+    # 其中一個品項少驗 → 異常
+    sync_qty([{"po_number": po_no, "sku_id": skus[0]["sku_id"],
+               "verified_qty": (skus[0]["qty_ship"] or 0) - 1}])
+    check("任一品項少驗，自動判為異常",
+          recv_status(po_no) == "異常", recv_status(po_no))
+
+    # 多驗也算異常（數字不一樣就是異常，不分多少）
+    sync_qty([{"po_number": po_no, "sku_id": skus[0]["sku_id"],
+               "verified_qty": (skus[0]["qty_ship"] or 0) + 5}])
+    check("多驗一樣判為異常（規則是「數字不一樣」，不是只看短驗）",
+          recv_status(po_no) == "異常", recv_status(po_no))
+
+    # 手動改成完成之後，再同步不該被蓋回異常
+    client.post("/api/pos/status", json={
+        "operator": "小真", "po_numbers": [po_no],
+        "field": "receiving_status", "value": "完成"})
+    check("手動可以把自動判定的異常改成完成", recv_status(po_no) == "完成")
+
+    sync_qty([{"po_number": po_no, "sku_id": skus[0]["sku_id"],
+               "verified_qty": (skus[0]["qty_ship"] or 0) + 7}])
+    check("手動判定過的單，之後同步不會被自動蓋回去",
+          recv_status(po_no) == "完成", recv_status(po_no))
+
+    # 改回未驗收＝放掉手動判定，自動判定恢復
+    client.post("/api/pos/status", json={
+        "operator": "小真", "po_numbers": [po_no],
+        "field": "receiving_status", "value": "未驗收"})
+    sync_qty([{"po_number": po_no, "sku_id": skus[0]["sku_id"],
+               "verified_qty": (skus[0]["qty_ship"] or 0) + 7}])
+    check("改回未驗收等於放掉手動判定，自動判定會恢復",
+          recv_status(po_no) == "異常", recv_status(po_no))
+
+    # 單張編輯（PUT）這條路徑也要一樣會設手動旗標，不是只有批次改狀態會
+    ver = client.get(f"/api/pos/{po_no}").get_json()["header"]["version"]
+    rput = client.put(f"/api/pos/{po_no}", json={
+        "operator": "小真", "po_version": ver, "receiving_status": "完成"})
+    check("單張編輯也能改驗收狀態", rput.status_code == 200, rput.get_json())
+    sync_qty([{"po_number": po_no, "sku_id": skus[0]["sku_id"],
+               "verified_qty": (skus[0]["qty_ship"] or 0) + 9}])
+    check("單張編輯改過的狀態，同步一樣不會蓋掉",
+          recv_status(po_no) == "完成", recv_status(po_no))
+
+    # 自動判定要留下歷程，不能無聲改狀態
+    logs = client.get(f"/api/pos/{po_no}").get_json().get("logs", [])
+    auto = [l for l in logs
+            if l["field"] == "receiving_status" and l["source"] == "system"]
+    check("自動判定的狀態變更有記進歷程", len(auto) > 0, len(auto))
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

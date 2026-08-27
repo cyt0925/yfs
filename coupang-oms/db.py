@@ -143,6 +143,10 @@ CREATE TABLE IF NOT EXISTS po_headers (
     po_number        TEXT PRIMARY KEY,
     po_status        TEXT NOT NULL DEFAULT '已建立',
     receiving_status TEXT NOT NULL DEFAULT '未驗收',
+    -- 驗收狀態是不是被人手動改過。同步實際驗入數量時會自動判定完成／
+    -- 異常，但只要有人手動改過就不再自動覆蓋，免得「我改成完成、隔天
+    -- 又被系統改回異常」。改回「未驗收」等於放掉手動判定、恢復自動。
+    receiving_status_overridden INTEGER NOT NULL DEFAULT 0,
     is_pulled        INTEGER NOT NULL DEFAULT 0,
     pulled_at        TEXT DEFAULT '',
     pulled_by        TEXT DEFAULT '',
@@ -364,6 +368,10 @@ CREATE TABLE IF NOT EXISTS po_headers (
     po_number        TEXT PRIMARY KEY,
     po_status        TEXT NOT NULL DEFAULT '已建立',
     receiving_status TEXT NOT NULL DEFAULT '未驗收',
+    -- 驗收狀態是不是被人手動改過。同步實際驗入數量時會自動判定完成／
+    -- 異常，但只要有人手動改過就不再自動覆蓋，免得「我改成完成、隔天
+    -- 又被系統改回異常」。改回「未驗收」等於放掉手動判定、恢復自動。
+    receiving_status_overridden INTEGER NOT NULL DEFAULT 0,
     is_pulled        INTEGER NOT NULL DEFAULT 0,
     pulled_at        TEXT DEFAULT '',
     pulled_by        TEXT DEFAULT '',
@@ -684,6 +692,7 @@ SELECT
     o.*,
     h.po_status,
     h.receiving_status,
+    h.receiving_status_overridden,
     h.is_pulled,
     h.pulled_at,
     h.pulled_by,
@@ -767,6 +776,10 @@ def _migrate_columns(conn):
             "INTEGER NOT NULL DEFAULT 0")
     if "remarks" not in poh_existing:
         conn.execute("ALTER TABLE po_headers ADD COLUMN remarks TEXT DEFAULT ''")
+    if "receiving_status_overridden" not in poh_existing:
+        conn.execute(
+            "ALTER TABLE po_headers ADD COLUMN receiving_status_overridden "
+            "INTEGER NOT NULL DEFAULT 0")
 
     # 備註從「每個品項各自一份」搬到「整張單一份」：orders.remarks 改名
     # remarks_legacy，只在既有資料庫、這個欄位還沒改過名時跑一次——
