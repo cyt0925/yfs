@@ -982,6 +982,53 @@ def main():
             if l["field"] == "receiving_status" and l["source"] == "system"]
     check("自動判定的狀態變更有記進歷程", len(auto) > 0, len(auto))
 
+    print("\n【35】PO 總表匯出：以 PO 為單位一列，不列 SKU 明細，外加備註")
+    all_pos_now = client.get("/api/pos?page_size=200").get_json()["rows"]
+    multi_po = next((r for r in all_pos_now if r["sku_count"] and r["sku_count"] > 1), None)
+    check("找得到品項數大於 1 的 PO 來測彙總", multi_po is not None)
+
+    po_sum = client.post("/api/export", json={
+        "operator": "小真", "profile": "po_summary", "mark_pulled": False,
+        "filters": {}, "po_numbers": [multi_po["po_number"]]})
+    check("PO 總表匯出成功", po_sum.status_code == 200, po_sum.status_code)
+    wb_sum = openpyxl.load_workbook(io.BytesIO(po_sum.data))
+    sum_headers = [c.value for c in wb_sum.active[1]]
+    check("表頭跟首頁列表一致，外加備註",
+          sum_headers == ["PO單號", "訂單類型", "PO狀態", "已拉單", "驗收狀態", "線別", "品牌",
+                          "建檔日", "到貨日", "到貨倉別", "配送方式", "品項數", "出貨數量",
+                          "實際驗入數量", "備註"],
+          sum_headers)
+    data_rows = list(wb_sum.active.iter_rows(min_row=2, values_only=True))
+    check("這張多品項的 PO 匯出只有一列，不是一個 SKU 一列",
+          len(data_rows) == 1, len(data_rows))
+    po_row = dict(zip(sum_headers, data_rows[0]))
+    check("PO 單號正確", po_row["PO單號"] == multi_po["po_number"], po_row["PO單號"])
+    check("品項數對得上實際 SKU 數", po_row["品項數"] == multi_po["sku_count"],
+          (po_row["品項數"], multi_po["sku_count"]))
+
+    # 只看已標記顏色，PO 總表一樣要吃得到這個篩選條件
+    flag_sum = client.post("/api/export", json={
+        "operator": "小真", "profile": "po_summary", "mark_pulled": False,
+        "filters": {"flagged": "1"}})
+    check("PO 總表也能只匯出已標記顏色的單", flag_sum.status_code == 200, flag_sum.status_code)
+    wb_flag_sum = openpyxl.load_workbook(io.BytesIO(flag_sum.data))
+    flag_sum_pos = [row[0].value for row in wb_flag_sum.active.iter_rows(min_row=2)]
+    check("只匯出剛才標記的那張單", flag_sum_pos == [flag_po], flag_sum_pos)
+
+    # 還沒同步實際驗入數量的單，PO 總表要留空白，不能印成 0
+    unsynced_po = next((r for r in all_pos_now
+                        if r["actual_verified_qty"] is None), None)
+    if unsynced_po:
+        us = client.post("/api/export", json={
+            "operator": "小真", "profile": "po_summary", "mark_pulled": False,
+            "filters": {}, "po_numbers": [unsynced_po["po_number"]]})
+        wb_us = openpyxl.load_workbook(io.BytesIO(us.data))
+        us_headers = [c.value for c in wb_us.active[1]]
+        us_row = list(wb_us.active.iter_rows(min_row=2, values_only=True))[0]
+        us_dict = dict(zip(us_headers, us_row))
+        check("還沒同步過的單，實際驗入數量印成空白，不是 0",
+              us_dict["實際驗入數量"] is None, us_dict["實際驗入數量"])
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

@@ -33,7 +33,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-26.8"
+BUILD_VERSION = "2026-08-26.9"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -283,9 +283,32 @@ def _ensure_export_profile_columns():
         save_json("export_profiles.json", data)
 
 
+def _ensure_po_summary_profile():
+    """把「PO 總表」這個新的匯出格式補進既有安裝——只在 profiles 裡完全
+    沒有 po_summary 這個 key 時才補，OP 如果自己刪掉過就不會被救回來，
+    跟 _ensure_export_profile_columns() 同一套「只補不搶」的原則。"""
+    data = load_json("export_profiles.json", {"profiles": {}})
+    profiles = data.get("profiles") or {}
+    if "po_summary" in profiles:
+        return
+    try:
+        with open(os.path.join(db.DEFAULTS_DIR, "export_profiles.json"),
+                   encoding="utf-8") as fh:
+            defaults = json.load(fh)
+    except (OSError, ValueError):
+        return
+    seed = (defaults.get("profiles") or {}).get("po_summary")
+    if not seed:
+        return
+    profiles["po_summary"] = seed
+    data["profiles"] = profiles
+    save_json("export_profiles.json", data)
+
+
 _ensure_receiving_status_option()
 _ensure_shipping_methods_option()
 _ensure_export_profile_columns()
+_ensure_po_summary_profile()
 
 
 def verify_password(stored, given):
@@ -1670,6 +1693,7 @@ def po_summary_sql(clause):
                -- 總和該是「還沒有數字」（畫面上顯示 —），不是「驗入 0 件」，
                -- 兩者意思差很多，混在一起會誤導人。
                SUM(actual_verified_qty)     AS actual_verified_qty,
+               MIN(remarks)         AS remarks,
                SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review_count,
                SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END)
                                             AS after_pull_count,
@@ -2361,6 +2385,27 @@ def api_export():
         if not rows:
             return jsonify({"error": "目前的篩選條件沒有任何資料可以匯出。"}), 400
 
+        # PO 總表：一張 PO 一列，不列 SKU 明細。追蹤用的 export_batch_items／
+        # 拉單鎖定仍然照 SKU 層級的 rows 走（下面沒動），只有畫面上實際
+        # 印出來的內容改成用整張單彙總過的資料。
+        if profile.get("level") == "po":
+            po_numbers = sorted({r["po_number"] for r in rows})
+            placeholders2 = ",".join("?" * len(po_numbers))
+            summary_rows = conn.execute(
+                po_summary_sql(f" WHERE po_number IN ({placeholders2})"),
+                po_numbers,
+            ).fetchall()
+            summary_rows = sorted(
+                summary_rows, key=lambda r: (r["delivery_date"] or "", r["po_number"]))
+            export_records = []
+            for r in summary_rows:
+                rec = dict(r)
+                rec["line"] = _csv_clean(rec.pop("lines_csv", ""))
+                rec["brand"] = _csv_clean(rec.pop("brands_csv", ""))
+                export_records.append(rec)
+        else:
+            export_records = [dict(r) for r in rows]
+
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
 
@@ -2377,8 +2422,7 @@ def api_export():
             cell.fill = head_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-        for row in rows:
-            record = dict(row)
+        for record in export_records:
             line = []
             for col in columns:
                 if "const" in col:
@@ -2406,7 +2450,7 @@ def api_export():
                (operator, profile, filename, row_count, mark_pulled,
                 filter_json, created_at)
                VALUES (?,?,?,?,?,?,?)""",
-            (operator, profile_key, filename, len(rows), int(mark_pulled),
+            (operator, profile_key, filename, len(export_records), int(mark_pulled),
              json.dumps(filter_desc, ensure_ascii=False), now()),
         )
         batch_id = cur.lastrowid
