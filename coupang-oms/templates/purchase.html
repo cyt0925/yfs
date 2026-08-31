@@ -137,10 +137,12 @@ function buildRemark(line, po, mmdd, wh) {
   if (line === "mars") return (md && wh) ? `MARS入倉${md}瑪氏送酷澎-${wh}倉` : "";
   return "";
 }
+// po 傳空字串＝這是合併多張 PO 的檔案，檔名就不放單號（跟紙潔那份
+// 「多張 PO 合併」的真實檔名慣例一致），不然只放第一張會誤導。
 function buildFilename(line, po, mmdd, wh) {
   if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${po ? `(${po})` : ""}.xls`;
   if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
-  if (line === "mars") return `永豐Mars採購單(箱單位)-GUM_${wh || "倉別"}_${po}.xls`;
+  if (line === "mars") return `永豐Mars採購單(箱單位)-GUM_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
   return `採購表_${mmdd || ""}.xls`;
 }
 
@@ -309,9 +311,19 @@ async function exportGroups(groups, merge) {
   if (!groups.length) { $("#p-export-status").textContent = "沒有勾選任何一組。"; return; }
   let payloadGroups = groups;
   if (merge) {
-    const rows = groups.flatMap(g => g.rows);
-    const first = groups[0];
-    payloadGroups = [{ rows, remark: first.remark, filename: first.filename }];
+    // 每一列要帶著「自己那一組」的備註，不能整份共用第一組的——P&G／
+    // 瑪氏的備註裡面有訂單編號，共用會讓後面幾張 PO 的單號整個不見。
+    const rows = groups.flatMap(g => g.rows.map(r => ({ ...r, remark: g.remark })));
+    const warehouses = [...new Set(groups.map(g => (g.warehouse || "").trim()))];
+    if (warehouses.length > 1 &&
+        !confirm(`勾選的這幾組倉別不一樣（${warehouses.join("、")}），合併成同一張採購表確定嗎？`)) {
+      $("#p-export-status").textContent = "已取消。";
+      return;
+    }
+    const mmdd = $("#p-date").value.trim();
+    // 合併檔沒有單一 PO，檔名就不放單號
+    const filename = buildFilename(PARSED.line, "", mmdd, groups[0].warehouse);
+    payloadGroups = [{ rows, remark: groups[0].remark, filename }];
   }
   $("#p-export-status").textContent = "產生中…";
   try {

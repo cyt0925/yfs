@@ -252,6 +252,9 @@ def build_remark(line_key, po_numbers, date_mmdd, warehouse):
 
 
 def build_filename(line_key, po_numbers, date_mmdd, warehouse):
+    """檔名裡的 PO 單號是用來區分「一張 PO 一個檔」時是哪一張，所以合併
+    匯出時呼叫端會傳空的 po_numbers 進來，這裡就不放單號——這正是紙潔
+    （本來就是多張 PO 合併）的真實檔名慣例：酷澎_產品採購表上傳_0902到貨。"""
     po = po_numbers[0] if po_numbers else ""
     if line_key == "pg":
         suffix = f"({po})" if po else ""
@@ -260,7 +263,8 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse):
         return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
     if line_key == "mars":
         wh = warehouse or "倉別"
-        return f"永豐Mars採購單(箱單位)-GUM_{wh}_{po}.xls"
+        suffix = f"_{po}" if po else ""
+        return f"永豐Mars採購單(箱單位)-GUM_{wh}{suffix}.xls"
     return f"採購表_{date_mmdd}.xls"
 
 
@@ -269,7 +273,12 @@ def fill_template(line_key, rows, remark):
 
     用 xlutils.copy 而不是重新用 xlwt 從零產生，是為了讓查表工作表
     （表單選項／商品資料／客編）跟儲存格樣式完全保留，降低跟公司系統
-    要求的格式對不起來的風險。"""
+    要求的格式對不起來的風險。
+
+    備註是「逐列」的：合併多張 PO 時，每一列要保留自己那張 PO 的備註
+    （P&G／瑪氏的備註帶著訂單編號），所以每列各自帶 remark 就用自己的，
+    沒帶才退回用整份共用的那個。之前整份共用一個備註，合併後會把所有
+    列都寫成第一張 PO 的單號，後面幾張的單號整個消失。"""
     cfg = LINES[line_key]
     rb = xlrd.open_workbook(cfg["template"], formatting_info=True)
     wb = xl_copy(rb)
@@ -286,7 +295,7 @@ def fill_template(line_key, rows, remark):
         ws.write(i, 2, "")                         # 品名
         ws.write(i, 3, "箱")                        # 單位
         ws.write(i, 6, int(row["qty"]))            # 採購數量
-        ws.write(i, 8, remark)                      # 備註
+        ws.write(i, 8, row.get("remark", remark))   # 備註（逐列，見上面說明）
 
     buf = io.BytesIO()
     wb.save(buf)

@@ -159,6 +159,49 @@ def main():
     check("瑪氏範本只有一張主表，沒有 P&G／紙潔那三張查表工作表",
           wb3.sheet_names() == ["產品領用單"], wb3.sheet_names())
 
+    print("\n【5.5】合併多張 PO 時，備註要逐列保留各自那張 PO 的單號")
+    # 這是實際踩到的 bug：以前整份檔案共用一個備註，合併之後 20 列全部
+    # 被寫成第一張 PO 的單號，後面幾張的單號整個消失、對不出是哪張單。
+    res = parse(client, "pg", "PG_訂單匯入範例.xlsx")
+    pg_groups = res.get_json()["groups"]
+    pick = [g for g in pg_groups
+            if g["key"] in ("13000000493049", "13000000492946", "13000000492925")]
+    check("挑到三組來測合併", len(pick) == 3, [g["key"] for g in pick])
+
+    merged_rows = [dict(row, remark=g["remark"]) for g in pick for row in g["rows"]]
+    res = export(client, "pg", [{
+        "rows": merged_rows, "remark": pick[0]["remark"],
+        "filename": "酷澎XP&G_產品採購表上傳_0905到貨.xls"}])
+    check("合併匯出成功", res.status_code == 200, res.status_code)
+    _, mrows = read_xls_main_sheet(res.data)
+    check("列數＝三組品項加總（表頭 + 7+8+5 = 20 筆）", len(mrows) == 21, len(mrows))
+
+    remarks = {r[8] for r in mrows[1:]}
+    check("備註出現三種、各自對應自己那張 PO，不是全部共用第一張",
+          remarks == {f"{g['key']}(TXRC8)_酷澎9/5買斷" for g in pick}, sorted(remarks))
+
+    # 逐列對：每一列的備註要跟它自己的料號所屬那組一致
+    expected = [(row["material_no"], g["remark"]) for g in pick for row in g["rows"]]
+    actual = [(r[1], r[8]) for r in mrows[1:]]
+    check("逐列比對：每一列的料號跟備註配對都正確", actual == expected)
+
+    check("合併檔的檔名不放 PO 單號（放第一張會誤導成只有那一張）",
+          "13000000493049" not in "酷澎XP&G_產品採購表上傳_0905到貨.xls")
+
+    print("\n【5.6】build_filename：合併（沒有單一 PO）時各線別的檔名長相")
+    import purchase  # noqa: E402
+    check("P&G 合併檔不帶括號單號",
+          purchase.build_filename("pg", [], "0905", "TXRC8")
+          == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
+          purchase.build_filename("pg", [], "0905", "TXRC8"))
+    check("瑪氏合併檔不會留下多餘的底線",
+          purchase.build_filename("mars", [], "0904", "TAO4")
+          == "永豐Mars採購單(箱單位)-GUM_TAO4.xls",
+          purchase.build_filename("mars", [], "0904", "TAO4"))
+    check("單張匯出時照舊帶單號",
+          purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8")
+          == "酷澎XP&G_產品採購表上傳_0905到貨(13000000492925).xls")
+
     print("\n【6】檔名衝突時自動加序號，不會互相覆蓋")
     dup_groups = [
         {"rows": [{"material_no": "A1", "qty": 1}], "remark": "", "filename": "同名.xls"},
