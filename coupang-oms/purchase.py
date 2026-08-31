@@ -118,6 +118,21 @@ def _guess_date_mmdd(ship_note):
     return ""
 
 
+def _guess_date_from_filename(filename):
+    """出貨備註猜不到日期時（瑪氏就是這樣，出貨備註是內部採購單號，
+    不含日期）退而看上傳檔名——三個線別的匯入檔名都遵守同一個慣例，
+    帶著「MMDD到貨」，例如「酷澎訂單匯入_0904到貨_TAO1_TAO4.xlsx」。"""
+    if not filename:
+        return ""
+    m = re.search(r"(\d{2})(\d{2})到貨", filename)
+    if not m:
+        return ""
+    month, day = int(m.group(1)), int(m.group(2))
+    if 1 <= month <= 12 and 1 <= day <= 31:
+        return m.group(1) + m.group(2)
+    return ""
+
+
 def mmdd_to_md(mmdd):
     """0905 -> 9/5（備註文字慣用不補零的月/日）。"""
     if not mmdd or len(mmdd) != 4 or not mmdd.isdigit():
@@ -138,8 +153,11 @@ class PurchaseImportError(Exception):
     pass
 
 
-def parse_import_file(line_key, file_bytes):
-    """讀酷澎的「訂單匯入」Excel，依線別規則分組，回傳給前端預覽用的結構。"""
+def parse_import_file(line_key, file_bytes, filename=""):
+    """讀酷澎的「訂單匯入」Excel，依線別規則分組，回傳給前端預覽用的結構。
+
+    filename 是上傳時的原始檔名，只用來在出貨備註猜不到日期時當備援
+    （見 _guess_date_from_filename）——不影響解析內容，純粹輔助猜日期。"""
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         ws = wb[wb.sheetnames[0]]
@@ -217,6 +235,10 @@ def parse_import_file(line_key, file_bytes):
             date_guess = _guess_date_mmdd(r["ship_note"])
             if date_guess:
                 break
+        if not date_guess:
+            # 瑪氏的出貨備註就是內部採購單號，不含日期，退而看上傳檔名——
+            # 三個線別的匯入檔名都遵守同一個「MMDD到貨」慣例。
+            date_guess = _guess_date_from_filename(filename)
 
         result.append({
             "key": str(key),
@@ -257,7 +279,12 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse):
     （本來就是多張 PO 合併）的真實檔名慣例：酷澎_產品採購表上傳_0902到貨。"""
     po = po_numbers[0] if po_numbers else ""
     if line_key == "pg":
-        suffix = f"({po})" if po else ""
+        # 只取後 6 碼——訂單編號前面那一串每張都一樣，沒有辨識度，
+        # 檔名太長也不好看。後 6 碼理論上有機會撞號（機率很低，同一批
+        # 匯出裡撞到才會真的出事），撞了也不會互相覆蓋：多檔匯出時
+        # 有另一層檔名去重機制兜底（見 api_purchase_export）。
+        short_po = po[-6:] if po else ""
+        suffix = f"({short_po})" if short_po else ""
         return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨{suffix}.xls"
     if line_key == "paper":
         return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
@@ -335,7 +362,7 @@ def api_purchase_parse():
     if upload is None or not upload.filename:
         return jsonify({"error": "沒有收到檔案。"}), 400
     try:
-        groups = parse_import_file(line_key, upload.read())
+        groups = parse_import_file(line_key, upload.read(), upload.filename)
     except PurchaseImportError as exc:
         return jsonify({"error": str(exc)}), 400
 

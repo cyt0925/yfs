@@ -189,7 +189,10 @@ function buildRemark(line, po, mmdd, wh) {
 // po 傳空字串＝這是合併多張 PO 的檔案，檔名就不放單號（跟紙潔那份
 // 「多張 PO 合併」的真實檔名慣例一致），不然只放第一張會誤導。
 function buildFilename(line, po, mmdd, wh) {
-  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${po ? `(${po})` : ""}.xls`;
+  if (line === "pg") {
+    const shortPo = po ? po.slice(-6) : "";
+    return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${shortPo ? `(${shortPo})` : ""}.xls`;
+  }
   if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
   if (line === "mars") return `永豐Mars採購單(箱單位)-GUM_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
   return `採購表_${mmdd || ""}.xls`;
@@ -239,7 +242,15 @@ $("#btn-parse").addEventListener("click", async () => {
       if (guessed) $("#p-date").value = guessed.date_guess;
     }
     renderGroups();
+    // 紙潔的備註本來就固定空白，不算異常；其他線別備註是空的，通常是
+    // 猜不到日期或倉別——猜不到就不硬湊，但要讓人知道為什麼是空的，
+    // 不然看起來像壞掉（曾經真的被誤會成 bug）。
+    const blank = PARSED.line !== "paper" && data.groups.some(g => !g.remark);
     $("#p-status").textContent = `解析完成，共 ${data.groups.length} 組`;
+    if (blank) {
+      showError("有幾組的備註是空的——通常是日期或倉別猜不到，"
+        + "請在上方填「到貨日期」後按「套用日期到全部」，或直接在下面表格裡手動填備註。");
+    }
   } catch (err) {
     showError("連線失敗：" + err);
     $("#p-status").textContent = "";
@@ -358,6 +369,15 @@ function selectedGroups() {
 
 async function exportGroups(groups, merge) {
   if (!groups.length) { $("#p-export-status").textContent = "沒有勾選任何一組。"; return; }
+
+  // 紙潔的備註本來就固定空白，不算異常，不用問；其他線別勾到備註是
+  // 空的就先確認一下，免得真的匯出一份漏了訂單編號的採購表。
+  if (PARSED.line !== "paper" && groups.some(g => !g.remark)
+      && !confirm("勾選的組別裡有備註是空的，確定要匯出嗎？")) {
+    $("#p-export-status").textContent = "已取消。";
+    return;
+  }
+
   let payloadGroups = groups;
   if (merge) {
     // 每一列要帶著「自己那一組」的備註，不能整份共用第一組的——P&G／

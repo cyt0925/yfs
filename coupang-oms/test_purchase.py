@@ -42,12 +42,14 @@ def sign_in(client, username="小真", password="changeme123"):
     assert res.status_code == 302, f"測試帳號登入失敗：{username}"
 
 
-def parse(client, line, filename):
+def parse(client, line, filename, upload_name=None):
+    """upload_name：模擬使用者上傳時實際帶的檔名跟本機測試檔名不一樣的
+    情況——日期救援機制是看「上傳檔名」，不是看樣本檔在硬碟上叫什麼。"""
     path = os.path.join(SAMPLES, filename)
     with open(path, "rb") as fh:
         data = fh.read()
     res = client.post("/api/purchase/parse", data={
-        "line": line, "file": (io.BytesIO(data), filename)},
+        "line": line, "file": (io.BytesIO(data), upload_name or filename)},
         content_type="multipart/form-data")
     return res
 
@@ -163,6 +165,18 @@ def main():
     check("瑪氏的出貨備註本身沒有日期，猜不到就是空字串，不能亂猜",
           g499["date_guess"] == "", repr(g499["date_guess"]))
 
+    # 這是實際踩到的 bug：瑪氏的出貨備註猜不到日期，備註就一直是空的，
+    # 被誤會成壞掉——其實日期就寫在使用者實際上傳的檔名裡（酷澎那邊
+    # 匯出檔名的慣例本來就帶「MMDD到貨」），出貨備註猜不到就該退而看
+    # 上傳檔名，不能就這樣放棄。
+    res_fn = parse(client, "mars", "瑪氏_訂單匯入範例.xlsx",
+                    upload_name="酷澎訂單匯入_0904到貨_TAO1_TAO4.xlsx")
+    g499_fn = next(g for g in res_fn.get_json()["groups"] if g["key"] == "PO202608499")
+    check("出貨備註猜不到日期時，退而看上傳檔名裡的「MMDD到貨」",
+          g499_fn["date_guess"] == "0904", repr(g499_fn["date_guess"]))
+    check("備註因此自動生成，不再是空的",
+          g499_fn["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g499_fn["remark"])
+
     remark = "MARS入倉9/4瑪氏送酷澎-TAO4倉"
     filename = "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xls"
     res = export(client, "mars", [{"rows": g499["rows"], "remark": remark, "filename": filename}])
@@ -218,9 +232,10 @@ def main():
           purchase.build_filename("mars", [], "0904", "TAO4")
           == "永豐Mars採購單(箱單位)-GUM_TAO4.xls",
           purchase.build_filename("mars", [], "0904", "TAO4"))
-    check("單張匯出時照舊帶單號",
+    check("單張匯出時照舊帶單號，但只取後 6 碼（前面那串每張都一樣沒有辨識度）",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8")
-          == "酷澎XP&G_產品採購表上傳_0905到貨(13000000492925).xls")
+          == "酷澎XP&G_產品採購表上傳_0905到貨(492925).xls",
+          purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8"))
 
     print("\n【6】檔名衝突時自動加序號，不會互相覆蓋")
     dup_groups = [
