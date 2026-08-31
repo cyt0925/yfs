@@ -139,6 +139,11 @@
     <button id="btn-sign-sop" class="bg-transparent hover:bg-[#D2AB75]/10 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-[#D2AB75] text-[#D2AB75]">
       <i class="bi bi-journal-text"></i> 驗收單簽名 SOP
     </button>
+    <a href="{{ url_for('purchase.purchase_page') }}" id="btn-purchase"
+       class="bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm text-white"
+       title="跟酷澎訂單管理無關的獨立工具：把酷澎訂單匯入檔轉成各線別的採購表">
+      <i class="bi bi-cart-check"></i> 採購表轉換
+    </a>
     <button id="btn-logs" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-clock-history"></i> 修改歷程
     </button>

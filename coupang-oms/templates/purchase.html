@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>採購表轉換</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+  .dropzone.dz-active { border-color: #0f766e; background: #f0fdfa; }
+  input[type=text] { outline: none; }
+  input[type=text]:focus { box-shadow: 0 0 0 2px rgba(15,118,110,.35); }
+</style>
+</head>
+<body class="bg-ink-50 text-ink-900">
+
+<header class="bg-ink-900 text-white shadow-lg border-b-[3px] border-emerald-600">
+  <div class="max-w-[1400px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-2.5">
+      <img src="{{ url_for('static', filename='logo.png') }}" width="40" height="35"
+           class="h-9 w-auto flex-none" alt="永豐商店 logo">
+      <div>
+        <h1 class="text-lg font-bold leading-tight tracking-tight">採購表轉換</h1>
+        <p class="text-[11px] text-ink-300 leading-tight">獨立工具．跟酷澎訂單管理系統資料完全無關</p>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <a href="{{ url_for('index') }}" class="text-sm text-ink-300 hover:text-white flex items-center gap-1">
+      <i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+  </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-5 py-6 space-y-5">
+
+  <!-- ── 步驟一：選線別、上傳檔案 ─────────────────────────── -->
+  <div class="bg-white rounded-xl border border-ink-200 shadow-sm p-5 space-y-4">
+    <h2 class="font-bold text-ink-800 flex items-center gap-2">
+      <span class="w-6 h-6 rounded-full bg-emerald-700 text-white text-xs flex items-center justify-center">1</span>
+      選線別、上傳酷澎「訂單匯入」檔
+    </h2>
+    <div class="flex flex-wrap items-end gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-ink-500">線別</span>
+        <select id="p-line" class="border rounded-lg px-3 py-2 text-sm">
+          <option value="pg">P&amp;G（一張 PO 一張採購表）</option>
+          <option value="paper">紙潔（可多張 PO 合併成一張採購表）</option>
+          <option value="mars">瑪氏（一張內部採購單一張採購表）</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-ink-500">到貨日期（用來套進備註／檔名，例如 9/5 到貨就填 0905）</span>
+        <input id="p-date" type="text" maxlength="4" placeholder="0905"
+               class="border rounded-lg px-3 py-2 text-sm w-28 font-mono">
+      </label>
+      <button id="btn-apply-date" type="button"
+              class="px-3 py-2 rounded-lg border border-ink-300 text-sm hover:bg-ink-50">
+        套用日期到全部
+      </button>
+    </div>
+    <div id="p-dropzone" class="dropzone border-2 border-dashed border-ink-300 rounded-xl p-8 text-center cursor-pointer transition"
+         onclick="document.getElementById('p-file').click()">
+      <input id="p-file" type="file" accept=".xlsx,.xls" class="hidden">
+      <i class="bi bi-cloud-arrow-up text-3xl text-ink-400"></i>
+      <p class="mt-2 text-sm text-ink-600">點這裡選檔案，或直接把 Excel 拖進來</p>
+      <p id="p-filename" class="mt-1 text-xs text-emerald-700 font-medium"></p>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="btn-parse" type="button"
+              class="px-5 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-sm flex items-center gap-2">
+        <i class="bi bi-search"></i> 解析檔案
+      </button>
+      <span id="p-status" class="text-sm text-ink-500"></span>
+    </div>
+    <div id="p-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3"></div>
+  </div>
+
+  <!-- ── 步驟二：確認分組、編輯備註/檔名、匯出 ────────────── -->
+  <div id="p-results" class="hidden bg-white rounded-xl border border-ink-200 shadow-sm p-5 space-y-4">
+    <h2 class="font-bold text-ink-800 flex items-center gap-2">
+      <span class="w-6 h-6 rounded-full bg-emerald-700 text-white text-xs flex items-center justify-center">2</span>
+      確認分組內容，需要的話自己改備註／檔名／倉別，再匯出
+    </h2>
+    <p class="text-xs text-ink-500">
+      倉別、備註、檔名都是系統依規則猜的，猜不到就留空——請自己看過再匯出。
+      點列可以展開看料號明細。
+    </p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+        <thead class="bg-ink-100 text-xs">
+          <tr>
+            <th class="px-2 py-2 w-10"><input id="p-check-all" type="checkbox" checked></th>
+            <th class="px-2 py-2 text-left">分組</th>
+            <th class="px-2 py-2 text-right w-20">品項數</th>
+            <th class="px-2 py-2 text-right w-20">數量合計</th>
+            <th class="px-2 py-2 text-left w-28">倉別</th>
+            <th class="px-2 py-2 text-left w-64">備註</th>
+            <th class="px-2 py-2 text-left w-72">檔名</th>
+          </tr>
+        </thead>
+        <tbody id="p-group-body"></tbody>
+      </table>
+    </div>
+    <div class="flex items-center gap-3 pt-2 border-t">
+      <button id="btn-export-each" type="button"
+              class="px-5 py-2.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold text-sm flex items-center gap-2">
+        <i class="bi bi-download"></i> 匯出所選（各自一個檔）
+      </button>
+      <button id="btn-export-merge" type="button"
+              class="px-5 py-2.5 rounded-lg border border-emerald-700 text-emerald-700 hover:bg-emerald-50 font-semibold text-sm flex items-center gap-2">
+        <i class="bi bi-file-earmark-plus"></i> 合併所選（一個檔）
+      </button>
+      <span id="p-export-status" class="text-sm text-ink-500"></span>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+let PARSED = null;   // 最後一次解析結果 { line, groups: [...] }
+
+// ── 這兩個函式跟 purchase.py 的 build_remark()/build_filename() 邏輯
+// 必須保持一致：現場改倉別/日期時要能立刻反映在畫面上，不等一趟
+// 伺服器往返，所以前端另外算一份。改規則時兩邊都要一起改。
+function mdFromMMDD(mmdd) {
+  if (!mmdd || !/^\d{4}$/.test(mmdd)) return "";
+  return `${parseInt(mmdd.slice(0, 2), 10)}/${parseInt(mmdd.slice(2), 10)}`;
+}
+function buildRemark(line, po, mmdd, wh) {
+  const md = mdFromMMDD(mmdd);
+  if (line === "paper") return "";
+  if (line === "pg") return (po && wh && md) ? `${po}(${wh})_酷澎${md}買斷` : "";
+  if (line === "mars") return (md && wh) ? `MARS入倉${md}瑪氏送酷澎-${wh}倉` : "";
+  return "";
+}
+function buildFilename(line, po, mmdd, wh) {
+  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${po ? `(${po})` : ""}.xls`;
+  if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
+  if (line === "mars") return `永豐Mars採購單(箱單位)-GUM_${wh || "倉別"}_${po}.xls`;
+  return `採購表_${mmdd || ""}.xls`;
+}
+
+function showError(msg) {
+  const box = $("#p-error");
+  if (!msg) { box.classList.add("hidden"); box.textContent = ""; return; }
+  box.textContent = msg;
+  box.classList.remove("hidden");
+}
+
+// ── 拖曳上傳 ──────────────────────────────────────────
+const dz = $("#p-dropzone");
+["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.add("dz-active");
+}));
+["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.remove("dz-active");
+}));
+dz.addEventListener("drop", e => {
+  const f = e.dataTransfer.files[0];
+  if (f) { $("#p-file").files = e.dataTransfer.files; $("#p-filename").textContent = f.name; }
+});
+$("#p-file").addEventListener("change", () => {
+  const f = $("#p-file").files[0];
+  $("#p-filename").textContent = f ? f.name : "";
+});
+
+// ── 解析 ──────────────────────────────────────────────
+$("#btn-parse").addEventListener("click", async () => {
+  const file = $("#p-file").files[0];
+  if (!file) { showError("請先選一個檔案。"); return; }
+  showError("");
+  $("#p-status").textContent = "解析中…";
+  const fd = new FormData();
+  fd.append("line", $("#p-line").value);
+  fd.append("file", file);
+  try {
+    const res = await fetch("{{ url_for('purchase.api_purchase_parse') }}", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || "解析失敗。"); $("#p-status").textContent = ""; return; }
+    PARSED = data;
+    // 有猜到日期就自動帶進日期欄位（用第一組猜到的）
+    if (!$("#p-date").value) {
+      const guessed = data.groups.find(g => g.date_guess);
+      if (guessed) $("#p-date").value = guessed.date_guess;
+    }
+    renderGroups();
+    $("#p-status").textContent = `解析完成，共 ${data.groups.length} 組`;
+  } catch (err) {
+    showError("連線失敗：" + err);
+    $("#p-status").textContent = "";
+  }
+});
+
+function renderGroups() {
+  const line = PARSED.line;
+  const mmdd = $("#p-date").value.trim();
+  const tbody = $("#p-group-body");
+  tbody.innerHTML = "";
+  PARSED.groups.forEach((g, idx) => {
+    const po = g.po_numbers[0] || g.key;
+    if (!g.remark) g.remark = buildRemark(line, po, mmdd, g.warehouse_guess);
+    if (!g.filename) g.filename = buildFilename(line, po, mmdd, g.warehouse_guess);
+    if (!g.warehouse) g.warehouse = g.warehouse_guess;
+
+    const tr = document.createElement("tr");
+    tr.className = "border-t hover:bg-ink-50";
+    const poLabel = g.po_numbers.join(", ");
+    const mismatchBadge = g.address_mismatch
+      ? '<span class="text-amber-600 text-xs" title="這組裡出現一個以上的收件地址，倉別可能猜不準，請自己確認"><i class="bi bi-exclamation-triangle-fill"></i></span>'
+      : "";
+    tr.innerHTML = `
+      <td class="px-2 py-2 align-top"><input type="checkbox" class="p-row-check" checked data-idx="${idx}"></td>
+      <td class="px-2 py-2 align-top">
+        <div class="font-mono text-xs">${g.key}</div>
+        <div class="text-[11px] text-ink-400">訂單編號：${poLabel} ${mismatchBadge}</div>
+        <button type="button" class="p-toggle-detail text-[11px] text-emerald-700 hover:underline mt-0.5" data-idx="${idx}">
+          展開料號明細</button>
+      </td>
+      <td class="px-2 py-2 text-right align-top">${g.item_count}</td>
+      <td class="px-2 py-2 text-right align-top">${g.qty_total}</td>
+      <td class="px-2 py-2 align-top">
+        <input type="text" class="p-field-warehouse border rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.warehouse || ""}">
+        ${g.address ? `<button type="button" class="p-remember-wh text-[10px] text-emerald-700 hover:underline mt-0.5" data-idx="${idx}" title="把這個收件地址記起來對應這個倉別代碼，下次匯入同一個地址就會自動猜到">記住這個倉別</button>` : ""}
+      </td>
+      <td class="px-2 py-2 align-top">
+        <input type="text" class="p-field-remark border rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.remark || ""}">
+      </td>
+      <td class="px-2 py-2 align-top">
+        <input type="text" class="p-field-filename border rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.filename || ""}">
+      </td>`;
+    tbody.appendChild(tr);
+
+    const detailTr = document.createElement("tr");
+    detailTr.className = "hidden bg-ink-50";
+    detailTr.dataset.detailFor = idx;
+    detailTr.innerHTML = `<td></td><td colspan="6" class="px-3 py-2">
+      <table class="text-xs w-full max-w-md">
+        <thead><tr class="text-ink-400"><th class="text-left font-normal">料號</th><th class="text-right font-normal">數量</th></tr></thead>
+        <tbody>${g.rows.map(r => `<tr><td class="font-mono py-0.5">${r.material_no}</td><td class="text-right py-0.5">${r.qty}</td></tr>`).join("")}</tbody>
+      </table>
+    </td>`;
+    tbody.appendChild(detailTr);
+  });
+
+  $$(".p-field-warehouse").forEach(el => el.addEventListener("input", onFieldEdit));
+  $$(".p-field-remark").forEach(el => el.addEventListener("input", onFieldEdit));
+  $$(".p-field-filename").forEach(el => el.addEventListener("input", onFieldEdit));
+  $$(".p-toggle-detail").forEach(btn => btn.addEventListener("click", () => {
+    const idx = btn.dataset.idx;
+    const row = tbody.querySelector(`tr[data-detail-for="${idx}"]`);
+    row.classList.toggle("hidden");
+    btn.textContent = row.classList.contains("hidden") ? "展開料號明細" : "收起料號明細";
+  }));
+  $$(".p-remember-wh").forEach(btn => btn.addEventListener("click", async () => {
+    const idx = Number(btn.dataset.idx);
+    const g = PARSED.groups[idx];
+    const code = (g.warehouse || "").trim();
+    if (!code) { alert("倉別欄位是空的，先填代碼再記住。"); return; }
+    try {
+      const res = await fetch("{{ url_for('purchase.api_purchase_warehouses_save') }}", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: g.address, code }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "");
+      const orig = btn.textContent;
+      btn.textContent = "已記住";
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    } catch (err) {
+      alert("記不起來：" + err.message);
+    }
+  }));
+
+  $("#p-results").classList.remove("hidden");
+}
+
+function onFieldEdit(e) {
+  const idx = Number(e.target.dataset.idx);
+  const g = PARSED.groups[idx];
+  if (e.target.classList.contains("p-field-warehouse")) g.warehouse = e.target.value;
+  if (e.target.classList.contains("p-field-remark")) g.remark = e.target.value;
+  if (e.target.classList.contains("p-field-filename")) g.filename = e.target.value;
+}
+
+$("#btn-apply-date").addEventListener("click", () => {
+  if (!PARSED) return;
+  const mmdd = $("#p-date").value.trim();
+  const line = PARSED.line;
+  PARSED.groups.forEach(g => {
+    const po = g.po_numbers[0] || g.key;
+    g.remark = buildRemark(line, po, mmdd, g.warehouse);
+    g.filename = buildFilename(line, po, mmdd, g.warehouse);
+  });
+  renderGroups();
+});
+
+$("#p-check-all").addEventListener("change", e => {
+  $$(".p-row-check").forEach(cb => cb.checked = e.target.checked);
+});
+
+function selectedGroups() {
+  return $$(".p-row-check").filter(cb => cb.checked).map(cb => PARSED.groups[Number(cb.dataset.idx)]);
+}
+
+async function exportGroups(groups, merge) {
+  if (!groups.length) { $("#p-export-status").textContent = "沒有勾選任何一組。"; return; }
+  let payloadGroups = groups;
+  if (merge) {
+    const rows = groups.flatMap(g => g.rows);
+    const first = groups[0];
+    payloadGroups = [{ rows, remark: first.remark, filename: first.filename }];
+  }
+  $("#p-export-status").textContent = "產生中…";
+  try {
+    const res = await fetch("{{ url_for('purchase.api_purchase_export') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line: PARSED.line, groups: payloadGroups }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      $("#p-export-status").textContent = data.error || "匯出失敗。";
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    // Flask 對非 ASCII 檔名會同時附上 filename=（退化過的 fallback）跟
+    // filename*=UTF-8''（真正的檔名），要先找星號那個，不然抓到的會是
+    // 退化過、看不懂的那份。
+    const starMatch = disposition.match(/filename\*=UTF-8''([^;]+)/);
+    const plainMatch = disposition.match(/filename="?([^";]+)"?/);
+    const filename = starMatch ? decodeURIComponent(starMatch[1])
+      : plainMatch ? plainMatch[1]
+      : (merge ? payloadGroups[0].filename : "採購表.zip");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    $("#p-export-status").textContent = "已下載。";
+  } catch (err) {
+    $("#p-export-status").textContent = "連線失敗：" + err;
+  }
+}
+
+$("#btn-export-each").addEventListener("click", () => exportGroups(selectedGroups(), false));
+$("#btn-export-merge").addEventListener("click", () => exportGroups(selectedGroups(), true));
+</script>
+</body>
+</html>

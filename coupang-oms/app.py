@@ -25,6 +25,7 @@ from importer import (
     parse_workbook,
 )
 import pdfsign
+import purchase
 from normalize import norm_date, norm_int, norm_key, norm_text, norm_warehouse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +34,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-08-26.9"
+BUILD_VERSION = "2026-08-31.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -41,6 +42,11 @@ app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 # 預設不會自動重讀模板檔，只改 index.html 卻要重開程式才生效，容易
 # 造成「明明換了檔案，畫面卻沒變」的誤判）。
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+
+# 採購表轉換：跟酷澎訂單資料完全獨立的新功能，見 purchase.py 檔案開頭
+# 的說明。掛成 Blueprint 是為了讓這塊邏輯物理上分開在別的檔案，不要
+# 把已經很大的 app.py 越養越肥，也強調這功能真的跟訂單管理無關。
+app.register_blueprint(purchase.purchase_bp)
 
 # 只要「開了資料資料夾、建了資料庫表」這件事，不管是 python app.py
 # 直接跑，還是 gunicorn 匯入 app 物件來跑，都要做——之前這兩行只寫
