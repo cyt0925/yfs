@@ -189,6 +189,16 @@ def main():
     check("備註因此自動生成，不再是空的",
           g499_fn["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g499_fn["remark"])
 
+    # 這是使用者實測回報的第二輪 bug：真實檔名用的是「交貨」不是「到貨」，
+    # 上面那條規則認死「到貨」兩個字，換個講法就又抓不到、備註又是空的。
+    res_fn2 = parse(client, "mars", "瑪氏_訂單匯入範例.xlsx",
+                     upload_name="酷澎訂單匯入_0904交貨-TAO1、TAO4.xlsx")
+    g499_fn2 = next(g for g in res_fn2.get_json()["groups"] if g["key"] == "PO202608499")
+    check("檔名用「交貨」（不是「到貨」）一樣要猜得到日期",
+          g499_fn2["date_guess"] == "0904", repr(g499_fn2["date_guess"]))
+    check("備註因此自動生成，不再是空的（第二輪）",
+          g499_fn2["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g499_fn2["remark"])
+
     remark = "MARS入倉9/4瑪氏送酷澎-TAO4倉"
     filename = "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xls"
     res = export(client, "mars", [{"rows": g499["rows"], "remark": remark, "filename": filename}])

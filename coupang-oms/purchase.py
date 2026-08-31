@@ -120,11 +120,15 @@ def _guess_date_mmdd(ship_note):
 
 def _guess_date_from_filename(filename):
     """出貨備註猜不到日期時（瑪氏就是這樣，出貨備註是內部採購單號，
-    不含日期）退而看上傳檔名——三個線別的匯入檔名都遵守同一個慣例，
-    帶著「MMDD到貨」，例如「酷澎訂單匯入_0904到貨_TAO1_TAO4.xlsx」。"""
+    不含日期）退而看上傳檔名——三個線別的匯入檔名都會帶著「MMDD 到貨」
+    這組數字，例如「酷澎訂單匯入_0904到貨_TAO1_TAO4.xlsx」。
+
+    但「到貨」不是唯一的講法，實測遇過「交貨」（酷澎訂單匯入_0904交貨-
+    TAO1、TAO4.xlsx），所以「到／交／出」都認，不要只認死一種寫法，
+    不然換個人上傳、換個講法就又猜不到。"""
     if not filename:
         return ""
-    m = re.search(r"(\d{2})(\d{2})到貨", filename)
+    m = re.search(r"(\d{2})(\d{2})[到交出]貨", filename)
     if not m:
         return ""
     month, day = int(m.group(1)), int(m.group(2))
