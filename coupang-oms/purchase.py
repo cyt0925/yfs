@@ -306,7 +306,14 @@ def fill_template(line_key, rows, remark):
 
 @purchase_bp.route("/purchase")
 def purchase_page():
-    return render_template("purchase.html", lines=LINES)
+    # 這頁的識別色是綠色，logo 也另外用一張綠色版。檔案還沒放進去之前
+    # 先用原本那張，等 static/logo_purchase.png 一丟進去就自動換掉，
+    # 不用再改程式；萬一哪天被刪掉也只是變回原本的 logo，不會破圖。
+    logo = ("logo_purchase.png"
+            if os.path.exists(os.path.join(os.path.dirname(__file__),
+                                            "static", "logo_purchase.png"))
+            else "logo.png")
+    return render_template("purchase.html", lines=LINES, logo_file=logo)
 
 
 @purchase_bp.route("/api/purchase/lines")

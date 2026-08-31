@@ -8,6 +8,7 @@
 """
 import io
 import os
+import shutil
 import sys
 import tempfile
 import zipfile
@@ -72,6 +73,25 @@ def main():
     anon = app_module.app.test_client()
     res = anon.get("/purchase")
     check("未登入會被導去登入頁，不是直接看到頁面", res.status_code in (302, 401), res.status_code)
+
+    res = client.get("/purchase")
+    check("登入後頁面正常渲染（樣板變數沒漏，例如 logo_file）",
+          res.status_code == 200, res.status_code)
+    check("頁面用的是綠色版 logo 的位置（沒放檔案時退回原本那張）",
+          b"/static/logo.png" in res.data)
+
+    # 丟一張綠色 logo 進去就要自動換掉，不用改程式
+    green = os.path.join(BASE_DIR, "static", "logo_purchase.png")
+    shutil.copy(os.path.join(BASE_DIR, "static", "logo.png"), green)
+    try:
+        res = client.get("/purchase")
+        check("static/logo_purchase.png 一放進去就自動改用綠色 logo",
+              b"/static/logo_purchase.png" in res.data)
+    finally:
+        os.remove(green)
+    res = client.get("/purchase")
+    check("綠色 logo 被移掉會自動退回原本的，不會破圖",
+          b"/static/logo_purchase.png" not in res.data)
 
     print("\n【2】P&G：一張 PO 一張採購表")
     res = parse(client, "pg", "PG_訂單匯入範例.xlsx")
@@ -240,7 +260,6 @@ def main():
 
 
 if __name__ == "__main__":
-    import shutil
     try:
         code = main()
     finally:
