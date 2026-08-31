@@ -86,8 +86,9 @@
   <div class="g-card bg-white rounded-xl shadow-sm p-5 space-y-4">
     <h2 class="font-bold text-emerald-900 flex items-center gap-2">
       <span class="g-step w-6 h-6 rounded-full text-white text-xs flex items-center justify-center">1</span>
-      選線別、上傳酷澎「訂單匯入」檔
+      選線別、上傳檔案
     </h2>
+    <p id="p-line-hint" class="text-xs text-ink-500"></p>
     <div class="flex flex-wrap items-end gap-4">
       <label class="flex flex-col gap-1">
         <span class="text-xs font-medium text-emerald-800">線別</span>
@@ -109,11 +110,13 @@
     </div>
     <div id="p-dropzone" class="dropzone rounded-xl p-8 text-center cursor-pointer transition"
          onclick="document.getElementById('p-file').click()">
-      <input id="p-file" type="file" accept=".xlsx,.xls" class="hidden">
+      <input id="p-file" type="file" accept=".xlsx,.xls" multiple class="hidden">
       <i class="bi bi-cloud-arrow-up text-3xl text-[#b8914f]"></i>
       <p class="mt-2 text-sm text-emerald-900">點這裡選檔案，或直接把 Excel 拖進來</p>
       <p class="text-[11px] text-[#8a6d3f] mt-0.5">支援 .xlsx／.xls</p>
-      <p id="p-filename" class="mt-1 text-xs text-emerald-700 font-medium"></p>
+      <p id="p-multi-hint" class="hidden text-[11px] text-[#8a6d3f]">
+        瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案</p>
+      <p id="p-filename" class="mt-1 text-xs text-emerald-700 font-medium whitespace-pre-line"></p>
     </div>
     <div class="flex items-center gap-3">
       <button id="btn-parse" type="button"
@@ -122,7 +125,7 @@
       </button>
       <span id="p-status" class="text-sm text-emerald-700 font-medium"></span>
     </div>
-    <div id="p-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3"></div>
+    <div id="p-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 whitespace-pre-line"></div>
   </div>
 
   <!-- ── 步驟二：確認分組、編輯備註/檔名、匯出 ────────────── -->
@@ -188,13 +191,13 @@ function buildRemark(line, po, mmdd, wh) {
 }
 // po 傳空字串＝這是合併多張 PO 的檔案，檔名就不放單號（跟紙潔那份
 // 「多張 PO 合併」的真實檔名慣例一致），不然只放第一張會誤導。
-function buildFilename(line, po, mmdd, wh) {
+function buildFilename(line, po, mmdd, wh, cat) {
   if (line === "pg") {
     const shortPo = po ? po.slice(-6) : "";
     return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${shortPo ? `(${shortPo})` : ""}.xls`;
   }
   if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
-  if (line === "mars") return `永豐Mars採購單(箱單位)-GUM_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
+  if (line === "mars") return `永豐Mars採購單(箱單位)-${cat || "GUM"}_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
   return `採購表_${mmdd || ""}.xls`;
 }
 
@@ -203,6 +206,27 @@ function showError(msg) {
   if (!msg) { box.classList.add("hidden"); box.textContent = ""; return; }
   box.textContent = msg;
   box.classList.remove("hidden");
+}
+
+// ── 線別切換：只有瑪氏能一次選多個檔案，而且上傳的檔案種類完全不同
+// （瑪氏是 MARS 開的訂貨通知單，不是酷澎系統匯出的「訂單匯入」表）──
+const LINE_UPLOAD_HINT = {
+  pg: "上傳酷澎系統匯出的「訂單匯入」Excel。",
+  paper: "上傳酷澎系統匯出的「訂單匯入」Excel，可以一次選多張 PO 合併。",
+  mars: "上傳 MARS TAIWAN 開的「訂貨通知單」（ORDER FORM），一份就是一張 PO，可以一次選多個檔案。",
+};
+function updateLineUI() {
+  const line = $("#p-line").value;
+  const isMulti = line === "mars";
+  $("#p-multi-hint").classList.toggle("hidden", !isMulti);
+  $("#p-line-hint").textContent = LINE_UPLOAD_HINT[line] || "";
+}
+$("#p-line").addEventListener("change", updateLineUI);
+updateLineUI();
+
+function showFileNames(files) {
+  const names = Array.from(files).map(f => f.name);
+  $("#p-filename").textContent = names.join("\n");
 }
 
 // ── 拖曳上傳 ──────────────────────────────────────────
@@ -214,23 +238,22 @@ const dz = $("#p-dropzone");
   e.preventDefault(); dz.classList.remove("dz-active");
 }));
 dz.addEventListener("drop", e => {
-  const f = e.dataTransfer.files[0];
-  if (f) { $("#p-file").files = e.dataTransfer.files; $("#p-filename").textContent = f.name; }
+  if (e.dataTransfer.files.length) {
+    $("#p-file").files = e.dataTransfer.files;
+    showFileNames(e.dataTransfer.files);
+  }
 });
-$("#p-file").addEventListener("change", () => {
-  const f = $("#p-file").files[0];
-  $("#p-filename").textContent = f ? f.name : "";
-});
+$("#p-file").addEventListener("change", () => showFileNames($("#p-file").files));
 
 // ── 解析 ──────────────────────────────────────────────
 $("#btn-parse").addEventListener("click", async () => {
-  const file = $("#p-file").files[0];
-  if (!file) { showError("請先選一個檔案。"); return; }
+  const files = $("#p-file").files;
+  if (!files.length) { showError("請先選一個檔案。"); return; }
   showError("");
   $("#p-status").textContent = "解析中…";
   const fd = new FormData();
   fd.append("line", $("#p-line").value);
-  fd.append("file", file);
+  Array.from(files).forEach(f => fd.append("file", f));
   try {
     const res = await fetch("{{ url_for('purchase.api_purchase_parse') }}", { method: "POST", body: fd });
     const data = await res.json();
@@ -265,7 +288,7 @@ function renderGroups() {
   PARSED.groups.forEach((g, idx) => {
     const po = g.po_numbers[0] || g.key;
     if (!g.remark) g.remark = buildRemark(line, po, mmdd, g.warehouse_guess);
-    if (!g.filename) g.filename = buildFilename(line, po, mmdd, g.warehouse_guess);
+    if (!g.filename) g.filename = buildFilename(line, po, mmdd, g.warehouse_guess, g.category);
     if (!g.warehouse) g.warehouse = g.warehouse_guess;
 
     const tr = document.createElement("tr");
@@ -354,7 +377,7 @@ $("#btn-apply-date").addEventListener("click", () => {
   PARSED.groups.forEach(g => {
     const po = g.po_numbers[0] || g.key;
     g.remark = buildRemark(line, po, mmdd, g.warehouse);
-    g.filename = buildFilename(line, po, mmdd, g.warehouse);
+    g.filename = buildFilename(line, po, mmdd, g.warehouse, g.category);
   });
   renderGroups();
 });
@@ -391,7 +414,7 @@ async function exportGroups(groups, merge) {
     }
     const mmdd = $("#p-date").value.trim();
     // 合併檔沒有單一 PO，檔名就不放單號
-    const filename = buildFilename(PARSED.line, "", mmdd, groups[0].warehouse);
+    const filename = buildFilename(PARSED.line, "", mmdd, groups[0].warehouse, groups[0].category);
     payloadGroups = [{ rows, remark: groups[0].remark, filename }];
   }
   $("#p-export-status").textContent = "產生中…";

@@ -54,6 +54,20 @@ def parse(client, line, filename, upload_name=None):
     return res
 
 
+def parse_multi(client, line, items):
+    """items: [(本機檔名, 模擬上傳檔名或 None), ...]——瑪氏可以一次選
+    多個檔案，用 werkzeug 測試客戶端要用同一個欄位名重複帶多個檔案。"""
+    files = []
+    for filename, upload_name in items:
+        with open(os.path.join(SAMPLES, filename), "rb") as fh:
+            data = fh.read()
+        files.append((io.BytesIO(data), upload_name or filename))
+    res = client.post("/api/purchase/parse",
+                       data={"line": line, "file": files},
+                       content_type="multipart/form-data")
+    return res
+
+
 def export(client, line, groups):
     return client.post("/api/purchase/export", json={"line": line, "groups": groups})
 
@@ -162,46 +176,39 @@ def main():
     check("表頭那個帶著總和數字的怪標題原樣保留（使用者要求維持原樣）",
           rows2[0][6] == "採購數量398", rows2[0][6])
 
-    print("\n【5】瑪氏：依出貨備註（內部採購單號）分組，不是依訂單編號")
-    res = parse(client, "mars", "瑪氏_訂單匯入範例.xlsx")
+    print("\n【5】瑪氏：讀 MARS 的「訂貨通知單」，不是酷澎系統的「訂單匯入」表")
+    # 第一版把瑪氏也套進 P&G／紙潔那套「訂單匯入」解析邏輯，是同事一開始
+    # 給錯範例害的——真正的來源是 MARS TAIWAN 開的訂貨通知單（ORDER
+    # FORM），完全不同的表格結構：一份 95 列的大表，只有「採購數量」
+    # 欄有填數字的才是真的要訂的品項，其他都是「有賣過但這次沒訂」的
+    # 參考列，不能整批照抓；而且一份訂貨通知單就是一張 PO，不用再像
+    # P&G／紙潔那樣分組。
+    res = parse(client, "mars", "瑪氏_訂貨通知單範例.xlsx",
+                upload_name="永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xlsx")
+    check("解析成功", res.status_code == 200, res.get_json() if res.status_code != 200 else "")
     data3 = res.get_json()
-    check("四個內部採購單號各自一組", len(data3["groups"]) == 4,
-          [g["key"] for g in data3["groups"]])
-    same_po_diff_group = [g for g in data3["groups"] if "13000000462848" in g["po_numbers"]]
-    check("同一張酷澎訂單號可以拆成兩個不同內部採購單（494/495），不會被誤合併",
-          len(same_po_diff_group) == 2, [g["key"] for g in same_po_diff_group])
+    check("一份訂貨通知單只有一組", len(data3["groups"]) == 1, len(data3["groups"]))
+    g = data3["groups"][0]
 
-    g499 = next(g for g in data3["groups"] if g["key"] == "PO202608499")
-    check("這組品項數對得起來（2 個 SKU）", g499["item_count"] == 2, g499["item_count"])
-    check("倉別依收件地址對照表自動判斷成 TAO4", g499["warehouse_guess"] == "TAO4", g499["warehouse_guess"])
-    check("瑪氏的出貨備註本身沒有日期，猜不到就是空字串，不能亂猜",
-          g499["date_guess"] == "", repr(g499["date_guess"]))
+    check("95 列裡只挑出 2 列真的有填採購數量的，其他參考列濾掉",
+          g["item_count"] == 2, g["item_count"])
+    check("品項明細對得上（永豐料號＋採購數量）",
+          g["rows"] == [{"material_no": "M10254005", "qty": 1},
+                        {"material_no": "M10267034", "qty": 2}], g["rows"])
+    check("PO 單號抓不到「永豐PO單號」欄位（範例裡是空的）時，退而看上傳檔名",
+          g["po_numbers"] == ["13000000467952"], g["po_numbers"])
+    check("倉別從「入倉倉別: 酷澎-TAO4」這格解析出來，不是猜地址",
+          g["warehouse_guess"] == "TAO4", g["warehouse_guess"])
+    check("日期直接讀「配送日」那格的日期值，不用再猜",
+          g["date_guess"] == "0904", g["date_guess"])
+    check("品類代碼從「Gum糖果」取英文開頭三碼變成 GUM（檔名裡那段的真正來源）",
+          g["category"] == "GUM", g["category"])
+    check("備註樣板套出來的字串完全對得上使用者給的真實範例",
+          g["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g["remark"])
+    check("檔名也完全對得上真實範例",
+          g["filename"] == "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xls", g["filename"])
 
-    # 這是實際踩到的 bug：瑪氏的出貨備註猜不到日期，備註就一直是空的，
-    # 被誤會成壞掉——其實日期就寫在使用者實際上傳的檔名裡（酷澎那邊
-    # 匯出檔名的慣例本來就帶「MMDD到貨」），出貨備註猜不到就該退而看
-    # 上傳檔名，不能就這樣放棄。
-    res_fn = parse(client, "mars", "瑪氏_訂單匯入範例.xlsx",
-                    upload_name="酷澎訂單匯入_0904到貨_TAO1_TAO4.xlsx")
-    g499_fn = next(g for g in res_fn.get_json()["groups"] if g["key"] == "PO202608499")
-    check("出貨備註猜不到日期時，退而看上傳檔名裡的「MMDD到貨」",
-          g499_fn["date_guess"] == "0904", repr(g499_fn["date_guess"]))
-    check("備註因此自動生成，不再是空的",
-          g499_fn["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g499_fn["remark"])
-
-    # 這是使用者實測回報的第二輪 bug：真實檔名用的是「交貨」不是「到貨」，
-    # 上面那條規則認死「到貨」兩個字，換個講法就又抓不到、備註又是空的。
-    res_fn2 = parse(client, "mars", "瑪氏_訂單匯入範例.xlsx",
-                     upload_name="酷澎訂單匯入_0904交貨-TAO1、TAO4.xlsx")
-    g499_fn2 = next(g for g in res_fn2.get_json()["groups"] if g["key"] == "PO202608499")
-    check("檔名用「交貨」（不是「到貨」）一樣要猜得到日期",
-          g499_fn2["date_guess"] == "0904", repr(g499_fn2["date_guess"]))
-    check("備註因此自動生成，不再是空的（第二輪）",
-          g499_fn2["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g499_fn2["remark"])
-
-    remark = "MARS入倉9/4瑪氏送酷澎-TAO4倉"
-    filename = "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xls"
-    res = export(client, "mars", [{"rows": g499["rows"], "remark": remark, "filename": filename}])
+    res = export(client, "mars", [{"rows": g["rows"], "remark": g["remark"], "filename": g["filename"]}])
     check("匯出成功", res.status_code == 200, res.status_code)
     wb3, rows3 = read_xls_main_sheet(res.data)
     check("跟使用者給的真實範例檔逐格一致（表頭+2筆資料）",
@@ -209,11 +216,52 @@ def main():
               ["項目", "料號", "品名", "單位", "寄銷倉庫存(直營平台請填0)",
                "寄銷倉前30天實銷(直營平台請填0)", "採購數量", "本月預估CM%", "備註",
                "外幣採購單價(新台幣採購請填0)"],
-              [1.0, "M10254005", "", "箱", "", "", 1.0, "", remark, ""],
-              [2.0, "M10267034", "", "箱", "", "", 2.0, "", remark, ""],
+              [1.0, "M10254005", "", "箱", "", "", 1.0, "", g["remark"], ""],
+              [2.0, "M10267034", "", "箱", "", "", 2.0, "", g["remark"], ""],
           ], rows3)
     check("瑪氏範本只有一張主表，沒有 P&G／紙潔那三張查表工作表",
           wb3.sheet_names() == ["產品領用單"], wb3.sheet_names())
+
+    print("\n【5.1】瑪氏：PO 單號抓不到檔名裡的數字時，退而用檔名本身當識別、不硬湊")
+    res_no_po = parse(client, "mars", "瑪氏_訂貨通知單範例.xlsx",
+                       upload_name="這份檔名沒有訂單編號.xlsx")
+    g_no_po = res_no_po.get_json()["groups"][0]
+    check("po_numbers 是空的，不硬湊一個假的", g_no_po["po_numbers"] == [], g_no_po["po_numbers"])
+    check("key 退而用檔名（去掉副檔名）當識別，畫面上才有東西可以顯示",
+          g_no_po["key"] == "這份檔名沒有訂單編號", g_no_po["key"])
+    check("檔名裡沒有單一 PO，匯出檔名就不放單號的那一截",
+          g_no_po["filename"] == "永豐Mars採購單(箱單位)-GUM_TAO4.xls", g_no_po["filename"])
+
+    print("\n【5.2】瑪氏：可以一次選多個檔案，各自轉成各自的一組")
+    res_multi = parse_multi(client, "mars", [
+        ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xlsx"),
+        ("瑪氏_訂貨通知單範例.xlsx", "第二張訂單.xlsx"),
+    ])
+    check("兩個檔案各自解析成兩組", res_multi.status_code == 200
+          and len(res_multi.get_json()["groups"]) == 2, res_multi.get_json())
+    keys = [gr["key"] for gr in res_multi.get_json()["groups"]]
+    check("兩組各自保留自己的識別（一個抓到 PO、一個退回用檔名）",
+          keys == ["13000000467952", "第二張訂單"], keys)
+
+    print("\n【5.3】瑪氏以外的線別一次只能上傳一個檔案，不能誤用多選")
+    res_pg_multi = parse_multi(client, "pg", [
+        ("PG_訂單匯入範例.xlsx", None), ("PG_訂單匯入範例.xlsx", None)])
+    check("P&G 選兩個檔案要擋下來，講清楚只有瑪氏能多選",
+          res_pg_multi.status_code == 400 and "瑪氏" in res_pg_multi.get_json()["error"],
+          res_pg_multi.get_json())
+
+    print("\n【5.4】瑪氏批次解析：只要一個檔案壞掉，整批都不算數（全有全無）")
+    bad = io.BytesIO(b"not an excel file")
+    with open(os.path.join(SAMPLES, "瑪氏_訂貨通知單範例.xlsx"), "rb") as fh:
+        good = io.BytesIO(fh.read())
+    res_batch = client.post("/api/purchase/parse", data={
+        "line": "mars",
+        "file": [(good, "good.xlsx"), (bad, "bad.xlsx")]},
+        content_type="multipart/form-data")
+    check("整批擋下來，不會只匯入好的那份、漏掉壞的那份",
+          res_batch.status_code == 400, res_batch.status_code)
+    check("錯誤訊息點名是哪個檔案壞的",
+          "bad.xlsx" in res_batch.get_json()["error"], res_batch.get_json()["error"])
 
     print("\n【5.5】合併多張 PO 時，備註要逐列保留各自那張 PO 的單號")
     # 這是實際踩到的 bug：以前整份檔案共用一個備註，合併之後 20 列全部

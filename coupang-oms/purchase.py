@@ -1,10 +1,20 @@
 """採購表轉換：跟酷澎訂單管理系統完全獨立的新功能。
 
-同一份酷澎「訂單匯入」Excel，依線別（PG／紙潔／瑪氏）轉換成各線別
-自己要用的「產品採購表」格式。三個線別各自沿用公司既有的範本檔
-（purchase_templates/ 底下那三個 .xls，連查表工作表、儲存格樣式都
-原封不動保留），只覆寫資料列——這樣匯出的檔案結構才會跟公司系統
+轉換成各線別自己要用的「產品採購表」格式。三個線別各自沿用公司既有的
+範本檔（purchase_templates/ 底下那三個 .xls，連查表工作表、儲存格樣式
+都原封不動保留），只覆寫資料列——這樣匯出的檔案結構才會跟公司系統
 原本要吃的格式一模一樣，不會因為改用別的函式庫重新產生而跑掉。
+
+但三個線別的「匯入來源」長得完全不一樣，不是同一份檔案：
+- P&G／紙潔：讀酷澎系統匯出的「訂單匯入」Excel（一列一個 SKU 的表格，
+  見 parse_import_file）。
+- 瑪氏：讀 MARS TAIWAN 開的「訂貨通知單」（ORDER FORM，一份很大的表，
+  大部分列是「有賣過但這次沒訂」的參考列，只有填了採購數量的才是真的
+  要訂的，見 parse_mars_order_form）。這份表的結構、來源都跟另外兩條線
+  的匯入檔沒有任何關係，第一版把瑪氏也硬套進 P&G／紙潔那套解析邏輯是
+  誤把同事給錯的範例當成正確格式，後來拿到真正的訂貨通知單才發現整個
+  格式都是錯的。而且訂貨通知單一份就是一張 PO，所以瑪氏的上傳介面
+  允許一次選多個檔案，各自轉成各自的一組。
 
 不寫進資料庫、不碰任何一張酷澎訂單的表：上傳的檔案只在這次請求內
 處理、解析結果全部回傳給瀏覽器暫存，使用者確認/編輯完再送回來產生
@@ -48,9 +58,9 @@ LINES = {
     "mars": {
         "label": "瑪氏",
         "template": os.path.join(TEMPLATE_DIR, "mars_template.xls"),
-        "group_by": "ship_note",
-        "wipe_rows": 10,
+        "wipe_rows": 60,
         "default_remark_style": "mars",
+        "multi_file": True,   # 一份訂貨通知單就是一張 PO，允許一次選多個檔案
     },
 }
 
@@ -137,6 +147,21 @@ def _guess_date_from_filename(filename):
     return ""
 
 
+def _guess_po_from_filename(filename):
+    """瑪氏的訂貨通知單裡「永豐PO單號」那個欄位常常是空的（見樣本），
+    訂單編號改從上傳的檔名抓——酷澎訂單編號固定是 13 開頭的 14 碼數字，
+    例如「13000000467952」。跟猜日期同一個道理：檔名裡有就用，抓不到
+    就留空給人填，不硬湊。"""
+    if not filename:
+        return ""
+    # 不能用 \b 當邊界——檔名裡數字前後常常接底線或中文字，這兩種在
+    # regex 裡都算「單字字元」，跟數字之間沒有邊界，\b 會直接抓不到。
+    # 改用「前後不是數字」，這樣不管接的是底線、中文、副檔名都擋得住，
+    # 也不會不小心咬到更長數字串裡的一段。
+    m = re.search(r"(?<!\d)(13\d{12})(?!\d)", filename)
+    return m.group(1) if m else ""
+
+
 def mmdd_to_md(mmdd):
     """0905 -> 9/5（備註文字慣用不補零的月/日）。"""
     if not mmdd or len(mmdd) != 4 or not mmdd.isdigit():
@@ -155,6 +180,163 @@ def _guess_warehouse_from_note(ship_note):
 
 class PurchaseImportError(Exception):
     pass
+
+
+_MARS_HEADER_SCAN_ROWS = 15    # 表頭資訊區塊大概落在這幾列裡
+_MARS_HEADER_SCAN_COLS = 12
+CATEGORY_LIST_SHEET = "清單"
+
+
+def _find_label_value(ws, label, max_row=_MARS_HEADER_SCAN_ROWS,
+                       max_col=_MARS_HEADER_SCAN_COLS):
+    """訂貨通知單的表頭是「標籤格＋同一列右邊某格是值」這種鬆散排版
+    （例如「配送日: 」在 F3、值在 H3，中間 G3 是空的），不是固定的表格，
+    找值要用「先找標籤文字、再往右找第一個有東西的格」，不能寫死座標。"""
+    for r in range(1, max_row + 1):
+        for c in range(1, max_col + 1):
+            v = ws.cell(row=r, column=c).value
+            if v is None:
+                continue
+            text = str(v).strip().rstrip(":：").strip()
+            if text == label:
+                for c2 in range(c + 1, max_col + 1):
+                    v2 = ws.cell(row=r, column=c2).value
+                    if v2 is not None and str(v2).strip() != "":
+                        return v2
+                return None
+    return None
+
+
+def _find_mars_data_sheet(wb):
+    """訂貨通知單通常有兩個分頁（一個是表本身，一個是給下拉選單用的
+    品類清單），用哪個當主表不能寫死分頁名稱（連現有樣本的分頁名稱都
+    帶著一個容易漏看的尾隨空白），改成找「哪個分頁裡有一格剛好等於
+    永豐料號」，那就是主表。"""
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(max_row=30, values_only=True):
+            if "永豐料號" in row:
+                return ws
+    return None
+
+
+def _guess_mars_category_code(wb, data_ws):
+    """檔名裡「GUM」這段是品類代碼（Gum糖果 → GUM），來源是主表裡某一格
+    直接寫著品類全名。優先讀「清單」分頁列出的合法品類清單去比對主表
+    （比較準，未來品類清單增加新項目也自動吃得到）；沒有清單分頁的話
+    退而找主表裡「英文開頭+中文」這種型態的字串當備援猜測。抓不到就
+    回傳空字串，讓使用者自己填，不要猜錯。"""
+    categories = []
+    if CATEGORY_LIST_SHEET in wb.sheetnames:
+        for row in wb[CATEGORY_LIST_SHEET].iter_rows(values_only=True):
+            for v in row:
+                if isinstance(v, str) and v.strip():
+                    categories.append(v.strip())
+
+    def to_code(full_text):
+        m = re.match(r"^([A-Za-z]+)", full_text)
+        return m.group(1)[:3].upper() if m else ""
+
+    if categories:
+        cat_set = set(categories)
+        for row in data_ws.iter_rows(max_row=15, values_only=True):
+            for v in row:
+                if isinstance(v, str) and v.strip() in cat_set:
+                    return to_code(v.strip())
+
+    for row in data_ws.iter_rows(max_row=15, values_only=True):
+        for v in row:
+            if isinstance(v, str) and re.match(r"^[A-Za-z]+[一-鿿]", v.strip()):
+                return to_code(v.strip())
+    return ""
+
+
+def parse_mars_order_form(file_bytes, filename=""):
+    """讀 MARS TAIWAN 的「訂貨通知單」（ORDER FORM），回傳單一組資料
+    （一份訂貨通知單就是一張 PO，不像 P&G／紙潔那樣要分組）。
+
+    表格結構分兩塊：
+    - 表頭資訊區（前面十幾列）：配送日、入倉倉別、送貨地址、永豐PO單號、
+      品類，用標籤文字去找值（見 _find_label_value）。
+    - 資料區：從「永豐料號」那一列表頭開始，一路列到底，但大部分列是
+      「有賣過、這次沒訂」的參考列，只有「採購數量」欄有填數字的才是
+      真的要訂的品項，其他要濾掉，不能整批照抓。"""
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    except Exception as exc:
+        raise PurchaseImportError(f"檔案讀取失敗，請確認是有效的 Excel 檔：{exc}") from exc
+
+    ws = _find_mars_data_sheet(wb)
+    if ws is None:
+        raise PurchaseImportError(
+            "找不到「永豐料號」這個欄位，請確認上傳的是瑪氏的訂貨通知單（ORDER FORM）。")
+
+    header_row_idx = None
+    material_col = qty_col = None
+    for row in ws.iter_rows(max_row=30):
+        for cell in row:
+            if cell.value == "永豐料號":
+                header_row_idx = cell.row
+                material_col = cell.column
+                break
+        if header_row_idx:
+            break
+    for cell in ws[header_row_idx]:
+        if cell.value and str(cell.value).strip().startswith("採購數量"):
+            qty_col = cell.column
+            break
+    if qty_col is None:
+        raise PurchaseImportError("找不到「採購數量」欄位，請確認上傳的是瑪氏的訂貨通知單。")
+
+    rows = []
+    for r in range(header_row_idx + 1, ws.max_row + 1):
+        material = ws.cell(row=r, column=material_col).value
+        if material is None or str(material).strip() == "":
+            continue
+        raw_qty = ws.cell(row=r, column=qty_col).value
+        try:
+            qty = int(raw_qty)
+        except (TypeError, ValueError):
+            continue
+        if qty == 0:
+            continue
+        rows.append({"material_no": str(material).strip(), "qty": qty})
+
+    if not rows:
+        raise PurchaseImportError(
+            "這份訂貨通知單裡找不到任何有填「採購數量」的品項，請確認上傳的檔案有勾選數量。")
+
+    delivery_date = _find_label_value(ws, "配送日")
+    date_guess = ""
+    if hasattr(delivery_date, "year"):
+        date_guess = f"{delivery_date.month:02d}{delivery_date.day:02d}"
+    if not date_guess:
+        date_guess = _guess_date_from_filename(filename)
+
+    warehouse_raw = _find_label_value(ws, "入倉倉別") or ""
+    m = re.search(r"([A-Za-z0-9]+)\s*$", str(warehouse_raw).strip())
+    warehouse_guess = m.group(1).upper() if m else ""
+
+    address = str(_find_label_value(ws, "送貨地址") or "").strip()
+
+    po_raw = str(_find_label_value(ws, "永豐PO單號") or "").strip()
+    po_number = po_raw if re.fullmatch(r"\d{10,}", po_raw) else _guess_po_from_filename(filename)
+
+    category_code = _guess_mars_category_code(wb, ws)
+
+    key = po_number or (os.path.splitext(filename)[0] if filename else f"檔案{id(file_bytes) % 10000}")
+
+    return {
+        "key": key,
+        "po_numbers": [po_number] if po_number else [],
+        "address": address,
+        "address_mismatch": False,
+        "warehouse_guess": warehouse_guess,
+        "date_guess": date_guess,
+        "category": category_code,
+        "item_count": len(rows),
+        "qty_total": sum(r["qty"] for r in rows),
+        "rows": rows,
+    }
 
 
 def parse_import_file(line_key, file_bytes, filename=""):
@@ -277,10 +459,14 @@ def build_remark(line_key, po_numbers, date_mmdd, warehouse):
     return ""
 
 
-def build_filename(line_key, po_numbers, date_mmdd, warehouse):
+def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
     """檔名裡的 PO 單號是用來區分「一張 PO 一個檔」時是哪一張，所以合併
     匯出時呼叫端會傳空的 po_numbers 進來，這裡就不放單號——這正是紙潔
-    （本來就是多張 PO 合併）的真實檔名慣例：酷澎_產品採購表上傳_0902到貨。"""
+    （本來就是多張 PO 合併）的真實檔名慣例：酷澎_產品採購表上傳_0902到貨。
+
+    category 是瑪氏檔名裡「GUM」那段（品類代碼，來自訂貨通知單裡的品類
+    全名取英文開頭三碼），從解析結果帶過來；抓不到就退回固定的 GUM，
+    不要讓檔名整個開天窗。"""
     po = po_numbers[0] if po_numbers else ""
     if line_key == "pg":
         # 只取後 6 碼——訂單編號前面那一串每張都一樣，沒有辨識度，
@@ -294,8 +480,9 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse):
         return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
     if line_key == "mars":
         wh = warehouse or "倉別"
+        cat = category or "GUM"
         suffix = f"_{po}" if po else ""
-        return f"永豐Mars採購單(箱單位)-GUM_{wh}{suffix}.xls"
+        return f"永豐Mars採購單(箱單位)-{cat}_{wh}{suffix}.xls"
     return f"採購表_{date_mmdd}.xls"
 
 
@@ -362,17 +549,38 @@ def api_purchase_parse():
     line_key = request.form.get("line", "")
     if line_key not in LINES:
         return jsonify({"error": "請選擇正確的線別。"}), 400
-    upload = request.files.get("file")
-    if upload is None or not upload.filename:
+    uploads = [f for f in request.files.getlist("file") if f and f.filename]
+    if not uploads:
         return jsonify({"error": "沒有收到檔案。"}), 400
-    try:
-        groups = parse_import_file(line_key, upload.read(), upload.filename)
-    except PurchaseImportError as exc:
-        return jsonify({"error": str(exc)}), 400
+
+    if LINES[line_key].get("multi_file"):
+        # 瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案，各自轉成
+        # 各自的一組。整批一起成功或一起失敗（跟系統其他地方的「全有
+        # 全無」原則一樣）：只要有一個檔案解析失敗就整批擋下來、講清楚
+        # 是哪個檔案有問題，不要讓使用者匯出一半、缺了某張單卻不知道。
+        groups = []
+        errors = []
+        for upload in uploads:
+            try:
+                groups.append(parse_mars_order_form(upload.read(), upload.filename))
+            except PurchaseImportError as exc:
+                errors.append(f"「{upload.filename}」：{exc}")
+        if errors:
+            return jsonify({"error": "有檔案解析失敗，本次都不會匯入：\n" + "\n".join(errors)}), 400
+    else:
+        if len(uploads) > 1:
+            return jsonify({
+                "error": f"{LINES[line_key]['label']}一次只能上傳一個檔案（瑪氏才能一次選多個）。"}), 400
+        try:
+            groups = parse_import_file(line_key, uploads[0].read(), uploads[0].filename)
+        except PurchaseImportError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     for g in groups:
+        category = g.get("category", "")
         g["remark"] = build_remark(line_key, g["po_numbers"], g["date_guess"], g["warehouse_guess"])
-        g["filename"] = build_filename(line_key, g["po_numbers"], g["date_guess"], g["warehouse_guess"])
+        g["filename"] = build_filename(
+            line_key, g["po_numbers"], g["date_guess"], g["warehouse_guess"], category)
 
     return jsonify({"line": line_key, "groups": groups})
 
