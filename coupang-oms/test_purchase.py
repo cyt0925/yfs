@@ -79,21 +79,33 @@ def main():
     res = client.get("/purchase")
     check("登入後頁面正常渲染（樣板變數沒漏，例如 logo_file）",
           res.status_code == 200, res.status_code)
-    check("頁面用的是綠色版 logo 的位置（沒放檔案時退回原本那張）",
-          b"/static/logo.png" in res.data)
 
-    # 丟一張綠色 logo 進去就要自動換掉，不用改程式
+    # static/logo_purchase.png 是使用者真的上傳、已經 commit 進 repo 的
+    # 正式資產——絕對不要動它（改名、搬移、刪除都不行）：測試被中斷
+    # （逾時、Ctrl-C）的話 finally 不一定來得及跑，會把正式檔案真的
+    # 弄丟。只驗證「已經存在」該有的行為；只有在檔案還不存在的機器上
+    # （例如全新 checkout、還沒人上傳過 logo）才測「不存在→退回預設
+    # →放新檔案生效」這條路徑，而且全程只碰自己建立的檔案。
     green = os.path.join(BASE_DIR, "static", "logo_purchase.png")
-    shutil.copy(os.path.join(BASE_DIR, "static", "logo.png"), green)
-    try:
+    if os.path.exists(green):
         res = client.get("/purchase")
-        check("static/logo_purchase.png 一放進去就自動改用綠色 logo",
+        check("已經有 static/logo_purchase.png 時，頁面就是用它",
               b"/static/logo_purchase.png" in res.data)
-    finally:
-        os.remove(green)
-    res = client.get("/purchase")
-    check("綠色 logo 被移掉會自動退回原本的，不會破圖",
-          b"/static/logo_purchase.png" not in res.data)
+    else:
+        res = client.get("/purchase")
+        check("沒有綠色 logo 檔案時，頁面退回用原本那張，不會破圖",
+              b"/static/logo.png" in res.data and b"/static/logo_purchase.png" not in res.data)
+        try:
+            shutil.copy(os.path.join(BASE_DIR, "static", "logo.png"), green)
+            res = client.get("/purchase")
+            check("static/logo_purchase.png 一放進去就自動改用綠色 logo",
+                  b"/static/logo_purchase.png" in res.data)
+        finally:
+            if os.path.exists(green):
+                os.remove(green)
+        res = client.get("/purchase")
+        check("綠色 logo 被移掉會自動退回原本的，不會破圖",
+              b"/static/logo_purchase.png" not in res.data)
 
     print("\n【2】P&G：一張 PO 一張採購表")
     res = parse(client, "pg", "PG_訂單匯入範例.xlsx")
