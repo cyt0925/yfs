@@ -469,13 +469,10 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
     不要讓檔名整個開天窗。"""
     po = po_numbers[0] if po_numbers else ""
     if line_key == "pg":
-        # 只取後 6 碼——訂單編號前面那一串每張都一樣，沒有辨識度，
-        # 檔名太長也不好看。後 6 碼理論上有機會撞號（機率很低，同一批
-        # 匯出裡撞到才會真的出事），撞了也不會互相覆蓋：多檔匯出時
-        # 有另一層檔名去重機制兜底（見 api_purchase_export）。
-        short_po = po[-6:] if po else ""
-        suffix = f"({short_po})" if short_po else ""
-        return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨{suffix}.xls"
+        # 檔名不放單號——同一批匯出好幾張 PO 就會撞成同一個檔名，交給
+        # 另一層檔名去重機制兜底（見 api_purchase_export，撞了會自動
+        # 加 (2)、(3)，不會互相覆蓋，只是檔名看不出是哪一張）。
+        return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨.xls"
     if line_key == "paper":
         return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
     if line_key == "mars":

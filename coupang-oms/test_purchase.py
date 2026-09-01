@@ -292,9 +292,9 @@ def main():
     check("合併檔的檔名不放 PO 單號（放第一張會誤導成只有那一張）",
           "13000000493049" not in "酷澎XP&G_產品採購表上傳_0905到貨.xls")
 
-    print("\n【5.6】build_filename：合併（沒有單一 PO）時各線別的檔名長相")
+    print("\n【5.6】build_filename：各線別的檔名長相")
     import purchase  # noqa: E402
-    check("P&G 合併檔不帶括號單號",
+    check("P&G 檔名不帶單號（合併時本來就這樣，使用者後來要求單張匯出也一併拿掉）",
           purchase.build_filename("pg", [], "0905", "TXRC8")
           == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
           purchase.build_filename("pg", [], "0905", "TXRC8"))
@@ -302,9 +302,9 @@ def main():
           purchase.build_filename("mars", [], "0904", "TAO4")
           == "永豐Mars採購單(箱單位)-GUM_TAO4.xls",
           purchase.build_filename("mars", [], "0904", "TAO4"))
-    check("單張匯出時照舊帶單號，但只取後 6 碼（前面那串每張都一樣沒有辨識度）",
+    check("P&G 單張匯出時檔名也不帶單號了（原本只留後 6 碼，使用者要求直接拿掉數字）",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8")
-          == "酷澎XP&G_產品採購表上傳_0905到貨(492925).xls",
+          == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8"))
 
     print("\n【6】檔名衝突時自動加序號，不會互相覆蓋")
