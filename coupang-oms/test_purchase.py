@@ -184,7 +184,7 @@ def main():
     # 參考列，不能整批照抓；而且一份訂貨通知單就是一張 PO，不用再像
     # P&G／紙潔那樣分組。
     res = parse(client, "mars", "瑪氏_訂貨通知單範例.xlsx",
-                upload_name="永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xlsx")
+                upload_name="永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952.xlsx")
     check("解析成功", res.status_code == 200, res.get_json() if res.status_code != 200 else "")
     data3 = res.get_json()
     check("一份訂貨通知單只有一組", len(data3["groups"]) == 1, len(data3["groups"]))
@@ -201,12 +201,12 @@ def main():
           g["warehouse_guess"] == "TAO4", g["warehouse_guess"])
     check("日期直接讀「配送日」那格的日期值，不用再猜",
           g["date_guess"] == "0904", g["date_guess"])
-    check("品類代碼從「Gum糖果」取英文開頭三碼變成 GUM（檔名裡那段的真正來源）",
-          g["category"] == "GUM", g["category"])
+    check("品類代碼從「Gum糖果」查對照表變成 GUM糖（檔名裡那段的公司慣例寫法，不是機械取三碼）",
+          g["category"] == "GUM糖", g["category"])
     check("備註樣板套出來的字串完全對得上使用者給的真實範例",
           g["remark"] == "MARS入倉9/4瑪氏送酷澎-TAO4倉", g["remark"])
     check("檔名也完全對得上真實範例",
-          g["filename"] == "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xls", g["filename"])
+          g["filename"] == "永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952.xls", g["filename"])
 
     res = export(client, "mars", [{"rows": g["rows"], "remark": g["remark"], "filename": g["filename"]}])
     check("匯出成功", res.status_code == 200, res.status_code)
@@ -230,11 +230,11 @@ def main():
     check("key 退而用檔名（去掉副檔名）當識別，畫面上才有東西可以顯示",
           g_no_po["key"] == "這份檔名沒有訂單編號", g_no_po["key"])
     check("檔名裡沒有單一 PO，匯出檔名就不放單號的那一截",
-          g_no_po["filename"] == "永豐Mars採購單(箱單位)-GUM_TAO4.xls", g_no_po["filename"])
+          g_no_po["filename"] == "永豐Mars採購單(箱單位)-GUM糖_TAO4.xls", g_no_po["filename"])
 
     print("\n【5.2】瑪氏：可以一次選多個檔案，各自轉成各自的一組")
     res_multi = parse_multi(client, "mars", [
-        ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-GUM_TAO4_13000000467952.xlsx"),
+        ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952.xlsx"),
         ("瑪氏_訂貨通知單範例.xlsx", "第二張訂單.xlsx"),
     ])
     check("兩個檔案各自解析成兩組", res_multi.status_code == 200
@@ -300,7 +300,7 @@ def main():
           purchase.build_filename("pg", [], "0905", "TXRC8"))
     check("瑪氏合併檔不會留下多餘的底線",
           purchase.build_filename("mars", [], "0904", "TAO4")
-          == "永豐Mars採購單(箱單位)-GUM_TAO4.xls",
+          == "永豐Mars採購單(箱單位)-GUM糖_TAO4.xls",
           purchase.build_filename("mars", [], "0904", "TAO4"))
     check("P&G 單張匯出時檔名也不帶單號了（原本只留後 6 碼，使用者要求直接拿掉數字）",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8")

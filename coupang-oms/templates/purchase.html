@@ -93,9 +93,9 @@
       <label class="flex flex-col gap-1">
         <span class="text-xs font-medium text-emerald-800">線別</span>
         <select id="p-line" class="border border-[#D2AB75] rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="pg">P&amp;G（一張 PO 一張採購表）</option>
-          <option value="paper">紙潔（可多張 PO 合併成一張採購表）</option>
-          <option value="mars">瑪氏（一張內部採購單一張採購表）</option>
+          <option value="pg">P&amp;G</option>
+          <option value="paper">紙潔</option>
+          <option value="mars">瑪氏</option>
         </select>
       </label>
       <label class="flex flex-col gap-1">
@@ -194,7 +194,7 @@ function buildRemark(line, po, mmdd, wh) {
 function buildFilename(line, po, mmdd, wh, cat) {
   if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨.xls`;
   if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
-  if (line === "mars") return `永豐Mars採購單(箱單位)-${cat || "GUM"}_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
+  if (line === "mars") return `永豐Mars採購單(箱單位)-${cat || "GUM糖"}_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
   return `採購表_${mmdd || ""}.xls`;
 }
 

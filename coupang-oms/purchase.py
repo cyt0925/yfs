@@ -186,6 +186,15 @@ _MARS_HEADER_SCAN_ROWS = 15    # 表頭資訊區塊大概落在這幾列裡
 _MARS_HEADER_SCAN_COLS = 12
 CATEGORY_LIST_SHEET = "清單"
 
+# 品類全名（「清單」分頁裡的選項）→ 檔名裡實際要用的品類代碼。這是公司
+# 既有檔名慣例定的固定寫法，不是從全名機械推導出來的（例如 Chocolate
+# 巧克力縮寫成「Cho巧」，不是取前三碼），所以用明確對照表，不要用猜的。
+CATEGORY_CODE_MAP = {
+    "Petcare寵物": "PET寵物",
+    "Gum糖果": "GUM糖",
+    "Chocolate巧克力": "Cho巧",
+}
+
 
 def _find_label_value(ws, label, max_row=_MARS_HEADER_SCAN_ROWS,
                        max_col=_MARS_HEADER_SCAN_COLS):
@@ -220,11 +229,12 @@ def _find_mars_data_sheet(wb):
 
 
 def _guess_mars_category_code(wb, data_ws):
-    """檔名裡「GUM」這段是品類代碼（Gum糖果 → GUM），來源是主表裡某一格
-    直接寫著品類全名。優先讀「清單」分頁列出的合法品類清單去比對主表
-    （比較準，未來品類清單增加新項目也自動吃得到）；沒有清單分頁的話
-    退而找主表裡「英文開頭+中文」這種型態的字串當備援猜測。抓不到就
-    回傳空字串，讓使用者自己填，不要猜錯。"""
+    """檔名裡「GUM糖」「PET寵物」「Cho巧」這段是品類代碼，來源是主表裡
+    某一格直接寫著品類全名（例如「Gum糖果」）。優先讀「清單」分頁列出的
+    合法品類全名去比對主表，抓到全名後查 CATEGORY_CODE_MAP 換成公司
+    檔名慣例的代碼；查不到對照（例如清單以後新增了品類但對照表還沒更新）
+    就退回取英文開頭三碼當備援猜測，抓不到就回傳空字串，讓使用者自己填，
+    不要猜錯。"""
     categories = []
     if CATEGORY_LIST_SHEET in wb.sheetnames:
         for row in wb[CATEGORY_LIST_SHEET].iter_rows(values_only=True):
@@ -233,6 +243,8 @@ def _guess_mars_category_code(wb, data_ws):
                     categories.append(v.strip())
 
     def to_code(full_text):
+        if full_text in CATEGORY_CODE_MAP:
+            return CATEGORY_CODE_MAP[full_text]
         m = re.match(r"^([A-Za-z]+)", full_text)
         return m.group(1)[:3].upper() if m else ""
 
@@ -464,9 +476,9 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
     匯出時呼叫端會傳空的 po_numbers 進來，這裡就不放單號——這正是紙潔
     （本來就是多張 PO 合併）的真實檔名慣例：酷澎_產品採購表上傳_0902到貨。
 
-    category 是瑪氏檔名裡「GUM」那段（品類代碼，來自訂貨通知單裡的品類
-    全名取英文開頭三碼），從解析結果帶過來；抓不到就退回固定的 GUM，
-    不要讓檔名整個開天窗。"""
+    category 是瑪氏檔名裡「GUM糖」「PET寵物」「Cho巧」那段（品類代碼，
+    來自訂貨通知單裡的品類全名對照 CATEGORY_CODE_MAP），從解析結果帶
+    過來；抓不到就退回固定的 GUM糖，不要讓檔名整個開天窗。"""
     po = po_numbers[0] if po_numbers else ""
     if line_key == "pg":
         # 檔名不放單號——同一批匯出好幾張 PO 就會撞成同一個檔名，交給
@@ -477,7 +489,7 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
         return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
     if line_key == "mars":
         wh = warehouse or "倉別"
-        cat = category or "GUM"
+        cat = category or "GUM糖"
         suffix = f"_{po}" if po else ""
         return f"永豐Mars採購單(箱單位)-{cat}_{wh}{suffix}.xls"
     return f"採購表_{date_mmdd}.xls"
