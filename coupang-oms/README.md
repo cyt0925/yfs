@@ -107,6 +107,9 @@ coupang-oms/
 ├── templates/index.html     訂單管理主頁面
 ├── templates/purchase.html  採購表轉換頁面
 ├── static/                  編譯好的 CSS／圖示／logo（改動見 .build-tools/README.md）
+├── deploy/nginx-oms.conf    未來搬上戰情室那台 GCP VM 時要用的 nginx
+│                             反向代理設定片段（還沒有 VM 存取權，先進
+│                             版控備用，不是現在生效中的設定）
 ├── START.bat                本機開發用啟動捷徑（雙擊，Windows）
 ├── test_flow.py             訂單管理端到端驗證
 ├── test_purchase.py         採購表轉換端到端驗證

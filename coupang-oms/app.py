@@ -16,6 +16,7 @@ from flask import (
     Flask, jsonify, redirect, render_template, request, send_file, session,
     url_for,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
@@ -34,9 +35,20 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-02.1"
+BUILD_VERSION = "2026-09-02.2"
 
 app = Flask(__name__)
+
+# 掛在反向代理的子路徑下時（例如未來戰情室的 /oms），代理只送標頭
+# 是不夠的——Flask 預設不會信任任何轉發標頭，收到的請求看起來就是
+# 「站在根路徑」，所以 url_for 產生的連結、登入後的轉址、靜態資源
+# 路徑全部會少掉子路徑那一截，看起來像壞掉、但其實是路徑對不上
+# （見 deploy/nginx-oms.conf 的說明）。ProxyFix 讓 Flask 讀懂
+# X-Forwarded-Proto／Host／Prefix 這三個標頭；不在反向代理後面時
+# （目前的 Render、或本機直接跑）沒有人會送這些標頭，等於沒作用，
+# 不影響現況。
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_prefix=1)
+
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 # 模板一律即時讀檔，不要用啟動當下快取的舊版本（debug=False 時 Flask
 # 預設不會自動重讀模板檔，只改 index.html 卻要重開程式才生效，容易
