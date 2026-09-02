@@ -619,6 +619,7 @@ def api_purchase_export():
         return jsonify({"error": "沒有要匯出的資料。"}), 400
 
     files = []
+    po_numbers_used = set()
     for g in groups:
         rows = g.get("rows") or []
         if not rows:
@@ -629,6 +630,9 @@ def api_purchase_export():
         remark = g.get("remark") or ""
         data = fill_template(line_key, rows, remark)
         files.append((filename, data))
+        po = (g.get("po_numbers") or [None])[0]
+        if po:
+            po_numbers_used.add(po)
 
     if not files:
         return jsonify({"error": "選取的項目裡沒有任何資料列。"}), 400
@@ -651,7 +655,11 @@ def api_purchase_export():
             used_names.add(final)
             zf.writestr(final, data)
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name="採購表.zip",
+    # 批次匯出好幾個檔案時，如果選的都是同一張 PO（例如同一張單被拆成
+    # 好幾組），zip 檔名就直接用那個 PO 單號，比通用的「採購表」好找；
+    # PO 不只一種或抓不到就退回原本的通用檔名，不要硬湊一個誤導的單號。
+    zip_name = f"{po_numbers_used.pop()}.zip" if len(po_numbers_used) == 1 else "採購表.zip"
+    return send_file(buf, as_attachment=True, download_name=zip_name,
                       mimetype="application/zip")
 
 

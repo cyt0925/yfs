@@ -322,6 +322,32 @@ def main():
         names = sorted(zf.namelist())
         check("兩個同名檔案自動改名不衝突", names == ["同名(2).xls", "同名.xls"], names)
 
+    print("\n【6.1】批次匯出：勾選的都是同一張 PO 時，zip 檔名直接用那個單號，不要叫「採購表」")
+    same_po_groups = [
+        {"rows": [{"material_no": "A1", "qty": 1}], "remark": "", "filename": "第一份.xls",
+         "po_numbers": ["13000000496610"]},
+        {"rows": [{"material_no": "A2", "qty": 2}], "remark": "", "filename": "第二份.xls",
+         "po_numbers": ["13000000496610"]},
+    ]
+    res = export(client, "pg", same_po_groups)
+    check("zip 檔名就是那張 PO 單號，同事一看就知道裡面是哪張單",
+          res.headers.get("Content-Disposition", "").find("13000000496610.zip") != -1,
+          res.headers.get("Content-Disposition"))
+
+    print("\n【6.2】批次匯出：PO 不只一種時，zip 檔名退回原本的通用檔名，不要硬湊一個誤導的單號")
+    mixed_po_groups = [
+        {"rows": [{"material_no": "A1", "qty": 1}], "remark": "", "filename": "第一份.xls",
+         "po_numbers": ["13000000496610"]},
+        {"rows": [{"material_no": "A2", "qty": 2}], "remark": "", "filename": "第二份.xls",
+         "po_numbers": ["13000000000001"]},
+    ]
+    res = export(client, "pg", mixed_po_groups)
+    # 中文檔名在 Content-Disposition 裡是 filename*=UTF-8''%E6%8E%A1... 這種
+    # URL 編碼過的形式，不能直接用字串比對找「採購表」。
+    check("zip 檔名退回「採購表」，不會只挑第一張的單號充數",
+          "UTF-8''%E6%8E%A1%E8%B3%BC%E8%A1%A8.zip" in res.headers.get("Content-Disposition", ""),
+          res.headers.get("Content-Disposition"))
+
     print("\n【7】基本防呆")
     res = client.post("/api/purchase/parse", data={"line": "不存在的線別"},
                        content_type="multipart/form-data")
