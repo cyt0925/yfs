@@ -115,9 +115,10 @@
       <p class="mt-2 text-sm text-emerald-900">點這裡選檔案，或直接把 Excel 拖進來</p>
       <p class="text-[11px] text-[#8a6d3f] mt-0.5">支援 .xlsx／.xls</p>
       <p id="p-multi-hint" class="hidden text-[11px] text-[#8a6d3f]">
-        瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案</p>
-      <p id="p-filename" class="mt-1 text-xs text-emerald-700 font-medium whitespace-pre-line"></p>
+        瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案——資料分散在不同資料夾也沒關係，
+        分好幾次選，選過的檔案會累加，不會被最新一次蓋掉</p>
     </div>
+    <div id="p-filelist" class="hidden space-y-1" onclick="event.stopPropagation()"></div>
     <div class="flex items-center gap-3">
       <button id="btn-parse" type="button"
               class="g-btn-green px-5 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2">
@@ -218,12 +219,62 @@ function updateLineUI() {
   $("#p-multi-hint").classList.toggle("hidden", !isMulti);
   $("#p-line-hint").textContent = LINE_UPLOAD_HINT[line] || "";
 }
-$("#p-line").addEventListener("change", updateLineUI);
+// 換線別代表換了一種完全不同的檔案格式，之前選的檔案留著沒有意義，
+// 清空重選比較不容易搞混（例如瑪氏選了一半又手滑切成 P&G）。
+$("#p-line").addEventListener("change", () => { clearFiles(); updateLineUI(); });
 updateLineUI();
 
-function showFileNames(files) {
-  const names = Array.from(files).map(f => f.name);
-  $("#p-filename").textContent = names.join("\n");
+// ── 選檔累加：瑪氏資料常常分散在不同資料夾，瀏覽器原生的檔案選取窗
+// 一次只能在一個資料夾裡選，選第二次就會整批蓋掉第一次選的——所以
+// 不能直接依賴 <input type=file> 自己的 FileList，改成自己維護一份
+// 累加清單，每次選擇／拖曳都是「加進去」，不是「取代」。
+let SELECTED_FILES = [];
+
+function fileKey(f) { return `${f.name}::${f.size}::${f.lastModified}`; }
+
+function addFiles(fileList) {
+  const existing = new Set(SELECTED_FILES.map(fileKey));
+  let added = 0, dup = 0;
+  Array.from(fileList).forEach(f => {
+    const k = fileKey(f);
+    if (existing.has(k)) { dup++; return; }
+    existing.add(k);
+    SELECTED_FILES.push(f);
+    added++;
+  });
+  renderFileList();
+  if (dup) $("#p-status").textContent = `已加入 ${added} 個檔案（${dup} 個檔名/大小都一樣，跳過重複）`;
+}
+
+function removeFile(idx) {
+  SELECTED_FILES.splice(idx, 1);
+  renderFileList();
+}
+
+function clearFiles() {
+  SELECTED_FILES = [];
+  $("#p-file").value = "";
+  renderFileList();
+}
+
+function renderFileList() {
+  const box = $("#p-filelist");
+  if (!SELECTED_FILES.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  box.classList.remove("hidden");
+  const rows = SELECTED_FILES.map((f, i) => `
+    <div class="flex items-center justify-between gap-2 bg-white border border-[#e0cfae] rounded px-2.5 py-1 text-xs">
+      <span class="text-emerald-900 truncate">${f.name}</span>
+      <button type="button" class="p-file-remove text-[#8a6d3f] hover:text-red-700 flex-none" data-idx="${i}" title="移除這個檔案">
+        <i class="bi bi-x-lg"></i></button>
+    </div>`).join("");
+  box.innerHTML = `
+    <div class="flex items-center justify-between">
+      <span class="text-[11px] text-[#8a6d3f]">已選 ${SELECTED_FILES.length} 個檔案</span>
+      <button type="button" id="btn-clear-files" class="g-link text-[11px] hover:underline">清空重選</button>
+    </div>
+    ${rows}`;
+  $$(".p-file-remove").forEach(btn => btn.addEventListener("click", () => removeFile(Number(btn.dataset.idx))));
+  $("#btn-clear-files").addEventListener("click", clearFiles);
 }
 
 // ── 拖曳上傳 ──────────────────────────────────────────
@@ -235,22 +286,22 @@ const dz = $("#p-dropzone");
   e.preventDefault(); dz.classList.remove("dz-active");
 }));
 dz.addEventListener("drop", e => {
-  if (e.dataTransfer.files.length) {
-    $("#p-file").files = e.dataTransfer.files;
-    showFileNames(e.dataTransfer.files);
-  }
+  if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
 });
-$("#p-file").addEventListener("change", () => showFileNames($("#p-file").files));
+$("#p-file").addEventListener("change", () => {
+  addFiles($("#p-file").files);
+  $("#p-file").value = "";   // 清掉才能連續選同一個資料夾裡的檔案時觸發 change
+});
 
 // ── 解析 ──────────────────────────────────────────────
 $("#btn-parse").addEventListener("click", async () => {
-  const files = $("#p-file").files;
+  const files = SELECTED_FILES;
   if (!files.length) { showError("請先選一個檔案。"); return; }
   showError("");
   $("#p-status").textContent = "解析中…";
   const fd = new FormData();
   fd.append("line", $("#p-line").value);
-  Array.from(files).forEach(f => fd.append("file", f));
+  files.forEach(f => fd.append("file", f));
   try {
     const res = await fetch("{{ url_for('purchase.api_purchase_parse') }}", { method: "POST", body: fd });
     const data = await res.json();
