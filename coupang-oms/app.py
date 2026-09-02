@@ -34,7 +34,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-01.1"
+BUILD_VERSION = "2026-09-02.1"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
@@ -347,7 +347,7 @@ def current_operator():
 # 這系統本來只跑在辦公室內網，沒有密碼也還好；一旦放到外網，網址誰都
 # 能打開、誰都能看到全部訂單、誰都能改，所以只要走外網就一定要有登入。
 
-PUBLIC_ENDPOINTS = {"login", "static"}
+PUBLIC_ENDPOINTS = {"login", "static", "healthz"}
 
 
 @app.before_request
@@ -1267,6 +1267,23 @@ def index():
         "index.html", build_version=BUILD_VERSION,
         logged_in_user=session.get("user", ""),
     )
+
+
+@app.route("/healthz")
+def healthz():
+    """給部署腳本／反向代理／監控打的健康檢查，不需要登入（見
+    PUBLIC_ENDPOINTS）。除了「行程還活著」，還多驗一步「資料庫連得上」
+    ——這兩件事在 systemd 眼裡是一樣的（行程都在跑），但對使用者是
+    天差地遠的兩種故障，只有真的連一次資料庫才分得出來。"""
+    try:
+        conn = get_conn()
+        try:
+            conn.execute("SELECT 1")
+        finally:
+            conn.close()
+    except Exception as exc:
+        return jsonify({"status": "error", "detail": str(exc)}), 503
+    return jsonify({"status": "ok", "build_version": BUILD_VERSION})
 
 
 @app.route("/api/config")
