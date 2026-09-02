@@ -229,8 +229,9 @@ def main():
     check("po_numbers 是空的，不硬湊一個假的", g_no_po["po_numbers"] == [], g_no_po["po_numbers"])
     check("key 退而用檔名（去掉副檔名）當識別，畫面上才有東西可以顯示",
           g_no_po["key"] == "這份檔名沒有訂單編號", g_no_po["key"])
-    check("檔名裡沒有單一 PO，匯出檔名就不放單號的那一截",
-          g_no_po["filename"] == "永豐Mars採購單(箱單位)-GUM糖_TAO4.xls", g_no_po["filename"])
+    check("匯出檔名沿用匯入檔名（同事反映匯出後對不起來是哪份，改成直接照抄匯入檔名，"
+          "只把副檔名換成實際輸出的 .xls），不是用猜出來的日期/倉別/品類重新拼一個",
+          g_no_po["filename"] == "這份檔名沒有訂單編號.xls", g_no_po["filename"])
 
     print("\n【5.2】瑪氏：可以一次選多個檔案，各自轉成各自的一組")
     res_multi = parse_multi(client, "mars", [
@@ -242,6 +243,10 @@ def main():
     keys = [gr["key"] for gr in res_multi.get_json()["groups"]]
     check("兩組各自保留自己的識別（一個抓到 PO、一個退回用檔名）",
           keys == ["13000000467952", "第二張訂單"], keys)
+    filenames = [gr["filename"] for gr in res_multi.get_json()["groups"]]
+    check("批次匯入時每一組的匯出檔名也各自沿用自己的匯入檔名，不是共用同一個",
+          filenames == ["永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952.xls", "第二張訂單.xls"],
+          filenames)
 
     print("\n【5.3】瑪氏以外的線別一次只能上傳一個檔案，不能誤用多選")
     res_pg_multi = parse_multi(client, "pg", [

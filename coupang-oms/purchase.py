@@ -335,7 +335,8 @@ def parse_mars_order_form(file_bytes, filename=""):
 
     category_code = _guess_mars_category_code(wb, ws)
 
-    key = po_number or (os.path.splitext(filename)[0] if filename else f"檔案{id(file_bytes) % 10000}")
+    filename_stem = os.path.splitext(filename)[0] if filename else ""
+    key = po_number or (filename_stem or f"檔案{id(file_bytes) % 10000}")
 
     return {
         "key": key,
@@ -348,6 +349,11 @@ def parse_mars_order_form(file_bytes, filename=""):
         "item_count": len(rows),
         "qty_total": sum(r["qty"] for r in rows),
         "rows": rows,
+        # 匯出檔名直接沿用匯入檔名（同事反映匯出後檔名對不起來，不容易
+        # 找到自己剛剛匯入的是哪一份）；副檔名固定改 .xls，因為匯出的
+        # 一定是舊版 BIFF 格式，副檔名跟著原檔名走的話（例如原檔是
+        # .xlsx）打開會被 Excel 警告格式不符。
+        "filename_stem": filename_stem,
     }
 
 
@@ -588,8 +594,16 @@ def api_purchase_parse():
     for g in groups:
         category = g.get("category", "")
         g["remark"] = build_remark(line_key, g["po_numbers"], g["date_guess"], g["warehouse_guess"])
-        g["filename"] = build_filename(
-            line_key, g["po_numbers"], g["date_guess"], g["warehouse_guess"], category)
+        # 瑪氏是「一份訂貨通知單＝一張 PO＝一個檔」，匯出檔名直接沿用
+        # 匯入檔名（見 parse_mars_order_form），不用猜出來的日期／倉別／
+        # 品類拼；猜錯或漏猜的欄位不會連累到檔名。P&G／紙潔本來就可能
+        # 多張 PO 合併成一份，沒有單一原檔名可以沿用，維持原本的規則。
+        stem = g.pop("filename_stem", "")
+        if line_key == "mars" and stem:
+            g["filename"] = stem + ".xls"
+        else:
+            g["filename"] = build_filename(
+                line_key, g["po_numbers"], g["date_guess"], g["warehouse_guess"], category)
 
     return jsonify({"line": line_key, "groups": groups})
 

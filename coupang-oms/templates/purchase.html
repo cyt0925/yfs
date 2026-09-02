@@ -374,7 +374,9 @@ $("#btn-apply-date").addEventListener("click", () => {
   PARSED.groups.forEach(g => {
     const po = g.po_numbers[0] || g.key;
     g.remark = buildRemark(line, po, mmdd, g.warehouse);
-    g.filename = buildFilename(line, po, mmdd, g.warehouse, g.category);
+    // 瑪氏的檔名沿用匯入檔名（見後端 api_purchase_parse），套用日期
+    // 只是補猜備註裡的日期，不該連帶把檔名蓋成猜出來的樣子。
+    if (line !== "mars") g.filename = buildFilename(line, po, mmdd, g.warehouse, g.category);
   });
   renderGroups();
 });
