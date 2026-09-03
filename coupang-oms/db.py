@@ -800,13 +800,18 @@ def _backfill_cpg_shipping_method(conn):
     只補「配送方式還是空的」那些——已經被人手動填過（不管填的是不是
     原廠(EM)）一律不動，人的判斷優先。冪等：補過的單下次執行時
     shipping_method 已經不是空的，不會再被選到，所以每次啟動都跑一次
-    也沒差，不用另外記「有沒有補過」的旗標。"""
+    也沒差，不用另外記「有沒有補過」的旗標。
+
+    LIKE 的樣式一定要綁參數傳、不能直接寫死在 SQL 字串裡——PostgreSQL
+    模式下 conn.execute 預設會把整段 SQL 當成有可能帶參數在跑
+    （psycopg2 底層的行為），字串裡隨便一個 % 都會被誤認成佔位符號，
+    啟動時直接炸成 IndexError，SQLite 本機測試又踩不到，非常隱蔽。"""
     conn.execute(
         """UPDATE po_headers SET shipping_method = '原廠(EM)'
            WHERE shipping_method = ''
              AND po_number IN (
-                 SELECT DISTINCT po_number FROM orders WHERE line LIKE 'CPG-%'
-             )""")
+                 SELECT DISTINCT po_number FROM orders WHERE line LIKE ?
+             )""", ("CPG-%",))
 
 
 def _consolidate_legacy_remarks(conn):
