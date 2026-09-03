@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>採購表轉換</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename=logo_file) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  /* ── 綠金主題 ────────────────────────────────────────────
+     這頁的識別色是「深綠打底、金色收邊」，跟酷澎訂單管理系統（紅／
+     深藍）刻意分開，一眼就知道現在在的是哪一個工具。金色沿用系統
+     既有的 #D2AB75（跟驗收單簽名那顆按鈕同一個色），不另外發明一個
+     色號，整套系統的金色才會是同一個。
+
+     深色文字才放在金色底上、金色文字才放在深綠底上——反過來（例如
+     白底放金色小字）對比度不足會看不清楚，這也是下面 --gold-ink
+     這個深金色存在的原因：需要在白底寫金色系文字時用它。 */
+  :root {
+    --green-900: #064e3b;
+    --green-800: #065f46;
+    --green-700: #047857;
+    --gold:      #D2AB75;
+    --gold-deep: #c19a63;
+    --gold-ink:  #8a6d3f;
+    --gold-mist: #f7efe2;
+  }
+  body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
+
+  .g-head {
+    background: linear-gradient(100deg, #04352a 0%, var(--green-900) 45%, var(--green-700) 100%);
+    border-bottom: 3px solid var(--gold);
+  }
+  /* 卡片：白底、淡金外框，左邊一條金色粗邊當書籤 */
+  .g-card { border: 1px solid #e8dcc6; border-left: 4px solid var(--gold); }
+  /* 步驟編號：深綠圓底外圈一圈金環 */
+  .g-step { background: var(--green-800); box-shadow: 0 0 0 2px var(--gold); }
+  /* 表頭：深綠底配金字 */
+  .g-thead { background: var(--green-800); color: var(--gold-mist); }
+  .g-thead th { border-bottom: 2px solid var(--gold); }
+
+  .g-btn-green { background: var(--green-700); color: #fff; }
+  .g-btn-green:hover { background: var(--green-800); }
+  .g-btn-gold { background: var(--gold); color: var(--green-900); }
+  .g-btn-gold:hover { background: var(--gold-deep); }
+  .g-btn-outline { border: 1px solid var(--gold); color: var(--gold-ink); background: #fff; }
+  .g-btn-outline:hover { background: var(--gold-mist); }
+
+  .g-divider { border-top: 1px solid #e8dcc6; }
+  .g-link { color: var(--gold-ink); }
+  .g-link:hover { color: var(--green-800); }
+
+  .dropzone { border: 2px dashed var(--gold); background: #fbf7f0; }
+  .dropzone:hover { background: var(--gold-mist); }
+  .dropzone.dz-active { border-color: var(--green-700); background: #ecfdf5; }
+
+  input[type=text], select { outline: none; }
+  input[type=text]:focus, select:focus {
+    border-color: var(--gold); box-shadow: 0 0 0 2px rgba(210,171,117,.45);
+  }
+</style>
+</head>
+<body class="bg-emerald-50/40 text-ink-900">
+
+<header class="g-head text-white shadow-lg">
+  <div class="max-w-[1400px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-2.5">
+      <img src="{{ url_for('static', filename=logo_file) }}" width="40" height="35"
+           class="h-9 w-auto flex-none" alt="永豐商店 logo">
+      <div>
+        <h1 class="text-lg font-bold leading-tight tracking-tight">採購表轉換</h1>
+        <p class="text-[11px] text-[#D2AB75] leading-tight">獨立工具．跟酷澎訂單管理系統資料完全無關</p>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <a href="{{ url_for('index') }}"
+       class="text-sm text-[#f7efe2] hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#D2AB75]/70 hover:bg-[#D2AB75]/20">
+      <i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+  </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-5 py-6 space-y-5">
+
+  <!-- ── 步驟一：選線別、上傳檔案 ─────────────────────────── -->
+  <div class="g-card bg-white rounded-xl shadow-sm p-5 space-y-4">
+    <h2 class="font-bold text-emerald-900 flex items-center gap-2">
+      <span class="g-step w-6 h-6 rounded-full text-white text-xs flex items-center justify-center">1</span>
+      選線別、上傳檔案
+    </h2>
+    <p id="p-line-hint" class="text-xs text-ink-500"></p>
+    <div class="flex flex-wrap items-end gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-emerald-800">線別</span>
+        <select id="p-line" class="border border-[#D2AB75] rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="pg">P&amp;G</option>
+          <option value="paper">紙潔</option>
+          <option value="mars">瑪氏</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-xs font-medium text-emerald-800">到貨日期（用來套進備註／檔名，例如 9/5 到貨就填 0905）</span>
+        <input id="p-date" type="text" maxlength="4" placeholder="0905"
+               class="border border-[#D2AB75] rounded-lg px-3 py-2 text-sm w-28 font-mono">
+      </label>
+      <button id="btn-apply-date" type="button"
+              class="g-btn-outline px-3 py-2 rounded-lg text-sm font-medium">
+        套用日期到全部
+      </button>
+    </div>
+    <div id="p-dropzone" class="dropzone rounded-xl p-8 text-center cursor-pointer transition"
+         onclick="document.getElementById('p-file').click()">
+      <input id="p-file" type="file" accept=".xlsx,.xls" multiple class="hidden">
+      <i class="bi bi-cloud-arrow-up text-3xl text-[#b8914f]"></i>
+      <p class="mt-2 text-sm text-emerald-900">點這裡選檔案，或直接把 Excel 拖進來</p>
+      <p class="text-[11px] text-[#8a6d3f] mt-0.5">支援 .xlsx／.xls</p>
+      <p id="p-multi-hint" class="hidden text-[11px] text-[#8a6d3f]">
+        瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案——資料分散在不同資料夾也沒關係，
+        分好幾次選，選過的檔案會累加，不會被最新一次蓋掉</p>
+    </div>
+    <div id="p-filelist" class="hidden space-y-1" onclick="event.stopPropagation()"></div>
+    <div class="flex items-center gap-3">
+      <button id="btn-parse" type="button"
+              class="g-btn-green px-5 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2">
+        <i class="bi bi-search"></i> 解析檔案
+      </button>
+      <span id="p-status" class="text-sm text-emerald-700 font-medium"></span>
+    </div>
+    <div id="p-error" class="hidden text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 whitespace-pre-line"></div>
+  </div>
+
+  <!-- ── 步驟二：確認分組、編輯備註/檔名、匯出 ────────────── -->
+  <div id="p-results" class="g-card hidden bg-white rounded-xl shadow-sm p-5 space-y-4">
+    <h2 class="font-bold text-emerald-900 flex items-center gap-2">
+      <span class="g-step w-6 h-6 rounded-full text-white text-xs flex items-center justify-center">2</span>
+      確認分組內容，需要的話自己改備註／檔名／倉別，再匯出
+    </h2>
+    <p class="text-xs text-ink-500">
+      倉別、備註、檔名都是系統依規則猜的，猜不到就留空——請自己看過再匯出。
+      點列可以展開看料號明細。
+    </p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+        <thead class="g-thead text-xs">
+          <tr>
+            <th class="px-2 py-2 w-10"><input id="p-check-all" type="checkbox" checked></th>
+            <th class="px-2 py-2 text-left">分組</th>
+            <th class="px-2 py-2 text-right w-20">品項數</th>
+            <th class="px-2 py-2 text-right w-20">數量合計</th>
+            <th class="px-2 py-2 text-left w-28">倉別</th>
+            <th class="px-2 py-2 text-left w-64">備註</th>
+            <th class="px-2 py-2 text-left w-72">檔名</th>
+          </tr>
+        </thead>
+        <tbody id="p-group-body"></tbody>
+      </table>
+    </div>
+    <div class="g-divider flex items-center gap-3 pt-3">
+      <button id="btn-export-each" type="button"
+              class="g-btn-green px-5 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2">
+        <i class="bi bi-download"></i> 匯出所選（各自一個檔）
+      </button>
+      <button id="btn-export-merge" type="button"
+              class="g-btn-gold px-5 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2">
+        <i class="bi bi-file-earmark-plus"></i> 合併所選（一個檔）
+      </button>
+      <span id="p-export-status" class="text-sm text-emerald-700 font-medium"></span>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+let PARSED = null;   // 最後一次解析結果 { line, groups: [...] }
+
+// ── 這兩個函式跟 purchase.py 的 build_remark()/build_filename() 邏輯
+// 必須保持一致：現場改倉別/日期時要能立刻反映在畫面上，不等一趟
+// 伺服器往返，所以前端另外算一份。改規則時兩邊都要一起改。
+function mdFromMMDD(mmdd) {
+  if (!mmdd || !/^\d{4}$/.test(mmdd)) return "";
+  return `${parseInt(mmdd.slice(0, 2), 10)}/${parseInt(mmdd.slice(2), 10)}`;
+}
+function buildRemark(line, po, mmdd, wh) {
+  const md = mdFromMMDD(mmdd);
+  if (line === "paper") return "";
+  if (line === "pg") return (po && wh && md) ? `${po}(${wh})_酷澎${md}買斷` : "";
+  if (line === "mars") return (md && wh) ? `MARS入倉${md}瑪氏送酷澎-${wh}倉` : "";
+  return "";
+}
+// po 傳空字串＝這是合併多張 PO 的檔案，檔名就不放單號（跟紙潔那份
+// 「多張 PO 合併」的真實檔名慣例一致），不然只放第一張會誤導。
+function buildFilename(line, po, mmdd, wh, cat) {
+  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨.xls`;
+  if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
+  if (line === "mars") return `永豐Mars採購單(箱單位)-${cat || "GUM糖"}_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
+  return `採購表_${mmdd || ""}.xls`;
+}
+
+function showError(msg) {
+  const box = $("#p-error");
+  if (!msg) { box.classList.add("hidden"); box.textContent = ""; return; }
+  box.textContent = msg;
+  box.classList.remove("hidden");
+}
+
+// ── 線別切換：只有瑪氏能一次選多個檔案，而且上傳的檔案種類完全不同
+// （瑪氏是 MARS 開的訂貨通知單，不是酷澎系統匯出的「訂單匯入」表）──
+const LINE_UPLOAD_HINT = {
+  pg: "上傳酷澎系統匯出的「訂單匯入」Excel。",
+  paper: "上傳酷澎系統匯出的「訂單匯入」Excel，可以一次選多張 PO 合併。",
+  mars: "上傳 MARS TAIWAN 開的「訂貨通知單」（ORDER FORM），一份就是一張 PO，可以一次選多個檔案。",
+};
+function updateLineUI() {
+  const line = $("#p-line").value;
+  const isMulti = line === "mars";
+  $("#p-multi-hint").classList.toggle("hidden", !isMulti);
+  $("#p-line-hint").textContent = LINE_UPLOAD_HINT[line] || "";
+}
+// 換線別代表換了一種完全不同的檔案格式，之前選的檔案留著沒有意義，
+// 清空重選比較不容易搞混（例如瑪氏選了一半又手滑切成 P&G）。
+$("#p-line").addEventListener("change", () => { clearFiles(); updateLineUI(); });
+updateLineUI();
+
+// ── 選檔累加：瑪氏資料常常分散在不同資料夾，瀏覽器原生的檔案選取窗
+// 一次只能在一個資料夾裡選，選第二次就會整批蓋掉第一次選的——所以
+// 不能直接依賴 <input type=file> 自己的 FileList，改成自己維護一份
+// 累加清單，每次選擇／拖曳都是「加進去」，不是「取代」。
+let SELECTED_FILES = [];
+
+function fileKey(f) { return `${f.name}::${f.size}::${f.lastModified}`; }
+
+function addFiles(fileList) {
+  const existing = new Set(SELECTED_FILES.map(fileKey));
+  let added = 0, dup = 0;
+  Array.from(fileList).forEach(f => {
+    const k = fileKey(f);
+    if (existing.has(k)) { dup++; return; }
+    existing.add(k);
+    SELECTED_FILES.push(f);
+    added++;
+  });
+  renderFileList();
+  if (dup) $("#p-status").textContent = `已加入 ${added} 個檔案（${dup} 個檔名/大小都一樣，跳過重複）`;
+}
+
+function removeFile(idx) {
+  SELECTED_FILES.splice(idx, 1);
+  renderFileList();
+}
+
+function clearFiles() {
+  SELECTED_FILES = [];
+  $("#p-file").value = "";
+  renderFileList();
+}
+
+function renderFileList() {
+  const box = $("#p-filelist");
+  if (!SELECTED_FILES.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  box.classList.remove("hidden");
+  const rows = SELECTED_FILES.map((f, i) => `
+    <div class="flex items-center justify-between gap-2 bg-white border border-[#e0cfae] rounded px-2.5 py-1 text-xs">
+      <span class="text-emerald-900 truncate">${f.name}</span>
+      <button type="button" class="p-file-remove text-[#8a6d3f] hover:text-red-700 flex-none" data-idx="${i}" title="移除這個檔案">
+        <i class="bi bi-x-lg"></i></button>
+    </div>`).join("");
+  box.innerHTML = `
+    <div class="flex items-center justify-between">
+      <span class="text-[11px] text-[#8a6d3f]">已選 ${SELECTED_FILES.length} 個檔案</span>
+      <button type="button" id="btn-clear-files" class="g-link text-[11px] hover:underline">清空重選</button>
+    </div>
+    ${rows}`;
+  $$(".p-file-remove").forEach(btn => btn.addEventListener("click", () => removeFile(Number(btn.dataset.idx))));
+  $("#btn-clear-files").addEventListener("click", clearFiles);
+}
+
+// ── 拖曳上傳 ──────────────────────────────────────────
+const dz = $("#p-dropzone");
+["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.add("dz-active");
+}));
+["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => {
+  e.preventDefault(); dz.classList.remove("dz-active");
+}));
+dz.addEventListener("drop", e => {
+  if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});
+$("#p-file").addEventListener("change", () => {
+  addFiles($("#p-file").files);
+  $("#p-file").value = "";   // 清掉才能連續選同一個資料夾裡的檔案時觸發 change
+});
+
+// ── 解析 ──────────────────────────────────────────────
+$("#btn-parse").addEventListener("click", async () => {
+  const files = SELECTED_FILES;
+  if (!files.length) { showError("請先選一個檔案。"); return; }
+  showError("");
+  $("#p-status").textContent = "解析中…";
+  const fd = new FormData();
+  fd.append("line", $("#p-line").value);
+  files.forEach(f => fd.append("file", f));
+  try {
+    const res = await fetch("{{ url_for('purchase.api_purchase_parse') }}", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || "解析失敗。"); $("#p-status").textContent = ""; return; }
+    PARSED = data;
+    // 有猜到日期就自動帶進日期欄位（用第一組猜到的）
+    if (!$("#p-date").value) {
+      const guessed = data.groups.find(g => g.date_guess);
+      if (guessed) $("#p-date").value = guessed.date_guess;
+    }
+    renderGroups();
+    // 紙潔的備註本來就固定空白，不算異常；其他線別備註是空的，通常是
+    // 猜不到日期或倉別——猜不到就不硬湊，但要讓人知道為什麼是空的，
+    // 不然看起來像壞掉（曾經真的被誤會成 bug）。
+    const blank = PARSED.line !== "paper" && data.groups.some(g => !g.remark);
+    $("#p-status").textContent = `解析完成，共 ${data.groups.length} 組`;
+    if (blank) {
+      showError("有幾組的備註是空的——通常是日期或倉別猜不到，"
+        + "請在上方填「到貨日期」後按「套用日期到全部」，或直接在下面表格裡手動填備註。");
+    }
+  } catch (err) {
+    showError("連線失敗：" + err);
+    $("#p-status").textContent = "";
+  }
+});
+
+function renderGroups() {
+  const line = PARSED.line;
+  const mmdd = $("#p-date").value.trim();
+  const tbody = $("#p-group-body");
+  tbody.innerHTML = "";
+  PARSED.groups.forEach((g, idx) => {
+    const po = g.po_numbers[0] || g.key;
+    if (!g.remark) g.remark = buildRemark(line, po, mmdd, g.warehouse_guess);
+    if (!g.filename) g.filename = buildFilename(line, po, mmdd, g.warehouse_guess, g.category);
+    if (!g.warehouse) g.warehouse = g.warehouse_guess;
+
+    const tr = document.createElement("tr");
+    tr.className = "border-t border-[#e8dcc6] hover:bg-[#fbf7f0]";
+    const poLabel = g.po_numbers.join(", ");
+    const mismatchBadge = g.address_mismatch
+      ? '<span class="text-amber-600 text-xs" title="這組裡出現一個以上的收件地址，倉別可能猜不準，請自己確認"><i class="bi bi-exclamation-triangle-fill"></i></span>'
+      : "";
+    tr.innerHTML = `
+      <td class="px-2 py-2 align-top"><input type="checkbox" class="p-row-check" checked data-idx="${idx}"></td>
+      <td class="px-2 py-2 align-top">
+        <div class="font-mono text-xs">${g.key}</div>
+        <div class="text-[11px] text-[#8a6d3f]">訂單編號：${poLabel} ${mismatchBadge}</div>
+        <button type="button" class="p-toggle-detail g-link text-[11px] hover:underline mt-0.5" data-idx="${idx}">
+          展開料號明細</button>
+      </td>
+      <td class="px-2 py-2 text-right align-top">${g.item_count}</td>
+      <td class="px-2 py-2 text-right align-top">${g.qty_total}</td>
+      <td class="px-2 py-2 align-top">
+        <input type="text" class="p-field-warehouse border border-[#e0cfae] rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.warehouse || ""}">
+        ${g.address ? `<button type="button" class="p-remember-wh g-link text-[10px] hover:underline mt-0.5" data-idx="${idx}" title="把這個收件地址記起來對應這個倉別代碼，下次匯入同一個地址就會自動猜到">記住這個倉別</button>` : ""}
+      </td>
+      <td class="px-2 py-2 align-top">
+        <input type="text" class="p-field-remark border border-[#e0cfae] rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.remark || ""}">
+      </td>
+      <td class="px-2 py-2 align-top">
+        <input type="text" class="p-field-filename border border-[#e0cfae] rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.filename || ""}">
+      </td>`;
+    tbody.appendChild(tr);
+
+    const detailTr = document.createElement("tr");
+    detailTr.className = "hidden bg-[#fbf7f0]";
+    detailTr.dataset.detailFor = idx;
+    detailTr.innerHTML = `<td></td><td colspan="6" class="px-3 py-2">
+      <table class="text-xs w-full max-w-md">
+        <thead><tr class="text-[#8a6d3f]"><th class="text-left font-medium">料號</th><th class="text-right font-medium">數量</th></tr></thead>
+        <tbody>${g.rows.map(r => `<tr><td class="font-mono py-0.5">${r.material_no}</td><td class="text-right py-0.5">${r.qty}</td></tr>`).join("")}</tbody>
+      </table>
+    </td>`;
+    tbody.appendChild(detailTr);
+  });
+
+  $$(".p-field-warehouse").forEach(el => el.addEventListener("input", onFieldEdit));
+  $$(".p-field-remark").forEach(el => el.addEventListener("input", onFieldEdit));
+  $$(".p-field-filename").forEach(el => el.addEventListener("input", onFieldEdit));
+  $$(".p-toggle-detail").forEach(btn => btn.addEventListener("click", () => {
+    const idx = btn.dataset.idx;
+    const row = tbody.querySelector(`tr[data-detail-for="${idx}"]`);
+    row.classList.toggle("hidden");
+    btn.textContent = row.classList.contains("hidden") ? "展開料號明細" : "收起料號明細";
+  }));
+  $$(".p-remember-wh").forEach(btn => btn.addEventListener("click", async () => {
+    const idx = Number(btn.dataset.idx);
+    const g = PARSED.groups[idx];
+    const code = (g.warehouse || "").trim();
+    if (!code) { alert("倉別欄位是空的，先填代碼再記住。"); return; }
+    try {
+      const res = await fetch("{{ url_for('purchase.api_purchase_warehouses_save') }}", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: g.address, code }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "");
+      const orig = btn.textContent;
+      btn.textContent = "已記住";
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    } catch (err) {
+      alert("記不起來：" + err.message);
+    }
+  }));
+
+  $("#p-results").classList.remove("hidden");
+}
+
+function onFieldEdit(e) {
+  const idx = Number(e.target.dataset.idx);
+  const g = PARSED.groups[idx];
+  if (e.target.classList.contains("p-field-warehouse")) g.warehouse = e.target.value;
+  if (e.target.classList.contains("p-field-remark")) g.remark = e.target.value;
+  if (e.target.classList.contains("p-field-filename")) g.filename = e.target.value;
+}
+
+$("#btn-apply-date").addEventListener("click", () => {
+  if (!PARSED) return;
+  const mmdd = $("#p-date").value.trim();
+  const line = PARSED.line;
+  PARSED.groups.forEach(g => {
+    const po = g.po_numbers[0] || g.key;
+    g.remark = buildRemark(line, po, mmdd, g.warehouse);
+    // 瑪氏的檔名沿用匯入檔名（見後端 api_purchase_parse），套用日期
+    // 只是補猜備註裡的日期，不該連帶把檔名蓋成猜出來的樣子。
+    if (line !== "mars") g.filename = buildFilename(line, po, mmdd, g.warehouse, g.category);
+  });
+  renderGroups();
+});
+
+$("#p-check-all").addEventListener("change", e => {
+  $$(".p-row-check").forEach(cb => cb.checked = e.target.checked);
+});
+
+function selectedGroups() {
+  return $$(".p-row-check").filter(cb => cb.checked).map(cb => PARSED.groups[Number(cb.dataset.idx)]);
+}
+
+async function exportGroups(groups, merge) {
+  if (!groups.length) { $("#p-export-status").textContent = "沒有勾選任何一組。"; return; }
+
+  // 紙潔的備註本來就固定空白，不算異常，不用問；其他線別勾到備註是
+  // 空的就先確認一下，免得真的匯出一份漏了訂單編號的採購表。
+  if (PARSED.line !== "paper" && groups.some(g => !g.remark)
+      && !confirm("勾選的組別裡有備註是空的，確定要匯出嗎？")) {
+    $("#p-export-status").textContent = "已取消。";
+    return;
+  }
+
+  let payloadGroups = groups;
+  if (merge) {
+    // 每一列要帶著「自己那一組」的備註，不能整份共用第一組的——P&G／
+    // 瑪氏的備註裡面有訂單編號，共用會讓後面幾張 PO 的單號整個不見。
+    const rows = groups.flatMap(g => g.rows.map(r => ({ ...r, remark: g.remark })));
+    const warehouses = [...new Set(groups.map(g => (g.warehouse || "").trim()))];
+    if (warehouses.length > 1 &&
+        !confirm(`勾選的這幾組倉別不一樣（${warehouses.join("、")}），合併成同一張採購表確定嗎？`)) {
+      $("#p-export-status").textContent = "已取消。";
+      return;
+    }
+    const mmdd = $("#p-date").value.trim();
+    // 合併檔沒有單一 PO，檔名就不放單號
+    const filename = buildFilename(PARSED.line, "", mmdd, groups[0].warehouse, groups[0].category);
+    payloadGroups = [{ rows, remark: groups[0].remark, filename }];
+  }
+  $("#p-export-status").textContent = "產生中…";
+  try {
+    const res = await fetch("{{ url_for('purchase.api_purchase_export') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line: PARSED.line, groups: payloadGroups }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      $("#p-export-status").textContent = data.error || "匯出失敗。";
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    // Flask 對非 ASCII 檔名會同時附上 filename=（退化過的 fallback）跟
+    // filename*=UTF-8''（真正的檔名），要先找星號那個，不然抓到的會是
+    // 退化過、看不懂的那份。
+    const starMatch = disposition.match(/filename\*=UTF-8''([^;]+)/);
+    const plainMatch = disposition.match(/filename="?([^";]+)"?/);
+    const filename = starMatch ? decodeURIComponent(starMatch[1])
+      : plainMatch ? plainMatch[1]
+      : (merge ? payloadGroups[0].filename : "採購表.zip");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    $("#p-export-status").textContent = "已下載。";
+  } catch (err) {
+    $("#p-export-status").textContent = "連線失敗：" + err;
+  }
+}
+
+$("#btn-export-each").addEventListener("click", () => exportGroups(selectedGroups(), false));
+$("#btn-export-merge").addEventListener("click", () => exportGroups(selectedGroups(), true));
+</script>
+</body>
+</html>

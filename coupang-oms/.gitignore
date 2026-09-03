@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+
+# 舊版佈局殘留（現在資料與設定都放在 coupang-oms 外面的「資料與設定」資料夾）
+database.db
+database.db-wal
+database.db-shm
+backups/
+/config.json
+/export_profiles.json
