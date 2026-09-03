@@ -136,9 +136,6 @@
     <button id="btn-sign" class="bg-[#D2AB75] hover:bg-[#c19a63] px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm text-ink-900">
       <i class="bi bi-pen"></i> 驗收單簽名
     </button>
-    <button id="btn-sign-sop" class="bg-transparent hover:bg-[#D2AB75]/10 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-[#D2AB75] text-[#D2AB75]">
-      <i class="bi bi-journal-text"></i> 驗收單簽名 SOP
-    </button>
     <a href="{{ url_for('purchase.purchase_page') }}" id="btn-purchase"
        class="bg-emerald-800 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm text-[#D2AB75] border border-[#D2AB75]"
        title="跟酷澎訂單管理無關的獨立工具：把酷澎訂單匯入檔轉成各線別的採購表">
@@ -449,6 +446,7 @@
     <button data-sgtab="run" class="sg-tab px-3 py-2 border-b-2 font-medium">簽名</button>
     <button data-sgtab="history" class="sg-tab px-3 py-2 border-b-2 font-medium">歷史紀錄</button>
     <button data-sgtab="calibrate" class="sg-tab px-3 py-2 border-b-2 font-medium">位置校正</button>
+    <button data-sgtab="sop" class="sg-tab px-3 py-2 border-b-2 font-medium">SOP</button>
   </div>
 
   <!-- 簽名 -->
@@ -599,45 +597,41 @@
     </div>
   </div>
 
+  <!-- SOP：投影片式的操作說明，跟位置校正一樣是驗收單簽名視窗裡的一個分頁 -->
+  <div data-sgpane="sop" class="sg-pane p-4 max-h-[72vh] overflow-y-auto text-sm hidden">
+    <div class="bg-ink-100 rounded-lg flex flex-col items-center p-4 gap-3">
+      <div class="w-full flex justify-end">
+        <button id="btn-sop-print" class="text-ink-500 hover:text-ink-900 text-xs flex items-center gap-1">
+          <i class="bi bi-printer"></i> 列印／存成 PDF</button>
+      </div>
+      <div class="flex items-center justify-center relative w-full">
+        <img id="sop-slide-img" class="max-w-full max-h-[46vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
+        <video id="sop-slide-video" class="hidden max-w-full max-h-[46vh] rounded-lg shadow-lg border border-ink-200"
+               muted loop playsinline autoplay controls></video>
+      </div>
+      <div id="sop-caption" class="w-full max-w-[860px] bg-white rounded-lg border border-ink-200 px-4 py-3">
+        <div id="sop-caption-title" class="font-bold text-[#8a6d3f] mb-1.5"></div>
+        <ul id="sop-caption-bullets" class="list-disc pl-5 space-y-1 text-sm text-ink-700"></ul>
+      </div>
+      <div class="w-full flex items-center justify-between gap-3 pt-1">
+        <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50 whitespace-nowrap text-xs">
+          <i class="bi bi-chevron-left"></i> 上一頁</button>
+        <div class="flex items-center gap-3 flex-wrap justify-center">
+          <span id="sop-page-label" class="text-sm text-ink-500 font-mono"></span>
+          <div id="sop-dots" class="flex items-center gap-1.5"></div>
+        </div>
+        <button id="btn-sop-next" class="px-4 py-2 rounded-lg bg-[#D2AB75] hover:bg-[#c19a63] text-ink-900 font-semibold whitespace-nowrap text-xs">
+          下一頁 <i class="bi bi-chevron-right"></i></button>
+      </div>
+    </div>
+  </div>
+
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
     <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
     <button id="btn-sign-zip" class="hidden px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
       <i class="bi bi-file-earmark-zip"></i> 下載全部（ZIP）</button>
     <button id="btn-sign-run" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
       <i class="bi bi-pen-fill"></i> 開始簽名</button>
-  </div>
-</dialog>
-
-<!-- ── 驗收單簽名 SOP ──────────────────────────────────── -->
-<dialog id="dlg-sign-sop" class="rounded-xl p-0 w-[min(1100px,96vw)] backdrop:bg-ink-950/70">
-  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
-    <h2 class="font-bold"><i class="bi bi-journal-text"></i> 驗收單簽名 SOP</h2>
-    <div class="flex items-center gap-3">
-      <button id="btn-sop-print" class="text-ink-300 hover:text-white text-sm flex items-center gap-1">
-        <i class="bi bi-printer"></i> 列印／存成 PDF</button>
-      <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
-    </div>
-  </div>
-  <div class="bg-ink-100 flex flex-col items-center p-4 gap-3 overflow-y-auto" style="max-height: 78vh;">
-    <div class="flex items-center justify-center relative w-full">
-      <img id="sop-slide-img" class="max-w-full max-h-[52vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
-      <video id="sop-slide-video" class="hidden max-w-full max-h-[52vh] rounded-lg shadow-lg border border-ink-200"
-             muted loop playsinline autoplay controls></video>
-    </div>
-    <div id="sop-caption" class="w-full max-w-[860px] bg-white rounded-lg border border-ink-200 px-4 py-3">
-      <div id="sop-caption-title" class="font-bold text-[#8a6d3f] mb-1.5"></div>
-      <ul id="sop-caption-bullets" class="list-disc pl-5 space-y-1 text-sm text-ink-700"></ul>
-    </div>
-  </div>
-  <div class="px-5 py-3 border-t flex items-center justify-between bg-slate-50 gap-3">
-    <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50 whitespace-nowrap">
-      <i class="bi bi-chevron-left"></i> 上一頁</button>
-    <div class="flex items-center gap-3 flex-wrap justify-center">
-      <span id="sop-page-label" class="text-sm text-ink-500 font-mono"></span>
-      <div id="sop-dots" class="flex items-center gap-1.5"></div>
-    </div>
-    <button id="btn-sop-next" class="px-4 py-2 rounded-lg bg-[#D2AB75] hover:bg-[#c19a63] text-ink-900 font-semibold whitespace-nowrap">
-      下一頁 <i class="bi bi-chevron-right"></i></button>
   </div>
 </dialog>
 
@@ -1966,6 +1960,13 @@ function switchSignTab(name) {
   $("#btn-sign-zip").classList.toggle("hidden", !onRun || !SIGN_STATE.lastBatch);
   if (name === "history") loadSignHistory();
   if (name === "calibrate") loadSignatureCalibration();
+  if (name === "sop") {
+    sopIndex = 0;
+    if (!$("#sop-dots").children.length) buildSopDots();
+    renderSopSlide();
+  } else {
+    stopSopVideo();   // 離開 SOP 分頁時把可能還在背景播的影片停掉
+  }
 }
 
 document.querySelectorAll(".sg-tab").forEach(b => {
@@ -2122,25 +2123,22 @@ function buildSopDots() {
   });
 }
 
-$("#btn-sign-sop").addEventListener("click", () => {
-  sopIndex = 0;
-  if (!$("#sop-dots").children.length) buildSopDots();
-  renderSopSlide();
-  $("#dlg-sign-sop").showModal();
-});
 $("#btn-sop-prev").addEventListener("click", () => {
   if (sopIndex > 0) { sopIndex--; renderSopSlide(); }
 });
 $("#btn-sop-next").addEventListener("click", () => {
   if (sopIndex < SOP_SLIDES.length - 1) { sopIndex++; renderSopSlide(); }
-  else $("#dlg-sign-sop").close();
+  else switchSignTab("run");   // 「看完了」回到簽名分頁，SOP 現在只是視窗裡的一頁，不整個關掉
 });
-$("#dlg-sign-sop").addEventListener("keydown", e => {
+// 方向鍵翻頁：SOP 分頁沒顯示時不要攔——不然歷史紀錄分頁打 PO 單號
+// 按左右鍵找字，會被誤當成翻頁。
+$("#dlg-sign").addEventListener("keydown", e => {
+  if ($('.sg-pane[data-sgpane="sop"]').classList.contains("hidden")) return;
   if (e.key === "ArrowRight") $("#btn-sop-next").click();
   if (e.key === "ArrowLeft") $("#btn-sop-prev").click();
 });
-// 關掉視窗時一定要把影片停掉，不然關了還在背景播
-$("#dlg-sign-sop").addEventListener("close", stopSopVideo);
+// 關掉整個視窗時把可能還在播的 SOP 影片停掉，不然關了還在背景播
+$("#dlg-sign").addEventListener("close", stopSopVideo);
 $("#btn-sop-print").addEventListener("click", () => {
   const win = window.open("", "_blank");
   const imgs = SOP_SLIDES.map(f =>
