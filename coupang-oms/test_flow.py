@@ -1029,6 +1029,62 @@ def main():
         check("還沒同步過的單，實際驗入數量印成空白，不是 0",
               us_dict["實際驗入數量"] is None, us_dict["實際驗入數量"])
 
+    print("\n【36】CPG 新單匯入自動帶配送方式，其他線別不動；舊資料一併補齊")
+    # CPG 固定走原廠(EM)，新單建立當下就該自動判斷帶入，不用 OP 每張手動選。
+    cpg_po = "13000000900001"
+    other_po = "13000000900002"
+    cpg_path = os.path.join(_tmp, "cpg_new.xlsx")
+    wb = openpyxl.load_workbook(SAMPLE)
+    ws = wb["整合表"]
+    template_row = 2   # 直接複製一列真實資料的其他欄位，只改 PO 單號跟線別
+    rows_to_add = [(cpg_po, "CPG-潔品"), (other_po, "瑪氏")]
+    for i, (po, line) in enumerate(rows_to_add):
+        r = ws.max_row + 1
+        for c in range(1, ws.max_column + 1):
+            ws.cell(row=r, column=c, value=ws.cell(row=template_row, column=c).value)
+        ws.cell(row=r, column=2, value=line)         # 線別
+        ws.cell(row=r, column=3, value=po)           # PO單號
+        ws.cell(row=r, column=8, value=f"TESTSKU{i}")  # SKU ID，避開跟既有資料撞鍵
+    wb.save(cpg_path)
+
+    res = upload(client, cpg_path)
+    prev = res.get_json()
+    client.post("/api/import/commit", json={"batch_id": prev["batch_id"], "operator": "小真"})
+
+    cpg_header = client.get(f"/api/pos/{cpg_po}").get_json()["header"]
+    check("CPG 新單匯入時自動帶入配送方式「原廠(EM)」",
+          cpg_header["shipping_method"] == "原廠(EM)", cpg_header["shipping_method"])
+
+    other_header = client.get(f"/api/pos/{other_po}").get_json()["header"]
+    check("非 CPG 線別的新單，配送方式不自動帶、維持空白",
+          other_header["shipping_method"] == "", other_header["shipping_method"])
+
+    # 補既有舊資料：找一筆匯入前就存在、線別是 CPG 但配送方式還沒填的單
+    # （用直接寫資料庫模擬「規則上線前就已經在系統裡」的舊資料），
+    # 重跑一次 init_db 的補值邏輯，確認補得到。
+    legacy_po = "13000000900003"
+    conn = db.get_conn()
+    stamp = db.now()
+    conn.execute(
+        "INSERT INTO po_headers (po_number, po_status, receiving_status, is_pulled, "
+        "filed_date, created_at, updated_at) VALUES (?, '已建立', '未驗收', 0, ?, ?, ?)",
+        (legacy_po, db.today(), stamp, stamp))
+    conn.execute(
+        "INSERT INTO orders (po_number, sku_id, line, created_at, updated_at, "
+        "first_seen_at, last_seen_at) VALUES (?, 'LEGACYSKU', 'CPG-紙品', ?, ?, ?, ?)",
+        (legacy_po, stamp, stamp, stamp, stamp))
+    conn.commit()
+    conn.close()
+
+    migrate_conn = db.get_conn()
+    db._migrate_columns(migrate_conn)
+    migrate_conn.commit()
+    migrate_conn.close()
+
+    legacy_header = client.get(f"/api/pos/{legacy_po}").get_json()["header"]
+    check("規則上線前既有的 CPG 舊資料，補值邏輯跑過一次後也補上了",
+          legacy_header["shipping_method"] == "原廠(EM)", legacy_header["shipping_method"])
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

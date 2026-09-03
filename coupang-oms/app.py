@@ -35,7 +35,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-02.5"
+BUILD_VERSION = "2026-09-02.6"
 
 app = Flask(__name__)
 
@@ -2170,6 +2170,21 @@ def api_import_commit():
         inserted = updated = 0
 
         today = db.today()
+
+        # CPG 的配送方式固定是原廠(EM)，新單建立時就直接判斷帶入，省得
+        # OP 每張都手動選。只在「這批真的建立了新表頭」時才判斷——同一張
+        # PO 之後再匯入新增 SKU，表頭早就存在，不該回頭去動配送方式。
+        new_po_numbers = {row["po_number"] for row in preview["new"]}
+        existing_po_numbers = set()
+        if new_po_numbers:
+            placeholders = ", ".join("?" * len(new_po_numbers))
+            existing_po_numbers = {
+                r["po_number"] for r in conn.execute(
+                    f"SELECT po_number FROM po_headers WHERE po_number IN ({placeholders})",
+                    tuple(new_po_numbers)).fetchall()
+            }
+        po_has_cpg_line = {}
+
         # INSERT OR IGNORE 是 SQLite 寫法，PostgreSQL 要用 ON CONFLICT
         # DO NOTHING，效果一樣：這張 PO 表頭已經存在就什麼都不做。
         insert_po_header = (
@@ -2188,6 +2203,9 @@ def api_import_commit():
             # PO 表頭只在第一次見到這張單時建立。之後同一張單再上傳，
             # 這裡什麼都不做——狀態與建檔日一律以系統為準，不被 Excel 覆蓋。
             conn.execute(insert_po_header, (row["po_number"], today, stamp, stamp))
+            if (row["po_number"] not in existing_po_numbers
+                    and str(row.get("line") or "").startswith("CPG-")):
+                po_has_cpg_line[row["po_number"]] = True
 
             columns = ", ".join(INSERT_FIELDS)
             marks = ", ".join("?" * len(INSERT_FIELDS))
@@ -2206,6 +2224,12 @@ def api_import_commit():
                        f"{row['po_number']} / {row['sku_id']}", operator,
                        "import", preview["filename"])
             inserted += 1
+
+        for po_number in po_has_cpg_line:
+            conn.execute(
+                "UPDATE po_headers SET shipping_method = '原廠(EM)', updated_at = ? "
+                "WHERE po_number = ? AND shipping_method = ''",
+                (stamp, po_number))
 
         for item in preview["updated"]:
             row = item["row"]

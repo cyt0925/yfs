@@ -789,6 +789,25 @@ def _migrate_columns(conn):
         conn.execute("ALTER TABLE orders RENAME COLUMN remarks TO remarks_legacy")
         _consolidate_legacy_remarks(conn)
 
+    _backfill_cpg_shipping_method(conn)
+
+
+def _backfill_cpg_shipping_method(conn):
+    """CPG 線別的配送方式固定是原廠(EM)，補上這條規則之後匯入的新單會
+    自動帶（見 app.py 的 api_import_commit），但補規則之前已經存在的舊
+    資料不會回頭套用，這裡一次補齊。
+
+    只補「配送方式還是空的」那些——已經被人手動填過（不管填的是不是
+    原廠(EM)）一律不動，人的判斷優先。冪等：補過的單下次執行時
+    shipping_method 已經不是空的，不會再被選到，所以每次啟動都跑一次
+    也沒差，不用另外記「有沒有補過」的旗標。"""
+    conn.execute(
+        """UPDATE po_headers SET shipping_method = '原廠(EM)'
+           WHERE shipping_method = ''
+             AND po_number IN (
+                 SELECT DISTINCT po_number FROM orders WHERE line LIKE 'CPG-%'
+             )""")
+
 
 def _consolidate_legacy_remarks(conn):
     """把搬欄位前每個品項各自的備註，合併成整張單一份，不要無聲丟資料。
