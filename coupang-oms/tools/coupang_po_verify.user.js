@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         酷澎 PO 批次驗收比對器
 // @namespace    yfycpg.kate
-// @version      7.2
+// @version      7.3
 // @description  兩層驗收：第一層 清單頁收貨數量 vs detail可交貨總數(confirmedQty加總)；不符才下鑽逐SKU比 receivedQty vs confirmedQty。可貼上訂單系統複製的 PO 單號指定要驗哪幾張，或掃描目前清單頁。多狀態勾選(預設已確認+已關閉)、匯出Excel、同步「實際驗入數量」與「驗收金額(訂單金額稅後)」到訂單系統。
 // @match        https://supplier.tw.coupang.com/pom/purchase-order/*
 // @run-at       document-idle
@@ -22,22 +22,18 @@
   const toNum = (t) => { const m = String(t ?? '').replace(/,/g, '').match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
 
   // ── 驗收金額：酷澎後台「訂單金額(稅後)」──
-  // detail API 回來的每個 SKU 物件裡，金額欄位叫什麼名字沒有文件可查，
-  // 只能列幾個最像的候選名字逐一試；都找不到就退回「稅後單價 × PO 數量」
-  // 自己算（畫面上 88,176 = 528 × 167.00 就是這樣來的）。還是算不出來
-  // 就回 null——訂單系統那邊 null 代表「這次沒抓到」，不會把原本的金額
-  // 清掉，也不會被當成 0 元。
-  // 第一次找不到時把該 SKU 的欄位名稱印到 Console（F12），把那串貼給
-  // 維護的人就能把正確的欄位名補進候選清單。
-  const AMOUNT_FIELDS = [
-    'totalPriceWithTax', 'totalAmountWithTax', 'amountWithTax', 'taxIncludedAmount',
-    'totalPrice', 'totalAmount', 'orderAmount', 'amount', 'totalSupplyPrice',
-    'supplyAmount', 'poAmount', 'orderedAmount',
-  ];
-  const UNIT_PRICE_FIELDS = [
-    'unitPriceWithTax', 'priceWithTax', 'taxIncludedPrice', 'unitPrice', 'price',
-    'supplyPrice', 'purchasePrice', 'orderPrice',
-  ];
+  // 2026-09-04 從真實 API 回應對出來的欄位名（poSkuList 每個 SKU 物件）：
+  //   purchasePriceAfterTax   訂單金額(稅後) ＝ unitPriceAfterTax × orderedQty
+  //                           （畫面上 88,176 = 167.00 × 528）← 用這個
+  //   purchasePriceBeforeTax / purchasePriceTax   訂單金額 稅前／稅金
+  //   receivingPriceAfterTax  實際收貨的稅後金額（依 receivedQty 算），
+  //                           要改成「以收到的算錢」就換成這個
+  //   unitPriceAfterTax / unitPriceBeforeTax      單價 稅後／稅前
+  // 主欄位抓不到就退回「稅後單價 × PO 數量」自己算；還是算不出來就回
+  // null——訂單系統那邊 null 代表「這次沒抓到」，不會把原本的金額清掉，
+  // 也不會被當成 0 元，並在面板上把該 SKU 的原始資料攤出來給人看。
+  const AMOUNT_FIELDS = ['purchasePriceAfterTax'];
+  const UNIT_PRICE_FIELDS = ['unitPriceAfterTax'];
   // 找不到金額欄位時留一份樣本，直接顯示在面板上讓使用者複製給維護的
   // 人，不用去翻 Console。
   let amountSample = null;
@@ -170,7 +166,7 @@
   const box = document.createElement('div');
   box.id = 'kpv';
   box.innerHTML = `
-    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.2</span></b><span class="x">×</span></div>
+    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.3</span></b><span class="x">×</span></div>
     <div class="bd">
       <textarea class="polist" id="kpv-po-list" placeholder="從訂單系統勾選 PO → 按「複製 PO 單號給驗收工具」→ 貼在這裡（一行一個）。留空則改成掃描目前這頁清單。"></textarea>
       <div class="pocount" id="kpv-pocount"></div>
