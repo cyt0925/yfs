@@ -189,7 +189,7 @@
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
         <input id="f-po" class="border rounded px-2 py-2" placeholder="模糊搜尋"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品名 / 料號 / 條碼</span>
-        <input id="f-keyword" class="border rounded px-2 py-2" placeholder="關鍵字"></label>
+        <input id="f-keyword" autocomplete="off" class="border rounded px-2 py-2" placeholder="關鍵字"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
         <select id="f-line" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">倉別</span>
@@ -653,6 +653,12 @@
   <!-- 改密碼：每個人都看得到，改自己的 -->
   <div data-pane="password" class="st-pane p-5 space-y-3 text-sm">
     <p class="text-xs text-ink-500">修改 <b id="st-me"></b> 的登入密碼。</p>
+    <!-- 給 Chrome 密碼管理器配對用的帳號欄，看不見、不可編輯。沒有它，
+         Chrome 看到下面的密碼欄就會去抓頁面上第一個純文字輸入框（正好是
+         首頁的「品名 / 料號 / 條碼」關鍵字欄）把存過的帳號填進去，每次
+         重新整理關鍵字欄就莫名出現登入者名字。 -->
+    <input id="st-user" type="text" autocomplete="username" readonly tabindex="-1"
+           aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
     <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">目前密碼</span>
       <input id="st-old" type="password" autocomplete="current-password" class="border rounded px-2 py-2"></label>
     <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">新密碼（至少 6 個字）</span>
@@ -1878,6 +1884,7 @@ function renderUserList() {
 async function loadAccount() {
   ACCOUNT = await (await fetch("/api/account")).json();
   $("#st-me").textContent = ACCOUNT.user;
+  $("#st-user").value = ACCOUNT.user;
   document.querySelectorAll('[data-tab="users"], [data-tab="data"], [data-tab="sync"]')
     .forEach(b => b.classList.toggle("hidden", !ACCOUNT.is_admin));
   if (ACCOUNT.is_admin) renderUserList();
