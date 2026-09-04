@@ -408,6 +408,67 @@ def main():
     check("差異照樣寫進歷程，不會把不一致藏起來", len(unsync_log) > 0,
           f"實際 {len(unsync_log)} 筆")
 
+    print("\n【18-2】談好交期之後酷澎又加 SKU：新品項要沿用談好的交期，不能讓整張單分裂")
+    # 情境：PO 13000000481036 明細改成 9/9 之後，整合表又多了一個新 SKU，
+    # 新 SKU 照檔案帶舊交期進來，首頁取 MIN 顯示舊日期、明細看第一列顯示
+    # 9/9，兩邊對不起來。
+    grown = os.path.join(_tmp, "grown.xlsx")
+    shutil.copy(SAMPLE, grown)
+    wb = openpyxl.load_workbook(grown)
+    ws = wb["整合表"]
+    hdr = [c.value for c in ws[1]]
+    col = {h: i + 1 for i, h in enumerate(hdr)}
+    src_row = next(r for r in range(2, ws.max_row + 1)
+                   if str(ws.cell(row=r, column=col["PO單號"]).value) == sync_po)
+    file_date = ws.cell(row=src_row, column=col["交付日期"]).value
+    new_row = ws.max_row + 1
+    for c in range(1, ws.max_column + 1):
+        ws.cell(row=new_row, column=c).value = ws.cell(row=src_row, column=c).value
+    ws.cell(row=new_row, column=col["SKU ID"]).value = "999900000000001"
+    ws.cell(row=new_row, column=col["NO"]).value = 99
+    wb.save(grown)
+
+    d = upload(client, grown).get_json()
+    check("多出來的那一列被判定成新增 1 筆", d["new_count"] == 1, f"實際 {d['new_count']}")
+    client.post("/api/import/commit", json={"batch_id": d["batch_id"], "operator": "小真"})
+    grown_det = client.get(f"/api/pos/{sync_po}").get_json()
+    new_sku = next(s for s in grown_det["skus"] if s["sku_id"] == "999900000000001")
+    check("新 SKU 沿用整張單談好的交期，不是檔案裡的舊日期",
+          new_sku["delivery_date"] == "2026-11-11",
+          f"實際 {new_sku['delivery_date']}（檔案為 {file_date}）")
+    check("新 SKU 一樣標記人工調整過，之後匯入不會再被蓋回",
+          bool(new_sku["delivery_date_overridden"]))
+    check("整張單所有品項交期一致，沒有分裂",
+          len({s["delivery_date"] for s in grown_det["skus"]}) == 1,
+          f"實際 {sorted({s['delivery_date'] for s in grown_det['skus']})}")
+    list_row = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                    if r["po_number"] == sync_po)
+    check("首頁列表的到貨日跟明細一致", list_row["delivery_date"] == grown_det["delivery_date"]
+          == "2026-11-11", f"首頁 {list_row['delivery_date']}／明細 {grown_det['delivery_date']}")
+    check("沿用這件事有寫進歷程，查得到酷澎檔案原本是什麼",
+          any(l["field"] == "_inherit" and l["sku_id"] == "999900000000001"
+              for l in grown_det["logs"]))
+
+    # 補規則之前已經分裂的舊資料：模擬一列被帶成舊日期，啟動補值要統一回來
+    conn = db.get_conn()
+    conn.execute("UPDATE orders SET delivery_date = '2026-01-01', delivery_date_overridden = 0 "
+                 "WHERE po_number = ? AND sku_id = ?", (sync_po, "999900000000001"))
+    conn.commit()
+    conn.close()
+    split_list = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                      if r["po_number"] == sync_po)
+    check("就算舊資料分裂，首頁也優先顯示人工調整過的交期，不再顯示最小值",
+          split_list["delivery_date"] == "2026-11-11", split_list["delivery_date"])
+    fix_conn = db.get_conn()
+    db._migrate_columns(fix_conn)
+    fix_conn.commit()
+    fix_conn.close()
+    fixed_det = client.get(f"/api/pos/{sync_po}").get_json()
+    check("啟動補值把分裂的舊資料統一成談好的交期",
+          all(s["delivery_date"] == "2026-11-11" and s["delivery_date_overridden"]
+              for s in fixed_det["skus"]),
+          f"實際 {sorted({s['delivery_date'] for s in fixed_det['skus']})}")
+
     print("\n【19】歷程總覽：查詢與匯出")
     all_logs = client.get("/api/logs?page_size=10").get_json()
     check("歷程總覽查得到資料", all_logs["total"] > 0, f"共 {all_logs['total']} 筆")

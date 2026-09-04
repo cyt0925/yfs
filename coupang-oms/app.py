@@ -35,7 +35,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-03.1"
+BUILD_VERSION = "2026-09-04.1"
 
 app = Flask(__name__)
 
@@ -188,6 +188,46 @@ INSERT_FIELDS = [
     "delivery_date", "qty_coupang", "unit", "box_size", "unit_price",
     "expiry_note", "seq_no",
 ]
+
+# 新增 SKU 併入既有 PO 時要一起寫進去的「人工調整過」旗標（見
+# api_import_commit 的 inherited）。
+_INSERT_OVERRIDE_FLAGS = [f"{f}_overridden" for f in
+                          ("delivery_date", "warehouse", "order_type")]
+
+
+def _po_overridden_values(conn, po_numbers):
+    """回傳 {po_number: {field: value}}：這些 PO 底下已被 OP 人工調整過的
+    交期／倉別／訂單類型。同一張單改的時候是整張一起改，所以任一列標記
+    已調整，值就代表整張單。"""
+    out = {}
+    po_numbers = list(po_numbers)
+    if not po_numbers:
+        return out
+    for i in range(0, len(po_numbers), 300):
+        chunk = po_numbers[i:i + 300]
+        placeholders = ", ".join("?" * len(chunk))
+        rows = conn.execute(
+            f"""SELECT po_number, delivery_date, warehouse, order_type,
+                       delivery_date_overridden, warehouse_overridden,
+                       order_type_overridden
+                FROM orders WHERE po_number IN ({placeholders})
+                  AND (delivery_date_overridden = 1 OR warehouse_overridden = 1
+                       OR order_type_overridden = 1)""", tuple(chunk)).fetchall()
+        for r in rows:
+            bucket = out.setdefault(r["po_number"], {})
+            for field in PO_COUPANG_FIELDS:
+                if r[f"{field}_overridden"] and field not in bucket:
+                    bucket[field] = r[field]
+    return out
+
+
+def po_shared_value(skus, field):
+    """整張單共用欄位要顯示哪一列的值：優先拿人工調整過那一列，沒有就
+    拿第一列。跟 po_summary_sql 裡的取法一致，首頁跟明細才不會各說各話。"""
+    for s in skus:
+        if s.get(f"{field}_overridden"):
+            return s[field]
+    return skus[0][field] if skus else ""
 
 
 # ---------------------------------------------------------------- 設定檔
@@ -1707,7 +1747,9 @@ def po_summary_sql(clause):
         else (lambda col: f"GROUP_CONCAT(DISTINCT {col})")
     return f"""
         SELECT po_number,
-               MIN(order_type)      AS order_type,
+               COALESCE(MAX(CASE WHEN order_type_overridden = 1
+                                 THEN order_type END),
+                        MIN(order_type))      AS order_type,
                MIN(parent_po)       AS parent_po,
                MIN(po_status)       AS po_status,
                MIN(receiving_status) AS receiving_status,
@@ -1717,8 +1759,14 @@ def po_summary_sql(clause):
                MIN(filed_date)      AS filed_date,
                MIN(shipping_method) AS shipping_method,
                MAX(flagged)         AS flagged,
-               MIN(delivery_date)   AS delivery_date,
-               MIN(warehouse)       AS warehouse,
+               -- 優先拿人工調整過那一列的值，沒有才取 MIN；跟明細的
+               -- po_shared_value 同一套邏輯，兩邊顯示才會一致。
+               COALESCE(MAX(CASE WHEN delivery_date_overridden = 1
+                                 THEN delivery_date END),
+                        MIN(delivery_date))   AS delivery_date,
+               COALESCE(MAX(CASE WHEN warehouse_overridden = 1
+                                 THEN warehouse END),
+                        MIN(warehouse))       AS warehouse,
                {concat("line")}  AS lines_csv,
                {concat("brand")} AS brands_csv,
                COUNT(*)             AS sku_count,
@@ -1818,8 +1866,8 @@ def api_po_detail(po_number):
             "header": dict(header),
             "brands": _csv_clean(",".join(s["brand"] or "" for s in skus)),
             "lines": _csv_clean(",".join(s["line"] or "" for s in skus)),
-            "delivery_date": skus[0]["delivery_date"] if skus else "",
-            "warehouse": skus[0]["warehouse"] if skus else "",
+            "delivery_date": po_shared_value(skus, "delivery_date"),
+            "warehouse": po_shared_value(skus, "warehouse"),
             "skus": skus,
             "logs": [dict(l) for l in logs],
         })
@@ -1866,17 +1914,24 @@ def api_update_po(po_number):
 
         # 交期／倉別存在每一列 SKU 上（要參與匯入比對），但 OP 是整張單一起改
         row_changes = []
-        first = conn.execute(
-            "SELECT delivery_date, warehouse, order_type FROM orders "
-            "WHERE po_number = ? LIMIT 1", (po_number,)).fetchone()
-        if first is not None:
+        po_rows = [dict(r) for r in conn.execute(
+            """SELECT delivery_date, warehouse, order_type,
+                      delivery_date_overridden, warehouse_overridden,
+                      order_type_overridden
+               FROM orders WHERE po_number = ? ORDER BY seq_no, sku_id""",
+            (po_number,)).fetchall()]
+        if po_rows:
             for field, label in PO_COUPANG_FIELDS.items():
                 if field not in payload:
                     continue
                 new_val = _PO_COUPANG_FIELD_NORM[field](payload[field])
-                if _same(first[field], new_val):
+                current = po_shared_value(po_rows, field)
+                # 各列不一致時（舊資料分裂過）即使跟顯示值相同也要寫一次，
+                # 把整張單重新統一。
+                if _same(current, new_val) and all(
+                        _same(r[field], new_val) for r in po_rows):
                     continue
-                row_changes.append((field, label, first[field], new_val))
+                row_changes.append((field, label, current, new_val))
 
         if not head_changes and not row_changes:
             return jsonify({"ok": True, "changed": 0})
@@ -2185,6 +2240,13 @@ def api_import_commit():
             }
         po_has_cpg_line = {}
 
+        # 同一張 PO 之後再匯入新增 SKU 時，如果 OP 早就把這張單的交期／
+        # 倉別／訂單類型改過（跟酷澎談好的結果），新 SKU 不能照檔案帶
+        # 舊值進來——否則同一張單底下會一半 9/9、一半 9/1，首頁取最小值
+        # 顯示 9/1、明細看第一筆顯示 9/9，兩邊對不起來。新 SKU 一律沿用
+        # 調整後的值、一樣標記已調整，之後匯入也照樣不覆蓋。
+        inherited = _po_overridden_values(conn, new_po_numbers & existing_po_numbers)
+
         # INSERT OR IGNORE 是 SQLite 寫法，PostgreSQL 要用 ON CONFLICT
         # DO NOTHING，效果一樣：這張 PO 表頭已經存在就什麼都不做。
         insert_po_header = (
@@ -2207,9 +2269,20 @@ def api_import_commit():
                     and str(row.get("line") or "").startswith("CPG-")):
                 po_has_cpg_line[row["po_number"]] = True
 
-            columns = ", ".join(INSERT_FIELDS)
-            marks = ", ".join("?" * len(INSERT_FIELDS))
-            values = [row.get(f) for f in INSERT_FIELDS]
+            row = dict(row)
+            inherit_notes = []
+            for field, value in inherited.get(row["po_number"], {}).items():
+                if not _same(row.get(field), value):
+                    inherit_notes.append(
+                        f"{PO_COUPANG_FIELDS[field]}沿用整張單已調整的值 {value}"
+                        f"（酷澎檔案為 {row.get(field) or '（空白）'}）")
+                row[field] = value
+                row[f"{field}_overridden"] = 1
+
+            columns = ", ".join(INSERT_FIELDS + _INSERT_OVERRIDE_FLAGS)
+            marks = ", ".join("?" * (len(INSERT_FIELDS) + len(_INSERT_OVERRIDE_FLAGS)))
+            values = ([row.get(f) for f in INSERT_FIELDS]
+                      + [row.get(f, 0) or 0 for f in _INSERT_OVERRIDE_FLAGS])
             cur = conn.execute(
                 f"""INSERT INTO orders ({columns}, qty_ship,
                         source_file, first_seen_at, last_seen_at,
@@ -2223,6 +2296,9 @@ def api_import_commit():
             log_change(conn, order, "_created", "新增訂單", "",
                        f"{row['po_number']} / {row['sku_id']}", operator,
                        "import", preview["filename"])
+            for note in inherit_notes:
+                log_change(conn, order, "_inherit", "沿用整張單設定", "", "",
+                           operator, "import", note)
             inserted += 1
 
         for po_number in po_has_cpg_line:

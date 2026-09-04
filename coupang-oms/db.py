@@ -790,6 +790,31 @@ def _migrate_columns(conn):
         _consolidate_legacy_remarks(conn)
 
     _backfill_cpg_shipping_method(conn)
+    _unify_overridden_po_fields(conn)
+
+
+def _unify_overridden_po_fields(conn):
+    """交期／倉別／訂單類型是整張 PO 共用的欄位，OP 改的時候整張一起改、
+    一起標記人工調整過。但在補「新增 SKU 併入既有 PO 要沿用調整後的值」
+    這條規則（app.py api_import_commit 的 inherited）之前，後來匯入才
+    新增的 SKU 會照檔案帶舊值進來，同一張單就分裂成兩種值：首頁取
+    MIN 顯示一個、明細看第一列顯示另一個。這裡把既有資料一次統一：
+    同一張 PO 只要有任一列標記人工調整過，其他還沒標記的列一律改成
+    那個值、一樣標記已調整。
+
+    冪等：補過之後那些列的 _overridden 已經是 1，不會再被選到。
+    只動「還沒被人工調整過」的列，人工改過的一律不碰。"""
+    for field in ("delivery_date", "warehouse", "order_type"):
+        flag = f"{field}_overridden"
+        conn.execute(
+            f"""UPDATE orders SET {field} = (
+                    SELECT MAX(o2.{field}) FROM orders o2
+                    WHERE o2.po_number = orders.po_number AND o2.{flag} = 1
+                ), {flag} = 1
+                WHERE {flag} = 0
+                  AND po_number IN (
+                      SELECT DISTINCT po_number FROM orders WHERE {flag} = 1
+                  )""")
 
 
 def _backfill_cpg_shipping_method(conn):
