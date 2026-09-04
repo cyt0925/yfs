@@ -36,7 +36,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-04.6"
+BUILD_VERSION = "2026-09-04.7"
 
 app = Flask(__name__)
 
@@ -2657,6 +2657,10 @@ def api_export():
             if col.get("format") == "text":
                 for cell in ws[letter][1:]:
                     cell.number_format = "@"
+            # 金額類欄位固定兩位小數、千分位，不然 Excel 會印成 89410.5
+            if col.get("format") == "decimal":
+                for cell in ws[letter][1:]:
+                    cell.number_format = "#,##0.00"
             widths = {"text": 18, "date": 12, "int": 10, "decimal": 12}
             ws.column_dimensions[letter].width = widths.get(col.get("format"), 16)
         ws.freeze_panes = "A2"

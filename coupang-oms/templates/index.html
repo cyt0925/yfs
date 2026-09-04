@@ -982,7 +982,8 @@ function renderRows() {
         ${r.actual_verified_qty == null ? "—" : r.actual_verified_qty.toLocaleString()}</td>
       <td class="px-2 py-2 text-right num text-ink-500"
           title="${r.verified_amount == null ? "這張單還沒有品項同步過金額（驗收工具要升到會送金額的版本）" : "整張單各品項訂單金額(稅後)加總"}">
-        ${r.verified_amount == null ? "—" : Math.round(r.verified_amount).toLocaleString()}</td>
+        ${r.verified_amount == null ? "—" : r.verified_amount.toLocaleString(undefined,
+            { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
