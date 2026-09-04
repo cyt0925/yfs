@@ -169,6 +169,13 @@ def main():
     with zipfile.ZipFile(io.BytesIO(res.data)) as zf:
         names = zf.namelist()
         check("五組各自一個檔案，檔名沒有重複", len(names) == 5 and len(set(names)) == 5, names)
+        # 檔名要看得出是哪一張 PO——之前不放單號，拆出來的檔案全部同名，
+        # 只能靠 (2)、(3) 區分，使用者收到一包檔案根本分不出誰是誰。
+        expected_pos = sorted(g["po_numbers"][0] for g in data["groups"])
+        check("每個檔名都帶著自己那張 PO 的單號，不是靠 (2)(3) 區分",
+              sorted(n for n in names) == sorted(
+                  f"酷澎XP&G_產品採購表上傳_0905到貨({po}).xls" for po in expected_pos),
+              names)
 
     print("\n【4】紙潔：多張 PO 合併成一張採購表，備註固定空白")
     res = parse(client, "paper", "紙潔_訂單匯入範例.xlsx")
@@ -342,7 +349,7 @@ def main():
           "13000000493049" not in "酷澎XP&G_產品採購表上傳_0905到貨.xls")
 
     print("\n【5.6】build_filename：各線別的檔名長相")
-    check("P&G 檔名不帶單號（合併時本來就這樣，使用者後來要求單張匯出也一併拿掉）",
+    check("合併匯出（沒有單一 PO）的 P&G 檔名不帶單號",
           purchase.build_filename("pg", [], "0905", "TXRC8")
           == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
           purchase.build_filename("pg", [], "0905", "TXRC8"))
@@ -350,10 +357,22 @@ def main():
           purchase.build_filename("mars", [], "0904", "TAO4")
           == "永豐Mars採購單(箱單位)-GUM糖_TAO4.xls",
           purchase.build_filename("mars", [], "0904", "TAO4"))
-    check("P&G 單張匯出時檔名也不帶單號了（原本只留後 6 碼，使用者要求直接拿掉數字）",
+    # 這條規則翻過兩次，把來由留著免得下一個人又改回去：一開始檔名留
+    # PO 後 6 碼 → 使用者要求整個拿掉 → 但「匯出所選（各自一個檔）」一次
+    # 拆好幾張時全部同名，只能靠 (2)、(3) 區分，使用者看不出哪個是哪張，
+    # 所以現在改成「一張 PO 一個檔就把完整單號放進括號」，合併檔照舊不放。
+    check("P&G 單張匯出的檔名帶完整 PO 單號（放在括號裡）",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8")
-          == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
+          == "酷澎XP&G_產品採購表上傳_0905到貨(13000000492925).xls",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8"))
+    check("紙潔單張匯出同一套規則（跟紙潔真實檔名的括號慣例一致）",
+          purchase.build_filename("paper", ["13000000504334"], "0902", "")
+          == "酷澎_產品採購表上傳_0902到貨(13000000504334).xls",
+          purchase.build_filename("paper", ["13000000504334"], "0902", ""))
+    check("紙潔合併匯出仍然不帶單號（放第一張會誤導成只有那一張）",
+          purchase.build_filename("paper", [], "0902", "")
+          == "酷澎_產品採購表上傳_0902到貨.xls",
+          purchase.build_filename("paper", [], "0902", ""))
 
     print("\n【6】檔名衝突時自動加序號，不會互相覆蓋")
     dup_groups = [

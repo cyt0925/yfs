@@ -117,6 +117,28 @@ def norm_int(value):
         return None
 
 
+def norm_money(value):
+    """金額欄位。酷澎後台複製過來常常帶千分位逗號、貨幣符號或全形空白
+    （例如「88,176.00」「NT$ 88,176」），一律清乾淨再轉數字；無法解析
+    回傳 None，絕不默默當成 0——0 元跟「沒抓到」是兩件事。"""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = norm_text(value)
+    for ch in (",", "$", "＄", "NT", "nt", "元"):
+        text = text.replace(ch, "")
+    text = text.strip()
+    if text in ("", "*", "-", "—"):
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def norm_decimal(value):
     """單價等數值欄位。無法解析回傳 None。"""
     if value is None or value == "":

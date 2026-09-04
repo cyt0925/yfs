@@ -1110,10 +1110,10 @@ def main():
     check("PO 總表匯出成功", po_sum.status_code == 200, po_sum.status_code)
     wb_sum = openpyxl.load_workbook(io.BytesIO(po_sum.data))
     sum_headers = [c.value for c in wb_sum.active[1]]
-    check("表頭跟首頁列表一致，外加備註",
+    check("表頭跟首頁列表一致，外加備註與驗收金額",
           sum_headers == ["PO單號", "訂單類型", "PO狀態", "已拉單", "驗收狀態", "線別", "品牌",
                           "建檔日", "到貨日", "到貨倉別", "配送方式", "品項數", "出貨數量",
-                          "實際驗入數量", "備註"],
+                          "實際驗入數量", "驗收金額", "備註"],
           sum_headers)
     data_rows = list(wb_sum.active.iter_rows(min_row=2, values_only=True))
     check("這張多品項的 PO 匯出只有一列，不是一個 SKU 一列",
@@ -1145,6 +1145,63 @@ def main():
         us_dict = dict(zip(us_headers, us_row))
         check("還沒同步過的單，實際驗入數量印成空白，不是 0",
               us_dict["實際驗入數量"] is None, us_dict["實際驗入數量"])
+        check("驗收金額同理：還沒抓到就是空白，不是 0 元",
+              us_dict["驗收金額"] is None, us_dict["驗收金額"])
+
+    print("\n【35-2】驗收金額：驗收工具一起把酷澎後台的「訂單金額(稅後)」抓回來")
+    amt_po, amt_skus = None, None
+    for row in client.get("/api/pos?page_size=200").get_json()["rows"]:
+        skus = client.get(f"/api/pos/{row['po_number']}").get_json()["skus"]
+        # 要有兩個以上品項、而且出貨數量都填了（沒填的話同步會直接略過）
+        if len(skus) >= 2 and all(s["qty_ship"] is not None for s in skus[:2]):
+            amt_po, amt_skus = row["po_number"], skus
+            break
+    check("找得到可以測驗收金額的 PO", amt_po is not None)
+    # 後台複製過來的金額常常帶千分位逗號，要吃得下去
+    amounts = ["88,176.00", 1234.5]
+    res = sync_qty([
+        {"po_number": amt_po, "sku_id": amt_skus[0]["sku_id"],
+         "verified_qty": amt_skus[0]["qty_ship"], "verified_amount": amounts[0]},
+        {"po_number": amt_po, "sku_id": amt_skus[1]["sku_id"],
+         "verified_qty": amt_skus[1]["qty_ship"], "verified_amount": amounts[1]},
+    ])
+    check("同步帶金額成功", res.status_code == 200, res.get_json())
+    check("回報有幾個品項更新了金額", res.get_json()["amount_matched"] == 2,
+          res.get_json())
+    amt_det = client.get(f"/api/pos/{amt_po}").get_json()
+    by_sku = {s["sku_id"]: s for s in amt_det["skus"]}
+    check("千分位逗號的「88,176.00」正確存成 88176.0，不是解析失敗留空",
+          by_sku[amt_skus[0]["sku_id"]]["verified_amount"] == 88176.0,
+          by_sku[amt_skus[0]["sku_id"]]["verified_amount"])
+    amt_row = next(r for r in client.get("/api/pos?page_size=200").get_json()["rows"]
+                   if r["po_number"] == amt_po)
+    check("首頁彙總把整張單的驗收金額加總起來",
+          amt_row["verified_amount"] == 88176.0 + 1234.5, amt_row["verified_amount"])
+
+    amt_export = client.post("/api/export", json={
+        "operator": "小真", "profile": "po_summary", "mark_pulled": False,
+        "filters": {}, "po_numbers": [amt_po]})
+    wb_amt = openpyxl.load_workbook(io.BytesIO(amt_export.data))
+    amt_headers = [c.value for c in wb_amt.active[1]]
+    amt_export_row = dict(zip(amt_headers,
+                              list(wb_amt.active.iter_rows(min_row=2, values_only=True))[0]))
+    check("PO 總表的驗收金額印出加總後的數字",
+          amt_export_row["驗收金額"] == 88176.0 + 1234.5, amt_export_row["驗收金額"])
+    check("金額變更寫進歷程，查得到是誰同步的、改前改後多少",
+          any(l["field"] == "verified_amount" and l["new_value"].startswith("88176")
+              for l in amt_det["logs"]),
+          [l["field"] for l in amt_det["logs"]][:6])
+
+    # 舊版腳本（或那一列後台本來就沒金額）不帶 verified_amount 時，不能把
+    # 已經抓到的金額清成空白——那會讓對帳金額無聲消失。
+    res = sync_qty([{"po_number": amt_po, "sku_id": amt_skus[0]["sku_id"],
+                     "verified_qty": amt_skus[0]["qty_ship"]}])
+    after_nil = {s["sku_id"]: s for s in
+                 client.get(f"/api/pos/{amt_po}").get_json()["skus"]}
+    check("沒帶金額的同步不會把原本的金額清掉",
+          res.status_code == 200
+          and after_nil[amt_skus[0]["sku_id"]]["verified_amount"] == 88176.0,
+          after_nil[amt_skus[0]["sku_id"]]["verified_amount"])
 
     print("\n【36】CPG 新單匯入自動帶配送方式，其他線別不動；舊資料一併補齊")
     # CPG 固定走原廠(EM)，新單建立當下就該自動判斷帶入，不用 OP 每張手動選。

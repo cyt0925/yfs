@@ -104,6 +104,11 @@ CREATE TABLE IF NOT EXISTS orders (
     actual_verified_qty    INTEGER,
     actual_verified_at     TEXT DEFAULT '',
 
+    -- 驗收金額：同一支驗收工具一起抓回來的酷澎後台「訂單金額(稅後)」。
+    -- 跟 actual_verified_qty 同樣是外部資料、畫面上唯讀，NULL 代表還沒
+    -- 同步過（跟「同步回來是 0 元」要分得開）。
+    verified_amount        REAL,
+
     -- === 警示（掛在 SKU 上：酷澎是逐品項改的）===
     needs_review      INTEGER NOT NULL DEFAULT 0,
     alert_level       TEXT DEFAULT '',      -- '' / changed / changed_after_pull / missing
@@ -340,6 +345,8 @@ CREATE TABLE IF NOT EXISTS orders (
 
     actual_verified_qty    INTEGER,
     actual_verified_at     TEXT DEFAULT '',
+    -- 驗收金額：酷澎後台「訂單金額(稅後)」，NULL＝還沒同步過
+    verified_amount        DOUBLE PRECISION,
 
     needs_review      INTEGER NOT NULL DEFAULT 0,
     alert_level       TEXT DEFAULT '',
@@ -749,6 +756,10 @@ def _migrate_columns(conn):
     if "actual_verified_at" not in existing:
         conn.execute(
             "ALTER TABLE orders ADD COLUMN actual_verified_at TEXT DEFAULT ''")
+
+    if "verified_amount" not in existing:
+        conn.execute("ALTER TABLE orders ADD COLUMN verified_amount "
+                     + ("DOUBLE PRECISION" if IS_POSTGRES else "REAL"))
 
     if "order_type_overridden" not in existing:
         conn.execute(

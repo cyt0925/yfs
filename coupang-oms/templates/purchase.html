@@ -193,8 +193,11 @@ function buildRemark(line, po, mmdd, wh) {
 // po 傳空字串＝這是合併多張 PO 的檔案，檔名就不放單號（跟紙潔那份
 // 「多張 PO 合併」的真實檔名慣例一致），不然只放第一張會誤導。
 function buildFilename(line, po, mmdd, wh, cat) {
-  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨.xls`;
-  if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
+  // 一張 PO 一個檔就把單號放進括號（跟紙潔真實檔名的慣例一致），
+  // 不然「各自一個檔」拆出來全部同名，只能靠 (2)、(3) 區分。
+  const suffix = po ? `(${po})` : "";
+  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${suffix}.xls`;
+  if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨${suffix}.xls`;
   if (line === "mars") return `永豐Mars採購單(箱單位)-${cat || "GUM糖"}_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
   return `採購表_${mmdd || ""}.xls`;
 }

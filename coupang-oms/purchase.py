@@ -492,13 +492,15 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
     來自訂貨通知單裡的品類全名對照 CATEGORY_CODE_MAP），從解析結果帶
     過來；抓不到就退回固定的 GUM糖，不要讓檔名整個開天窗。"""
     po = po_numbers[0] if po_numbers else ""
+    # 一張 PO 一個檔的時候，單號放進括號裡——這是紙潔那份真實檔案的
+    # 慣例（酷澎_產品採購表上傳_0902到貨(PO202608445)）。之前這裡不放
+    # 單號，「匯出所選（各自一個檔）」一次拆好幾張就會全部撞成同一個
+    # 檔名，只能靠去重機制加 (2)、(3)，使用者從檔名看不出哪個是哪張單。
+    suffix = f"({po})" if po else ""
     if line_key == "pg":
-        # 檔名不放單號——同一批匯出好幾張 PO 就會撞成同一個檔名，交給
-        # 另一層檔名去重機制兜底（見 api_purchase_export，撞了會自動
-        # 加 (2)、(3)，不會互相覆蓋，只是檔名看不出是哪一張）。
-        return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨.xls"
+        return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨{suffix}.xls"
     if line_key == "paper":
-        return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
+        return f"酷澎_產品採購表上傳_{date_mmdd}到貨{suffix}.xls"
     if line_key == "mars":
         wh = warehouse or "倉別"
         cat = category or "GUM糖"

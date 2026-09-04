@@ -20,23 +20,81 @@
       "note": "給管廳工廠安排實體出貨用",
       "mark_pulled_default": true,
       "columns": [
-        { "header": "PO單號", "field": "po_number", "format": "text" },
-        { "header": "訂單類型", "field": "order_type" },
-        { "header": "線別", "field": "line" },
-        { "header": "品牌", "field": "brand" },
-        { "header": "SKU ID", "field": "sku_id", "format": "text" },
-        { "header": "永豐料號", "field": "yf_sku", "format": "text" },
-        { "header": "品名", "field": "product_name" },
-        { "header": "倉別", "field": "warehouse" },
-        { "header": "地址", "field": "address" },
-        { "header": "交期", "field": "delivery_date", "format": "date" },
-        { "header": "下單數量", "field": "qty_coupang", "format": "int" },
-        { "header": "出貨數量", "field": "qty_ship", "format": "int" },
-        { "header": "單位", "field": "unit" },
-        { "header": "箱入數", "field": "box_size", "format": "int" },
-        { "header": "允收效期", "field": "expiry_note" },
-        { "header": "PO狀態", "field": "po_status" },
-        { "header": "備註", "field": "remarks" }
+        {
+          "header": "PO單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "訂單類型",
+          "field": "order_type"
+        },
+        {
+          "header": "線別",
+          "field": "line"
+        },
+        {
+          "header": "品牌",
+          "field": "brand"
+        },
+        {
+          "header": "SKU ID",
+          "field": "sku_id",
+          "format": "text"
+        },
+        {
+          "header": "永豐料號",
+          "field": "yf_sku",
+          "format": "text"
+        },
+        {
+          "header": "品名",
+          "field": "product_name"
+        },
+        {
+          "header": "倉別",
+          "field": "warehouse"
+        },
+        {
+          "header": "地址",
+          "field": "address"
+        },
+        {
+          "header": "交期",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "下單數量",
+          "field": "qty_coupang",
+          "format": "int"
+        },
+        {
+          "header": "出貨數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "單位",
+          "field": "unit"
+        },
+        {
+          "header": "箱入數",
+          "field": "box_size",
+          "format": "int"
+        },
+        {
+          "header": "允收效期",
+          "field": "expiry_note"
+        },
+        {
+          "header": "PO狀態",
+          "field": "po_status"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        }
       ]
     },
     "erp": {
@@ -44,15 +102,47 @@
       "note": "欄位名稱與順序請依公司 ERP 匯入規範直接修改本檔案的 columns，不需改程式",
       "mark_pulled_default": true,
       "columns": [
-        { "header": "採購單號", "field": "po_number", "format": "text" },
-        { "header": "料號", "field": "yf_sku", "format": "text" },
-        { "header": "品名", "field": "product_name" },
-        { "header": "數量", "field": "qty_ship", "format": "int" },
-        { "header": "單位", "field": "unit" },
-        { "header": "交貨日期", "field": "delivery_date", "format": "date" },
-        { "header": "收貨倉", "field": "warehouse" },
-        { "header": "單價", "field": "unit_price", "format": "decimal" },
-        { "header": "備註", "field": "remarks" }
+        {
+          "header": "採購單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "料號",
+          "field": "yf_sku",
+          "format": "text"
+        },
+        {
+          "header": "品名",
+          "field": "product_name"
+        },
+        {
+          "header": "數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "單位",
+          "field": "unit"
+        },
+        {
+          "header": "交貨日期",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "收貨倉",
+          "field": "warehouse"
+        },
+        {
+          "header": "單價",
+          "field": "unit_price",
+          "format": "decimal"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        }
       ]
     },
     "po_summary": {
@@ -61,21 +151,78 @@
       "level": "po",
       "mark_pulled_default": false,
       "columns": [
-        { "header": "PO單號", "field": "po_number", "format": "text" },
-        { "header": "訂單類型", "field": "order_type" },
-        { "header": "PO狀態", "field": "po_status" },
-        { "header": "已拉單", "field": "is_pulled", "format": "yesno" },
-        { "header": "驗收狀態", "field": "receiving_status" },
-        { "header": "線別", "field": "line" },
-        { "header": "品牌", "field": "brand" },
-        { "header": "建檔日", "field": "filed_date", "format": "date" },
-        { "header": "到貨日", "field": "delivery_date", "format": "date" },
-        { "header": "到貨倉別", "field": "warehouse" },
-        { "header": "配送方式", "field": "shipping_method" },
-        { "header": "品項數", "field": "sku_count", "format": "int" },
-        { "header": "出貨數量", "field": "qty_ship", "format": "int" },
-        { "header": "實際驗入數量", "field": "actual_verified_qty", "format": "int" },
-        { "header": "備註", "field": "remarks" }
+        {
+          "header": "PO單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "訂單類型",
+          "field": "order_type"
+        },
+        {
+          "header": "PO狀態",
+          "field": "po_status"
+        },
+        {
+          "header": "已拉單",
+          "field": "is_pulled",
+          "format": "yesno"
+        },
+        {
+          "header": "驗收狀態",
+          "field": "receiving_status"
+        },
+        {
+          "header": "線別",
+          "field": "line"
+        },
+        {
+          "header": "品牌",
+          "field": "brand"
+        },
+        {
+          "header": "建檔日",
+          "field": "filed_date",
+          "format": "date"
+        },
+        {
+          "header": "到貨日",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "到貨倉別",
+          "field": "warehouse"
+        },
+        {
+          "header": "配送方式",
+          "field": "shipping_method"
+        },
+        {
+          "header": "品項數",
+          "field": "sku_count",
+          "format": "int"
+        },
+        {
+          "header": "出貨數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "實際驗入數量",
+          "field": "actual_verified_qty",
+          "format": "int"
+        },
+        {
+          "header": "驗收金額",
+          "field": "verified_amount",
+          "format": "decimal"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        }
       ]
     },
     "full": {
@@ -83,35 +230,133 @@
       "note": "所有欄位全開，出問題時拿來查",
       "mark_pulled_default": false,
       "columns": [
-        { "header": "PO單號", "field": "po_number", "format": "text" },
-        { "header": "SKU ID", "field": "sku_id", "format": "text" },
-        { "header": "訂單類型", "field": "order_type" },
-        { "header": "原訂單", "field": "parent_po", "format": "text" },
-        { "header": "線別", "field": "line" },
-        { "header": "品牌", "field": "brand" },
-        { "header": "品名", "field": "product_name" },
-        { "header": "條碼", "field": "barcode", "format": "text" },
-        { "header": "永豐料號", "field": "yf_sku", "format": "text" },
-        { "header": "倉別", "field": "warehouse" },
-        { "header": "地址", "field": "address" },
-        { "header": "交期", "field": "delivery_date", "format": "date" },
-        { "header": "下單數量", "field": "qty_coupang", "format": "int" },
-        { "header": "出貨數量", "field": "qty_ship", "format": "int" },
-        { "header": "單位", "field": "unit" },
-        { "header": "箱入數", "field": "box_size", "format": "int" },
-        { "header": "下單單價", "field": "unit_price", "format": "decimal" },
-        { "header": "PO狀態", "field": "po_status" },
-        { "header": "驗收狀態", "field": "receiving_status" },
-        { "header": "配送方式", "field": "shipping_method" },
-        { "header": "允收效期", "field": "expiry_note" },
-        { "header": "備註", "field": "remarks" },
-        { "header": "已拉單", "field": "is_pulled" },
-        { "header": "拉單時間", "field": "pulled_at" },
-        { "header": "拉單人", "field": "pulled_by" },
-        { "header": "待確認", "field": "needs_review" },
-        { "header": "警示層級", "field": "alert_level" },
-        { "header": "個人標記", "field": "flagged", "format": "yesno" },
-        { "header": "最後更新", "field": "updated_at" }
+        {
+          "header": "PO單號",
+          "field": "po_number",
+          "format": "text"
+        },
+        {
+          "header": "SKU ID",
+          "field": "sku_id",
+          "format": "text"
+        },
+        {
+          "header": "訂單類型",
+          "field": "order_type"
+        },
+        {
+          "header": "原訂單",
+          "field": "parent_po",
+          "format": "text"
+        },
+        {
+          "header": "線別",
+          "field": "line"
+        },
+        {
+          "header": "品牌",
+          "field": "brand"
+        },
+        {
+          "header": "品名",
+          "field": "product_name"
+        },
+        {
+          "header": "條碼",
+          "field": "barcode",
+          "format": "text"
+        },
+        {
+          "header": "永豐料號",
+          "field": "yf_sku",
+          "format": "text"
+        },
+        {
+          "header": "倉別",
+          "field": "warehouse"
+        },
+        {
+          "header": "地址",
+          "field": "address"
+        },
+        {
+          "header": "交期",
+          "field": "delivery_date",
+          "format": "date"
+        },
+        {
+          "header": "下單數量",
+          "field": "qty_coupang",
+          "format": "int"
+        },
+        {
+          "header": "出貨數量",
+          "field": "qty_ship",
+          "format": "int"
+        },
+        {
+          "header": "單位",
+          "field": "unit"
+        },
+        {
+          "header": "箱入數",
+          "field": "box_size",
+          "format": "int"
+        },
+        {
+          "header": "下單單價",
+          "field": "unit_price",
+          "format": "decimal"
+        },
+        {
+          "header": "PO狀態",
+          "field": "po_status"
+        },
+        {
+          "header": "驗收狀態",
+          "field": "receiving_status"
+        },
+        {
+          "header": "配送方式",
+          "field": "shipping_method"
+        },
+        {
+          "header": "允收效期",
+          "field": "expiry_note"
+        },
+        {
+          "header": "備註",
+          "field": "remarks"
+        },
+        {
+          "header": "已拉單",
+          "field": "is_pulled"
+        },
+        {
+          "header": "拉單時間",
+          "field": "pulled_at"
+        },
+        {
+          "header": "拉單人",
+          "field": "pulled_by"
+        },
+        {
+          "header": "待確認",
+          "field": "needs_review"
+        },
+        {
+          "header": "警示層級",
+          "field": "alert_level"
+        },
+        {
+          "header": "個人標記",
+          "field": "flagged",
+          "format": "yesno"
+        },
+        {
+          "header": "最後更新",
+          "field": "updated_at"
+        }
       ]
     }
   }

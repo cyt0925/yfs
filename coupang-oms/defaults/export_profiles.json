@@ -217,6 +217,11 @@
           "format": "int"
         },
         {
+          "header": "驗收金額",
+          "field": "verified_amount",
+          "format": "decimal"
+        },
+        {
           "header": "備註",
           "field": "remarks"
         }

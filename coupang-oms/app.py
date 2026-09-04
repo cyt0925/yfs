@@ -27,7 +27,8 @@ from importer import (
 )
 import pdfsign
 import purchase
-from normalize import norm_date, norm_int, norm_key, norm_text, norm_warehouse
+from normalize import (norm_date, norm_int, norm_key, norm_money, norm_text,
+                       norm_warehouse)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -35,7 +36,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-04.3"
+BUILD_VERSION = "2026-09-04.4"
 
 app = Flask(__name__)
 
@@ -365,6 +366,31 @@ def _ensure_export_profile_columns():
         save_json("export_profiles.json", data)
 
 
+def _ensure_po_summary_amount_column():
+    """把「驗收金額」補進既有安裝的 PO 總表匯出格式。
+
+    跟其他 _ensure_* 一樣是一次性補寫：正式站的匯出格式已經存進資料庫，
+    只改 export_profiles.json 對跑起來的安裝沒有用。只在確定沒有這個欄位
+    代碼時才補，補在「實際驗入數量」後面（對帳時兩個數字要並排看），
+    找不到那一欄就加在最後面，不去動 OP 自己調整過的順序。"""
+    data = load_json("export_profiles.json", {"profiles": {}})
+    summary = (data.get("profiles") or {}).get("po_summary")
+    if not summary:
+        return
+    columns = summary.get("columns") or []
+    if any(c.get("field") == "verified_amount" for c in columns):
+        return
+    new_col = {"header": "驗收金額", "field": "verified_amount", "format": "decimal"}
+    at = next((i for i, c in enumerate(columns)
+               if c.get("field") == "actual_verified_qty"), None)
+    if at is None:
+        columns.append(new_col)
+    else:
+        columns.insert(at + 1, new_col)
+    summary["columns"] = columns
+    save_json("export_profiles.json", data)
+
+
 def _ensure_po_summary_profile():
     """把「PO 總表」這個新的匯出格式補進既有安裝——只在 profiles 裡完全
     沒有 po_summary 這個 key 時才補，OP 如果自己刪掉過就不會被救回來，
@@ -391,6 +417,7 @@ _ensure_receiving_status_option()
 _ensure_shipping_methods_option()
 _ensure_export_profile_columns()
 _ensure_po_summary_profile()
+_ensure_po_summary_amount_column()
 
 
 def verify_password(stored, given):
@@ -1238,6 +1265,7 @@ def api_sync_verified_qty():
 
     stamp = now()
     matched = 0
+    amount_matched = 0
     not_found = []
     touched_pos = []
     judged_done = 0
@@ -1254,6 +1282,12 @@ def api_sync_verified_qty():
             if raw_qty is None:
                 raw_qty = item.get("confirmed_qty")
             qty = norm_int(raw_qty)
+            # 驗收金額＝酷澎後台的「訂單金額(稅後)」。腳本沒送這個欄位
+            # （舊版腳本、或那一列本來就沒有金額）就是 None，代表「這次
+            # 沒抓到」，原本存的金額保持不動，不會被清成空白。
+            amount = norm_money(item.get("verified_amount")
+                                if item.get("verified_amount") is not None
+                                else item.get("amount"))
             if not po_number or not sku_id or qty is None:
                 continue
 
@@ -1277,6 +1311,17 @@ def api_sync_verified_qty():
                 log_change(conn, order, "actual_verified_qty", "實際驗入數量",
                            order["actual_verified_qty"], qty, operator, "system",
                            "酷澎後台驗收工具同步")
+
+            if amount is not None and not _same(order["verified_amount"], amount):
+                conn.execute(
+                    """UPDATE orders SET verified_amount = ?, updated_at = ?,
+                           version = version + 1
+                       WHERE id = ?""",
+                    (amount, stamp, order["id"]))
+                log_change(conn, order, "verified_amount", "驗收金額",
+                           order["verified_amount"], amount, operator, "system",
+                           "酷澎後台驗收工具同步（訂單金額稅後）")
+                amount_matched += 1
 
             # 出貨數量 − 實際驗入數量 > 0，代表少到貨，自動把「短驗 差額」
             # 補進驗收註記——已經有內容就接在後面補一行，不覆蓋原本寫的；
@@ -1313,9 +1358,11 @@ def api_sync_verified_qty():
         judged.append(f"{judged_abnormal} 張判為異常")
 
     return jsonify({
-        "ok": True, "matched": matched, "not_found": not_found,
+        "ok": True, "matched": matched, "amount_matched": amount_matched,
+        "not_found": not_found,
         "judged_done": judged_done, "judged_abnormal": judged_abnormal,
         "message": f"同步完成，比對到 {matched} 個品項"
+                   + (f"（其中 {amount_matched} 個更新了驗收金額）" if amount_matched else "")
                    + (f"，{len(not_found)} 個系統裡還沒有、略過" if not_found else "")
                    + (f"；{'、'.join(judged)}" if judged else ""),
     })
@@ -1806,6 +1853,9 @@ def po_summary_sql(clause):
                -- 總和該是「還沒有數字」（畫面上顯示 —），不是「驗入 0 件」，
                -- 兩者意思差很多，混在一起會誤導人。
                SUM(actual_verified_qty)     AS actual_verified_qty,
+               -- 驗收金額同理：一毛都還沒抓到的單留空白（畫面／匯出印
+               -- 「—」），不是「驗收金額 0 元」。
+               SUM(verified_amount)         AS verified_amount,
                MIN(remarks)         AS remarks,
                SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review_count,
                SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END)

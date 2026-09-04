@@ -716,8 +716,9 @@
   <!-- 驗收同步：只有管理員，給酷澎後台批次驗收工具用的通行碼 -->
   <div data-pane="sync" class="st-pane p-5 space-y-4 text-sm hidden">
     <p class="text-xs text-ink-500">
-      酷澎後台的「批次驗收工具」用這組網址跟通行碼，把「實際驗入數量」自動送進系統，
-      不用再手動匯出 Excel、上傳。設定一次就好，之後每次跑工具都會自動同步。
+      酷澎後台的「批次驗收工具」用這組網址跟通行碼，把「實際驗入數量」跟「驗收金額」
+      （後台的訂單金額稅後）自動送進系統，不用再手動匯出 Excel、上傳。
+      設定一次就好，之後每次跑工具都會自動同步。
     </p>
     <p class="text-xs text-ink-500 bg-ink-50 border border-ink-200 rounded-lg p-2">
       <i class="bi bi-info-circle"></i>
@@ -725,7 +726,9 @@
       整張單判為<b>完成</b>；只要有任何一個品項數字對不起來（不管多驗還是少驗）就判為<b>異常</b>；
       還有品項沒驗到的維持<b>未驗收</b>。<br>
       驗收狀態還是可以自己手動改，<b>手動改過的單之後同步就不會再被自動蓋掉</b>；
-      想恢復自動判定的話，把狀態改回「未驗收」就好。
+      想恢復自動判定的話，把狀態改回「未驗收」就好。<br>
+      驗收金額會加總成整張單的金額，從「PO 總表」匯出看得到；
+      工具那次沒抓到金額的品項會維持原本的值，不會被清成空白。
     </p>
     <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">同步網址</span>
       <input id="st-sync-url" readonly class="border rounded px-2 py-2 font-mono text-xs bg-ink-50"></label>
