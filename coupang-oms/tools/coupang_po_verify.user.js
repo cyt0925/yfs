@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         酷澎 PO 批次驗收比對器
 // @namespace    yfycpg.kate
-// @version      7.1
+// @version      7.2
 // @description  兩層驗收：第一層 清單頁收貨數量 vs detail可交貨總數(confirmedQty加總)；不符才下鑽逐SKU比 receivedQty vs confirmedQty。可貼上訂單系統複製的 PO 單號指定要驗哪幾張，或掃描目前清單頁。多狀態勾選(預設已確認+已關閉)、匯出Excel、同步「實際驗入數量」與「驗收金額(訂單金額稅後)」到訂單系統。
 // @match        https://supplier.tw.coupang.com/pom/purchase-order/*
 // @run-at       document-idle
@@ -38,7 +38,9 @@
     'unitPriceWithTax', 'priceWithTax', 'taxIncludedPrice', 'unitPrice', 'price',
     'supplyPrice', 'purchasePrice', 'orderPrice',
   ];
-  let amountKeysLogged = false;
+  // 找不到金額欄位時留一份樣本，直接顯示在面板上讓使用者複製給維護的
+  // 人，不用去翻 Console。
+  let amountSample = null;
   function pickAmount(s) {
     for (const k of AMOUNT_FIELDS) {
       const v = toNum(s[k]);
@@ -49,8 +51,8 @@
       const p = toNum(s[k]);
       if (p != null && qty != null) return Math.round(p * qty * 100) / 100;
     }
-    if (!amountKeysLogged) {
-      amountKeysLogged = true;
+    if (!amountSample) {
+      amountSample = s;
       console.warn('[PO 批次驗收] 找不到「訂單金額(稅後)」欄位，這個 SKU 的欄位有：',
         Object.keys(s).join(', '), s);
     }
@@ -153,6 +155,8 @@
   #kpv .prog{font-size:12px;color:#6b7280;margin:6px 0;min-height:16px}
   #kpv .note{font-size:11px;color:#9ca3af;margin-top:2px}
   #kpv .warn{font-size:11px;color:#b45309;background:#fef3c7;border-radius:6px;padding:4px 8px;margin-top:6px}
+  #kpv .warn textarea{width:100%;box-sizing:border-box;margin-top:4px;font:10px/1.3 monospace;height:110px;border:1px solid #fcd34d;border-radius:4px;background:#fff;color:#374151}
+  #kpv .warn button{margin-top:4px;padding:3px 8px;border:0;border-radius:4px;background:#b45309;color:#fff;font-size:11px;cursor:pointer}
   #kpv .cfgbox{display:none;border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:10px;background:#fafafa}
   #kpv .cfgbox.open{display:block}
   #kpv .cfgbox input{width:100%;box-sizing:border-box;padding:6px 8px;margin-bottom:6px;border:1px solid #d1d5db;border-radius:6px;font-size:12px}
@@ -166,7 +170,7 @@
   const box = document.createElement('div');
   box.id = 'kpv';
   box.innerHTML = `
-    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.1</span></b><span class="x">×</span></div>
+    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.2</span></b><span class="x">×</span></div>
     <div class="bd">
       <textarea class="polist" id="kpv-po-list" placeholder="從訂單系統勾選 PO → 按「複製 PO 單號給驗收工具」→ 貼在這裡（一行一個）。留空則改成掃描目前這頁清單。"></textarea>
       <div class="pocount" id="kpv-pocount"></div>
@@ -236,6 +240,7 @@
 
     btn.disabled = true; results = []; out.innerHTML = '';
     box.querySelector('#kpv-amount-warn').innerHTML = '';
+    amountSample = null;
     box.querySelector('#kpv-sync').disabled = true;
     let done = 0, pass = 0, fail = 0, skip = 0, amountMissing = 0, skuTotal = 0;
 
@@ -275,9 +280,18 @@
     prog.textContent = `完成：驗 ${pass + fail} 張` + (skip ? `（略過非勾選狀態 ${skip} 張）` : '');
     if (amountMissing) {
       // 金額欄位名字猜不到時明講，不要讓使用者以為有同步到金額。
+      // 把第一個抓不到的 SKU 原始資料直接攤在面板上，複製貼給維護的人就
+      // 能對出正確的欄位名，不用教人開 Console。
+      const sample = amountSample ? JSON.stringify(amountSample, null, 1) : '';
       box.querySelector('#kpv-amount-warn').innerHTML =
-        `<div class="warn">⚠ ${amountMissing}/${skuTotal} 個品項抓不到「訂單金額(稅後)」，同步時這些品項不會帶金額。`
-        + `按 F12 打開 Console，把「[PO 批次驗收] 找不到…欄位有：」那一行貼給維護的人。</div>`;
+        `<div class="warn">⚠ ${amountMissing}/${skuTotal} 個品項抓不到「訂單金額(稅後)」，同步時這些品項不會帶金額。<br>`
+        + `下面是其中一個品項的原始資料，請整段複製貼給維護的人：`
+        + `<textarea id="kpv-sample" readonly>${sample.replace(/</g, '&lt;')}</textarea>`
+        + `<button id="kpv-sample-copy">複製這段</button></div>`;
+      box.querySelector('#kpv-sample-copy').onclick = async () => {
+        try { await navigator.clipboard.writeText(sample); box.querySelector('#kpv-sample-copy').textContent = '已複製'; }
+        catch { box.querySelector('#kpv-sample').select(); document.execCommand('copy'); }
+      };
     }
     const stTxt = s => PO_STATUS_TXT[s] || s || '?';
     out.innerHTML = `<div class="sum"><div class="sp">相符 ${pass}</div><div class="sf">短少 ${fail}</div></div>` +
