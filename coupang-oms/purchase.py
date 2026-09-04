@@ -24,12 +24,15 @@ import io
 import json
 import os
 import re
+import struct
 import zipfile
 
 import openpyxl
 import xlrd
+import xlwt
 from flask import Blueprint, jsonify, render_template, request, send_file
 from xlutils.copy import copy as xl_copy
+from xlwt.Cell import FormulaCell
 
 import db
 
@@ -54,6 +57,9 @@ LINES = {
         "group_by": "po_number",
         "wipe_rows": 45,
         "default_remark_style": "blank",
+        # 紙潔的採購表，採購數量欄的標題是一條活的公式（見
+        # _write_qty_header_formula），不是普通文字。
+        "qty_header_formula": True,
     },
     "mars": {
         "label": "瑪氏",
@@ -501,6 +507,74 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
     return f"採購表_{date_mmdd}.xls"
 
 
+# 採購數量是 G 欄（第 7 欄，索引 6）。紙潔原檔的加總範圍是 $G$2:$G$203。
+_QTY_COL = 6
+_QTY_SUBTOTAL_LAST_ROW = 203
+
+
+class _CachedFormulaCell(FormulaCell):
+    """帶「現成結果」的公式儲存格。
+
+    xlwt 內建的 FormulaCell 會把結果欄位寫死成「空字串」——Excel 開檔
+    自己重算沒問題，但只讀快取值、不算公式的程式（xlrd／pandas 這類，
+    公司的上傳系統很可能就是其中一種）會讀到空白標題，等於把一個看不見
+    的地雷丟給對方。
+
+    所以這裡自己組 BIFF 記錄：把結果標成「字串型別」，再緊接著補一筆
+    STRING 記錄放實際文字。這樣公式是活的，沒有算公式能力的程式也讀得
+    到「採購數量398」這個現成的值。"""
+
+    __slots__ = ["cached"]
+
+    def __init__(self, rowx, colx, xf_idx, frmla, cached):
+        # calc_flags=3 是「開檔就重算 + 永遠重算」，使用者改了採購數量，
+        # 標題的總和會立刻跟著動。
+        FormulaCell.__init__(self, rowx, colx, xf_idx, frmla, calc_flags=3)
+        self.cached = cached
+
+    def get_biff_data(self):
+        # 結果那 8 個 byte，第 0 個 byte = 0 表示「結果是字串」（xlwt 寫死
+        # 的 3 是空字串），最後兩個 byte 固定 0xFFFF，標示這不是浮點數。
+        body = struct.pack("<3HQHL", self.rowx, self.colx, self.xf_idx,
+                           0xFFFF000000000000, self.calc_flags & 3, 0)
+        body += self.frmla.rpn()
+        text = self.cached.encode("utf-16-le")
+        payload = struct.pack("<HB", len(self.cached), 1) + text
+        return (struct.pack("<HH", 0x0006, len(body)) + body
+                + struct.pack("<HH", 0x0207, len(payload)) + payload)
+
+
+def _header_xf_index(ws, colx):
+    """範本檔標題列這一格原本的樣式編號（黃底、粗框那些）。
+
+    xlwt 沒有公開的取法，只能讀私有的儲存格字典。萬一哪天套件改版拿不
+    到，就退回預設樣式——公式跟數字才是重點，少了黃底不影響公司系統
+    讀檔，測試也會先攔下來。"""
+    try:
+        return ws.rows[0]._Row__cells[colx].xf_idx
+    except (AttributeError, KeyError, IndexError):
+        return 0
+
+
+def _write_qty_header_formula(wb, ws, rows):
+    """把採購數量欄的標題寫成活的公式：="採購數量"&SUBTOTAL(9,$G$2:$G$203)
+
+    紙潔自己匯出的檔案，這一格就是這條公式，總和會跟著採購數量欄自動
+    更新。但範本檔存進來的是當初那份檔案「算完之後的死字串」（採購數量
+    398），照抄的話，每一份新產生的採購表都會頂著別人那次的舊總和，而且
+    使用者在 Excel 裡改了數量也不會變。
+
+    加總範圍照抄紙潔原檔的 $G$2:$G$203；萬一某次品項多到超過這個範圍，
+    就跟著資料列往下延伸，不能讓後面的品項沒被算進去。"""
+    last_row = max(_QTY_SUBTOTAL_LAST_ROW, len(rows) + 1)
+    formula = xlwt.Formula(f'"採購數量"&SUBTOTAL(9,$G$2:$G${last_row})')
+    wb.add_sheet_reference(formula)
+    total = sum(int(row["qty"]) for row in rows)
+    ws.row(0).insert_cell(_QTY_COL, _CachedFormulaCell(
+        0, _QTY_COL, _header_xf_index(ws, _QTY_COL), formula,
+        f"採購數量{total}"))
+
+
 def fill_template(line_key, rows, remark):
     """載入該線別的公司範本檔，清空資料區、寫入新資料，回傳檔案位元組。
 
@@ -527,8 +601,11 @@ def fill_template(line_key, rows, remark):
         ws.write(i, 1, str(row["material_no"]))   # 料號
         ws.write(i, 2, "")                         # 品名
         ws.write(i, 3, "箱")                        # 單位
-        ws.write(i, 6, int(row["qty"]))            # 採購數量
+        ws.write(i, _QTY_COL, int(row["qty"]))      # 採購數量
         ws.write(i, 8, row.get("remark", remark))   # 備註（逐列，見上面說明）
+
+    if cfg.get("qty_header_formula"):
+        _write_qty_header_formula(wb, ws, rows)
 
     buf = io.BytesIO()
     wb.save(buf)

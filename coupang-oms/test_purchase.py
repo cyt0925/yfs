@@ -9,6 +9,7 @@
 import io
 import os
 import shutil
+import struct
 import sys
 import tempfile
 import zipfile
@@ -27,6 +28,20 @@ db.DB_PATH = os.path.join(db.DATA_DIR, "test.db")
 db.BACKUP_DIR = os.path.join(db.DATA_DIR, "backups")
 
 import app as app_module  # noqa: E402
+import purchase  # noqa: E402
+
+
+def qty_header_tokens(last_row):
+    """採購數量標題那條公式，在 .xls 裡實際會長出來的兩段位元組。
+
+    xlrd 讀不到公式（只讀得到算好的值），所以要確認「真的是公式、不是
+    一段長得很像的文字」，只能直接驗 BIFF 的 RPN 位元組：
+      - 字串常數 tStr：0x17 + 長度 + 旗標 + UTF-16LE 的「採購數量」
+      - 範圍 tArea：0x25 + 起始列 + 結束列 + 起始欄 + 結束欄（都是 0 起算）
+    """
+    tstr = b"\x17\x04\x01" + "採購數量".encode("utf-16-le")
+    tarea = b"\x25" + struct.pack("<4H", 1, last_row - 1, 6, 6)
+    return tstr, tarea
 
 PASS, FAIL = [], []
 
@@ -173,8 +188,37 @@ def main():
           len(rows2) == 11, len(rows2))
     check("同一個料號在不同 PO 分開出現兩次，不會被誤合併加總",
           [r[1] for r in rows2[1:]].count("0304042") == 2)
-    check("表頭那個帶著總和數字的怪標題原樣保留（使用者要求維持原樣）",
-          rows2[0][6] == "採購數量398", rows2[0][6])
+    # 紙潔自己匯出的檔案，G1 是活的公式 ="採購數量"&SUBTOTAL(9,$G$2:$G$203)，
+    # 總和會跟著採購數量欄跑。範本檔存下來的卻是那份檔案算完的死字串
+    # 「採購數量398」，照抄的話每份新檔都頂著別人那次的舊總和。
+    qty_total = sum(int(r["qty"]) for r in merged_rows)
+    check("採購數量標題是這次實際的總和，不是範本裡凍結的舊數字",
+          rows2[0][6] == f"採購數量{qty_total}",
+          f"實際 {rows2[0][6]}（本次總和 {qty_total}）")
+    tstr, tarea = qty_header_tokens(203)
+    check("而且真的是公式，不是一段長得很像的文字（檔案裡有 SUBTOTAL 的公式碼）",
+          tstr in res.data and tarea in res.data)
+    check("沒有公式能力的程式（xlrd／pandas 這類）也讀得到現成的標題值",
+          isinstance(rows2[0][6], str) and rows2[0][6].startswith("採購數量"),
+          rows2[0][6])
+
+    # 品項多到超過紙潔原檔的 $G$2:$G$203 時，加總範圍要跟著往下延伸，
+    # 不然後面的品項不會被算進總和。
+    many = [{"material_no": f"TEST{i:04d}", "qty": 1, "remark": ""}
+            for i in range(210)]
+    big = purchase.fill_template("paper", many, "")
+    _, big_area = qty_header_tokens(211)
+    check("品項超過 203 列時，加總範圍跟著資料列延伸", big_area in big)
+    big_sheet = xlrd.open_workbook(file_contents=big).sheet_by_index(0)
+    check("延伸後的標題總和涵蓋全部品項", big_sheet.cell_value(0, 6) == "採購數量210",
+          big_sheet.cell_value(0, 6))
+
+    for other in ("pg", "mars"):
+        sheet = xlrd.open_workbook(
+            file_contents=purchase.fill_template(other, merged_rows, "")
+        ).sheet_by_index(0)
+        check(f"{purchase.LINES[other]['label']}的標題維持原樣，沒被順手改成公式",
+              sheet.cell_value(0, 6) == "採購數量", sheet.cell_value(0, 6))
 
     print("\n【5】瑪氏：讀 MARS 的「訂貨通知單」，不是酷澎系統的「訂單匯入」表")
     # 第一版把瑪氏也套進 P&G／紙潔那套「訂單匯入」解析邏輯，是同事一開始
@@ -298,7 +342,6 @@ def main():
           "13000000493049" not in "酷澎XP&G_產品採購表上傳_0905到貨.xls")
 
     print("\n【5.6】build_filename：各線別的檔名長相")
-    import purchase  # noqa: E402
     check("P&G 檔名不帶單號（合併時本來就這樣，使用者後來要求單張匯出也一併拿掉）",
           purchase.build_filename("pg", [], "0905", "TXRC8")
           == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
