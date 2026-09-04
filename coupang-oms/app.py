@@ -35,7 +35,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-04.1"
+BUILD_VERSION = "2026-09-04.2"
 
 app = Flask(__name__)
 
@@ -221,13 +221,37 @@ def _po_overridden_values(conn, po_numbers):
     return out
 
 
+def po_field_spread(skus, field):
+    """這張單底下這個欄位實際上有哪幾種值，各幾項——只在「超過一種」時
+    回傳內容，一致時回傳空清單。
+
+    交期／倉別照理說整張單一致，但酷澎其實會只改其中幾個品項（實際遇過：
+    一張單一半 9/1、一半 9/9）。這種情況下不管挑哪個值顯示都是片面的，
+    所以另外把實際分布帶給前端，讓畫面能明講「這張單不一致」，而不是
+    靜悄悄挑一個顯示、首頁跟明細各說各話。"""
+    counts = {}
+    for s in skus:
+        val = s.get(field) or ""
+        if val:
+            counts[val] = counts.get(val, 0) + 1
+    if len(counts) <= 1:
+        return []
+    return [{"value": v, "count": n} for v, n in sorted(counts.items())]
+
+
 def po_shared_value(skus, field):
     """整張單共用欄位要顯示哪一列的值：優先拿人工調整過那一列，沒有就
-    拿第一列。跟 po_summary_sql 裡的取法一致，首頁跟明細才不會各說各話。"""
+    取最小的非空值。
+
+    這裡的規則必須跟 po_summary_sql 裡那段 SQL 一字不差地對應，否則
+    同一張單在首頁跟明細會是兩個答案——實際踩過：明細取第一列拿到
+    9/9、首頁取 MIN 拿到 9/1，同事以為系統壞了。空字串要排除掉（對應
+    SQL 的 NULLIF），不然「還沒填」會排在日期前面被選中。"""
     for s in skus:
         if s.get(f"{field}_overridden"):
             return s[field]
-    return skus[0][field] if skus else ""
+    values = [s[field] for s in skus if s.get(field)]
+    return min(values) if values else ""
 
 
 # ---------------------------------------------------------------- 設定檔
@@ -1749,7 +1773,7 @@ def po_summary_sql(clause):
         SELECT po_number,
                COALESCE(MAX(CASE WHEN order_type_overridden = 1
                                  THEN order_type END),
-                        MIN(order_type))      AS order_type,
+                        MIN(NULLIF(order_type, '')), '')    AS order_type,
                MIN(parent_po)       AS parent_po,
                MIN(po_status)       AS po_status,
                MIN(receiving_status) AS receiving_status,
@@ -1763,12 +1787,18 @@ def po_summary_sql(clause):
                -- po_shared_value 同一套邏輯，兩邊顯示才會一致。
                COALESCE(MAX(CASE WHEN delivery_date_overridden = 1
                                  THEN delivery_date END),
-                        MIN(delivery_date))   AS delivery_date,
+                        MIN(NULLIF(delivery_date, '')), '') AS delivery_date,
                COALESCE(MAX(CASE WHEN warehouse_overridden = 1
                                  THEN warehouse END),
-                        MIN(warehouse))       AS warehouse,
+                        MIN(NULLIF(warehouse, '')), '')     AS warehouse,
                {concat("line")}  AS lines_csv,
                {concat("brand")} AS brands_csv,
+               -- 酷澎會只改其中幾個品項，同一張單就會有兩種交期／倉別。
+               -- 首頁挑一個顯示會跟明細對不起來，所以一併帶出「有幾種
+               -- 值」，畫面上直接標示不一致。NULLIF 把空字串排除掉，
+               -- 免得「還沒填」被算成一種值。
+               COUNT(DISTINCT NULLIF(delivery_date, '')) AS delivery_date_variants,
+               COUNT(DISTINCT NULLIF(warehouse, ''))     AS warehouse_variants,
                COUNT(*)             AS sku_count,
                COALESCE(SUM(qty_coupang),0) AS qty_coupang,
                COALESCE(SUM(qty_ship),0)    AS qty_ship,
@@ -1868,6 +1898,10 @@ def api_po_detail(po_number):
             "lines": _csv_clean(",".join(s["line"] or "" for s in skus)),
             "delivery_date": po_shared_value(skus, "delivery_date"),
             "warehouse": po_shared_value(skus, "warehouse"),
+            "order_type": po_shared_value(skus, "order_type"),
+            "delivery_date_spread": po_field_spread(skus, "delivery_date"),
+            "warehouse_spread": po_field_spread(skus, "warehouse"),
+            "order_type_spread": po_field_spread(skus, "order_type"),
             "skus": skus,
             "logs": [dict(l) for l in logs],
         })

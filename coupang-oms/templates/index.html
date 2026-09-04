@@ -964,8 +964,8 @@ function renderRows() {
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="filed_date" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}${mixedTag(r.delivery_date_variants, "交期")}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}${mixedTag(r.warehouse_variants, "倉別")}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell"
           data-inline="shipping_method" data-po="${esc(r.po_number)}"
           title="點一下可直接修改（不受拉單鎖定限制）">${esc(r.shipping_method) || "選擇配送方式"}</td>
@@ -978,6 +978,14 @@ function renderRows() {
     </tr>`;
   }).join("");
   updateSelectedInfo();
+}
+
+// 同一張單底下這個欄位有兩種以上的值時，在首頁直接講出來。挑一個顯示
+// 而不說，就會變成「首頁 9/1、點進去 9/9」這種對不起來的狀況。
+function mixedTag(variants, label) {
+  if (!(variants > 1)) return "";
+  return `<span class="block text-[10px] text-amber-700 font-semibold"
+    title="這張單各品項的${label}不一致，共 ${variants} 種，點進去看明細">各品項不一致</span>`;
 }
 
 function badgeClass(value) {
@@ -1020,6 +1028,16 @@ async function openPo(poNumber) {
     if (!isFinite(n)) return "—";
     return (Math.round(n * 100) / 100).toString();
   }
+
+  // 酷澎只改了部分品項時，這張單的交期／倉別其實有好幾種。上面那格是
+  // 「整張單一起改」用的，直接顯示其中一個會誤導人以為全單都是這個值，
+  // 所以把實際分布攤開講，並說明存檔會統一。
+  const spreadNote = (spread, label) => {
+    if (!spread || !spread.length) return "";
+    const items = spread.map(v => `${esc(v.value)}（${v.count} 項）`).join("、");
+    return `<span class="block text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1">
+      這張單各品項的${label}不一致：${items}。上面填的值按「儲存」會套用到全部品項。</span>`;
+  };
 
   const skuRows = d.skus.map(s => {
     const cls = s.removed_from_coupang ? "bg-orange-50"
@@ -1091,17 +1109,17 @@ async function openPo(poNumber) {
           class="border rounded px-2 py-1.5 bg-ink-50 text-ink-500"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨日（整張單）</span>
         <input id="p-date" type="date" value="${esc(d.delivery_date)}" ${locked ? "disabled" : ""}
-          class="border rounded px-2 py-1.5"></label>
+          class="border rounded px-2 py-1.5">${spreadNote(d.delivery_date_spread, "交期")}</label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨倉別（整張單）</span>
         <input id="p-wh" value="${esc(d.warehouse)}" ${locked ? "disabled" : ""}
-          class="border rounded px-2 py-1.5"></label>
+          class="border rounded px-2 py-1.5">${spreadNote(d.warehouse_spread, "倉別")}</label>
       <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
         <span class="text-sm py-1.5">${esc(displayLines(d.lines)) || "待補"}</span></div>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型（整張單）</span>
         <select id="p-ordertype" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">
-          ${(d.skus[0]?.order_type || "") ? "" : `<option value="">（尚未填寫）</option>`}
-          ${opt(CONFIG.order_types, d.skus[0]?.order_type || "")}
-        </select></label>
+          ${d.order_type ? "" : `<option value="">（尚未填寫）</option>`}
+          ${opt(CONFIG.order_types, d.order_type || "")}
+        </select>${spreadNote(d.order_type_spread, "訂單類型")}</label>
     </div>
 
     <div>

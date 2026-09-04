@@ -469,6 +469,62 @@ def main():
               for s in fixed_det["skus"]),
           f"實際 {sorted({s['delivery_date'] for s in fixed_det['skus']})}")
 
+    print("\n【18-3】酷澎只改部分品項的交期：首頁與明細不能各說各話")
+    # 實際遇過的狀況（PO 13000000481036）：酷澎只把其中幾個品項的交期改掉，
+    # 同一張單就出現兩種交期。舊版首頁取 MIN 顯示 9/1、明細取第一個品項
+    # 顯示 9/9，同一張單在兩個畫面上是兩個答案。
+    mixed = os.path.join(_tmp, "mixed.xlsx")
+    shutil.copy(grown, mixed)          # 以 18-2 的檔案為底，才不會誤判成品項被移除
+    wb = openpyxl.load_workbook(mixed)
+    ws = wb["整合表"]
+    hdr = [c.value for c in ws[1]]
+    col = {h: i + 1 for i, h in enumerate(hdr)}
+    po_rows = {}
+    for r in range(2, ws.max_row + 1):
+        po_rows.setdefault(str(ws.cell(row=r, column=col["PO單號"]).value), []).append(r)
+    # 要挑沒拉單鎖定的單，不然後面測不到「儲存會統一」
+    unlocked = {r["po_number"] for r in
+                client.get("/api/pos?page_size=100").get_json()["rows"]
+                if not r["is_pulled"]}
+    mixed_po = next(p for p, rs in po_rows.items()
+                    if len(rs) >= 2 and p in unlocked
+                    and p not in (target_po, sync_po))
+    ws.cell(row=po_rows[mixed_po][0], column=col["交付日期"]).value = "2026/9/9"
+    wb.save(mixed)
+
+    d = upload(client, mixed).get_json()
+    client.post("/api/import/commit", json={"batch_id": d["batch_id"], "operator": "小真"})
+
+    mixed_det = client.get(f"/api/pos/{mixed_po}").get_json()
+    dates = {s["delivery_date"] for s in mixed_det["skus"]}
+    check("測試前提：這張單真的變成兩種交期", len(dates) == 2, f"實際 {sorted(dates)}")
+    mixed_list = next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+                      if r["po_number"] == mixed_po)
+    check("首頁到貨日與明細到貨日一致（不再一邊 9/1 一邊 9/9）",
+          mixed_list["delivery_date"] == mixed_det["delivery_date"],
+          f"首頁 {mixed_list['delivery_date']}／明細 {mixed_det['delivery_date']}")
+    check("首頁標示這張單各品項交期不一致，不是靜悄悄挑一個顯示",
+          mixed_list["delivery_date_variants"] == 2,
+          f"實際 {mixed_list['delivery_date_variants']}")
+    spread = {v["value"]: v["count"] for v in mixed_det["delivery_date_spread"]}
+    check("明細講得出實際分布（哪個日期各幾項）",
+          len(spread) == 2 and sum(spread.values()) == len(mixed_det["skus"]),
+          f"實際 {spread}")
+    check("交期一致的單不會被誤標成不一致",
+          next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"]
+               if r["po_number"] == target_po)["delivery_date_variants"] == 1)
+
+    res = client.put(f"/api/pos/{mixed_po}", json={
+        "po_version": mixed_det["header"]["version"],
+        "delivery_date": mixed_det["delivery_date"]})
+    check("就算填的值跟畫面顯示的一樣，儲存也會把整張單統一回來",
+          res.status_code == 200 and res.get_json()["changed"] == 1, res.get_json())
+    unified = client.get(f"/api/pos/{mixed_po}").get_json()
+    check("統一之後全部品項同一個交期，首頁不再標示不一致",
+          len({s["delivery_date"] for s in unified["skus"]}) == 1
+          and not unified["delivery_date_spread"],
+          f"實際 {sorted({s['delivery_date'] for s in unified['skus']})}")
+
     print("\n【19】歷程總覽：查詢與匯出")
     all_logs = client.get("/api/logs?page_size=10").get_json()
     check("歷程總覽查得到資料", all_logs["total"] > 0, f"共 {all_logs['total']} 筆")
