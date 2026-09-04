@@ -262,6 +262,8 @@
             <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
             <th class="px-2 py-2 text-right whitespace-nowrap">實際驗入數量
               <span class="block font-normal text-[10px] text-ink-400">酷澎後台同步</span></th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">驗收金額
+              <span class="block font-normal text-[10px] text-ink-400">訂單金額(稅後)</span></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -920,7 +922,7 @@ function renderRows() {
   const tb = $("#tbody");
   ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="14" class="text-center py-16 text-ink-300">
+    tb.innerHTML = `<tr><td colspan="15" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
@@ -978,6 +980,9 @@ function renderRows() {
       <td class="px-2 py-2 text-right num ${r.actual_verified_qty != null && r.actual_verified_qty !== r.qty_ship ? "text-amber-700 font-bold" : ""}"
           title="${r.actual_verified_qty == null ? "這張單還沒有品項同步過" : r.actual_verified_qty !== r.qty_ship ? "跟出貨數量不一致，可能有短驗" : ""}">
         ${r.actual_verified_qty == null ? "—" : r.actual_verified_qty.toLocaleString()}</td>
+      <td class="px-2 py-2 text-right num text-ink-500"
+          title="${r.verified_amount == null ? "這張單還沒有品項同步過金額（驗收工具要升到會送金額的版本）" : "整張單各品項訂單金額(稅後)加總"}">
+        ${r.verified_amount == null ? "—" : Math.round(r.verified_amount).toLocaleString()}</td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
