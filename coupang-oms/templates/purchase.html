@@ -193,11 +193,9 @@ function buildRemark(line, po, mmdd, wh) {
 // po 傳空字串＝這是合併多張 PO 的檔案，檔名就不放單號（跟紙潔那份
 // 「多張 PO 合併」的真實檔名慣例一致），不然只放第一張會誤導。
 function buildFilename(line, po, mmdd, wh, cat) {
-  // 一張 PO 一個檔就把單號放進括號（跟紙潔真實檔名的慣例一致），
-  // 不然「各自一個檔」拆出來全部同名，只能靠 (2)、(3) 區分。
-  const suffix = po ? `(${po})` : "";
-  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨${suffix}.xls`;
-  if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨${suffix}.xls`;
+  // P&G／紙潔的檔名不放單號（使用者明確要求），跟 purchase.py 一致。
+  if (line === "pg") return `酷澎XP&G_產品採購表上傳_${mmdd || "____"}到貨.xls`;
+  if (line === "paper") return `酷澎_產品採購表上傳_${mmdd || "____"}到貨.xls`;
   if (line === "mars") return `永豐Mars採購單(箱單位)-${cat || "GUM糖"}_${wh || "倉別"}${po ? `_${po}` : ""}.xls`;
   return `採購表_${mmdd || ""}.xls`;
 }
@@ -454,8 +452,23 @@ async function exportGroups(groups, merge) {
     return;
   }
 
+  if (!merge) {
+    // 各自一個檔：一張 PO 一個檔、一個一個下載，不包 zip——使用者要的是
+    // 下載資料夾裡直接就是一張張 .xls，不用再解壓縮一層「採購表.zip」。
+    // 逐張送、等上一張下載觸發了再送下一張，瀏覽器才不會把連續下載
+    // 當成惡意行為擋掉（Chrome 第一次還是會問一次「允許多個下載」）。
+    for (let i = 0; i < groups.length; i++) {
+      $("#p-export-status").textContent = `產生中… ${i + 1}/${groups.length}`;
+      if (!await downloadExport([groups[i]], "採購表.xls")) return;
+    }
+    $("#p-export-status").textContent =
+      groups.length === 1 ? "已下載。" : `已下載 ${groups.length} 個檔案。`;
+    return;
+  }
+
+  // 以下是「合併所選（一個檔）」的流程
   let payloadGroups = groups;
-  if (merge) {
+  {
     // 每一列要帶著「自己那一組」的備註，不能整份共用第一組的——P&G／
     // 瑪氏的備註裡面有訂單編號，共用會讓後面幾張 PO 的單號整個不見。
     const rows = groups.flatMap(g => g.rows.map(r => ({ ...r, remark: g.remark })));
@@ -471,6 +484,14 @@ async function exportGroups(groups, merge) {
     payloadGroups = [{ rows, remark: groups[0].remark, filename }];
   }
   $("#p-export-status").textContent = "產生中…";
+  if (await downloadExport(payloadGroups, payloadGroups[0].filename)) {
+    $("#p-export-status").textContent = "已下載。";
+  }
+}
+
+// 送一批 groups 給後端產檔並觸發下載。成功回 true；失敗會自己把錯誤
+// 寫到狀態列、回 false，呼叫端直接中止就好。
+async function downloadExport(payloadGroups, fallbackName) {
   try {
     const res = await fetch("{{ url_for('purchase.api_purchase_export') }}", {
       method: "POST",
@@ -480,7 +501,7 @@ async function exportGroups(groups, merge) {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       $("#p-export-status").textContent = data.error || "匯出失敗。";
-      return;
+      return false;
     }
     const blob = await res.blob();
     const disposition = res.headers.get("Content-Disposition") || "";
@@ -490,16 +511,16 @@ async function exportGroups(groups, merge) {
     const starMatch = disposition.match(/filename\*=UTF-8''([^;]+)/);
     const plainMatch = disposition.match(/filename="?([^";]+)"?/);
     const filename = starMatch ? decodeURIComponent(starMatch[1])
-      : plainMatch ? plainMatch[1]
-      : (merge ? payloadGroups[0].filename : "採購表.zip");
+      : plainMatch ? plainMatch[1] : fallbackName;
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-    $("#p-export-status").textContent = "已下載。";
+    return true;
   } catch (err) {
     $("#p-export-status").textContent = "連線失敗：" + err;
+    return false;
   }
 }
 
