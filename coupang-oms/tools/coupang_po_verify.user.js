@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         酷澎 PO 批次驗收比對器
 // @namespace    yfycpg.kate
-// @version      7.3
+// @version      7.4
 // @description  兩層驗收：第一層 清單頁收貨數量 vs detail可交貨總數(confirmedQty加總)；不符才下鑽逐SKU比 receivedQty vs confirmedQty。可貼上訂單系統複製的 PO 單號指定要驗哪幾張，或掃描目前清單頁。多狀態勾選(預設已確認+已關閉)、匯出Excel、同步「實際驗入數量」與「驗收金額(訂單金額稅後)」到訂單系統。
 // @match        https://supplier.tw.coupang.com/pom/purchase-order/*
 // @run-at       document-idle
@@ -29,23 +29,27 @@
   //   receivingPriceAfterTax  實際收貨的稅後金額（依 receivedQty 算），
   //                           要改成「以收到的算錢」就換成這個
   //   unitPriceAfterTax / unitPriceBeforeTax      單價 稅後／稅前
+  // ⚠ 這些金額欄位 API 回的是「分」（×100 的整數）：後台畫面顯示
+  //   178,854.00 的那張，API 給的是 17885400。一律除以 100 才是畫面上的
+  //   元。第一版沒除，同步進訂單系統的金額全部大了 100 倍，被使用者抓到。
   // 主欄位抓不到就退回「稅後單價 × PO 數量」自己算；還是算不出來就回
   // null——訂單系統那邊 null 代表「這次沒抓到」，不會把原本的金額清掉，
   // 也不會被當成 0 元，並在面板上把該 SKU 的原始資料攤出來給人看。
   const AMOUNT_FIELDS = ['purchasePriceAfterTax'];
   const UNIT_PRICE_FIELDS = ['unitPriceAfterTax'];
+  const MINOR_UNITS = 100;   // API 金額單位：分 → 元
   // 找不到金額欄位時留一份樣本，直接顯示在面板上讓使用者複製給維護的
   // 人，不用去翻 Console。
   let amountSample = null;
   function pickAmount(s) {
     for (const k of AMOUNT_FIELDS) {
       const v = toNum(s[k]);
-      if (v != null) return v;
+      if (v != null) return Math.round(v) / MINOR_UNITS;
     }
     const qty = toNum(s.orderedQty);
     for (const k of UNIT_PRICE_FIELDS) {
       const p = toNum(s[k]);
-      if (p != null && qty != null) return Math.round(p * qty * 100) / 100;
+      if (p != null && qty != null) return Math.round(p * qty) / MINOR_UNITS;
     }
     if (!amountSample) {
       amountSample = s;
@@ -166,7 +170,7 @@
   const box = document.createElement('div');
   box.id = 'kpv';
   box.innerHTML = `
-    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.3</span></b><span class="x">×</span></div>
+    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.4</span></b><span class="x">×</span></div>
     <div class="bd">
       <textarea class="polist" id="kpv-po-list" placeholder="從訂單系統勾選 PO → 按「複製 PO 單號給驗收工具」→ 貼在這裡（一行一個）。留空則改成掃描目前這頁清單。"></textarea>
       <div class="pocount" id="kpv-pocount"></div>
