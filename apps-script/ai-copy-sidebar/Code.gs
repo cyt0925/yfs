@@ -47,7 +47,6 @@ const DRIVE_FOLDERS = {
   ASSETS: "橘子工坊品牌素材",       // logo.png
   OUTPUT: "橘子工坊生圖"            // 產出存這裡（存檔時自動建立）
 };
-const VISION_MODEL_CANDIDATES = ["gpt-4.1", "gpt-4o"];
 // 生圖對話用的模型：GPT 負責看圖、寫指令、呼叫 image_generation 工具
 const CHAT_IMAGE_MODELS = ["gpt-5", "gpt-4.1"];
 
@@ -553,8 +552,6 @@ ${trendBlock}
 只回傳 JSON。`;
 }
 
-const REF_KEY = "跟參考圖一樣";
-
 /**
  * 側邊欄呼叫：把參考圖分析與文案情境，整理成一段業務看得懂、可以直接改的中文背景描述。
  */
@@ -791,6 +788,20 @@ function chatImage(input) {
     }
   }
   throw new Error("生圖失敗（" + lastError + "）。稍候再試，或把這則訊息貼給工程師。");
+}
+
+/** 側邊欄呼叫：貼網址時由伺服器端抓圖（瀏覽器跨網域抓不到），回傳 dataUrl */
+function fetchImageFromUrl(url) {
+  url = String(url || "").trim();
+  if (!/^https?:\/\//i.test(url)) throw new Error("網址要以 http:// 或 https:// 開頭。");
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { "User-Agent": "Mozilla/5.0" } });
+  if (res.getResponseCode() !== 200) throw new Error("抓不到這個網址（" + res.getResponseCode() + "）。改用右鍵另存圖片再拖進來。");
+  const blob = res.getBlob();
+  const mime = (blob.getContentType() || "").split(";")[0];
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(mime)) throw new Error("這個網址不是圖片檔（" + mime + "）。請對圖片本身按右鍵「複製圖片網址」。");
+  const bytes = blob.getBytes();
+  if (bytes.length > 15 * 1024 * 1024) throw new Error("圖片超過 15MB，請換小一點的。");
+  return { dataUrl: "data:" + mime + ";base64," + Utilities.base64Encode(bytes), mime: mime };
 }
 
 /** 側邊欄呼叫：把 base64 圖存進雲端硬碟輸出資料夾 */
