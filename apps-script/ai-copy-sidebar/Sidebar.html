@@ -142,6 +142,12 @@
       <div class="chips" id="qualityChips"><span class="chip" data-v="low">草稿</span><span class="chip on" data-v="medium">一般</span><span class="chip" data-v="high">精細</span></div>
       <div class="chips" id="ratioChips"></div>
     </div>
+    <div class="chipgroups" style="margin-top:4px">
+      <div class="chips" id="textLayoutChips" title="文字怎麼排"><span class="chip on" data-v="auto">排法自動變化</span><span class="chip" data-v="band">底部資訊帶</span><span class="chip" data-v="tag">價格牌</span><span class="chip" data-v="center">置中疊排</span><span class="chip" data-v="side">左字右圖</span></div>
+    </div>
+    <div class="chipgroups" style="margin-top:4px">
+      <div class="chips" id="accentChips" title="強調色"><span class="chip on" data-v="auto">強調色依背景</span><span class="chip" data-v="yellow">亮黃</span><span class="chip" data-v="orange">品牌橘</span><span class="chip" data-v="white">白字深邊</span><span class="chip" data-v="navy">深藍</span></div>
+    </div>
     <div class="btns">
       <button class="btn ghost" id="resetChatBtn" onclick="resetChat()" disabled>重來</button>
       <button class="btn primary" id="sendBtn" onclick="sendChat()" style="flex:2">產圖</button>
@@ -443,7 +449,7 @@
 
   // ---------- 生圖對話 ----------
   bindChips("modeChips", v => updateOverlayDefaults(v));
-  bindChips("qualityChips"); bindChips("ratioChips");
+  bindChips("qualityChips"); bindChips("ratioChips"); bindChips("textLayoutChips"); bindChips("accentChips");
   $("chatText").addEventListener("input", () => { chatTouched = true; });
   function prefillChat(force) {
     if (chat.responseId || !copyScene) return;
@@ -474,7 +480,7 @@
       product: $("product").value.trim(), productInfo: ctx ? ctx.productInfo : null,
       headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(), note: $("note").value.trim(),
       hookCopy: copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "",
-      layout: $("layout").value
+      layout: $("layout").value, textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips")
     };
     pushBubble("user", esc(text)); $("chatText").value = "";
     $("sendBtn").disabled = true; $("resetChatBtn").disabled = true;
