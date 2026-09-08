@@ -36,7 +36,7 @@ const API_KEY_PROP = "OPENAI_API_KEY";
 // 模型清單：依序嘗試，不存在或不支援就自動往後退。
 // 2026-09 平台上的 id：gpt-6-astra（$10/$50）、gpt-5.6-sol（$4/$20）、gpt-5.6-terra（$2/$12）、gpt-5.6-luna（$0.2/$1.2）。
 // 文案與看圖寫指令用 Terra 就夠；想更強把 "gpt-5.6-sol" 放到第一個即可。
-const TEXT_MODEL_CANDIDATES = ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-4.1"];
+const TEXT_MODEL_CANDIDATES = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-4.1"];   // 文案用 Luna 省錢，不夠好再往前換
 const IMAGE_QUALITY = "medium"; // 預設生圖品質 low / medium / high，high 一張成本約 3～4 倍
 
 const LABELS = { PRODUCT: "品類", AD_NAME: "廣告名稱", COPY: "文案", BUDGET: "預算分配" };
@@ -200,7 +200,7 @@ const LAYOUTS = [
   }
 ];
 
-const RATIOS = ["9:16", "1:1", "16:9", "4:5"];
+const RATIOS = ["1:1", "9:16", "4:5", "16:9"];   // momo CPAS 素材以 1:1 為主
 const SIZE_MAP = { "9:16": "1024x1536", "4:5": "1024x1536", "16:9": "1536x1024", "1:1": "1024x1024" };
 
 // ============================================================
@@ -671,6 +671,18 @@ function getFileBase64(fileId) {
 // 生圖
 // ============================================================
 
+/** 橘子工坊 momo CPAS 素材的固定版型（從設計師歷年成品歸納，設計師可直接改這段） */
+const HOUSE_TEMPLATE = [
+  "【橘子工坊 momo 素材固定版型，除非業務另外指定，一律照此排】",
+  "1. 品牌 logo 放左上角（聯名時兩個 logo 並排在上方）。",
+  "2. 標題放上半部，1～2 行，白色粗體、深色描邊加柔和陰影；關鍵字或數字改用亮黃色或品牌橘強調。商品名可直接寫進標題。",
+  "3. 三到四個圓形賣點徽章（白底或半透明圓形＋小圖示＋4～6 字），散布在產品旁邊，不能擋到產品正面。",
+  "4. 產品放中間偏下，是視覺重心之一但不是唯一主角；多包裝時扇形排開；膠囊、水花、光點帶出動態。",
+  "5. 底部一條滿版深色資訊帶（冷色系用深藍，節慶用深紅），左邊放「檔期 momo限定 ▸ 商品名或優惠」，右邊放價格：「$」加特大亮黃色數字加小字單位（例：/顆 up）。mo 點以圓形 mo 圖示呈現。",
+  "6. 背景高彩度、明亮、有光線感，主題呼應文案（水、冰、運動、節慶皆可），但不能雜到蓋住文字。",
+  "7. 圖上文字只能有業務給的那幾組，繁體中文，字要大、正確、清楚。"
+].join("\n");
+
 /**
  * 第一輪對話的開場指令。之後的輪次只送業務的中文，靠 previous_response_id 延續。
  * mode: "full" 完整稿（含標題文字，像 ChatGPT 直接生一張廣告）／ "background" 只畫背景（之後用程式疊真實文字與產品）
@@ -690,22 +702,33 @@ function buildChatInstruction(input) {
     lines.push("- 單一柔和光源，方便之後合成去背產品。");
   } else {
     lines.push("【這次要畫的是「完整的廣告主視覺」】");
-    lines.push("- 畫面要有電商促銷圖的完成度：主視覺、光影、材質、質感、氛圍，像專業設計師做的成品。");
-    if (input.headline || input.subline || input.badge) {
-      lines.push("- 圖上的文字只能有下面這幾組，繁體中文，字要大、正確、清楚，不可以出現任何其他文字：");
-      if (input.headline) lines.push("  主標：「" + input.headline + "」");
-      if (input.subline) lines.push("  副標：「" + input.subline + "」");
-      if (input.badge) lines.push("  角標：「" + input.badge + "」");
-    } else {
-      lines.push("- 圖上不要出現任何文字（標題之後由程式疊上）。");
+    lines.push(HOUSE_TEMPLATE);
+    lines.push("");
+    lines.push("【圖上的文字，只能有這幾組，不可多加任何字】");
+    const headline = input.headline || (input.hookCopy ? String(input.hookCopy).split(/\r?\n/)[0] : "");
+    if (headline) lines.push("- 主標：「" + headline + "」");
+    if (input.subline) lines.push("- 優惠：「" + input.subline + "」（放底部資訊帶左側）");
+    if (input.price) lines.push("- 價格：「" + input.price + "」（放底部資訊帶右側，數字特大亮黃）");
+    if (input.badge) lines.push("- 檔期：「" + input.badge + "」（放底部資訊帶最左，接「momo限定 ▸」）");
+    const badges = (input.productInfo && input.productInfo.sellingPoints ? String(input.productInfo.sellingPoints).split(/[、,，]/) : []).map(t => t.trim()).filter(t => t && t.length <= 8).slice(0, 4);
+    if (badges.length) lines.push("- 賣點徽章：" + badges.map(b => "「" + b + "」").join(""));
+    if (!headline && !input.subline && !input.price && !input.badge) lines.push("- （沒有給文字，這張不要有任何文字）");
+    if (input.hookCopy) {
+      lines.push("");
+      lines.push("【這次的文案，主視覺要扣住它】\n" + input.hookCopy);
+      lines.push("先找出文案裡可以視覺化的字眼（例如「一球」就讓膠囊像球一樣飛進畫面），讓主視覺表現那個梗，不要只是把產品放中間。");
     }
     if (input.productImages && input.productImages.length) {
-      lines.push("- 我會附上真實產品的去背圖：必須忠實重現它的形狀、配色、包裝版面與包裝上的文字，不可以重新設計或改字。包裝上看不清的小字寧可留白或保持模糊，不要自己編字。");
+      lines.push("- 附上的真實產品去背圖：必須忠實重現形狀、配色、包裝版面與包裝上的文字，不可重新設計或改字。看不清的小字寧可留白，不要編字。");
     }
+    if (input.logoImages && input.logoImages.length) lines.push("- 附上的 logo 圖：原樣放左上角，不可改顏色或變形。");
   }
   lines.push("");
   if (input.referenceImages && input.referenceImages.length) {
     lines.push("【參考圖的用法】只借它的配色、氛圍、光線、構圖密度。不要抄它的文字、logo、價格、他牌產品；若參考圖裡有他牌 logo 或名人角色，一律排除。");
+  }
+  if (input.layoutImages && input.layoutImages.length) {
+    lines.push("【版型圖的用法】這是我們自家設計師的成品，請照它的排版來排：logo 位置、標題位置與字體處理、賣點徽章、產品位置、底部資訊帶的樣式，都照它。只把文字、產品、背景主題換成這次的內容。");
   }
   if (input.refAnalysis) {
     lines.push("【先前對參考圖的分析】" + input.refAnalysis.summaryZh + (input.refAnalysis.backgroundPaletteEn ? "　背景色：" + input.refAnalysis.backgroundPaletteEn : ""));
@@ -730,8 +753,8 @@ function extractResponsesError(code, body) {
 
 /**
  * 側邊欄呼叫：生圖對話。第一輪帶開場指令與圖片；之後只帶業務的中文與 previousResponseId。
- * input: { text, mode, ratio, quality, previousResponseId, productImages, referenceImages, refAnalysis,
- *          product, productInfo, headline, subline, badge, layout }
+ * input: { text, mode, ratio, quality, previousResponseId, productImages, referenceImages, layoutImages, logoImages,
+ *          product, productInfo, headline, subline, price, badge, hookCopy, layout }
  * 回傳: { responseId, base64, text, revisedPrompt, model }
  */
 function chatImage(input) {
@@ -748,6 +771,14 @@ function chatImage(input) {
     (input.productImages || []).forEach((im, i) => {
       content.push({ type: "input_text", text: "【真實產品去背圖 " + (i + 1) + "】" });
       content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/png") + ";base64," + im.base64, detail: "high" });
+    });
+    (input.logoImages || []).forEach((im, i) => {
+      content.push({ type: "input_text", text: "【品牌 logo " + (i + 1) + "，原樣放左上角】" });
+      content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/png") + ";base64," + im.base64, detail: "high" });
+    });
+    (input.layoutImages || []).forEach((im, i) => {
+      content.push({ type: "input_text", text: "【版型圖 " + (i + 1) + "，照它的排版】" });
+      content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/jpeg") + ";base64," + im.base64, detail: "high" });
     });
     (input.referenceImages || []).forEach((im, i) => {
       content.push({ type: "input_text", text: "【參考圖 " + (i + 1) + "，只借氛圍】" });

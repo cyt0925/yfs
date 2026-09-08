@@ -55,6 +55,10 @@
   .tray { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
   .tile { position: relative; width: 84px; border: 2px solid var(--rule); border-radius: 8px; padding: 3px; background: #fff; }
   .tile.prod { border-color: var(--citrus); }
+  .tile.layout { border-color: #1B4F9C; }
+  .tile.logo { border-color: var(--good); }
+  .tile.layout .kind { border-color: #1B4F9C; color: #1B4F9C; font-weight: 600; }
+  .tile.logo .kind { border-color: var(--good); color: var(--good); font-weight: 600; }
   .tile.opaque { border-color: #E0B000; background: var(--warn-bg); }
   .tile img { width: 100%; height: 56px; object-fit: contain; display: block; border-radius: 4px; background: repeating-conic-gradient(#f3f0eb 0 25%, #fff 0 50%) 0 0 / 10px 10px; }
   .tile .kind { display: block; width: 100%; margin-top: 3px; font-size: 10.5px; padding: 1px 0; border: 1px solid var(--rule); border-radius: 8px; background: #fff; cursor: pointer; color: var(--ink-2); text-align: center; }
@@ -123,7 +127,7 @@
   <h2 onclick="toggle('secImage')">圖<span class="chev"></span></h2>
   <div class="body">
     <div class="drop" id="drop" onclick="document.getElementById('fileAny').click()">
-      <b>把參考圖、產品去背圖拖進來</b>，或 Ctrl+V 貼上
+      <b>把參考圖、自家舊稿（版型）、產品去背圖、logo 拖進來</b>，或 Ctrl+V 貼上。點標籤切換類型
       <input type="file" id="fileAny" accept="image/*" multiple onchange="addFiles(this.files); this.value=''">
     </div>
     <div class="urlrow"><input type="text" id="urlInput" placeholder="或貼圖片網址"><button class="btn ghost" onclick="addUrl()">加入</button></div>
@@ -153,9 +157,12 @@
       </div>
       <details class="more">
         <summary>圖上文字、字色、大小</summary>
-        <input type="text" id="headline" placeholder="主標" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
-        <input type="text" id="subline" placeholder="副標" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
-        <input type="text" id="badge" placeholder="角標（檔期）" style="margin-top:6px" oninput="scheduleRender()">
+        <input type="text" id="headline" placeholder="主標（空白就用選定文案第一行）" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
+        <input type="text" id="subline" placeholder="優惠（例：買2箱送150點）" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
+        <div class="two" style="margin-top:6px">
+          <input type="text" id="price" placeholder="價格（例：$5.7/顆 up）" oninput="scheduleRender()">
+          <input type="text" id="badge" placeholder="檔期（例：6/13 momo限定）" oninput="scheduleRender()">
+        </div>
         <div class="notice" id="mismatchNotice"></div>
         <div class="two" style="margin-top:6px">
           <select id="palette" onchange="onPaletteChange(); scheduleRender()"></select>
@@ -224,8 +231,9 @@
       if (onChange) onChange(c.dataset.v);
     });
   }
-  const prods = () => images.filter(i => i.kind === "prod");
-  const refs = () => images.filter(i => i.kind === "ref");
+  const KINDS = ["ref", "layout", "prod", "logo"], KIND_LABEL = { ref: "參考", layout: "版型", prod: "產品", logo: "logo" };
+  const byKind = k => images.filter(i => i.kind === k);
+  const prods = () => byKind("prod"), refs = () => byKind("ref"), layouts = () => byKind("layout"), logos = () => byKind("logo");
 
   // ---------- 初始化 ----------
   function loadFormOptions() {
@@ -254,11 +262,12 @@
   }
   function prefillCompose(c) {
     const lines = String(c.copyText || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    const price = lines.filter(l => /(滿|買)\s*\$?\s*\d/.test(l) && /(折|送|贈|下殺)/.test(l));
     const clean = s => s.replace(/^[^一-鿿\w$￥]+/, "").replace(/[^一-鿿\w$%)）]+$/, "").trim();
-    if (!$("headline").value && price[0]) $("headline").value = clean(price[0]);
-    if (!$("subline").value && price[1]) $("subline").value = clean(price[1]);
-    if (!$("badge").value) { const m = (String(c.budgetText || "") + " " + String(c.copyText || "")).match(/(\d{1,2}\/\d{1,2})\s*[-~～–]\s*(\d{1,2}\/\d{1,2})/); if (m) $("badge").value = m[1].replace("/", ".") + "-" + m[2].replace("/", ".") + " 指定品"; }
+    const offers = lines.filter(l => /(滿|買)\s*\$?\s*\d/.test(l) && /(折|送|贈)/.test(l));
+    const prices = lines.filter(l => /(下殺|直降|特價|\$\s*\d)/.test(l) && !/(滿|買)\s*\$?\s*\d.*送/.test(l));
+    if (!$("subline").value && offers[0]) $("subline").value = clean(offers[0]);
+    if (!$("price").value && prices[0]) { const m = prices[0].match(/\$?\s*[\d,]+(?:\.\d+)?\s*(?:\/\s*[一-鿿a-zA-Z]+)?(?:\s*up)?/i); $("price").value = m ? ("$" + m[0].replace(/^\$?\s*/, "").trim()) : clean(prices[0]); }
+    if (!$("badge").value) { const m = (String(c.budgetText || "") + " " + String(c.copyText || "") + " " + String(c.adName || "")).match(/(\d{1,2}\/\d{1,2})(?:\s*[-~～–]\s*\d{1,2}\/\d{1,2})?/); if (m) $("badge").value = m[1] + " momo限定"; }
   }
   function checkMismatch() {
     const product = ($("product").value + " " + (ctx && ctx.ok ? ctx.adName : "")).toLowerCase();
@@ -348,13 +357,13 @@
     run("fetchImageFromUrl")(url).then(r => addImage(r.dataUrl, url.split("/").pop().split("?")[0].replace(/\.[^.]+$/, "") || "網址圖片", "url"))
       .then(() => { $("urlInput").value = ""; setStatus("trayStatus", "", false); }).catch(e => setStatus("trayStatus", e.message, true));
   }
-  function setKind(id, kind) { const im = images.find(x => x.id === id); if (!im) return; im.kind = kind; renderTray(); invalidateChat(); }
+  function cycleKind(id) { const im = images.find(x => x.id === id); if (!im) return; im.kind = KINDS[(KINDS.indexOf(im.kind) + 1) % KINDS.length]; renderTray(); invalidateChat(); }
   function removeImage(id) { const i = images.findIndex(x => x.id === id); if (i !== -1) images.splice(i, 1); renderTray(); invalidateChat(); }
   function renderTray() {
     $("tray").innerHTML = images.map(im =>
       '<div class="tile ' + im.kind + (im.opaque && im.kind === "prod" ? ' opaque' : '') + '" title="' + esc(im.name) + '">' +
         '<button class="x" onclick="removeImage(\'' + im.id + '\')">×</button><img src="' + im.dataUrl + '">' +
-        '<button class="kind" onclick="setKind(\'' + im.id + '\',\'' + (im.kind === "prod" ? "ref" : "prod") + '\')">' + (im.kind === "prod" ? "產品" : "參考") + ' ⇄</button>' +
+        '<button class="kind" title="點一下切換：參考 → 版型 → 產品 → logo" onclick="cycleKind(\'' + im.id + '\')">' + KIND_LABEL[im.kind] + ' ⇄</button>' +
       '</div>').join("");
     const opaque = prods().filter(im => im.opaque).length;
     setNotice("trayNotice", opaque ? opaque + " 張標成「產品」的圖沒有去背，疊圖會帶白底。" : "");
@@ -385,6 +394,7 @@
       $("libHint").textContent = files.length ? "點一下加入。" + (res.logo ? "　logo：" + res.logo.name : "") : "雲端硬碟沒有常用素材（選單「建立雲端硬碟常用素材庫」可建立，非必要）。";
       $("libTray").innerHTML = files.map(x => '<div class="tile lib ' + x.kind + '" onclick=\'addFromLibrary(' + JSON.stringify({ id: x.f.id, name: x.f.name, kind: x.kind }).replace(/'/g, "&#39;") + ')\'>' + (x.f.thumb ? '<img src="' + x.f.thumb + '">' : '') + '<span class="kind">' + (x.kind === "prod" ? "產品" : "參考") + '</span></div>').join("");
       if (res.logo) run("getFileBase64")(res.logo.id).then(r => { logoDataUrl = r.dataUrl; updateOverlayChips(); scheduleRender(); }).catch(() => {});
+      window.__libHasLogo = !!res.logo;
     }).catch(e => { $("libHint").textContent = e.message; });
   }
   function addFromLibrary(f) {
@@ -414,8 +424,12 @@
       text: text, mode: mode, ratio: ratio, quality: quality, previousResponseId: chat.responseId || "",
       productImages: first ? prods().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       referenceImages: first && $("sendRefs").checked ? refs().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
+      layoutImages: first ? layouts().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
+      logoImages: first ? logos().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       product: $("product").value.trim(), productInfo: ctx ? ctx.productInfo : null,
-      headline: $("headline").value.trim(), subline: $("subline").value.trim(), badge: $("badge").value.trim(), layout: $("layout").value
+      headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(),
+      hookCopy: copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "",
+      layout: $("layout").value
     };
     pushBubble("user", esc(text)); $("chatText").value = "";
     $("sendBtn").disabled = true; $("resetChatBtn").disabled = true;
@@ -444,7 +458,7 @@
   function updateOverlayChips() {
     $("chipText").classList.toggle("on", overlay.overlayText);
     $("chipProd").classList.toggle("on", overlay.overlayProducts); $("chipProd").style.display = prods().length ? "" : "none";
-    $("chipLogo").classList.toggle("on", overlay.overlayLogo); $("chipLogo").style.display = logoDataUrl ? "" : "none";
+    $("chipLogo").classList.toggle("on", overlay.overlayLogo); $("chipLogo").style.display = (logoDataUrl || logos().length) ? "" : "none";
   }
   function onPaletteChange() {}
 
@@ -478,7 +492,8 @@
       bgImg = await loadImage("data:image/png;base64," + currentImageBase64);
       full.width = bgImg.naturalWidth; full.height = bgImg.naturalHeight;
       prodImgs = await Promise.all(prods().map(im => loadImage(im.dataUrl)));
-      logoImg = logoDataUrl ? await loadImage(logoDataUrl).catch(() => null) : null;
+      const logoSrc = logos().length ? logos()[0].dataUrl : logoDataUrl;
+      logoImg = logoSrc ? await loadImage(logoSrc).catch(() => null) : null;
       $("stageWrap").style.display = "block"; $("briefBox").style.display = "none";
       resetPositions(); if (overlay.overlayText) autoPlaceHeadline(); else render();
       updateOverlayChips();
@@ -500,7 +515,7 @@
       prodImgs.forEach((im, i) => { const w = ws[i]; g.save(); g.fillStyle = "rgba(0,0,0,0.22)"; g.filter = "blur(" + Math.round(W * 0.012) + "px)"; g.beginPath(); g.ellipse(x + w / 2, bottom - th * 0.01, w * 0.42, th * 0.035, 0, 0, Math.PI * 2); g.fill(); g.restore(); g.drawImage(im, x, bottom - th, w, th); x += w + gap; });
       hitBoxes.push({ key: "products", x: comp.products.cx * W - total / 2, y: bottom - th, w: total, h: th });
     }
-    const headline = overlay.overlayText ? $("headline").value.trim() : "", subline = overlay.overlayText ? $("subline").value.trim() : "", badge = overlay.overlayText ? $("badge").value.trim() : "";
+    const headline = overlay.overlayText ? $("headline").value.trim() : "", subline = overlay.overlayText ? [$("subline").value.trim(), $("price").value.trim()].filter(Boolean).join("　") : "", badge = overlay.overlayText ? $("badge").value.trim() : "";
     if (headline || subline) {
       const maxW = W * 0.9, s1 = headline ? fitFont(g, headline, maxW, W * 0.085 * ts, "900") : 0, s2 = subline ? fitFont(g, subline, maxW, W * 0.058 * ts, "700") : 0;
       const bh = s1 + (s1 && s2 ? s1 * 0.25 : 0) + s2, cx = comp.headline.cx * W, top = comp.headline.cy * H - bh / 2; let y = top, mw = 0;
@@ -546,11 +561,11 @@
     const L = ["【橘子工坊 素材需求單】"];
     if (ctx && ctx.ok) L.push("檔期／欄位：" + ctx.sheetName + " " + ctx.columnLabel + " 欄" + (ctx.budgetText ? "（" + ctx.budgetText + "）" : ""));
     L.push("商品：" + ($("product").value.trim() || "（未填）"));
-    const t = [$("headline").value, $("subline").value, $("badge").value].filter(Boolean).join("／"); if (t) L.push("圖上文字：" + t);
+    const t = [$("headline").value, $("subline").value, $("price").value, $("badge").value].filter(Boolean).join("／"); if (t) L.push("圖上文字：" + t);
     if (copyResult) { const p = selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : null; L.push("", p ? "選定文案（" + $("tone").value + "）：\n" + p : "文案候選：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((x, i) => "版本" + (i + 1) + "：\n" + x).join("\n\n")); }
     L.push("", "視覺：" + (chipValue("modeChips") === "background" ? "只畫背景＋程式疊字" : "完整稿") + "　比例 " + (chipValue("ratioChips") || "9:16") + "　主色調 " + $("palette").value);
     if (chat.turns.length) L.push("生圖對話：\n" + chat.turns.map((x, i) => "  " + (i + 1) + ". " + x.text).join("\n"));
-    L.push("參考圖 " + refs().length + " 張、產品去背圖 " + prods().length + " 張（另附）");
+    L.push("參考圖 " + refs().length + " 張、版型 " + layouts().length + " 張、產品去背圖 " + prods().length + " 張、logo " + logos().length + " 張（另附）");
     if ($("composeNote").value.trim()) L.push("備註：" + $("composeNote").value.trim());
     L.push(currentDriveUrl ? "AI 草稿：" + currentDriveUrl : "AI 草稿：請先按「存雲端」取得連結");
     L.push("AI 草稿僅供構圖與氛圍參考，產品與文字以原始檔為準。");
