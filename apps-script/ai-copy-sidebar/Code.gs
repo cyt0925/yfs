@@ -13,7 +13,7 @@
  *  - 參考圖：直接在側邊欄拖放、選檔、Ctrl+V 貼上或貼網址，不用先整理雲端硬碟。
  *  - 生圖：走 Responses API 的 image_generation 工具，也就是 ChatGPT 生圖背後同一套機制：
  *          GPT 先看懂中文與圖片，自己寫指令、呼叫生圖、記住上一輪，之後用中文繼續改。
- *          input_fidelity=high 用來保住產品包裝與 logo 的細節。
+ *          不指定影像模型，交給 OpenAI 用最新的（目前是 gpt-image-2）。
  *  - 合成：側邊欄用 canvas 把 AI 底圖 + 真實去背產品 PNG + 中文標題 + 角標 + logo 疊成草稿，
  *          數字與 logo 保證正確，給設計師接手微調。
  *
@@ -737,9 +737,9 @@ function chatImage(input) {
     content.push({ type: "input_text", text: userText + "\n（只改我提到的部分，其他保持與上一張一致。直接產出新圖。）" });
   }
 
+  // 不指定 image model，讓 OpenAI 用目前最新的（實測已是 gpt-image-2）。
+  // 舊的 input_fidelity 參數新模型不吃，不送；若日後有參數不被支援，下面的迴圈會自動拿掉重送。
   const tool = { type: "image_generation", size: size, quality: quality, output_format: "png" };
-  if (firstTurn && input.productImages && input.productImages.length) tool.input_fidelity = "high";
-  else if (!firstTurn) tool.input_fidelity = "high";
 
   const basePayload = {
     input: [{ role: "user", content: content }],
@@ -771,7 +771,12 @@ function chatImage(input) {
       }
       // tool_choice 不被接受時，拿掉再試一次
       if (code === 400 && body.indexOf("tool_choice") !== -1 && payload.tool_choice) {
-        payload = Object.assign({}, payload); delete payload.tool_choice; continue;
+        payload = Object.assign({}, payload); delete payload.tool_choice; attempt--; continue;
+      }
+      // 「模型不支援 X 參數」→ 把 X 從工具設定拿掉再試（例如 gpt-image-2 不吃 input_fidelity）
+      const unsupported = body.match(/does not support the '([a-z_]+)' parameter/);
+      if (code === 400 && unsupported && payload.tools[0][unsupported[1]] !== undefined) {
+        payload = JSON.parse(JSON.stringify(payload)); delete payload.tools[0][unsupported[1]]; attempt--; continue;
       }
       if (code === 404 || (code === 400 && body.indexOf("model") !== -1 && (body.indexOf("does not exist") !== -1 || body.indexOf("not found") !== -1))) {
         lastError = "模型 " + model + " 無法使用"; break;
