@@ -867,6 +867,56 @@ function fetchImageFromUrl(url) {
   return { dataUrl: "data:" + mime + ";base64," + Utilities.base64Encode(bytes), mime: mime };
 }
 
+/**
+ * 側邊欄呼叫：把業務用中文寫的「想保留什麼、想改什麼」翻成給生圖模型的英文指令。
+ * 只翻譯與具體化，不加油添醋；同時把「保留」與「修改」分開。
+ */
+function translateInstruction(text) {
+  text = String(text || "").trim();
+  if (!text) return { en: "" };
+  const prompt = `你是電商視覺的美術指導。業務用中文寫了對「背景圖」的修改要求，請翻成給圖像生成模型的英文指令。
+規則：
+- 只翻譯與具體化業務的意思，不要自己加新的元素。
+- 分成兩句：第一句 "Keep: ..." 列出要保留的；第二句 "Change: ..." 列出要改的。沒有的那句就省略。
+- 顏色請給具體色名或近似 hex。
+- 不要出現任何文字、logo、產品包裝的描述（背景圖不畫這些）。
+
+業務的要求：
+${text}
+
+只回傳 JSON。`;
+  const schema = { type: "object", properties: { en: { type: "string" } }, required: ["en"], additionalProperties: false };
+  return callChatJson(prompt, "instruction_translation", schema);
+}
+
+/**
+ * 側邊欄呼叫：拿上一張背景當輸入，只改業務指定的部分，其他保持。
+ * input: { previousBase64, instruction, ratio, keepSurfaceEmpty }
+ */
+function reviseBackground(input) {
+  const apiKey = requireApiKey();
+  if (!input.previousBase64) throw new Error("沒有上一張背景可以修改，請先生成一次。");
+  if (!input.instruction) throw new Error("請先在「想保留什麼、想改什麼」寫下修改指示。");
+  const size = SIZE_MAP[input.ratio] || "1024x1024";
+  const en = translateInstruction(input.instruction).en || input.instruction;
+
+  const prompt = [
+    "Edit the attached background image according to this direction: " + en,
+    "Everything not mentioned in the direction must stay exactly as it is: same composition, same camera angle, same lighting, same objects and their positions.",
+    input.keepSurfaceEmpty === false ? "" : NO_PRODUCT_RULE,
+    "ABSOLUTELY NO text, letters, numbers, logos, watermarks, price tags or packaging anywhere in the image. Photorealistic quality, sharp focus."
+  ].filter(Boolean).join("\n\n");
+
+  const files = decodeUploads([{ name: "previous", mime: "image/png", base64: input.previousBase64 }], "previous");
+  const mp = buildMultipart({ model: IMAGE_MODEL, prompt: prompt, size: size, quality: IMAGE_QUALITY, n: "1" }, files);
+  const res = UrlFetchApp.fetch("https://api.openai.com/v1/images/edits", {
+    method: "post", contentType: mp.contentType, headers: { Authorization: "Bearer " + apiKey }, payload: mp.bytes, muteHttpExceptions: true
+  });
+  const code = res.getResponseCode(), body = res.getContentText();
+  if (code !== 200) handleImageError(code, body);
+  return { base64: JSON.parse(body).data[0].b64_json, directiveEn: en };
+}
+
 /** 側邊欄呼叫：把 base64 圖存進雲端硬碟輸出資料夾 */
 function saveImageToDrive(input) {
   const folder = getFolderByName(DRIVE_FOLDERS.OUTPUT) || DriveApp.createFolder(DRIVE_FOLDERS.OUTPUT);

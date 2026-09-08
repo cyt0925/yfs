@@ -237,7 +237,13 @@
     <textarea id="imagePrompt" class="prompt-box" placeholder="生成文案或分析參考圖後會自動組出 Prompt；也可以自己貼一段。"></textarea>
     <button class="small-btn" onclick="rebuildPrompt(true)">依上方選項重組 Prompt</button>
 
-    <button class="primary-btn" id="genImageBtn" onclick="generateImage()">生成背景</button>
+    <label>想保留什麼、想改什麼 <span class="opt">（中文就好，例：保留水波和藍色，毛巾拿掉，上方留更多空）</span></label>
+    <textarea id="bgInstruction" style="min-height:48px" placeholder="第一次生成可以先空著；看到圖再寫要怎麼改"></textarea>
+    <div class="two">
+      <button class="primary-btn" id="genImageBtn" onclick="generateImage()">生成背景</button>
+      <button class="secondary-btn" id="reviseBtn" style="margin-top:12px" onclick="reviseBackground()" disabled>依指示微調這張背景</button>
+    </div>
+    <div class="hint">「生成背景」會帶著指示重畫一張新的；「微調」是拿上一張圖只改你說的部分，其他保持。</div>
     <div class="status" id="imageStatus"></div>
     <div class="result" id="imageResult"></div>
   </div>
@@ -283,6 +289,9 @@
       <span><input type="checkbox" id="overlayLogo" checked onchange="scheduleRender()"> 疊上 logo</span>
     </label>
     <div class="hint" id="composeHint"></div>
+
+    <label>給設計師的備註 <span class="opt">（想保留什麼、想改什麼，會放進第五步的需求單）</span></label>
+    <textarea id="composeNote" style="min-height:44px" placeholder="例：標題想要更有份量的字體、產品盒子加反光、整體再亮一點"></textarea>
 
     <button class="primary-btn" id="composeBtn" onclick="startCompose()">開始合成</button>
     <div class="status" id="composeStatus"></div>
@@ -434,6 +443,7 @@
   function pushImage(kind, item, source) {
     const list = kind === "ref" ? refImages : prodImages;
     item.id = "img" + (++uid); item.source = source || "upload"; list.push(item); renderImageList(kind);
+    if (kind === "ref") invalidateAnalysis("有新增");
   }
   function addFiles(files, kind) {
     const statusId = kind === "ref" ? "refStatus" : "prodStatus";
@@ -458,13 +468,25 @@
       .then(item => { item.name = file.name; pushImage(kind, item, "drive"); setStatus(statusId, "", false); })
       .catch(err => setStatus(statusId, err.message, true));
   }
-  function removeImage(kind, id) { const list = kind === "ref" ? refImages : prodImages; const i = list.findIndex(x => x.id === id); if (i !== -1) list.splice(i, 1); renderImageList(kind); }
+  function removeImage(kind, id) {
+    const list = kind === "ref" ? refImages : prodImages; const i = list.findIndex(x => x.id === id); if (i !== -1) list.splice(i, 1); renderImageList(kind);
+    if (kind === "ref") invalidateAnalysis("有移除");
+  }
   function moveImage(kind, id) {
     const from = kind === "ref" ? refImages : prodImages, to = kind === "ref" ? prodImages : refImages;
     const i = from.findIndex(x => x.id === id); if (i === -1) return;
     const it = from.splice(i, 1)[0];
-    if (kind === "ref") { downscale(it.dataUrl, "prod").then(re => { Object.assign(it, re); to.push(it); renderImageList("ref"); renderImageList("prod"); }); return; }
-    to.push(it); renderImageList("ref"); renderImageList("prod");
+    if (kind === "ref") { downscale(it.dataUrl, "prod").then(re => { Object.assign(it, re); to.push(it); renderImageList("ref"); renderImageList("prod"); invalidateAnalysis("有變動"); }); return; }
+    to.push(it); renderImageList("ref"); renderImageList("prod"); invalidateAnalysis("有變動");
+  }
+  function invalidateAnalysis(reason) {
+    if (!refAnalysis) return;
+    refAnalysis = null; refScene = "";
+    if ($("palette").value === REF_KEY) $("palette").value = options ? options.palettes[0].key : "";
+    if ($("visualStyle").value === REF_KEY) $("visualStyle").value = options ? options.visualStyles[0] : "";
+    if (sceneSource === "ref") { sceneSource = copyScene ? "copy" : "custom"; applyScene(); }
+    $("analysisBox").innerHTML = '<div class="notice show">參考圖' + reason + '，舊的分析已作廢。請重新按「讓 AI 分析參考圖」，否則生圖會用預設配色。</div>';
+    rebuildPrompt(true);
   }
   function renderImageList(kind) {
     const list = kind === "ref" ? refImages : prodImages;
@@ -622,10 +644,19 @@
     parts.push(draw ? (prodImages.length ? "會請 AI 把 " + prodImages.length + " 張產品畫進去（文字會亂）" : "選了 AI 畫產品，但還沒放產品圖") : "AI 只畫背景，桌面留空");
     $("imageInputsHint").textContent = parts.join("　｜　");
   }
-  function generateImage() {
-    const prompt = $("imagePrompt").value.trim();
+  async function generateImage() {
+    let prompt = $("imagePrompt").value.trim();
     if (!prompt) { setStatus("imageStatus", "沒有 Prompt，請先生成文案、分析參考圖，或自己貼一段。", true); return; }
     const draw = productMode() === "draw", sendRefs = $("sendRefs").checked;
+    if (refImages.length && !refAnalysis && $("palette").value !== "自訂") {
+      setStatus("imageStatus", "提醒：目前參考圖還沒分析（或分析已作廢），這次會用「" + $("palette").value + "」配色生成。想照參考圖就先回第一步按分析。", false);
+    }
+    const instruction = $("bgInstruction").value.trim();
+    if (instruction) {
+      $("genImageBtn").disabled = true; setStatus("imageStatus", "翻譯修改指示中…", false);
+      try { const t = await run("translateInstruction")(instruction); if (t.en) prompt += "\n\nAdditional direction from the marketer: " + t.en; }
+      catch (e) { $("genImageBtn").disabled = false; setStatus("imageStatus", "指示翻譯失敗：" + e.message, true); return; }
+    }
     const productImages = draw ? prodImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })) : [];
     const referenceImages = sendRefs ? refImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })) : [];
     $("genImageBtn").disabled = true; $("imageResult").innerHTML = ""; currentDriveUrl = "";
@@ -633,16 +664,38 @@
     setStatus("imageStatus", n ? "帶 " + n + " 張圖生成中…約 20～60 秒" : "生成背景中…約 10～30 秒", false);
     run("generateImage")({ imagePrompt: prompt, ratio: $("ratio").value || "9:16", productImages: productImages, referenceImages: referenceImages })
       .then(result => {
-        $("genImageBtn").disabled = false; currentImageBase64 = result.base64; currentImageMode = draw && productImages.length ? "draw" : "background";
-        setStatus("imageStatus", currentImageMode === "draw"
-          ? "AI 已把產品畫進畫面。包裝文字是模型編的，只能當構圖參考。第四步預設不再疊真實產品，要疊就勾回來。"
-          : "背景完成。到第四步把真實產品圖與標題疊上去，位置可以拖。", false);
+        $("genImageBtn").disabled = false; $("reviseBtn").disabled = false;
+        currentImageBase64 = result.base64; currentImageMode = draw && productImages.length ? "draw" : "background";
+        let msg = currentImageMode === "draw"
+          ? "⚠ AI 已把產品畫進畫面。包裝文字是模型編的，只能當構圖參考，不能出稿。第四步預設不再疊真實產品。"
+          : "背景完成。到第四步把真實產品圖與標題疊上去，位置可以拖。";
+        if (sendRefs) msg += "\n⚠ 這次附了參考圖本身，若畫面裡出現長得像參考圖的產品或文字，那是模型照抄的，不能用；取消勾選再生成一次。";
+        msg += "\n不滿意的地方可以在上方「想保留什麼、想改什麼」寫下來，按「微調這張背景」。";
+        setStatus("imageStatus", msg, false);
         const dataUrl = "data:image/png;base64," + result.base64;
         $("imageResult").innerHTML = '<img src="' + dataUrl + '"><div class="actions"><a href="' + dataUrl + '" download="ai-background.png">下載背景</a><button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div><div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
         $("overlayProducts").checked = currentImageMode !== "draw";
         updateComposeHint(); open("secCompose"); startCompose();
       }).catch(err => { $("genImageBtn").disabled = false; setStatus("imageStatus", err.message, true); });
   }
+  function reviseBackground() {
+    const instruction = $("bgInstruction").value.trim();
+    if (!currentImageBase64) { setStatus("imageStatus", "還沒有背景可以微調，先按「生成背景」。", true); return; }
+    if (!instruction) { setStatus("imageStatus", "請先在「想保留什麼、想改什麼」寫下修改指示。", true); return; }
+    $("reviseBtn").disabled = true; $("genImageBtn").disabled = true; currentDriveUrl = "";
+    setStatus("imageStatus", "依指示微調中…約 20～40 秒", false);
+    run("reviseBackground")({ previousBase64: currentImageBase64, instruction: instruction, ratio: $("ratio").value || "9:16", keepSurfaceEmpty: productMode() !== "draw" })
+      .then(result => {
+        $("reviseBtn").disabled = false; $("genImageBtn").disabled = false;
+        currentImageBase64 = result.base64;
+        setStatus("imageStatus", "已微調。送給模型的指令：" + result.directiveEn + "\n還要改就再寫、再按一次；想從頭來就按「生成背景」。", false);
+        const dataUrl = "data:image/png;base64," + result.base64;
+        $("imageResult").innerHTML = '<img src="' + dataUrl + '"><div class="actions"><a href="' + dataUrl + '" download="ai-background.png">下載背景</a><button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div><div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
+        startCompose();
+      })
+      .catch(err => { $("reviseBtn").disabled = false; $("genImageBtn").disabled = false; setStatus("imageStatus", err.message, true); });
+  }
+
   function saveToDrive(base64, prefix, statusId, remember) {
     const el = $(statusId); if (!base64) { el.textContent = "沒有圖片可以儲存。"; return; }
     el.textContent = "儲存中…";
@@ -852,6 +905,8 @@
     lines.push("・風格：" + $("visualStyle").value + "　留白版面：" + $("layout").value + "　比例：" + $("ratio").value);
     if (refAnalysis) lines.push("・參考圖重點：" + refAnalysis.summaryZh + (refAnalysis.cautionsZh ? "\n・注意：" + refAnalysis.cautionsZh : ""));
     if ($("sceneText").value.trim()) lines.push("・背景場景：" + $("sceneText").value.trim());
+    if ($("bgInstruction").value.trim()) lines.push("・對背景的要求：" + $("bgInstruction").value.trim());
+    if ($("composeNote").value.trim()) lines.push("・給設計師的備註：" + $("composeNote").value.trim());
     if ($("refNote").value.trim()) lines.push("・業務補充：" + $("refNote").value.trim());
     lines.push("・參考圖 " + refImages.length + " 張、產品去背圖 " + prodImages.length + " 張（另附）");
     if (currentDriveUrl) lines.push("・AI 草稿：" + currentDriveUrl);
