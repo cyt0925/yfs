@@ -1,16 +1,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700;900&display=swap" rel="stylesheet">
 <style>
   :root {
-    --citrus: #D9520A;
-    --citrus-dark: #B8440A;
-    --ink: #1C1815;
-    --ink-2: #453D35;
-    --muted: #6E645A;
-    --surface: #F8F5F1;
-    --surface-2: #F1ECE5;
-    --rule: #E3DCD3;
-    --good: #1F6B45;
-    --bad: #A32118;
+    --citrus: #D9520A; --citrus-dark: #B8440A;
+    --ink: #1C1815; --ink-2: #453D35; --muted: #6E645A;
+    --surface: #F8F5F1; --surface-2: #F1ECE5; --rule: #E3DCD3;
+    --good: #1F6B45; --bad: #A32118; --info-bg: #FFF4EC;
   }
   * { box-sizing: border-box; }
   body {
@@ -27,7 +21,7 @@
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; border-radius: 50%; background: var(--citrus); color: #fff; font-size: 11px;
   }
-  h2 .chev { margin-left: auto; color: var(--muted); font-size: 11px; }
+  h2 .chev { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; }
   section { border-top: 1px solid var(--rule); }
   section .body { padding: 0 0 14px; }
   section.collapsed .body { display: none; }
@@ -45,7 +39,7 @@
   .hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
   .small-btn {
     display: inline-block; margin-top: 6px; font-size: 11.5px; color: var(--citrus);
-    background: none; border: 1px solid var(--rule); border-radius: 6px; padding: 3px 9px; cursor: pointer;
+    background: #fff; border: 1px solid var(--rule); border-radius: 6px; padding: 3px 9px; cursor: pointer;
   }
   .small-btn:hover { background: var(--surface-2); }
   .small-btn:disabled { color: #B9AFA4; cursor: not-allowed; }
@@ -78,18 +72,56 @@
   .status.show { display: block; }
   .status.error { color: var(--bad); }
 
-  .angles { display: grid; gap: 6px; margin-top: 8px; }
-  .angle {
-    border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; cursor: pointer; background: #fff;
+  /* 拖放區 */
+  .drop {
+    border: 2px dashed var(--rule); border-radius: 10px; padding: 12px; text-align: center;
+    background: var(--surface); color: var(--muted); font-size: 12px; cursor: pointer; transition: border-color .15s, background .15s;
   }
+  .drop:hover, .drop.over { border-color: var(--citrus); background: var(--info-bg); color: var(--ink-2); }
+  .drop b { color: var(--citrus); }
+  .drop input[type=file] { display: none; }
+  .url-row { display: flex; gap: 6px; margin-top: 6px; }
+  .url-row input { flex: 1; font-size: 12px; }
+  .url-row button { white-space: nowrap; }
+
+  .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .thumb {
+    position: relative; border: 2px solid var(--rule); border-radius: 8px; padding: 4px; background: #fff; text-align: center;
+  }
+  .thumb.selected, .thumb.added { border-color: var(--citrus); background: var(--info-bg); }
+  .thumb img {
+    width: 100%; height: 64px; object-fit: contain; display: block; border-radius: 4px;
+    background: repeating-conic-gradient(#f3f0eb 0 25%, #fff 0 50%) 0 0 / 12px 12px;
+  }
+  .thumb .n { font-size: 10.5px; margin-top: 3px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thumb .x {
+    position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--ink); color: #fff; border: 0; font-size: 11px; line-height: 18px; cursor: pointer; padding: 0;
+  }
+  .thumb .mv {
+    position: absolute; top: -6px; left: -6px; height: 18px; border-radius: 9px; padding: 0 6px;
+    background: #fff; color: var(--citrus); border: 1px solid var(--citrus); font-size: 10px; line-height: 16px; cursor: pointer;
+  }
+  .thumb.lib { cursor: pointer; }
+  .thumb .ph { height: 64px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
+
+  .analysis {
+    margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: var(--info-bg); border: 1px solid #F3D9C4; font-size: 12.5px;
+  }
+  .analysis .t { font-weight: 700; margin-bottom: 4px; }
+  .analysis .c { color: var(--bad); margin-top: 6px; }
+
+  .angles { display: grid; gap: 6px; margin-top: 8px; }
+  .angle { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; cursor: pointer; background: #fff; }
   .angle:hover { background: var(--surface); }
-  .angle.selected { border-color: var(--citrus); background: #FFF4EC; }
+  .angle.selected { border-color: var(--citrus); background: var(--info-bg); }
   .angle .t { font-weight: 700; font-size: 12.5px; }
   .angle .h { font-size: 12.5px; margin: 2px 0; }
   .angle .w { font-size: 11.5px; color: var(--muted); }
 
   .cards { display: grid; gap: 10px; margin-top: 12px; }
-  .card { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 11px; background: var(--surface); }
+  .card { border: 1px solid var(--rule); border-radius: 8px; padding: 10px 11px; background: var(--surface); cursor: pointer; }
+  .card.selected { border-color: var(--citrus); background: var(--info-bg); }
   .card .label { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 5px; }
   .card .text { white-space: pre-wrap; font-size: 13px; margin-bottom: 8px; }
   .copy-btn {
@@ -98,47 +130,77 @@
   }
   .copy-btn[data-done="1"] { color: var(--good); border-color: var(--good); }
 
-  .thumbs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
-  .thumb {
-    border: 2px solid var(--rule); border-radius: 8px; padding: 4px; cursor: pointer; background: #fff; text-align: center;
-  }
-  .thumb.selected { border-color: var(--citrus); background: #FFF4EC; }
-  .thumb img { width: 100%; height: 64px; object-fit: contain; display: block; background:
-    repeating-conic-gradient(#f3f0eb 0 25%, #fff 0 50%) 0 0 / 12px 12px; border-radius: 4px; }
-  .thumb .n { font-size: 10.5px; margin-top: 3px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .thumb .ph { height: 64px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
-
   .prompt-box { font-size: 11.5px; color: var(--ink-2); min-height: 120px; }
-
   .result { margin-top: 12px; text-align: center; }
-  .result img, .result canvas { max-width: 100%; border-radius: 8px; border: 1px solid var(--rule); }
+  .result img { max-width: 100%; border-radius: 8px; border: 1px solid var(--rule); }
   .actions { display: flex; gap: 8px; margin-top: 8px; }
   .actions a, .actions button {
     flex: 1; text-align: center; font-size: 12px; font-weight: 600; padding: 7px; border-radius: 6px;
     border: 1px solid var(--rule); background: #fff; color: var(--ink); text-decoration: none; cursor: pointer;
   }
+  details.lib { margin-top: 8px; }
+  details.lib summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+  .brief { white-space: pre-wrap; font-size: 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin-top: 8px; }
   footer { margin-top: 18px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 10px; }
 </style>
 
 <h1>🍊 AI 文案助手</h1>
 
-<div class="context" id="context">
-  <div class="row"><span class="k">讀取中…</span></div>
-</div>
+<div class="context" id="context"><div class="row"><span class="k">讀取中…</span></div></div>
 
-<!-- ① 文案 -->
-<section id="secCopy">
-  <h2 onclick="toggle('secCopy')"><span class="num">1</span>文案<span class="chev"></span></h2>
+<!-- ① 參考圖 -->
+<section id="secRef">
+  <h2 onclick="toggle('secRef')"><span class="num">1</span>參考圖與產品圖<span class="chev"></span></h2>
   <div class="body">
-    <label>商品 <span class="opt">（可修改）</span></label>
+    <label style="margin-top:0">參考圖 <span class="opt">（網路上找到「想要這種感覺」的圖）</span></label>
+    <div class="drop" id="dropRef" onclick="document.getElementById('fileRef').click()">
+      <b>拖圖片到這裡</b>、點選檔案，或直接 <b>Ctrl+V</b> 貼上複製的圖片
+      <input type="file" id="fileRef" accept="image/*" multiple onchange="addFiles(this.files, 'ref'); this.value=''">
+    </div>
+    <div class="url-row">
+      <input type="text" id="urlRef" placeholder="或貼圖片網址（對圖片按右鍵 → 複製圖片網址）">
+      <button class="small-btn" style="margin:0" onclick="addUrl('ref')">加入</button>
+    </div>
+    <div class="thumbs" id="refThumbs"></div>
+    <div class="status" id="refStatus"></div>
+
+    <label>補充說明 <span class="opt">（選填，例：我想要這種藍色但要更亮、產品放下面）</span></label>
+    <input type="text" id="refNote" placeholder="想保留什麼、想改什麼">
+    <button class="secondary-btn" id="analyzeBtn" onclick="analyzeRefs()">讓 AI 分析參考圖的配色、風格、構圖</button>
+    <div class="status" id="analyzeStatus"></div>
+    <div id="analysisBox"></div>
+
+    <label>產品去背圖 <span class="opt">（選填，要把自家產品放進畫面時才需要）</span></label>
+    <div class="drop" id="dropProd" onclick="document.getElementById('fileProd').click()">
+      <b>拖去背 PNG 到這裡</b> 或點選檔案
+      <input type="file" id="fileProd" accept="image/*" multiple onchange="addFiles(this.files, 'prod'); this.value=''">
+    </div>
+    <div class="thumbs" id="prodThumbs"></div>
+    <div class="status" id="prodStatus"></div>
+
+    <details class="lib" id="libDetails">
+      <summary>從雲端硬碟常用素材庫加入（選用，放每次都會用的產品圖與 logo）</summary>
+      <div class="hint" id="libHint">讀取中…</div>
+      <div class="thumbs" id="libProdThumbs"></div>
+      <div class="thumbs" id="libRefThumbs"></div>
+      <button class="small-btn" onclick="loadAssets()">重新讀取</button>
+    </details>
+  </div>
+</section>
+
+<!-- ② 文案 -->
+<section id="secCopy">
+  <h2 onclick="toggle('secCopy')"><span class="num">2</span>文案<span class="chev"></span></h2>
+  <div class="body">
+    <label style="margin-top:0">商品 <span class="opt">（可修改）</span></label>
     <input type="text" id="product" placeholder="例：洗衣膠囊*3盒" oninput="productTouched = true">
     <div class="hint" id="productInfoHint"></div>
 
-    <label>商品賣點／差異點 <span class="opt">（選填，會補進產品資料）</span></label>
+    <label>商品賣點／差異點 <span class="opt">（選填）</span></label>
     <input type="text" id="sellingPoint" placeholder="例：一球即淨、不用計量">
 
     <label>文案調性</label>
-    <select id="tone" onchange="onToneChange()"></select>
+    <select id="tone"></select>
 
     <label>本週時事／梗料 <span class="opt">（選填，寫清楚事件＋跟洗衣清潔的關聯）</span></label>
     <textarea id="trend" placeholder="例：颱風假連放兩天，大家都在家追劇、叫外送，衣服堆到週一才洗"></textarea>
@@ -153,67 +215,45 @@
   </div>
 </section>
 
-<!-- ② 生圖 -->
+<!-- ③ 生圖 -->
 <section id="secImage" class="collapsed">
-  <h2 onclick="toggle('secImage')"><span class="num">2</span>生圖底圖<span class="chev"></span></h2>
+  <h2 onclick="toggle('secImage')"><span class="num">3</span>生圖<span class="chev"></span></h2>
   <div class="body">
     <div class="two">
-      <div>
-        <label>主色調</label>
-        <select id="palette" onchange="onPaletteChange()"></select>
-      </div>
-      <div>
-        <label>視覺風格</label>
-        <select id="visualStyle" onchange="rebuildPrompt()"></select>
-      </div>
+      <div><label style="margin-top:0">主色調</label><select id="palette" onchange="onPaletteChange()"></select></div>
+      <div><label style="margin-top:0">視覺風格</label><select id="visualStyle" onchange="rebuildPrompt()"></select></div>
     </div>
     <div id="customPaletteWrap" style="display:none">
-      <label>自訂顏色描述 <span class="opt">（英文較準，例：lavender purple and white）</span></label>
+      <label>自訂顏色描述 <span class="opt">（英文較準）</span></label>
       <input type="text" id="customPalette" placeholder="e.g. deep navy with warm gold accents" oninput="rebuildPromptDebounced()">
     </div>
     <div class="two">
-      <div>
-        <label>版面</label>
-        <select id="layout" onchange="rebuildPrompt()"></select>
-      </div>
-      <div>
-        <label>圖片比例</label>
-        <select id="ratio" onchange="rebuildPrompt()"></select>
-      </div>
+      <div><label>版面</label><select id="layout" onchange="rebuildPrompt()"></select></div>
+      <div><label>圖片比例</label><select id="ratio" onchange="rebuildPrompt()"></select></div>
     </div>
+    <div class="hint" id="imageInputsHint"></div>
 
-    <label>去背產品圖 <span class="opt">（勾選後 AI 會把真實產品畫進底圖）</span></label>
-    <div class="hint" id="productsHint">讀取雲端硬碟中…</div>
-    <div class="thumbs" id="productThumbs"></div>
-
-    <label>參考成品 <span class="opt">（設計師做過的圖，只借氛圍不抄文字）</span></label>
-    <div class="hint" id="refsHint"></div>
-    <div class="thumbs" id="refThumbs"></div>
-    <button class="small-btn" onclick="loadAssets()">重新讀取雲端硬碟素材</button>
-
-    <label>生圖 Prompt <span class="opt">（可直接修改再生成）</span></label>
-    <textarea id="imagePrompt" class="prompt-box" placeholder="生成文案後會自動組出 Prompt；也可以自己貼一段。"></textarea>
+    <label>生圖 Prompt <span class="opt">（可直接修改）</span></label>
+    <textarea id="imagePrompt" class="prompt-box" placeholder="生成文案或分析參考圖後會自動組出 Prompt；也可以自己貼一段。"></textarea>
     <button class="small-btn" onclick="rebuildPrompt(true)">依上方選項重組 Prompt</button>
 
-    <button class="primary-btn" id="genImageBtn" onclick="generateImage()">生成底圖</button>
+    <button class="primary-btn" id="genImageBtn" onclick="generateImage()">生成圖片</button>
     <div class="status" id="imageStatus"></div>
     <div class="result" id="imageResult"></div>
   </div>
 </section>
 
-<!-- ③ 合成草稿 -->
+<!-- ④ 合成 -->
 <section id="secCompose" class="collapsed">
-  <h2 onclick="toggle('secCompose')"><span class="num">3</span>合成草稿<span class="chev"></span></h2>
+  <h2 onclick="toggle('secCompose')"><span class="num">4</span>疊上標題與產品<span class="chev"></span></h2>
   <div class="body">
-    <div class="hint">把 AI 底圖、真實去背產品、正確的中文標題與 logo 疊在一起。數字不會被 AI 改壞，給設計師接手微調。</div>
-
+    <div class="hint">把正確的中文標題、價格、logo 與真實去背產品疊到圖上。數字不會被 AI 改壞。</div>
     <label>主標 <span class="opt">（自動從「文案」列抓，可改）</span></label>
     <input type="text" id="headline" placeholder="例：滿$1099折$150">
     <label>副標</label>
     <input type="text" id="subline" placeholder="例：滿$2000送650點">
     <label>角標 <span class="opt">（檔期）</span></label>
     <input type="text" id="badge" placeholder="例：6.13-6.15 指定品">
-
     <div class="three">
       <div>
         <label>字色</label>
@@ -236,16 +276,25 @@
         <input type="range" id="productScale" min="50" max="140" value="100" oninput="document.getElementById('productScaleVal').textContent = this.value + '%'">
       </div>
     </div>
-
     <label style="display:flex;gap:14px;align-items:center;font-weight:400">
-      <span><input type="checkbox" id="overlayProducts" checked> 疊上勾選的去背產品圖</span>
+      <span><input type="checkbox" id="overlayProducts" checked> 疊上產品去背圖</span>
       <span><input type="checkbox" id="overlayLogo" checked> 疊上 logo</span>
     </label>
     <div class="hint" id="composeHint"></div>
-
-    <button class="primary-btn" id="composeBtn" onclick="composeDraft()">合成草稿</button>
+    <button class="primary-btn" id="composeBtn" onclick="composeDraft()">合成</button>
     <div class="status" id="composeStatus"></div>
     <div class="result" id="composeResult"></div>
+  </div>
+</section>
+
+<!-- ⑤ 需求單 -->
+<section id="secBrief" class="collapsed">
+  <h2 onclick="toggle('secBrief')"><span class="num">5</span>給設計師的需求單<span class="chev"></span></h2>
+  <div class="body">
+    <div class="hint">把這次選定的文案、配色、版面、參考圖分析與標題整理成一段文字，複製給設計師。</div>
+    <button class="secondary-btn" onclick="buildBrief()">產出需求單</button>
+    <div class="brief" id="briefBox" style="display:none"></div>
+    <button class="small-btn" id="briefCopyBtn" style="display:none" onclick="copyBrief(this)">複製需求單</button>
   </div>
 </section>
 
@@ -255,87 +304,73 @@
 
 <script>
   // ---------- 狀態 ----------
-  let options = null;
-  let ctx = null;
-  let productTouched = false;
-  let lastContextKey = "";
-  let angles = [];
-  let selectedAngle = null;
-  let currentScene = "";
-  let currentImageBase64 = "";
-  let currentImageMode = "";
-  let assets = { products: { files: [] }, references: { files: [] }, logo: null };
-  const selectedProducts = new Set();
-  const selectedRefs = new Set();
-  const imageCache = {}; // fileId -> dataUrl
+  let options = null, ctx = null;
+  let productTouched = false, lastContextKey = "";
+  let angles = [], selectedAngle = null;
+  let copyResult = null, selectedCopyIndex = -1;
+  let currentScene = "", refAnalysis = null;
+  let currentImageBase64 = "", currentImageMode = "", currentDriveUrl = "";
   let composedDataUrl = "";
+  const refImages = [];   // {id, name, mime, base64, dataUrl, source}
+  const prodImages = [];
+  let assets = { products: { exists: false, files: [] }, references: { exists: false, files: [] }, logo: null };
+  let logoDataUrl = "";
+  const REF_KEY = "跟參考圖一樣";
+  let uid = 0;
 
   const $ = id => document.getElementById(id);
-
   function toggle(id) { $(id).classList.toggle("collapsed"); }
   function open(id) { $(id).classList.remove("collapsed"); }
-
   function setStatus(id, msg, isError) {
-    const el = $(id);
-    el.textContent = msg || "";
+    const el = $(id); el.textContent = msg || "";
     el.className = "status" + (msg ? " show" : "") + (isError ? " error" : "");
   }
-
   function escapeHtml(s) {
-    return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-
   function fillSelect(el, list, valueKey) {
-    el.innerHTML = list.map(v => {
-      const val = valueKey ? v[valueKey] : v;
-      return '<option value="' + escapeHtml(val) + '">' + escapeHtml(val) + '</option>';
-    }).join("");
+    el.innerHTML = list.map(v => { const val = valueKey ? v[valueKey] : v; return '<option value="' + escapeHtml(val) + '">' + escapeHtml(val) + '</option>'; }).join("");
+  }
+  function run(fn) {
+    // 把 google.script.run 包成 Promise
+    return (...args) => new Promise((resolve, reject) => {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args);
+    });
   }
 
   // ---------- 初始化 ----------
   function loadFormOptions() {
-    google.script.run.withSuccessHandler(opts => {
+    run("getFormOptions")().then(opts => {
       options = opts;
       fillSelect($("tone"), opts.tones);
-      $("tone").insertAdjacentHTML("afterbegin", '<option value="">請選擇</option>');
-      $("tone").value = "";
+      $("tone").insertAdjacentHTML("afterbegin", '<option value="">請選擇</option>'); $("tone").value = "";
       fillSelect($("palette"), opts.palettes, "key");
       fillSelect($("visualStyle"), opts.visualStyles);
       fillSelect($("layout"), opts.layouts, "key");
-      fillSelect($("ratio"), opts.ratios);
-      $("ratio").value = "9:16";
-    }).getFormOptions();
+      fillSelect($("ratio"), opts.ratios); $("ratio").value = "9:16";
+    });
   }
 
   function loadContext(silent) {
-    google.script.run
-      .withSuccessHandler(c => {
-        const key = JSON.stringify(c);
-        if (silent && key === lastContextKey) return;
-        lastContextKey = key;
-        ctx = c;
-        renderContext(c);
-      })
-      .withFailureHandler(err => {
-        if (silent) return;
-        $("context").innerHTML = '<div class="row warn">讀取失敗：' + escapeHtml(err.message) + '</div>' +
-          '<button class="small-btn" onclick="loadContext()">重試</button>';
-      })
-      .getColumnContext();
+    run("getColumnContext")().then(c => {
+      const key = JSON.stringify(c);
+      if (silent && key === lastContextKey) return;
+      lastContextKey = key; ctx = c; renderContext(c);
+    }).catch(err => {
+      if (silent) return;
+      $("context").innerHTML = '<div class="row warn">讀取失敗：' + escapeHtml(err.message) + '</div><button class="small-btn" onclick="loadContext()">重試</button>';
+    });
   }
 
   function renderContext(c) {
     const el = $("context");
     if (!c.ok) {
-      el.innerHTML = '<div class="row"><span class="warn">' + escapeHtml(c.message) + '</span></div>' +
-        '<button class="small-btn" onclick="loadContext()">重新讀取</button>';
+      el.innerHTML = '<div class="row"><span class="warn">' + escapeHtml(c.message) + '</span></div><button class="small-btn" onclick="loadContext()">重新讀取</button>';
       return;
     }
     if (!productTouched) $("product").value = c.product || "";
     renderProductInfo(c.productInfo);
     prefillCompose(c);
-
     el.innerHTML =
       '<div class="row"><span class="k">分頁</span><span class="v">' + escapeHtml(c.sheetName) + '</span></div>' +
       '<div class="row"><span class="k">目前欄位</span><span class="v">' + escapeHtml(c.columnLabel) + ' 欄</span></div>' +
@@ -345,12 +380,11 @@
   }
 
   function renderProductInfo(info) {
-    const el = $("productInfoHint");
-    if (!info) { el.textContent = "找不到這個品項的產品資料，AI 會依商品名稱推斷。可用選單「建立產品資料分頁」補資料。"; return; }
-    el.textContent = "已帶入產品資料（" + info.source + "／" + info.key + "）：" + info.sellingPoints;
+    $("productInfoHint").textContent = info
+      ? "已帶入產品資料（" + info.source + "／" + info.key + "）：" + info.sellingPoints
+      : "找不到這個品項的產品資料，AI 會依商品名稱推斷。可用選單「建立產品資料分頁」補資料。";
   }
 
-  // 從「文案」「預算分配」列抓價格與檔期，預填合成欄位
   function prefillCompose(c) {
     const lines = String(c.copyText || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     const priceLines = lines.filter(l => /滿\s*\$?\s*\d/.test(l) && /(折|送|贈)/.test(l));
@@ -358,426 +392,441 @@
     if (!$("headline").value && priceLines[0]) $("headline").value = clean(priceLines[0]);
     if (!$("subline").value && priceLines[1]) $("subline").value = clean(priceLines[1]);
     if (!$("badge").value) {
-      const src = String(c.budgetText || "") + " " + String(c.copyText || "");
-      const m = src.match(/(\d{1,2}\/\d{1,2})\s*[-~～–]\s*(\d{1,2}\/\d{1,2})/);
+      const m = (String(c.budgetText || "") + " " + String(c.copyText || "")).match(/(\d{1,2}\/\d{1,2})\s*[-~～–]\s*(\d{1,2}\/\d{1,2})/);
       if (m) $("badge").value = m[1].replace("/", ".") + "-" + m[2].replace("/", ".") + " 指定品";
     }
   }
 
-  function onToneChange() {
-    const t = $("tone").value;
-    $("angleBtn").textContent = t === "時事型"
-      ? "先請 AI 提 5 個切角（時事型建議先做這步）"
-      : "先請 AI 提 5 個切角（有填時事才需要）";
+  // ---------- ① 圖片加入：檔案／拖放／貼上／網址／素材庫 ----------
+  function imageFromFile(file, kind) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => downscale(reader.result, kind).then(resolve).catch(reject);
+      reader.onerror = () => reject(new Error("讀取檔案失敗"));
+      reader.readAsDataURL(file);
+    }).then(out => Object.assign(out, { name: (file.name || "image").replace(/\.[^.]+$/, "") }));
   }
 
+  // 側邊欄先縮圖，避免傳給 Apps Script 太大。產品圖保留 PNG 透明；參考圖轉 JPEG。
+  function downscale(dataUrl, kind) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = kind === "prod" ? 1024 : 1536;
+        const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
+        const canvas = document.createElement("canvas"); canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const isPngSrc = /^data:image\/png/.test(dataUrl) || /^data:image\/webp/.test(dataUrl);
+        const keepPng = kind === "prod" || isPngSrc && kind !== "ref";
+        const out = keepPng ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.88);
+        const mime = keepPng ? "image/png" : "image/jpeg";
+        resolve({ mime: mime, dataUrl: out, base64: out.split(",")[1], w: w, h: h });
+      };
+      img.onerror = () => reject(new Error("這不是可讀取的圖片"));
+      img.src = dataUrl;
+    });
+  }
+
+  function pushImage(kind, item, source) {
+    const list = kind === "ref" ? refImages : prodImages;
+    item.id = "img" + (++uid); item.source = source || "upload";
+    list.push(item);
+    renderImageList(kind);
+  }
+
+  function addFiles(files, kind) {
+    const statusId = kind === "ref" ? "refStatus" : "prodStatus";
+    const arr = Array.from(files || []).filter(f => /^image\//.test(f.type));
+    if (!arr.length) { setStatus(statusId, "沒有可用的圖片檔。", true); return; }
+    setStatus(statusId, "處理 " + arr.length + " 張圖片…", false);
+    Promise.all(arr.map(f => imageFromFile(f, kind).then(item => pushImage(kind, item, "upload")).catch(e => setStatus(statusId, e.message, true))))
+      .then(() => { if (!$(statusId).classList.contains("error")) setStatus(statusId, "", false); });
+  }
+
+  function addUrl(kind) {
+    const input = $(kind === "ref" ? "urlRef" : "urlRef");
+    const url = input.value.trim();
+    const statusId = kind === "ref" ? "refStatus" : "prodStatus";
+    if (!url) return;
+    setStatus(statusId, "抓取圖片中…", false);
+    run("fetchImageFromUrl")(url)
+      .then(res => downscale(res.dataUrl, kind))
+      .then(item => { item.name = url.split("/").pop().split("?")[0].replace(/\.[^.]+$/, "") || "網址圖片"; pushImage(kind, item, "url"); input.value = ""; setStatus(statusId, "", false); })
+      .catch(err => setStatus(statusId, err.message, true));
+  }
+
+  function addFromLibrary(file, kind) {
+    const statusId = kind === "ref" ? "refStatus" : "prodStatus";
+    setStatus(statusId, "從雲端硬碟讀取「" + file.name + "」…", false);
+    run("getFileBase64")(file.id)
+      .then(res => downscale(res.dataUrl, kind))
+      .then(item => { item.name = file.name; pushImage(kind, item, "drive"); setStatus(statusId, "", false); })
+      .catch(err => setStatus(statusId, err.message, true));
+  }
+
+  function removeImage(kind, id) {
+    const list = kind === "ref" ? refImages : prodImages;
+    const i = list.findIndex(x => x.id === id);
+    if (i !== -1) list.splice(i, 1);
+    renderImageList(kind);
+  }
+
+  function moveImage(kind, id) {
+    const from = kind === "ref" ? refImages : prodImages, to = kind === "ref" ? prodImages : refImages;
+    const i = from.findIndex(x => x.id === id);
+    if (i === -1) return;
+    to.push(from.splice(i, 1)[0]);
+    renderImageList("ref"); renderImageList("prod");
+  }
+
+  function renderImageList(kind) {
+    const list = kind === "ref" ? refImages : prodImages;
+    const grid = $(kind === "ref" ? "refThumbs" : "prodThumbs");
+    grid.innerHTML = list.map(im =>
+      '<div class="thumb added">' +
+        '<button class="mv" title="移到另一類" onclick="moveImage(\'' + kind + '\',\'' + im.id + '\')">' + (kind === "ref" ? "→產品" : "→參考") + '</button>' +
+        '<button class="x" title="移除" onclick="removeImage(\'' + kind + '\',\'' + im.id + '\')">×</button>' +
+        '<img src="' + im.dataUrl + '">' +
+        '<div class="n" title="' + escapeHtml(im.name) + '">' + escapeHtml(im.name) + '</div>' +
+      '</div>'
+    ).join("");
+    updateImageInputsHint(); updateComposeHint();
+  }
+
+  // 拖放
+  ["dropRef", "dropProd"].forEach(id => {
+    const el = $(id), kind = id === "dropRef" ? "ref" : "prod";
+    el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("over"); });
+    el.addEventListener("dragleave", () => el.classList.remove("over"));
+    el.addEventListener("drop", e => {
+      e.preventDefault(); el.classList.remove("over");
+      if (e.dataTransfer.files && e.dataTransfer.files.length) { addFiles(e.dataTransfer.files, kind); return; }
+      // 從網頁直接拖圖片過來時會是網址
+      const html = e.dataTransfer.getData("text/html");
+      const m = html && html.match(/src="([^"]+)"/);
+      const url = (m && m[1]) || e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
+      if (url && /^https?:\/\//.test(url)) { $("urlRef").value = url; addUrl(kind); }
+    });
+  });
+
+  // Ctrl+V 貼圖（預設進參考圖；焦點在產品拖放區時進產品圖）
+  document.addEventListener("paste", e => {
+    const items = Array.from((e.clipboardData || {}).items || []);
+    const files = items.filter(it => it.kind === "file" && /^image\//.test(it.type)).map(it => it.getAsFile());
+    if (!files.length) return;
+    if (document.activeElement && document.activeElement.tagName === "INPUT" && document.activeElement.type === "text") return;
+    e.preventDefault();
+    addFiles(files, "ref");
+    open("secRef");
+  });
+
+  // 素材庫（選用）
+  function loadAssets() {
+    $("libHint").textContent = "讀取雲端硬碟中…";
+    run("listAssets")().then(res => {
+      assets = res;
+      const any = res.products.exists || res.references.exists;
+      if (!any) {
+        $("libHint").textContent = "尚未建立常用素材庫。不建也沒關係，圖片直接拖進上方即可；若想建，用選單「建立雲端硬碟常用素材庫」。";
+        $("libProdThumbs").innerHTML = ""; $("libRefThumbs").innerHTML = ""; return;
+      }
+      $("libHint").textContent = "點一下就加入。" + (res.logo ? "　logo：" + res.logo.name : "　（沒有 logo，第四步不會疊 logo）");
+      $("libProdThumbs").innerHTML = res.products.files.map(f => libThumb(f, "prod")).join("");
+      $("libRefThumbs").innerHTML = res.references.files.map(f => libThumb(f, "ref")).join("");
+      if (res.logo) run("getFileBase64")(res.logo.id).then(r => { logoDataUrl = r.dataUrl; updateComposeHint(); }).catch(() => {});
+      updateComposeHint();
+    }).catch(err => { $("libHint").textContent = "讀取失敗：" + err.message; });
+  }
+  function libThumb(f, kind) {
+    return '<div class="thumb lib" onclick=\'addFromLibrary(' + JSON.stringify({ id: f.id, name: f.name }).replace(/'/g, "&#39;") + ', "' + kind + '")\'>' +
+      (f.thumb ? '<img src="' + f.thumb + '">' : '<div class="ph">無縮圖</div>') +
+      '<div class="n">' + (kind === "prod" ? "產品｜" : "參考｜") + escapeHtml(f.name) + '</div></div>';
+  }
+
+  // ---------- ① 分析參考圖 ----------
+  function analyzeRefs() {
+    if (!refImages.length) { setStatus("analyzeStatus", "請先加入至少一張參考圖。", true); return; }
+    $("analyzeBtn").disabled = true;
+    setStatus("analyzeStatus", "AI 看圖中…約 10 秒", false);
+    run("analyzeReferences")({ images: refImages.map(im => ({ mime: im.mime, base64: im.base64 })), note: $("refNote").value.trim() })
+      .then(res => {
+        $("analyzeBtn").disabled = false;
+        setStatus("analyzeStatus", "", false);
+        refAnalysis = res;
+        $("analysisBox").innerHTML =
+          '<div class="analysis"><div class="t">AI 看到的重點</div>' + escapeHtml(res.summaryZh) +
+          (res.cautionsZh ? '<div class="c">⚠ ' + escapeHtml(res.cautionsZh) + '</div>' : "") +
+          '<div class="hint">已把主色調與視覺風格切到「' + REF_KEY + '」，版面建議「' + escapeHtml(res.layoutHint) + '」。第三步可再改。</div></div>';
+        ensureRefOption($("palette")); ensureRefOption($("visualStyle"));
+        $("palette").value = REF_KEY; $("visualStyle").value = REF_KEY;
+        $("customPaletteWrap").style.display = "none";
+        if ((options.layouts || []).some(l => l.key === res.layoutHint)) $("layout").value = res.layoutHint;
+        if (!currentScene) currentScene = res.sceneEn || "";
+        rebuildPrompt(true);
+        open("secImage");
+      })
+      .catch(err => { $("analyzeBtn").disabled = false; setStatus("analyzeStatus", err.message, true); });
+  }
+  function ensureRefOption(sel) {
+    if (!Array.from(sel.options).some(o => o.value === REF_KEY)) sel.insertAdjacentHTML("afterbegin", '<option value="' + REF_KEY + '">' + REF_KEY + '</option>');
+  }
+
+  // ---------- ② 文案 ----------
   function collectCopyInput() {
     return {
-      product: $("product").value.trim(),
-      sellingPoint: $("sellingPoint").value.trim(),
-      tone: $("tone").value,
-      trend: $("trend").value.trim(),
-      angle: selectedAngle,
+      product: $("product").value.trim(), sellingPoint: $("sellingPoint").value.trim(),
+      tone: $("tone").value, trend: $("trend").value.trim(), angle: selectedAngle,
       productInfo: ctx ? ctx.productInfo : null,
-      palette: $("palette").value,
-      customPalette: $("customPalette").value.trim(),
-      visualStyle: $("visualStyle").value,
-      layout: $("layout").value,
-      ratio: $("ratio").value || "9:16"
+      palette: $("palette").value, customPalette: $("customPalette").value.trim(),
+      visualStyle: $("visualStyle").value, layout: $("layout").value, ratio: $("ratio").value || "9:16",
+      refAnalysis: refAnalysis
     };
   }
 
-  // ---------- 步驟一：切角 ----------
   function proposeAngles() {
     const input = collectCopyInput();
     if (!input.product) { setStatus("angleStatus", "請先填寫「商品」。", true); return; }
     if (!input.trend) { setStatus("angleStatus", "請先填「本週時事／梗料」，沒有時事就直接按「生成 3 版文案」。", true); return; }
-    $("angleBtn").disabled = true;
-    $("angles").innerHTML = "";
-    selectedAngle = null;
+    $("angleBtn").disabled = true; $("angles").innerHTML = ""; selectedAngle = null;
     setStatus("angleStatus", "AI 思考切角中…約 5～10 秒", false);
-    google.script.run
-      .withSuccessHandler(res => {
-        $("angleBtn").disabled = false;
-        setStatus("angleStatus", "點一個切角，之後的三版文案都會圍繞它；不選就交給 AI 自由發揮。", false);
-        angles = res.angles || [];
-        renderAngles();
-      })
-      .withFailureHandler(err => {
-        $("angleBtn").disabled = false;
-        setStatus("angleStatus", err.message, true);
-      })
-      .proposeAngles(input);
+    run("proposeAngles")(input).then(res => {
+      $("angleBtn").disabled = false;
+      setStatus("angleStatus", "點一個切角，三版文案都會圍繞它；不選就交給 AI 自由發揮。", false);
+      angles = res.angles || []; renderAngles();
+    }).catch(err => { $("angleBtn").disabled = false; setStatus("angleStatus", err.message, true); });
   }
-
   function renderAngles() {
     $("angles").innerHTML = angles.map((a, i) =>
       '<div class="angle' + (selectedAngle === a ? ' selected' : '') + '" onclick="selectAngle(' + i + ')">' +
-        '<div class="t">' + escapeHtml(a.title) + '</div>' +
-        '<div class="h">' + escapeHtml(a.hook) + '</div>' +
-        '<div class="w">' + escapeHtml(a.why) + '</div>' +
-      '</div>'
-    ).join("");
+      '<div class="t">' + escapeHtml(a.title) + '</div><div class="h">' + escapeHtml(a.hook) + '</div><div class="w">' + escapeHtml(a.why) + '</div></div>').join("");
   }
+  function selectAngle(i) { selectedAngle = (selectedAngle === angles[i]) ? null : angles[i]; renderAngles(); }
 
-  function selectAngle(i) {
-    selectedAngle = (selectedAngle === angles[i]) ? null : angles[i];
-    renderAngles();
-  }
-
-  // ---------- 步驟一：文案 ----------
   function generateCopy() {
     const input = collectCopyInput();
-    if (!input.product || !input.tone) {
-      setStatus("copyStatus", "請至少填寫「商品」與「文案調性」。", true);
-      return;
-    }
-    $("genCopyBtn").disabled = true;
-    $("cards").innerHTML = "";
+    if (!input.product || !input.tone) { setStatus("copyStatus", "請至少填寫「商品」與「文案調性」。", true); return; }
+    $("genCopyBtn").disabled = true; $("cards").innerHTML = "";
     setStatus("copyStatus", "生成中…約 5～15 秒", false);
-
-    google.script.run
-      .withSuccessHandler(result => {
-        $("genCopyBtn").disabled = false;
-        setStatus("copyStatus", "", false);
-        renderCards(result);
-        currentScene = result.scene || "";
-        $("imagePrompt").value = result.imagePrompt || "";
-        open("secImage");
-      })
-      .withFailureHandler(err => {
-        $("genCopyBtn").disabled = false;
-        setStatus("copyStatus", err.message, true);
-      })
-      .generateCopy(input);
+    run("generateCopy")(input).then(result => {
+      $("genCopyBtn").disabled = false; setStatus("copyStatus", "點一版當這次的選定文案（需求單會用到）。", false);
+      copyResult = result; selectedCopyIndex = -1; renderCards();
+      currentScene = result.scene || currentScene;
+      $("imagePrompt").value = result.imagePrompt || "";
+      open("secImage");
+    }).catch(err => { $("genCopyBtn").disabled = false; setStatus("copyStatus", err.message, true); });
   }
-
-  function renderCards(result) {
-    const versions = [result.copy1, result.copy2, result.copy3];
+  function renderCards() {
+    const versions = [copyResult.copy1, copyResult.copy2, copyResult.copy3];
     $("cards").innerHTML = versions.map((text, i) =>
-      '<div class="card">' +
-        '<div class="label">版本 ' + (i + 1) + '</div>' +
+      '<div class="card' + (selectedCopyIndex === i ? ' selected' : '') + '" onclick="selectCopy(' + i + ')">' +
+        '<div class="label">版本 ' + (i + 1) + (selectedCopyIndex === i ? "　✓ 選定" : "") + '</div>' +
         '<div class="text">' + escapeHtml(text) + '</div>' +
-        '<button class="copy-btn" onclick="copyText(this, ' + i + ')">複製</button>' +
-      '</div>'
-    ).join("");
-    $("cards").dataset.texts = JSON.stringify(versions);
+        '<button class="copy-btn" onclick="event.stopPropagation(); copyText(this, ' + i + ')">複製</button>' +
+      '</div>').join("");
   }
-
+  function selectCopy(i) { selectedCopyIndex = (selectedCopyIndex === i) ? -1 : i; renderCards(); }
   function copyText(btn, index) {
-    const texts = JSON.parse($("cards").dataset.texts || "[]");
-    const text = texts[index] || "";
-    const done = () => {
+    const text = [copyResult.copy1, copyResult.copy2, copyResult.copy3][index] || "";
+    writeClipboard(text, () => {
       btn.textContent = "已複製 ✓"; btn.setAttribute("data-done", "1");
       setTimeout(() => { btn.textContent = "複製"; btn.removeAttribute("data-done"); }, 2200);
+    });
+  }
+  function writeClipboard(text, done) {
+    const legacy = () => {
+      const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.top = "-1000px";
+      document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (e) {} document.body.removeChild(ta);
     };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done));
-    } else legacyCopy(text, done);
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(legacy); else legacy();
   }
 
-  function legacyCopy(text, done) {
-    const ta = document.createElement("textarea");
-    ta.value = text; ta.style.position = "fixed"; ta.style.top = "-1000px";
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); done(); } catch (e) {}
-    document.body.removeChild(ta);
-  }
-
-  // ---------- 步驟二：Prompt ----------
-  function onPaletteChange() {
-    $("customPaletteWrap").style.display = $("palette").value === "自訂" ? "block" : "none";
-    rebuildPrompt();
-  }
-
+  // ---------- ③ 生圖 ----------
+  function onPaletteChange() { $("customPaletteWrap").style.display = $("palette").value === "自訂" ? "block" : "none"; rebuildPrompt(); }
   let rebuildTimer = null;
   function rebuildPromptDebounced() { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildPrompt(), 400); }
-
   function rebuildPrompt(force) {
-    // 還沒有文案產生過的場景時，不主動覆蓋使用者手貼的 Prompt
-    if (!currentScene && !force) return;
-    const input = collectCopyInput();
-    input.scene = currentScene;
-    google.script.run
-      .withSuccessHandler(res => { $("imagePrompt").value = res.imagePrompt; })
-      .rebuildImagePrompt(input);
+    if (!currentScene && !refAnalysis && !force) return;
+    const input = collectCopyInput(); input.scene = currentScene;
+    run("rebuildImagePrompt")(input).then(res => { $("imagePrompt").value = res.imagePrompt; });
+  }
+  function updateImageInputsHint() {
+    const parts = [];
+    parts.push(refImages.length ? "會帶 " + refImages.length + " 張參考圖" : "沒有參考圖，純靠文字 Prompt");
+    parts.push(prodImages.length ? "會把 " + prodImages.length + " 張產品圖畫進畫面" : "沒有產品圖，只畫背景");
+    $("imageInputsHint").textContent = parts.join("　｜　") + "（在第一步調整）";
   }
 
-  // ---------- 步驟二：素材 ----------
-  function loadAssets() {
-    $("productsHint").textContent = "讀取雲端硬碟中…";
-    google.script.run
-      .withSuccessHandler(res => {
-        assets = res;
-        renderThumbs("productThumbs", "productsHint", res.products, selectedProducts, "橘子工坊產品去背圖");
-        renderThumbs("refThumbs", "refsHint", res.references, selectedRefs, "橘子工坊參考成品");
-        updateComposeHint();
-      })
-      .withFailureHandler(err => { $("productsHint").textContent = "讀取失敗：" + err.message; })
-      .listAssets();
-  }
-
-  function renderThumbs(gridId, hintId, data, selectedSet, folderName) {
-    const grid = $(gridId), hint = $(hintId);
-    if (!data.exists) {
-      hint.innerHTML = "找不到雲端硬碟資料夾「" + escapeHtml(folderName) + "」。請執行選單「建立雲端硬碟素材資料夾」。";
-      grid.innerHTML = ""; return;
-    }
-    if (!data.files.length) {
-      hint.textContent = "資料夾「" + folderName + "」目前沒有 PNG／JPG 檔。";
-      grid.innerHTML = ""; return;
-    }
-    hint.textContent = "點選勾選，可多選。";
-    grid.innerHTML = data.files.map(f =>
-      '<div class="thumb' + (selectedSet.has(f.id) ? ' selected' : '') + '" data-id="' + escapeHtml(f.id) + '" onclick="toggleThumb(this, \'' + gridId + '\')">' +
-        (f.thumb ? '<img src="' + f.thumb + '">' : '<div class="ph">無縮圖</div>') +
-        '<div class="n" title="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</div>' +
-      '</div>'
-    ).join("");
-  }
-
-  function toggleThumb(el, gridId) {
-    const set = gridId === "productThumbs" ? selectedProducts : selectedRefs;
-    const id = el.dataset.id;
-    if (set.has(id)) { set.delete(id); el.classList.remove("selected"); }
-    else { set.add(id); el.classList.add("selected"); }
-    updateComposeHint();
-  }
-
-  // ---------- 步驟二：生圖 ----------
   function generateImage() {
     const prompt = $("imagePrompt").value.trim();
-    if (!prompt) { setStatus("imageStatus", "沒有 Prompt，請先生成文案或自己貼一段。", true); return; }
-    const productIds = Array.from(selectedProducts);
-    const referenceIds = Array.from(selectedRefs);
-    $("genImageBtn").disabled = true;
-    $("imageResult").innerHTML = "";
-    setStatus("imageStatus", productIds.length + referenceIds.length
-      ? "帶 " + (productIds.length + referenceIds.length) + " 張參考圖生成中…約 20～60 秒"
-      : "生成中…約 10～30 秒", false);
-
-    google.script.run
-      .withSuccessHandler(result => {
-        $("genImageBtn").disabled = false;
-        currentImageBase64 = result.base64;
-        currentImageMode = result.mode;
-        setStatus("imageStatus", result.mode === "edits"
-          ? "已將勾選的產品畫進底圖。產品標籤文字可能略有變形，第三步會再疊真實去背圖或保留 AI 版本。"
-          : "純文字生成的底圖。到第三步疊上真實產品圖與標題。", false);
-        const dataUrl = "data:image/png;base64," + result.base64;
-        $("imageResult").innerHTML =
-          '<img src="' + dataUrl + '">' +
-          '<div class="actions">' +
-            '<a href="' + dataUrl + '" download="ai-background.png">下載底圖</a>' +
-            '<button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\')">存到雲端硬碟</button>' +
-          '</div>' +
-          '<div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
-        // edits 模式已經把產品畫進去了，預設不要再疊一次
-        $("overlayProducts").checked = result.mode !== "edits";
-        updateComposeHint();
-        open("secCompose");
-      })
-      .withFailureHandler(err => {
-        $("genImageBtn").disabled = false;
-        setStatus("imageStatus", err.message, true);
-      })
-      .generateImage({ imagePrompt: prompt, ratio: $("ratio").value || "9:16", productFileIds: productIds, referenceFileIds: referenceIds });
+    if (!prompt) { setStatus("imageStatus", "沒有 Prompt，請先生成文案、分析參考圖，或自己貼一段。", true); return; }
+    $("genImageBtn").disabled = true; $("imageResult").innerHTML = ""; currentDriveUrl = "";
+    const n = refImages.length + prodImages.length;
+    setStatus("imageStatus", n ? "帶 " + n + " 張圖生成中…約 20～60 秒" : "生成中…約 10～30 秒", false);
+    run("generateImage")({
+      imagePrompt: prompt, ratio: $("ratio").value || "9:16",
+      productImages: prodImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })),
+      referenceImages: refImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 }))
+    }).then(result => {
+      $("genImageBtn").disabled = false;
+      currentImageBase64 = result.base64; currentImageMode = result.mode;
+      setStatus("imageStatus", prodImages.length
+        ? "產品已畫進畫面。標籤小字可能略有變形，第四步預設不再疊產品；要精準包裝就勾回「疊上產品去背圖」。"
+        : "背景完成。到第四步疊上標題" + (prodImages.length ? "與產品" : "") + "。", false);
+      const dataUrl = "data:image/png;base64," + result.base64;
+      $("imageResult").innerHTML =
+        '<img src="' + dataUrl + '">' +
+        '<div class="actions"><a href="' + dataUrl + '" download="ai-image.png">下載</a>' +
+        '<button onclick="saveToDrive(currentImageBase64, \'ai-image\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div>' +
+        '<div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
+      $("overlayProducts").checked = !prodImages.length ? false : result.mode !== "edits";
+      updateComposeHint(); open("secCompose");
+    }).catch(err => { $("genImageBtn").disabled = false; setStatus("imageStatus", err.message, true); });
   }
 
-  function saveToDrive(base64, prefix, statusId) {
+  function saveToDrive(base64, prefix, statusId, remember) {
     const el = $(statusId);
     if (!base64) { el.textContent = "沒有圖片可以儲存。"; return; }
     el.textContent = "儲存中…";
-    google.script.run
-      .withSuccessHandler(result => { el.innerHTML = '已存入雲端硬碟「橘子工坊生圖」：<a href="' + result.url + '" target="_blank">開啟連結</a>'; })
-      .withFailureHandler(err => { el.textContent = "儲存失敗：" + err.message; })
-      .saveImageToDrive({ base64: base64, filename: prefix + "-" + Date.now() });
+    run("saveImageToDrive")({ base64: base64, filename: prefix + "-" + Date.now() })
+      .then(result => { if (remember) currentDriveUrl = result.url; el.innerHTML = '已存入雲端硬碟「橘子工坊生圖」：<a href="' + result.url + '" target="_blank">開啟連結</a>'; })
+      .catch(err => { el.textContent = "儲存失敗：" + err.message; });
   }
 
-  // ---------- 步驟三：合成 ----------
+  // ---------- ④ 合成 ----------
   function updateComposeHint() {
-    const n = selectedProducts.size;
     const parts = [];
-    parts.push(n ? "會疊上 " + n + " 張去背產品圖" : "尚未勾選去背產品圖（第二步勾選）");
-    parts.push(assets.logo ? "logo：" + assets.logo.name : "找不到 logo（請把 logo.png 放進「橘子工坊品牌素材」）");
-    if (currentImageMode === "edits") parts.push("底圖已含 AI 畫的產品，預設不再疊");
+    parts.push(prodImages.length ? "可疊 " + prodImages.length + " 張產品去背圖" : "沒有產品圖（第一步加入）");
+    parts.push(logoDataUrl ? "logo 就緒" : "沒有 logo（可放進雲端硬碟「橘子工坊品牌素材」）");
+    if (currentImageMode === "edits" && prodImages.length) parts.push("圖裡已含 AI 畫的產品，預設不再疊");
     $("composeHint").textContent = parts.join("　｜　");
   }
-
   function loadImage(src) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error("圖片載入失敗"));
-      img.src = src;
-    });
+    return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error("圖片載入失敗")); img.src = src; });
   }
-
-  function fetchFileDataUrl(id) {
-    if (imageCache[id]) return Promise.resolve(imageCache[id]);
-    return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler(res => { imageCache[id] = res.dataUrl; resolve(res.dataUrl); })
-        .withFailureHandler(err => reject(err))
-        .getFileBase64(id);
-    });
-  }
-
   function currentPalette() {
-    return (options.palettes || []).find(p => p.key === $("palette").value) || options.palettes[0];
+    const key = $("palette").value;
+    const found = (options.palettes || []).find(p => p.key === key);
+    if (found) return found;
+    return { textColor: "#FFFFFF", textStroke: "#333333", badgeColor: "#D9520A" }; // 跟參考圖一樣 → 中性預設
   }
-
   function roundRect(g, x, y, w, h, r) {
-    g.beginPath();
-    g.moveTo(x + r, y);
-    g.arcTo(x + w, y, x + w, y + h, r);
-    g.arcTo(x + w, y + h, x, y + h, r);
-    g.arcTo(x, y + h, x, y, r);
-    g.arcTo(x, y, x + w, y, r);
-    g.closePath();
+    g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
   }
-
   function fitFont(g, text, maxWidth, startSize, weight) {
     let size = startSize;
-    while (size > 12) {
-      g.font = weight + " " + size + "px 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif";
-      if (g.measureText(text).width <= maxWidth) break;
-      size -= 2;
-    }
+    while (size > 12) { g.font = weight + " " + size + "px 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif"; if (g.measureText(text).width <= maxWidth) break; size -= 2; }
     return size;
   }
-
-  function drawOutlinedText(g, text, x, y, size, fill, stroke, align) {
-    g.textAlign = align || "center";
-    g.textBaseline = "alphabetic";
-    g.lineJoin = "round";
-    g.lineWidth = Math.max(2, size * 0.14);
-    g.strokeStyle = stroke;
-    g.strokeText(text, x, y);
-    g.fillStyle = fill;
-    g.fillText(text, x, y);
+  function drawOutlinedText(g, text, x, y, size, fill, stroke) {
+    g.textAlign = "center"; g.textBaseline = "alphabetic"; g.lineJoin = "round";
+    g.lineWidth = Math.max(2, size * 0.14); g.strokeStyle = stroke; g.strokeText(text, x, y); g.fillStyle = fill; g.fillText(text, x, y);
   }
 
   async function composeDraft() {
-    if (!currentImageBase64) { setStatus("composeStatus", "請先在第二步生成底圖。", true); return; }
-    $("composeBtn").disabled = true;
-    setStatus("composeStatus", "合成中…", false);
+    if (!currentImageBase64) { setStatus("composeStatus", "請先在第三步生成圖片。", true); return; }
+    $("composeBtn").disabled = true; setStatus("composeStatus", "合成中…", false);
     try {
       try { await document.fonts.load("900 40px 'Noto Sans TC'"); } catch (e) {}
-
       const bg = await loadImage("data:image/png;base64," + currentImageBase64);
       const W = bg.naturalWidth, H = bg.naturalHeight;
-      const canvas = document.createElement("canvas");
-      canvas.width = W; canvas.height = H;
-      const g = canvas.getContext("2d");
-      g.drawImage(bg, 0, 0, W, H);
+      const canvas = document.createElement("canvas"); canvas.width = W; canvas.height = H;
+      const g = canvas.getContext("2d"); g.drawImage(bg, 0, 0, W, H);
 
       const layout = (options.layouts || []).find(l => l.key === $("layout").value) || options.layouts[0];
-      const z = layout.zones;
-      const pal = currentPalette();
-      const tc = $("textColor").value;
+      const z = layout.zones, pal = currentPalette(), tc = $("textColor").value;
       const fill = tc === "auto" ? pal.textColor : tc.split("|")[0];
       const stroke = tc === "auto" ? pal.textStroke : tc.split("|")[1];
       const textScale = parseInt($("textScale").value, 10) / 100;
       const productScale = parseInt($("productScale").value, 10) / 100;
 
-      // 產品
-      if ($("overlayProducts").checked && selectedProducts.size) {
-        const ids = Array.from(selectedProducts);
-        const urls = await Promise.all(ids.map(fetchFileDataUrl));
-        const imgs = await Promise.all(urls.map(loadImage));
+      if ($("overlayProducts").checked && prodImages.length) {
+        const imgs = await Promise.all(prodImages.map(im => loadImage(im.dataUrl)));
         const zone = { x: z.products.x * W, y: z.products.y * H, w: z.products.w * W, h: z.products.h * H };
         let targetH = zone.h * 0.92 * productScale;
         const gap = zone.w * 0.03;
         let widths = imgs.map(im => im.naturalWidth / im.naturalHeight * targetH);
         let total = widths.reduce((a, b) => a + b, 0) + gap * (imgs.length - 1);
-        if (total > zone.w) {
-          const k = zone.w / total;
-          targetH *= k; widths = widths.map(w => w * k); total = zone.w;
-        }
-        let x = zone.x + (zone.w - total) / 2;
-        const bottom = zone.y + zone.h;
+        if (total > zone.w) { const k = zone.w / total; targetH *= k; widths = widths.map(w => w * k); total = zone.w; }
+        let x = zone.x + (zone.w - total) / 2; const bottom = zone.y + zone.h;
         imgs.forEach((im, i) => {
           const w = widths[i];
-          // 接觸陰影
-          g.save();
-          g.fillStyle = "rgba(0,0,0,0.22)";
-          g.filter = "blur(" + Math.round(W * 0.012) + "px)";
-          g.beginPath();
-          g.ellipse(x + w / 2, bottom - targetH * 0.01, w * 0.42, targetH * 0.035, 0, 0, Math.PI * 2);
-          g.fill();
-          g.restore();
-          g.drawImage(im, x, bottom - targetH, w, targetH);
-          x += w + gap;
+          g.save(); g.fillStyle = "rgba(0,0,0,0.22)"; g.filter = "blur(" + Math.round(W * 0.012) + "px)";
+          g.beginPath(); g.ellipse(x + w / 2, bottom - targetH * 0.01, w * 0.42, targetH * 0.035, 0, 0, Math.PI * 2); g.fill(); g.restore();
+          g.drawImage(im, x, bottom - targetH, w, targetH); x += w + gap;
         });
       }
 
-      // 主標／副標
       const hz = { x: z.headline.x * W, y: z.headline.y * H, w: z.headline.w * W, h: z.headline.h * H };
-      const headline = $("headline").value.trim();
-      const subline = $("subline").value.trim();
-      const cx = hz.x + hz.w / 2;
-      let cursorY = hz.y;
-      if (headline) {
-        const size = fitFont(g, headline, hz.w, hz.h * (subline ? 0.46 : 0.6) * textScale, "900");
-        cursorY += size;
-        drawOutlinedText(g, headline, cx, cursorY, size, fill, stroke);
-        cursorY += size * 0.18;
-      }
-      if (subline) {
-        const size = fitFont(g, subline, hz.w, hz.h * 0.34 * textScale, "700");
-        cursorY += size;
-        drawOutlinedText(g, subline, cx, cursorY, size, fill, stroke);
-      }
+      const headline = $("headline").value.trim(), subline = $("subline").value.trim();
+      const cx = hz.x + hz.w / 2; let cursorY = hz.y;
+      if (headline) { const size = fitFont(g, headline, hz.w, hz.h * (subline ? 0.46 : 0.6) * textScale, "900"); cursorY += size; drawOutlinedText(g, headline, cx, cursorY, size, fill, stroke); cursorY += size * 0.18; }
+      if (subline) { const size = fitFont(g, subline, hz.w, hz.h * 0.34 * textScale, "700"); cursorY += size; drawOutlinedText(g, subline, cx, cursorY, size, fill, stroke); }
 
-      // 角標
       const badge = $("badge").value.trim();
       if (badge) {
         const size = Math.round(W * 0.034 * textScale);
         g.font = "700 " + size + "px 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif";
-        const padX = size * 0.7, padY = size * 0.45;
-        const bw = g.measureText(badge).width + padX * 2, bh = size + padY * 2;
-        const margin = W * 0.03;
-        const bx = z.badge === "top-left" ? margin : W - margin - bw;
-        const by = margin;
-        g.fillStyle = pal.badgeColor || "#D9520A";
-        roundRect(g, bx, by, bw, bh, bh / 2);
-        g.fill();
-        g.fillStyle = "#FFFFFF";
-        g.textAlign = "center"; g.textBaseline = "middle";
-        g.fillText(badge, bx + bw / 2, by + bh / 2 + size * 0.04);
+        const padX = size * 0.7, padY = size * 0.45, bw = g.measureText(badge).width + padX * 2, bh = size + padY * 2, margin = W * 0.03;
+        const bx = z.badge === "top-left" ? margin : W - margin - bw, by = margin;
+        g.fillStyle = pal.badgeColor || "#D9520A"; roundRect(g, bx, by, bw, bh, bh / 2); g.fill();
+        g.fillStyle = "#FFFFFF"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(badge, bx + bw / 2, by + bh / 2 + size * 0.04);
       }
 
-      // logo
-      if ($("overlayLogo").checked && assets.logo) {
+      if ($("overlayLogo").checked && logoDataUrl) {
         try {
-          const logo = await loadImage(await fetchFileDataUrl(assets.logo.id));
-          const lh = H * 0.05, lw = logo.naturalWidth / logo.naturalHeight * lh;
-          const margin = W * 0.03;
-          const lx = z.logo === "top-right" ? W - margin - lw : margin;
-          g.drawImage(logo, lx, margin, lw, lh);
-        } catch (e) { /* logo 讀不到就略過 */ }
+          const logo = await loadImage(logoDataUrl);
+          const lh = H * 0.05, lw = logo.naturalWidth / logo.naturalHeight * lh, margin = W * 0.03;
+          g.drawImage(logo, z.logo === "top-right" ? W - margin - lw : margin, margin, lw, lh);
+        } catch (e) {}
       }
 
       composedDataUrl = canvas.toDataURL("image/png");
       $("composeResult").innerHTML =
         '<img src="' + composedDataUrl + '">' +
-        '<div class="actions">' +
-          '<a href="' + composedDataUrl + '" download="ai-draft.png">下載草稿</a>' +
-          '<button onclick="saveToDrive(composedDataUrl.split(\',\')[1], \'ai-draft\', \'composeDriveStatus\')">存到雲端硬碟</button>' +
-        '</div>' +
+        '<div class="actions"><a href="' + composedDataUrl + '" download="ai-draft.png">下載</a>' +
+        '<button onclick="saveToDrive(composedDataUrl.split(\',\')[1], \'ai-draft\', \'composeDriveStatus\', true)">存到雲端硬碟</button></div>' +
         '<div class="status show" id="composeDriveStatus" style="margin-top:6px"></div>';
       setStatus("composeStatus", "合成完成。調整字級或產品大小後可再按一次。", false);
+      open("secBrief");
     } catch (e) {
       setStatus("composeStatus", "合成失敗：" + (e && e.message ? e.message : e), true);
-    } finally {
-      $("composeBtn").disabled = false;
+    } finally { $("composeBtn").disabled = false; }
+  }
+
+  // ---------- ⑤ 需求單 ----------
+  function buildBrief() {
+    const lines = [];
+    lines.push("【橘子工坊 素材需求單】");
+    if (ctx && ctx.ok) lines.push("檔期／欄位：" + ctx.sheetName + " " + ctx.columnLabel + " 欄" + (ctx.budgetText ? "（" + ctx.budgetText + "）" : ""));
+    lines.push("商品：" + ($("product").value.trim() || "（未填）"));
+    if ($("headline").value || $("subline").value || $("badge").value) {
+      lines.push("圖上文字：" + [$("headline").value, $("subline").value, $("badge").value].filter(Boolean).join("／"));
     }
+    if (copyResult) {
+      const picked = selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : null;
+      lines.push("", picked ? "選定文案（" + $("tone").value + "）：\n" + picked : "文案候選（" + $("tone").value + "）：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((t, i) => "版本" + (i + 1) + "：\n" + t).join("\n\n"));
+    }
+    lines.push("", "視覺方向：");
+    lines.push("・主色調：" + $("palette").value + ($("palette").value === "自訂" && $("customPalette").value ? "（" + $("customPalette").value + "）" : ""));
+    lines.push("・風格：" + $("visualStyle").value + "　版面：" + $("layout").value + "　比例：" + $("ratio").value);
+    if (refAnalysis) lines.push("・參考圖重點：" + refAnalysis.summaryZh + (refAnalysis.cautionsZh ? "\n・注意：" + refAnalysis.cautionsZh : ""));
+    if ($("refNote").value.trim()) lines.push("・業務補充：" + $("refNote").value.trim());
+    lines.push("・參考圖 " + refImages.length + " 張、產品去背圖 " + prodImages.length + " 張（另附）");
+    if (currentDriveUrl) lines.push("・AI 草稿：" + currentDriveUrl);
+    else if (currentImageBase64) lines.push("・AI 草稿：已生成，請按「存到雲端硬碟」後把連結補進來");
+    const text = lines.join("\n");
+    $("briefBox").textContent = text; $("briefBox").style.display = "block"; $("briefCopyBtn").style.display = "inline-block";
+  }
+  function copyBrief(btn) {
+    writeClipboard($("briefBox").textContent, () => { btn.textContent = "已複製 ✓"; setTimeout(() => btn.textContent = "複製需求單", 2200); });
   }
 
   // ---------- 啟動 ----------
   loadFormOptions();
   loadContext();
   loadAssets();
+  updateImageInputsHint();
   setInterval(() => loadContext(true), 4000);
 </script>

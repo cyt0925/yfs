@@ -10,7 +10,9 @@
  *          時事先提切角再寫文案（兩步驟）、範例與反例加量。
  *  - 生圖：Prompt 改成「程式填空模板」，主色調、視覺風格、版面由設計師寫死的英文描述組成，
  *          模型只負責寫 1～2 句場景道具，不能改顏色與版面。
- *  - 產品：可從雲端硬碟資料夾勾選去背產品圖與參考成品，走 /v1/images/edits 一起送進模型。
+ *  - 參考圖：直接在側邊欄拖放、選檔、Ctrl+V 貼上或貼網址，不用先整理雲端硬碟；
+ *            可先讓 AI 分析參考圖的風格與配色，再用同樣風格生成底圖並換上自家產品。
+ *  - 產品：去背產品圖同樣直接上傳，走 /v1/images/edits 一起送進模型；雲端硬碟只是可選的常用素材庫。
  *  - 合成：側邊欄用 canvas 把 AI 底圖 + 真實去背產品 PNG + 中文標題 + 角標 + logo 疊成草稿，
  *          數字與 logo 保證正確，給設計師接手微調。
  *
@@ -20,9 +22,8 @@
  * 3. 新增 HTML 檔「Sidebar」（不要打副檔名），貼上 Sidebar.html 的內容
  * 4. 存檔、回試算表重新整理
  * 5. 選單「AI 文案工具 → 設定 OpenAI API Key」
- * 6. 選單「AI 文案工具 → 建立雲端硬碟素材資料夾」，把去背產品 PNG、參考成品、logo 丟進對應資料夾
- * 7. （選用）選單「AI 文案工具 → 建立產品資料分頁」，填每個品類的賣點
- * 8. 選單「AI 文案工具 → 開啟 AI 文案側邊欄」
+ * 6. 選單「AI 文案工具 → 開啟 AI 文案側邊欄」，參考圖與產品圖直接拖進側邊欄即可
+ * 7. （選用）「建立產品資料分頁」填每個品類的賣點；「建立雲端硬碟常用素材庫」放每次都會用到的產品去背圖與 logo
  */
 
 // ============================================================
@@ -39,12 +40,15 @@ const IMAGE_QUALITY = "medium"; // low / medium / high，high 一張成本約 3�
 const LABELS = { PRODUCT: "品類", AD_NAME: "廣告名稱", COPY: "文案", BUDGET: "預算分配" };
 const PRODUCT_SHEET = "產品資料";
 
+// 雲端硬碟只是「可選」的常用素材庫。沒建也能用，所有圖都可以直接在側邊欄上傳。
 const DRIVE_FOLDERS = {
-  PRODUCTS: "橘子工坊產品去背圖",   // 去背 PNG，一個檔一個產品
-  REFERENCES: "橘子工坊參考成品",   // 設計師做過的成品，當風格參考
-  ASSETS: "橘子工坊品牌素材",       // logo.png、mo點圖示等
-  OUTPUT: "橘子工坊生圖"            // 產出存這裡
+  PRODUCTS: "橘子工坊產品去背圖",   // 每次都會用到的去背 PNG
+  REFERENCES: "橘子工坊參考成品",   // 設計師做過的成品
+  ASSETS: "橘子工坊品牌素材",       // logo.png
+  OUTPUT: "橘子工坊生圖"            // 產出存這裡（存檔時自動建立）
 };
+const VISION_MODEL_CANDIDATES = ["gpt-4.1", "gpt-4o"];
+const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 單張上限（側邊欄已先縮圖）
 
 // ============================================================
 // 品牌規範（文案）
@@ -228,8 +232,8 @@ function onOpen() {
     .addItem("開啟 AI 文案側邊欄", "showSidebar")
     .addSeparator()
     .addItem("設定 OpenAI API Key", "setApiKey")
-    .addItem("建立雲端硬碟素材資料夾", "setupDriveFolders")
-    .addItem("建立產品資料分頁", "setupProductSheet")
+    .addItem("建立產品資料分頁（選用）", "setupProductSheet")
+    .addItem("建立雲端硬碟常用素材庫（選用）", "setupDriveFolders")
     .addToUi();
 }
 
@@ -264,10 +268,10 @@ function setupDriveFolders() {
     if (!it.hasNext()) { DriveApp.createFolder(name); created.push(name); }
   });
   SpreadsheetApp.getUi().alert(
-    "雲端硬碟資料夾已就位。\n\n" +
-    "・" + DRIVE_FOLDERS.PRODUCTS + "：放去背產品 PNG，一個檔一個產品，檔名就是顯示名稱\n" +
-    "・" + DRIVE_FOLDERS.REFERENCES + "：放設計師做過的成品，當風格參考\n" +
-    "・" + DRIVE_FOLDERS.ASSETS + "：放 logo.png（檔名含 logo 即可）\n" +
+    "常用素材庫已就位（這是選用功能，圖片也可以直接拖進側邊欄）。\n\n" +
+    "・" + DRIVE_FOLDERS.PRODUCTS + "：每次都會用到的去背產品 PNG\n" +
+    "・" + DRIVE_FOLDERS.REFERENCES + "：設計師做過的成品\n" +
+    "・" + DRIVE_FOLDERS.ASSETS + "：logo.png（檔名含 logo 即可）\n" +
     "・" + DRIVE_FOLDERS.OUTPUT + "：產出圖會存這裡\n\n" +
     (created.length ? "本次新建：" + created.join("、") : "全部都已存在，沒有新建。")
   );
@@ -569,19 +573,28 @@ ${trendBlock}
 只回傳 JSON。`;
 }
 
+const REF_KEY = "跟參考圖一樣";
+
 function buildImagePrompt(input, scene) {
+  const ref = input.refAnalysis || null;
   const palette = PALETTES.find(p => p.key === input.palette) || PALETTES[0];
-  const paletteEn = palette.key === "自訂"
-    ? "Dominant color palette: " + (input.customPalette || "designer's choice") + "."
-    : palette.en;
-  const style = VISUAL_STYLES.find(s => s.key === input.visualStyle) || VISUAL_STYLES[0];
+  let paletteEn;
+  if (input.palette === REF_KEY && ref && ref.paletteEn) paletteEn = "Dominant color palette (matched from the reference image): " + ref.paletteEn;
+  else if (palette.key === "自訂") paletteEn = "Dominant color palette: " + (input.customPalette || "designer's choice") + ".";
+  else paletteEn = palette.en;
+
+  let styleEn;
+  if (input.visualStyle === REF_KEY && ref && ref.styleEn) styleEn = "Style (matched from the reference image): " + ref.styleEn;
+  else styleEn = (VISUAL_STYLES.find(s => s.key === input.visualStyle) || VISUAL_STYLES[0]).en;
+
   const layout = LAYOUTS.find(l => l.key === input.layout) || LAYOUTS[0];
   const ratio = input.ratio || "9:16";
+  if (ref && ref.sceneEn && !scene) scene = ref.sceneEn;
 
   return [
     paletteEn,
     layout.en,
-    style.en,
+    styleEn,
     "Scene: " + (scene || "a clean home laundry corner with a folded white towel and a small green plant."),
     "Aspect ratio " + ratio + ".",
     IMAGE_HARD_RULES
@@ -708,44 +721,46 @@ function handleImageError(code, body) {
   throw new Error("生圖失敗（" + code + "）：\n" + body.substring(0, 300));
 }
 
+function decodeUploads(list, label) {
+  return (list || []).map((im, i) => {
+    if (!im || !im.base64) throw new Error(label + "第 " + (i + 1) + " 張圖片資料不完整，請移除後重新加入。");
+    const bytes = Utilities.base64Decode(im.base64);
+    if (bytes.length > MAX_UPLOAD_BYTES) throw new Error(label + "「" + (im.name || i + 1) + "」超過 6MB，請換小一點的圖。");
+    const mime = im.mime || "image/png";
+    const ext = mime === "image/jpeg" ? "jpg" : (mime === "image/webp" ? "webp" : "png");
+    return { field: "image[]", name: label + (i + 1) + "." + ext, mime: mime, bytes: bytes };
+  });
+}
+
 /**
  * 側邊欄呼叫：產生圖片，回傳 base64。
- * input.productFileIds / input.referenceFileIds 有東西 → /v1/images/edits 帶參考圖
- * 否則 → /v1/images/generations 純文字
+ * input.productImages / input.referenceImages 為 [{name, mime, base64}]，由側邊欄直接上傳（已縮圖）。
+ * 有任何一張 → /v1/images/edits 帶參考圖；否則 → /v1/images/generations 純文字。
  */
 function generateImage(input) {
   const apiKey = requireApiKey();
-  if (!input.imagePrompt) throw new Error("沒有生圖 Prompt 可以使用，請先生成文案。");
+  if (!input.imagePrompt) throw new Error("沒有生圖 Prompt 可以使用，請先生成文案或自己貼一段。");
   const size = SIZE_MAP[input.ratio] || "1024x1024";
 
-  const productIds = input.productFileIds || [];
-  const referenceIds = input.referenceFileIds || [];
-  const useEdits = productIds.length + referenceIds.length > 0;
+  const productFiles = decodeUploads(input.productImages, "product");
+  const referenceFiles = decodeUploads(input.referenceImages, "reference");
+  const useEdits = productFiles.length + referenceFiles.length > 0;
 
   let prompt = input.imagePrompt;
   if (useEdits) {
     const notes = [];
-    if (productIds.length) {
-      notes.push("The first " + productIds.length + " attached image(s) are the REAL PRODUCTS (cut-out, transparent background). Reproduce their shape, colors and label design as faithfully as possible, do not redesign them, and place them standing naturally ONLY inside the product zone described in the layout, with correct perspective and a soft contact shadow.");
+    if (productFiles.length) {
+      notes.push("The first " + productFiles.length + " attached image(s) are the REAL PRODUCTS (cut-out, transparent background). Reproduce their shape, colors and label design as faithfully as possible, do not redesign them, and place them standing naturally ONLY inside the product zone described in the layout, with correct perspective and a soft contact shadow.");
     }
-    if (referenceIds.length) {
-      notes.push("The last " + referenceIds.length + " attached image(s) are previous finished ads from our designer. Use them ONLY as a reference for overall mood, composition density and lighting. Do NOT copy their text, numbers, logos or badges.");
+    if (referenceFiles.length) {
+      notes.push("The last " + referenceFiles.length + " attached image(s) are REFERENCE images for the look we want. Match their overall mood, composition density, lighting and color feeling. Do NOT copy any text, numbers, logos, badges or third-party products that appear in them.");
     }
     prompt = notes.join(" ") + "\n\n" + prompt;
   }
 
   let res;
   if (useEdits) {
-    const files = [];
-    productIds.concat(referenceIds).forEach((id, i) => {
-      const f = DriveApp.getFileById(id);
-      const blob = f.getBlob();
-      const mime = blob.getContentType();
-      const ext = mime === "image/jpeg" ? "jpg" : (mime === "image/webp" ? "webp" : "png");
-      // 檔名只用 ASCII，避免中文檔名進 multipart 標頭
-      files.push({ field: "image[]", name: "image" + (i + 1) + "." + ext, mime: mime, bytes: blob.getBytes() });
-    });
-    const mp = buildMultipart({ model: IMAGE_MODEL, prompt: prompt, size: size, quality: IMAGE_QUALITY, n: "1" }, files);
+    const mp = buildMultipart({ model: IMAGE_MODEL, prompt: prompt, size: size, quality: IMAGE_QUALITY, n: "1" }, productFiles.concat(referenceFiles));
     res = UrlFetchApp.fetch("https://api.openai.com/v1/images/edits", {
       method: "post",
       contentType: mp.contentType,
@@ -769,6 +784,79 @@ function generateImage(input) {
 
   const json = JSON.parse(body);
   return { base64: json.data[0].b64_json, mode: useEdits ? "edits" : "generations", finalPrompt: prompt };
+}
+
+/**
+ * 側邊欄呼叫：讓模型「看」參考圖，回傳中文摘要與英文的配色／風格／場景描述。
+ * 對應你們的實際流程：先在網路找到想要的樣子 → 讓 AI 描述 → 用同樣風格生成並換上自家產品。
+ */
+function analyzeReferences(input) {
+  const apiKey = requireApiKey();
+  const images = input.images || [];
+  if (!images.length) throw new Error("請先加入至少一張參考圖。");
+
+  const content = [{
+    type: "text",
+    text: `你是資深電商視覺設計師。以下是業務在網路上找到、想要「做成這種感覺」的參考圖${images.length > 1 ? "（共 " + images.length + " 張，請歸納共同點）" : ""}。
+${input.note ? "業務補充：" + input.note : ""}
+
+請分析並回傳 JSON：
+- summaryZh：用繁體中文 2～3 句，講這張圖的視覺重點（配色、氛圍、構圖、材質），讓業務跟設計師能快速對齊。
+- paletteEn：英文，一句話描述主色與輔色（可含近似 hex），供生圖模型使用。
+- styleEn：英文，1～2 句描述攝影／插畫風格、光線、材質、氛圍。不要提到圖中的文字、logo、價格或任何他牌產品。
+- sceneEn：英文，1～2 句描述背景場景與道具（地點、材質、季節感、1～3 個小道具）。不要寫顏色、不要寫文字、不要寫產品。
+- layoutHint：從這三個選一個最接近圖中留白配置的：「上標題．下產品」「左產品．右標題」「中央產品．上下標題」。
+- cautionsZh：繁體中文，若圖中有他牌 logo、名人、卡通角色等不能照抄的元素，一句話提醒；沒有就空字串。`
+  }];
+  images.forEach(im => {
+    content.push({ type: "image_url", image_url: { url: "data:" + (im.mime || "image/png") + ";base64," + im.base64, detail: "low" } });
+  });
+
+  const schema = {
+    type: "object",
+    properties: {
+      summaryZh: { type: "string" }, paletteEn: { type: "string" }, styleEn: { type: "string" },
+      sceneEn: { type: "string" }, layoutHint: { type: "string" }, cautionsZh: { type: "string" }
+    },
+    required: ["summaryZh", "paletteEn", "styleEn", "sceneEn", "layoutHint", "cautionsZh"],
+    additionalProperties: false
+  };
+  const payload = {
+    messages: [{ role: "user", content: content }],
+    temperature: 0.4,
+    response_format: { type: "json_schema", json_schema: { name: "reference_analysis", strict: true, schema: schema } }
+  };
+  const options = {
+    method: "post", contentType: "application/json",
+    headers: { Authorization: "Bearer " + apiKey }, muteHttpExceptions: true
+  };
+
+  let lastError = "";
+  for (let i = 0; i < VISION_MODEL_CANDIDATES.length; i++) {
+    options.payload = JSON.stringify(Object.assign({ model: VISION_MODEL_CANDIDATES[i] }, payload));
+    const res = UrlFetchApp.fetch("https://api.openai.com/v1/chat/completions", options);
+    const code = res.getResponseCode();
+    const body = res.getContentText();
+    if (code === 200) return JSON.parse(JSON.parse(body).choices[0].message.content);
+    if (code === 401) throw new Error("API Key 無效或已被刪除。請重新執行「設定 OpenAI API Key」。");
+    if (code === 429 && body.indexOf("insufficient_quota") !== -1) throw new Error("OpenAI 帳戶額度不足，請到 Billing 儲值。");
+    lastError = "（" + code + "）" + body.substring(0, 200);
+  }
+  throw new Error("參考圖分析失敗 " + lastError);
+}
+
+/** 側邊欄呼叫：貼網址時由伺服器端抓圖（瀏覽器跨網域抓不到），回傳 dataUrl */
+function fetchImageFromUrl(url) {
+  url = String(url || "").trim();
+  if (!/^https?:\/\//i.test(url)) throw new Error("網址要以 http:// 或 https:// 開頭。");
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { "User-Agent": "Mozilla/5.0" } });
+  if (res.getResponseCode() !== 200) throw new Error("抓不到這個網址（" + res.getResponseCode() + "）。有些網站擋機器人，改用右鍵另存圖片再拖進來。");
+  const blob = res.getBlob();
+  const mime = (blob.getContentType() || "").split(";")[0];
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(mime)) throw new Error("這個網址不是圖片檔（" + mime + "）。請對圖片本身按右鍵「複製圖片網址」，或直接把圖拖進來。");
+  const bytes = blob.getBytes();
+  if (bytes.length > 15 * 1024 * 1024) throw new Error("圖片超過 15MB，請換小一點的。");
+  return { dataUrl: "data:" + mime + ";base64," + Utilities.base64Encode(bytes), mime: mime };
 }
 
 /** 側邊欄呼叫：把 base64 圖存進雲端硬碟輸出資料夾 */
