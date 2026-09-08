@@ -42,7 +42,7 @@ Google Sheets 的 Apps Script 側邊欄，掛在 CPAS 廣告素材入稿表上�
 - `PALETTES`：每個主色調的英文描述、合成時的字色與角標色。
 - `LAYOUTS`：「只畫背景」模式的留白指令，以及成品預覽疊圖的預設位置。
 - `buildChatInstruction`：生圖對話第一輪的開場指令（品牌、模式、產品圖與參考圖的用法）。
-- `CHAT_IMAGE_MODELS`：負責看圖寫指令的 GPT 模型清單，依序嘗試。
+- `CHAT_IMAGE_MODELS` 與 `TEXT_MODEL_CANDIDATES`：預設 gpt-5.6-terra，備援 luna、gpt-5、gpt-4.1；想更強把 gpt-5.6-sol 放第一個。不支援的參數會自動拿掉重送。
 - `IMAGE_QUALITY`：預設品質，側邊欄可逐次改。
 
 ## 給業務調的地方

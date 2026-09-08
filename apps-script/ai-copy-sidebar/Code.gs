@@ -33,8 +33,10 @@
 
 const API_KEY_PROP = "OPENAI_API_KEY";
 
-// 依序嘗試，哪個模型可用就用哪個。三行文案 token 極少，直接用大模型，品質差很多。
-const TEXT_MODEL_CANDIDATES = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini"];
+// 模型清單：依序嘗試，不存在或不支援就自動往後退。
+// 2026-09 平台上的 id：gpt-6-astra（$10/$50）、gpt-5.6-sol（$4/$20）、gpt-5.6-terra（$2/$12）、gpt-5.6-luna（$0.2/$1.2）。
+// 文案與看圖寫指令用 Terra 就夠；想更強把 "gpt-5.6-sol" 放到第一個即可。
+const TEXT_MODEL_CANDIDATES = ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-4.1"];
 const IMAGE_QUALITY = "medium"; // 預設生圖品質 low / medium / high，high 一張成本約 3～4 倍
 
 const LABELS = { PRODUCT: "品類", AD_NAME: "廣告名稱", COPY: "文案", BUDGET: "預算分配" };
@@ -47,8 +49,8 @@ const DRIVE_FOLDERS = {
   ASSETS: "橘子工坊品牌素材",       // logo.png
   OUTPUT: "橘子工坊生圖"            // 產出存這裡（存檔時自動建立）
 };
-// 生圖對話用的模型：GPT 負責看圖、寫指令、呼叫 image_generation 工具
-const CHAT_IMAGE_MODELS = ["gpt-5", "gpt-4.1"];
+// 生圖對話用的模型：GPT 負責看圖、寫指令、呼叫 image_generation 工具（畫圖本身是 gpt-image-2）
+const CHAT_IMAGE_MODELS = ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5", "gpt-4.1"];
 
 // ============================================================
 // 品牌規範（文案）
@@ -376,6 +378,22 @@ function requireApiKey() {
   return key;
 }
 
+/**
+ * 400 錯誤裡若指出某參數不被支援（例如 gpt-5.x 不吃 temperature、gpt-image-2 不吃 input_fidelity），
+ * 從 payload 頂層或 tools[0] 把它拿掉。回傳 true 表示有拿掉、可以重送。
+ */
+function stripUnsupportedParam(payload, body) {
+  const m = body.match(/does not support the '([a-z_.]+)' parameter/) ||
+            body.match(/Unsupported parameter:? '?([a-z_.]+)'?/i) ||
+            body.match(/'([a-z_.]+)' is not supported/) ||
+            body.match(/Unsupported value:? '([a-z_.]+)'/i);
+  if (!m) return false;
+  const key = m[1].split(".").pop();
+  if (payload[key] !== undefined) { delete payload[key]; return true; }
+  if (payload.tools && payload.tools[0] && payload.tools[0][key] !== undefined) { delete payload.tools[0][key]; return true; }
+  return false;
+}
+
 /** 呼叫 chat completions，依序試 TEXT_MODEL_CANDIDATES，回傳解析後的 JSON */
 function callChatJson(prompt, schemaName, schema) {
   const apiKey = requireApiKey();
@@ -397,9 +415,10 @@ function callChatJson(prompt, schemaName, schema) {
   let lastError = "";
   for (let i = 0; i < TEXT_MODEL_CANDIDATES.length; i++) {
     const model = TEXT_MODEL_CANDIDATES[i];
-    options.payload = JSON.stringify(Object.assign({ model: model }, payload));
+    const p = JSON.parse(JSON.stringify(Object.assign({ model: model }, payload)));
 
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      options.payload = JSON.stringify(p);
       const res = UrlFetchApp.fetch("https://api.openai.com/v1/chat/completions", options);
       const code = res.getResponseCode();
       const body = res.getContentText();
@@ -409,7 +428,8 @@ function callChatJson(prompt, schemaName, schema) {
         return JSON.parse(json.choices[0].message.content);
       }
       if (code === 401) throw new Error("API Key 無效或已被刪除。請重新執行「設定 OpenAI API Key」。");
-      if (code === 404 || (code === 400 && body.indexOf("model") !== -1 && body.indexOf("does not exist") !== -1)) {
+      if (code === 400 && stripUnsupportedParam(p, body)) continue;   // 拿掉不支援的參數再送一次
+      if (code === 404 || (code === 400 && body.indexOf("model") !== -1 && (body.indexOf("does not exist") !== -1 || body.indexOf("not found") !== -1))) {
         lastError = "模型 " + model + " 無法使用";
         break;
       }
@@ -744,7 +764,8 @@ function chatImage(input) {
   const basePayload = {
     input: [{ role: "user", content: content }],
     tools: [tool],
-    tool_choice: { type: "image_generation" }
+    tool_choice: { type: "image_generation" },
+    reasoning: { effort: "low" }   // 看圖寫指令不需要深思，省時間；模型不支援會自動拿掉
   };
   if (input.previousResponseId) basePayload.previous_response_id = input.previousResponseId;
 
@@ -773,10 +794,10 @@ function chatImage(input) {
       if (code === 400 && body.indexOf("tool_choice") !== -1 && payload.tool_choice) {
         payload = Object.assign({}, payload); delete payload.tool_choice; attempt--; continue;
       }
-      // 「模型不支援 X 參數」→ 把 X 從工具設定拿掉再試（例如 gpt-image-2 不吃 input_fidelity）
-      const unsupported = body.match(/does not support the '([a-z_]+)' parameter/);
-      if (code === 400 && unsupported && payload.tools[0][unsupported[1]] !== undefined) {
-        payload = JSON.parse(JSON.stringify(payload)); delete payload.tools[0][unsupported[1]]; attempt--; continue;
+      // 「模型不支援 X 參數」→ 從頂層或工具設定拿掉再試（例如 gpt-image-2 不吃 input_fidelity、某些模型不吃 reasoning）
+      if (code === 400) {
+        const copy = JSON.parse(JSON.stringify(payload));
+        if (stripUnsupportedParam(copy, body)) { payload = copy; attempt--; continue; }
       }
       if (code === 404 || (code === 400 && body.indexOf("model") !== -1 && (body.indexOf("does not exist") !== -1 || body.indexOf("not found") !== -1))) {
         lastError = "模型 " + model + " 無法使用"; break;
