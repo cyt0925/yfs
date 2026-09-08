@@ -675,12 +675,20 @@ function getFileBase64(fileId) {
 const HOUSE_TEMPLATE = [
   "【橘子工坊 momo 素材固定版型，除非業務另外指定，一律照此排】",
   "1. 品牌 logo 放左上角（聯名時兩個 logo 並排在上方）。",
-  "2. 標題放上半部，1～2 行，白色粗體、深色描邊加柔和陰影；關鍵字或數字改用亮黃色或品牌橘強調。商品名可直接寫進標題。",
+  "2. 標題放上半部，1～2 行。商品名可直接寫進標題。字體處理見下方【字體規格】。",
   "3. 三到四個圓形賣點徽章（白底或半透明圓形＋小圖示＋4～6 字），散布在產品旁邊，不能擋到產品正面。",
   "4. 產品放中間偏下，是視覺重心之一但不是唯一主角；多包裝時扇形排開；膠囊、水花、光點帶出動態。",
   "5. 底部一條滿版深色資訊帶（冷色系用深藍，節慶用深紅），左邊放「檔期 momo限定 ▸ 商品名或優惠」，右邊放價格：「$」加特大亮黃色數字加小字單位（例：/顆 up）。mo 點以圓形 mo 圖示呈現。",
   "6. 背景高彩度、明亮、有光線感，主題呼應文案（水、冰、運動、節慶皆可），但不能雜到蓋住文字。",
-  "7. 圖上文字只能有業務給的那幾組，繁體中文，字要大、正確、清楚。"
+  "7. 圖上文字只能有業務給的那幾組，繁體中文，字要大、正確、清楚。",
+  "",
+  "【字體規格，照做，不要用招牌式的平板字】",
+  "- 主標：超粗圓黑體，整組向右上傾斜約 8 度（斜體感），兩行錯落、第二行縮排，字距壓緊到筆畫微微相碰。白色填色＋深藍或深色粗描邊（約字高 6%）＋往右下的深色長投影，字要像浮在畫面上。關鍵字（例如產品名、動作詞）改亮黃色或品牌橘，其餘保持白。",
+  "- 價格：全圖最大的字。「$」與數字用另一套斜體的展示型數字字體，亮黃色，粗描邊；「/顆」「up」「起」等單位縮小三分之一，疊在數字右側。「下殺」「直降」這類動詞用白色、中等字級，放在數字左邊。",
+  "- 優惠：「買2組送150點」裡的數字放大一級並改亮黃色，其餘白色；mo 點一律畫成圓形 mo 圖示加「150點」，不要寫成「mo點」三個字。",
+  "- 小字註記（限量須登記、圖片僅供參考等）：最小字級、白色或淺灰、無描邊，放在底部資訊帶的最下緣。",
+  "- 除了底部資訊帶以外，任何文字都不可以有色塊底框、膠囊框或橫幅框；文字直接壓在畫面上，靠描邊與陰影和背景分離。",
+  "- 中文字與數字要用不同字體，數字更粗更斜；同一組文字內至少有兩種字級。"
 ].join("\n");
 
 /**
@@ -710,6 +718,7 @@ function buildChatInstruction(input) {
     if (input.subline) lines.push("- 優惠：「" + input.subline + "」（放底部資訊帶左側）");
     if (input.price) lines.push("- 價格：「" + input.price + "」（放底部資訊帶右側，數字特大亮黃）");
     if (input.badge) lines.push("- 檔期：「" + input.badge + "」（放底部資訊帶最左，接「momo限定 ▸」）");
+    if (input.note) lines.push("- 小字註記：「" + input.note + "」（最小字級，資訊帶最下緣）");
     const badges = (input.productInfo && input.productInfo.sellingPoints ? String(input.productInfo.sellingPoints).split(/[、,，]/) : []).map(t => t.trim()).filter(t => t && t.length <= 8).slice(0, 4);
     if (badges.length) lines.push("- 賣點徽章：" + badges.map(b => "「" + b + "」").join(""));
     if (!headline && !input.subline && !input.price && !input.badge) lines.push("- （沒有給文字，這張不要有任何文字）");
@@ -754,7 +763,7 @@ function extractResponsesError(code, body) {
 /**
  * 側邊欄呼叫：生圖對話。第一輪帶開場指令與圖片；之後只帶業務的中文與 previousResponseId。
  * input: { text, mode, ratio, quality, previousResponseId, productImages, referenceImages, layoutImages, logoImages,
- *          product, productInfo, headline, subline, price, badge, hookCopy, layout }
+ *          product, productInfo, headline, subline, price, badge, note, hookCopy, layout }
  * 回傳: { responseId, base64, text, revisedPrompt, model }
  */
 function chatImage(input) {

@@ -163,6 +163,7 @@
           <input type="text" id="price" placeholder="價格（例：$5.7/顆 up）" oninput="scheduleRender()">
           <input type="text" id="badge" placeholder="檔期（例：6/13 momo限定）" oninput="scheduleRender()">
         </div>
+        <input type="text" id="note" placeholder="小字註記（例：限量須登記）" style="margin-top:6px">
         <div class="notice" id="mismatchNotice"></div>
         <div class="two" style="margin-top:6px">
           <select id="palette" onchange="onPaletteChange(); scheduleRender()"></select>
@@ -265,7 +266,13 @@
     const clean = s => s.replace(/^[^一-鿿\w$￥]+/, "").replace(/[^一-鿿\w$%)）]+$/, "").trim();
     const offers = lines.filter(l => /(滿|買)\s*\$?\s*\d/.test(l) && /(折|送|贈)/.test(l));
     const prices = lines.filter(l => /(下殺|直降|特價|\$\s*\d)/.test(l) && !/(滿|買)\s*\$?\s*\d.*送/.test(l));
-    if (!$("subline").value && offers[0]) $("subline").value = clean(offers[0]);
+    if (!$("subline").value && offers[0]) {
+      let o = clean(offers[0]);
+      const paren = o.match(/[（(]([^）)]{2,12})[）)]\s*$/);
+      if (paren) { o = o.replace(paren[0], "").trim(); if (!$("note").value) $("note").value = paren[1]; }
+      $("subline").value = o;
+    }
+    if (!$("note").value) { const n = lines.find(l => /(限量|須登記|需登記|僅供參考|依網頁公告)/.test(l) && l.length <= 20); if (n) $("note").value = clean(n); }
     if (!$("price").value && prices[0]) { const m = prices[0].match(/\$?\s*[\d,]+(?:\.\d+)?\s*(?:\/\s*[一-鿿a-zA-Z]+)?(?:\s*up)?/i); $("price").value = m ? ("$" + m[0].replace(/^\$?\s*/, "").trim()) : clean(prices[0]); }
     if (!$("badge").value) { const m = (String(c.budgetText || "") + " " + String(c.copyText || "") + " " + String(c.adName || "")).match(/(\d{1,2}\/\d{1,2})(?:\s*[-~～–]\s*\d{1,2}\/\d{1,2})?/); if (m) $("badge").value = m[1] + " momo限定"; }
   }
@@ -427,7 +434,7 @@
       layoutImages: first ? layouts().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       logoImages: first ? logos().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       product: $("product").value.trim(), productInfo: ctx ? ctx.productInfo : null,
-      headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(),
+      headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(), note: $("note").value.trim(),
       hookCopy: copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "",
       layout: $("layout").value
     };
@@ -561,7 +568,7 @@
     const L = ["【橘子工坊 素材需求單】"];
     if (ctx && ctx.ok) L.push("檔期／欄位：" + ctx.sheetName + " " + ctx.columnLabel + " 欄" + (ctx.budgetText ? "（" + ctx.budgetText + "）" : ""));
     L.push("商品：" + ($("product").value.trim() || "（未填）"));
-    const t = [$("headline").value, $("subline").value, $("price").value, $("badge").value].filter(Boolean).join("／"); if (t) L.push("圖上文字：" + t);
+    const t = [$("headline").value, $("subline").value, $("price").value, $("badge").value, $("note").value].filter(Boolean).join("／"); if (t) L.push("圖上文字：" + t);
     if (copyResult) { const p = selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : null; L.push("", p ? "選定文案（" + $("tone").value + "）：\n" + p : "文案候選：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((x, i) => "版本" + (i + 1) + "：\n" + x).join("\n\n")); }
     L.push("", "視覺：" + (chipValue("modeChips") === "background" ? "只畫背景＋程式疊字" : "完整稿") + "　比例 " + (chipValue("ratioChips") || "9:16") + "　主色調 " + $("palette").value);
     if (chat.turns.length) L.push("生圖對話：\n" + chat.turns.map((x, i) => "  " + (i + 1) + ". " + x.text).join("\n"));
