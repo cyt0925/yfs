@@ -122,6 +122,14 @@
   .chip { font-size: 11.5px; padding: 3px 9px; border: 1px solid var(--rule); border-radius: 12px; background: #fff; cursor: pointer; color: var(--ink-2); }
   .chip.on { border-color: var(--citrus); color: var(--citrus); background: var(--info-bg); }
 
+  .chatlog { display: grid; gap: 8px; margin-top: 8px; }
+  .bubble { border-radius: 10px; padding: 8px 10px; font-size: 12.5px; max-width: 100%; }
+  .bubble.user { background: var(--surface-2); justify-self: end; white-space: pre-wrap; }
+  .bubble.ai { background: var(--info-bg); border: 1px solid #F3D9C4; }
+  .bubble.ai img { max-width: 100%; border-radius: 8px; display: block; margin-top: 6px; border: 1px solid var(--rule); cursor: pointer; }
+  .bubble.ai img.current { outline: 3px solid var(--citrus); }
+  .bubble .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .bubble .row-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
   details.lib { margin-top: 8px; }
   details.lib summary { font-size: 12px; color: var(--muted); cursor: pointer; }
   .brief { white-space: pre-wrap; font-size: 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; margin-top: 8px; }
@@ -194,47 +202,49 @@
   </div>
 </section>
 
-<!-- ③ 生圖 -->
+<!-- ③ 生圖對話 -->
 <section id="secImage" class="collapsed">
-  <h2 onclick="toggle('secImage')"><span class="num">3</span>生成背景<span class="chev"></span></h2>
+  <h2 onclick="toggle('secImage')"><span class="num">3</span>生圖（跟 ChatGPT 一樣用講的）<span class="chev"></span></h2>
   <div class="body">
-    <label style="margin-top:0">這張背景要長什麼樣 <span class="opt">（中文。分析參考圖或生成文案後會自動填好，直接改就好）</span></label>
-    <textarea id="bgDesc" style="min-height:96px" placeholder="例：淺藍色天空漸層的背景，下方是淺色木桌，柔和的自然光從左上打進來。左邊桌角放一條摺好的白毛巾，右邊一小盆綠植。上方三分之一留空放標題，桌面中央留空放產品。" oninput="descTouched = true; updateReviseState()"></textarea>
-    <div class="hint" id="bgDescHint"></div>
-
     <div class="three">
-      <div><label>主色調</label><select id="palette" onchange="onPaletteChange()"></select></div>
-      <div><label>留白版面</label><select id="layout"></select></div>
-      <div><label>比例</label><select id="ratio"></select></div>
+      <div>
+        <label style="margin-top:0">要產什麼</label>
+        <select id="genMode" onchange="onGenModeChange()">
+          <option value="full">完整廣告稿（含標題）</option>
+          <option value="background">只畫背景（文字產品之後疊）</option>
+        </select>
+      </div>
+      <div>
+        <label style="margin-top:0">品質</label>
+        <select id="quality">
+          <option value="medium">一般（約 NT$2／張）</option>
+          <option value="high">精細（約 NT$7／張）</option>
+          <option value="low">草稿（約 NT$0.5／張）</option>
+        </select>
+      </div>
+      <div><label style="margin-top:0">比例</label><select id="ratio"></select></div>
     </div>
-    <div id="customPaletteWrap" style="display:none">
-      <label>自訂顏色 <span class="opt">（中英文皆可）</span></label>
-      <input type="text" id="customPalette" placeholder="例：深藍配金色">
-    </div>
+    <div class="hint" id="genModeHint"></div>
 
+    <div id="chatLog" class="chatlog"></div>
+
+    <label>跟設計師講話一樣，用中文說 <span class="opt">（第一句會自動帶入參考圖分析與文案情境）</span></label>
+    <textarea id="chatText" style="min-height:80px" placeholder="例：做一張夏日清爽感的促銷主視覺，藍天白雲背景，產品放下方桌面，上方放大標題。第一輪會自動附上第一步的參考圖與產品圖。"></textarea>
     <div class="two">
-      <button class="primary-btn" id="genImageBtn" onclick="generateImage()">生成背景</button>
-      <button class="secondary-btn" id="reviseBtn" style="margin-top:12px" onclick="reviseBackground()" disabled>微調上一張</button>
+      <button class="primary-btn" id="sendBtn" onclick="sendChat()">產圖</button>
+      <button class="secondary-btn" id="resetChatBtn" style="margin-top:12px" onclick="resetChat()" disabled>重新開始對話</button>
     </div>
-    <div class="hint">看到圖之後，直接改上面的描述：「生成背景」重畫一張新的；「微調上一張」只改你動到的地方，其他保持。</div>
+    <div class="hint">產圖後繼續打字就是「改上一張」，例如「膠囊再大一點、背景再亮、把毛巾拿掉」。想換方向就按重新開始。</div>
     <div class="status" id="imageStatus"></div>
-    <div class="result" id="imageResult"></div>
 
     <details class="lib" style="margin-top:10px">
-      <summary>進階選項（平常不用動）</summary>
-      <label>產品怎麼進畫面</label>
-      <div class="radio-group" id="productModeGroup">
-        <label class="on"><input type="radio" name="productMode" value="overlay" checked onchange="onProductModeChange()">
-          <div><b>AI 只畫背景，產品用真實去背圖疊上（預設）</b><span class="d">包裝上的字、logo 保證正確。</span></div></label>
-        <label><input type="radio" name="productMode" value="draw" onchange="onProductModeChange()">
-          <div><b>讓 AI 把產品畫進場景</b><span class="d">包裝文字一定會變亂碼，只能當構圖參考，不能出稿。</span></div></label>
-      </div>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px">
-        <input type="checkbox" id="sendRefs" style="margin-top:3px">
-        <span>連參考圖本身一起送給生圖模型 <span class="opt">（模型會照抄它塞滿的版面與產品，預設只送分析文字）</span></span>
-      </label>
-      <label>實際送出的英文 Prompt <span class="opt">（唯讀，除錯用）</span></label>
+      <summary>進階（除錯用）</summary>
+      <label>模型實際用的生圖指令 <span class="opt">（唯讀）</span></label>
       <textarea id="promptEn" class="prompt-box" readonly style="min-height:80px;background:var(--surface)"></textarea>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px">
+        <input type="checkbox" id="sendRefs" checked style="margin-top:3px">
+        <span>第一輪附上參考圖給模型 <span class="opt">（預設開。若模型老是照抄參考圖的版面，可以關掉只留分析文字）</span></span>
+      </label>
     </details>
   </div>
 </section>
@@ -252,6 +262,11 @@
     <input type="text" id="badge" placeholder="例：6.13-6.15 指定品" oninput="scheduleRender()">
     <div class="notice" id="mismatchNotice"></div>
 
+    <div class="two">
+      <div><label>主色調 <span class="opt">（字色與角標色）</span></label><select id="palette" onchange="onPaletteChange(); scheduleRender()"></select></div>
+      <div><label>版面預設位置</label><select id="layout" onchange="resetPositions()"></select></div>
+    </div>
+    <div id="customPaletteWrap" style="display:none"><label>自訂顏色</label><input type="text" id="customPalette" placeholder="例：深藍配金色"></div>
     <div class="three">
       <div>
         <label>字色</label>
@@ -274,7 +289,8 @@
         <input type="range" id="productScale" min="40" max="180" value="100" oninput="document.getElementById('productScaleVal').textContent = this.value + '%'; scheduleRender()">
       </div>
     </div>
-    <label style="display:flex;gap:14px;align-items:center;font-weight:400">
+    <label style="display:flex;gap:14px;align-items:center;font-weight:400;flex-wrap:wrap">
+      <span><input type="checkbox" id="overlayText" checked onchange="scheduleRender()"> 疊上標題文字</span>
       <span><input type="checkbox" id="overlayProducts" checked onchange="scheduleRender()"> 疊上產品去背圖</span>
       <span><input type="checkbox" id="overlayLogo" checked onchange="scheduleRender()"> 疊上 logo</span>
     </label>
@@ -322,9 +338,9 @@
   let angles = [], selectedAngle = null;
   let copyResult = null, selectedCopyIndex = -1;
   let refAnalysis = null;
-  let copyScene = "";                       // 文案模型寫的情境（英文，只拿來組中文描述）
-  let descTouched = false;                  // 業務有沒有手改過中文描述
-  let lastGeneratedZh = "";                 // 上一張背景用的中文描述
+  let copyScene = "";                       // 文案模型寫的情境（英文，只拿來組第一句中文）
+  let chatTouched = false;                  // 業務有沒有手改過對話框
+  let chat = { responseId: "", turns: [] };  // 生圖對話狀態
   let currentImageBase64 = "", currentImageMode = "", currentDriveUrl = "";
   const refImages = [], prodImages = [];   // {id, name, mime, base64, dataUrl, source, opaque}
   let assets = { products: { exists: false, files: [] }, references: { exists: false, files: [] }, logo: null };
@@ -341,7 +357,6 @@
   function escapeHtml(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function fillSelect(el, list, valueKey) { el.innerHTML = list.map(v => { const val = valueKey ? v[valueKey] : v; return '<option value="' + escapeHtml(val) + '">' + escapeHtml(val) + '</option>'; }).join(""); }
   function run(fn) { return (...args) => new Promise((resolve, reject) => { google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](...args); }); }
-  function productMode() { return document.querySelector('input[name="productMode"]:checked').value; }
 
   // ---------- 初始化 ----------
   function loadFormOptions() {
@@ -537,11 +552,11 @@
         $("analysisBox").innerHTML = '<div class="analysis"><div class="t">AI 看到的重點</div>' + escapeHtml(res.summaryZh) +
           (res.cautionsZh ? '<div class="c">⚠ ' + escapeHtml(res.cautionsZh) + '</div>' : "") +
           (res.backgroundPaletteEn ? '<div class="hint">背景顏色：' + escapeHtml(res.backgroundPaletteEn) + '</div>' : '') +
-          '<div class="hint">主色調已切到「' + REF_KEY + '」（只套用背景的顏色），留白版面建議「' + escapeHtml(res.layoutHint) + '」。第三步的中文背景描述已依這張參考圖重寫。</div></div>';
+          '<div class="hint">第三步的第一句話已依這張參考圖寫好；第四步的主色調切到「' + REF_KEY + '」，版面建議「' + escapeHtml(res.layoutHint) + '」。</div></div>';
         ensureRefOption($("palette"));
         $("palette").value = REF_KEY; $("customPaletteWrap").style.display = "none";
         if ((options.layouts || []).some(l => l.key === res.layoutHint)) $("layout").value = res.layoutHint;
-        refreshDescription(true); open("secImage");
+        prefillChat(true); open("secImage");
       }).catch(err => { $("analyzeBtn").disabled = false; setStatus("analyzeStatus", err.message, true); });
   }
   function ensureRefOption(sel) { if (!Array.from(sel.options).some(o => o.value === REF_KEY)) sel.insertAdjacentHTML("afterbegin", '<option value="' + REF_KEY + '">' + REF_KEY + '</option>'); }
@@ -575,7 +590,7 @@
       $("genCopyBtn").disabled = false; setStatus("copyStatus", "點一版當這次的選定文案（需求單會用到）。", false);
       copyResult = result; selectedCopyIndex = -1; renderCards();
       copyScene = result.scene || "";
-      refreshDescription(false); open("secImage");
+      prefillChat(false); open("secImage");
     }).catch(err => { $("genCopyBtn").disabled = false; setStatus("copyStatus", err.message, true); });
   }
   function renderCards() {
@@ -591,80 +606,95 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(legacy); else legacy();
   }
 
-  // ---------- ③ 生圖 ----------
-  function onProductModeChange() {
-    document.querySelectorAll("#productModeGroup label").forEach(l => l.classList.toggle("on", l.querySelector("input").checked));
+  // ---------- ③ 生圖對話 ----------
+  function onGenModeChange() {
+    const bg = $("genMode").value === "background";
+    $("genModeHint").textContent = bg
+      ? "模型只畫空背景，第四步再疊真實產品圖與正確標題。適合要精準包裝文字、或要自己排版的時候。"
+      : "模型直接產出完整廣告稿，會把第四步的主標／副標／角標畫進圖裡，並忠實重現你附的產品圖。像 ChatGPT 那樣。";
   }
   function onPaletteChange() { $("customPaletteWrap").style.display = $("palette").value === "自訂" ? "block" : "none"; }
 
-  // 用參考圖分析＋文案情境，請模型寫一段中文背景描述。force=true 表示參考圖剛分析完，一定覆寫。
-  function refreshDescription(force) {
+  // 依參考圖分析＋文案情境，請模型寫第一句中文；業務手改過就不覆寫（除非參考圖剛分析完）
+  function prefillChat(force) {
+    if (chat.responseId) return;                       // 對話進行中不要動
     if (!refAnalysis && !copyScene) return;
-    if (!force && descTouched && $("bgDesc").value.trim()) { $("bgDescHint").textContent = "文案已產生新的情境，但你改過描述，所以沒有覆寫。想重寫可清空描述再生成一次文案。"; return; }
-    $("bgDescHint").textContent = "整理中文背景描述中…";
+    if (!force && chatTouched && $("chatText").value.trim()) return;
     run("describeBackgroundZh")({ refAnalysis: refAnalysis, copyScene: copyScene, product: $("product").value.trim() })
-      .then(res => {
-        if (res.zh) { $("bgDesc").value = res.zh; descTouched = false; }
-        $("bgDescHint").textContent = refAnalysis ? "已依參考圖寫好。不對的地方直接改中文。" : "已依文案情境寫好。不對的地方直接改中文。";
-        updateReviseState();
-      })
-      .catch(err => { $("bgDescHint").textContent = "描述整理失敗：" + err.message; });
+      .then(res => { if (res.zh && !chat.responseId) { $("chatText").value = res.zh; chatTouched = false; } })
+      .catch(() => {});
   }
-  function updateReviseState() {
-    const changed = currentImageBase64 && $("bgDesc").value.trim() && $("bgDesc").value.trim() !== lastGeneratedZh;
-    $("reviseBtn").disabled = !changed;
-    $("reviseBtn").textContent = changed ? "微調上一張（只改我改的地方）" : "微調上一張";
+  $("chatText").addEventListener("input", () => { chatTouched = true; });
+
+  function pushBubble(kind, html) {
+    const el = document.createElement("div"); el.className = "bubble " + kind; el.innerHTML = html;
+    $("chatLog").appendChild(el); el.scrollIntoView({ block: "nearest" }); return el;
   }
 
-  function showImageResult(result, msg) {
-    currentImageBase64 = result.base64;
-    const dataUrl = "data:image/png;base64," + result.base64;
-    $("imageResult").innerHTML = '<img src="' + dataUrl + '"><div class="actions"><a href="' + dataUrl + '" download="ai-background.png">下載背景</a><button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div><div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
-    $("promptEn").value = result.finalPrompt || "";
-    setStatus("imageStatus", msg, false);
-    lastGeneratedZh = $("bgDesc").value.trim(); updateReviseState();
-    updateComposeHint(); open("secCompose"); startCompose();
-  }
-
-  function generateImage() {
-    const zh = $("bgDesc").value.trim();
-    if (!zh) { setStatus("imageStatus", "請先寫「這張背景要長什麼樣」，或先分析參考圖／生成文案讓它自動填。", true); return; }
-    const draw = productMode() === "draw", sendRefs = $("sendRefs").checked;
-    if (refImages.length && !refAnalysis && $("palette").value !== "自訂") {
-      setStatus("imageStatus", "提醒：參考圖還沒分析（或分析已作廢），這次用「" + $("palette").value + "」配色。想照參考圖就先回第一步按分析。", false);
+  function sendChat() {
+    const text = $("chatText").value.trim();
+    const firstTurn = !chat.responseId;
+    if (!text) { setStatus("imageStatus", firstTurn ? "先用中文說這張圖要長什麼樣。" : "要改什麼？用中文說。", true); return; }
+    if (firstTurn && refImages.length && !refAnalysis) {
+      setStatus("imageStatus", "提醒：參考圖還沒分析。仍會把圖附給模型，但先分析會更準。", false);
     }
-    const productImages = draw ? prodImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })) : [];
-    const referenceImages = sendRefs ? refImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })) : [];
-    $("genImageBtn").disabled = true; $("reviseBtn").disabled = true; $("imageResult").innerHTML = ""; currentDriveUrl = "";
-    setStatus("imageStatus", "生成背景中…約 15～40 秒", false);
-    run("generateImage")({
-      descriptionZh: zh, palette: $("palette").value, customPalette: $("customPalette").value.trim(),
-      layout: $("layout").value, ratio: $("ratio").value || "9:16", refAnalysis: refAnalysis,
-      productImages: productImages, referenceImages: referenceImages
-    }).then(result => {
-      $("genImageBtn").disabled = false;
-      currentImageMode = draw && productImages.length ? "draw" : "background";
-      let msg = currentImageMode === "draw"
-        ? "⚠ AI 已把產品畫進畫面。包裝文字是模型編的，只能當構圖參考，不能出稿。"
-        : "背景完成，已自動進入第四步。不滿意就直接改上面的中文描述，再按「微調上一張」。";
-      if (sendRefs) msg += "\n⚠ 這次附了參考圖本身，畫面裡若出現像參考圖的產品或文字，那是模型照抄的，不能用。";
-      $("overlayProducts").checked = currentImageMode !== "draw";
-      showImageResult(result, msg);
-    }).catch(err => { $("genImageBtn").disabled = false; updateReviseState(); setStatus("imageStatus", err.message, true); });
-  }
+    const mode = $("genMode").value;
+    const payload = {
+      text: text, mode: mode, ratio: $("ratio").value || "9:16", quality: $("quality").value,
+      previousResponseId: chat.responseId || "",
+      productImages: firstTurn ? prodImages.map(im => ({ mime: im.mime, base64: im.base64 })) : [],
+      referenceImages: firstTurn && $("sendRefs").checked ? refImages.map(im => ({ mime: im.mime, base64: im.base64 })) : [],
+      refAnalysis: firstTurn ? refAnalysis : null,
+      product: $("product").value.trim(), productInfo: ctx ? ctx.productInfo : null,
+      headline: $("headline").value.trim(), subline: $("subline").value.trim(), badge: $("badge").value.trim(),
+      layout: $("layout").value
+    };
+    pushBubble("user", escapeHtml(text));
+    $("chatText").value = "";
+    $("sendBtn").disabled = true; $("resetChatBtn").disabled = true;
+    const waiting = pushBubble("ai", "產圖中…約 30～90 秒" + (payload.quality === "high" ? "（精細品質較久）" : ""));
+    setStatus("imageStatus", "", false);
 
-  function reviseBackground() {
-    const zh = $("bgDesc").value.trim();
-    if (!currentImageBase64) { setStatus("imageStatus", "還沒有背景可以微調，先按「生成背景」。", true); return; }
-    if (zh === lastGeneratedZh) { setStatus("imageStatus", "描述沒有改動。先改「這張背景要長什麼樣」，再按微調。", true); return; }
-    $("reviseBtn").disabled = true; $("genImageBtn").disabled = true; currentDriveUrl = "";
-    setStatus("imageStatus", "比對你改了什麼、微調中…約 20～40 秒", false);
-    run("reviseBackground")({ previousBase64: currentImageBase64, previousZh: lastGeneratedZh, newZh: zh, ratio: $("ratio").value || "9:16", keepSurfaceEmpty: productMode() !== "draw" })
-      .then(result => {
-        $("genImageBtn").disabled = false;
-        showImageResult(result, "已微調。這次送出的指令：" + result.directiveEn + "\n還要改就再改描述、再按微調；想從頭來就按「生成背景」。");
-      })
-      .catch(err => { $("genImageBtn").disabled = false; updateReviseState(); setStatus("imageStatus", err.message, true); });
+    run("chatImage")(payload).then(res => {
+      $("sendBtn").disabled = false; $("resetChatBtn").disabled = false;
+      chat.responseId = res.responseId;
+      chat.turns.push({ text: text, base64: res.base64, reply: res.text });
+      const dataUrl = "data:image/png;base64," + res.base64;
+      waiting.innerHTML =
+        (res.text ? '<div>' + escapeHtml(res.text) + '</div>' : '') +
+        '<img src="' + dataUrl + '" title="點一下設為第四步要用的圖" onclick="useImage(this, \'' + chat.turns.length + '\')">' +
+        '<div class="row-actions"><a class="small-btn" style="margin:0" href="' + dataUrl + '" download="ai-' + chat.turns.length + '.png">下載</a>' +
+        '<button class="small-btn" style="margin:0" onclick="saveToDrive(chatTurnBase64(' + chat.turns.length + '), \'ai-visual\', \'imageStatus\', true)">存到雲端硬碟</button></div>' +
+        '<div class="meta">第 ' + chat.turns.length + ' 版・' + escapeHtml(res.model) + '・' + payload.quality + '</div>';
+      $("promptEn").value = res.revisedPrompt || "";
+      document.querySelectorAll("#chatLog img").forEach(im => im.classList.remove("current"));
+      waiting.querySelector("img").classList.add("current");
+      currentImageBase64 = res.base64; currentImageMode = mode === "background" ? "background" : "draw"; currentDriveUrl = "";
+      // 完整稿：文字與產品已在圖裡，第四步預設不再疊；只畫背景：預設都疊
+      $("overlayText").checked = mode === "background";
+      $("overlayProducts").checked = mode === "background" && prodImages.length > 0;
+      updateComposeHint(); open("secCompose"); startCompose();
+      setStatus("imageStatus", "不滿意就繼續打字修改，模型會在這張的基礎上改。滿意就到第四步。", false);
+    }).catch(err => {
+      $("sendBtn").disabled = false; $("resetChatBtn").disabled = !chat.responseId;
+      waiting.innerHTML = '<span class="warn">' + escapeHtml(err.message) + '</span>';
+      $("chatText").value = text;
+    });
+  }
+  function chatTurnBase64(n) { const t = chat.turns[n - 1]; return t ? t.base64 : ""; }
+  function useImage(imgEl, n) {
+    const t = chat.turns[parseInt(n, 10) - 1]; if (!t) return;
+    document.querySelectorAll("#chatLog img").forEach(im => im.classList.remove("current"));
+    imgEl.classList.add("current");
+    currentImageBase64 = t.base64; currentDriveUrl = "";
+    open("secCompose"); startCompose();
+  }
+  function resetChat() {
+    chat = { responseId: "", turns: [] };
+    $("chatLog").innerHTML = ""; $("promptEn").value = "";
+    $("resetChatBtn").disabled = true; chatTouched = false;
+    prefillChat(true);
+    setStatus("imageStatus", "已重新開始。第一句會重新附上參考圖與產品圖。", false);
   }
 
   function saveToDrive(base64, prefix, statusId, remember) {
@@ -687,7 +717,7 @@
     const parts = [];
     parts.push(prodImages.length ? "可疊 " + prodImages.length + " 張產品去背圖" : "沒有產品圖（第一步加入）");
     parts.push(logoDataUrl ? "logo 就緒" : "沒有 logo（放進雲端硬碟「橘子工坊品牌素材」即可）");
-    if (currentImageMode === "draw") parts.push("背景裡已有 AI 畫的產品，預設不再疊");
+    if (currentImageMode === "draw") parts.push("這張是完整稿，文字與產品已在圖裡，預設不再疊");
     $("composeHint").textContent = parts.join("　｜　");
   }
   function loadImage(src) { return new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error("圖片載入失敗")); img.src = src; }); }
@@ -733,7 +763,7 @@
   }
 
   async function startCompose() {
-    if (!currentImageBase64) { setStatus("composeStatus", "請先在第三步生成背景。", true); return; }
+    if (!currentImageBase64) { setStatus("composeStatus", "請先在第三步產一張圖。", true); return; }
     $("composeBtn").disabled = true; setStatus("composeStatus", "載入中…", false);
     try {
       try { await document.fonts.load("900 40px 'Noto Sans TC'"); await document.fonts.load("700 40px 'Noto Sans TC'"); } catch (e) {}
@@ -788,7 +818,7 @@
     }
 
     // 標題區塊：主標＋副標，以中心點定位
-    const headline = $("headline").value.trim(), subline = $("subline").value.trim();
+    const headline = $("overlayText").checked ? $("headline").value.trim() : "", subline = $("overlayText").checked ? $("subline").value.trim() : "";
     if (headline || subline) {
       const maxW = W * 0.9;
       const s1 = headline ? fitFont(g, headline, maxW, W * 0.085 * textScale, "900") : 0;
@@ -803,7 +833,7 @@
     }
 
     // 角標
-    const badge = $("badge").value.trim();
+    const badge = $("overlayText").checked ? $("badge").value.trim() : "";
     if (badge) {
       const size = Math.round(W * 0.034 * textScale);
       g.font = "700 " + size + "px " + FONT;
@@ -872,10 +902,9 @@
       lines.push("", picked ? "選定文案（" + $("tone").value + "）：\n" + picked : "文案候選（" + $("tone").value + "）：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((t, i) => "版本" + (i + 1) + "：\n" + t).join("\n\n"));
     }
     lines.push("", "視覺方向：");
-    lines.push("・主色調：" + $("palette").value + ($("palette").value === "自訂" && $("customPalette").value ? "（" + $("customPalette").value + "）" : ""));
-    lines.push("・留白版面：" + $("layout").value + "　比例：" + $("ratio").value);
+    lines.push("・主色調：" + $("palette").value + "　比例：" + $("ratio").value + "　模式：" + ($("genMode").value === "background" ? "只畫背景＋程式疊字" : "完整稿"));
+    if (chat.turns.length) lines.push("・生圖對話：\n" + chat.turns.map((t, i) => "  " + (i + 1) + ". " + t.text).join("\n"));
     if (refAnalysis) lines.push("・參考圖重點：" + refAnalysis.summaryZh + (refAnalysis.cautionsZh ? "\n・注意：" + refAnalysis.cautionsZh : ""));
-    if ($("bgDesc").value.trim()) lines.push("・背景描述：" + $("bgDesc").value.trim());
     if ($("composeNote").value.trim()) lines.push("・給設計師的備註：" + $("composeNote").value.trim());
     if ($("refNote").value.trim()) lines.push("・業務補充：" + $("refNote").value.trim());
     lines.push("・參考圖 " + refImages.length + " 張、產品去背圖 " + prodImages.length + " 張（另附）");
@@ -887,6 +916,6 @@
   function copyBrief(btn) { writeClipboard($("briefBox").textContent, () => { btn.textContent = "已複製 ✓"; setTimeout(() => btn.textContent = "複製需求單", 2200); }); }
 
   // ---------- 啟動 ----------
-  loadFormOptions(); loadContext(); loadAssets();
+  loadFormOptions(); loadContext(); loadAssets(); onGenModeChange();
   setInterval(() => loadContext(true), 4000);
 </script>

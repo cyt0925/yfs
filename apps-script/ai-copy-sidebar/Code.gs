@@ -10,9 +10,10 @@
  *          時事先提切角再寫文案（兩步驟）、範例與反例加量。
  *  - 生圖：Prompt 改成「程式填空模板」，主色調、視覺風格、版面由設計師寫死的英文描述組成，
  *          模型只負責寫 1～2 句場景道具，不能改顏色與版面。
- *  - 參考圖：直接在側邊欄拖放、選檔、Ctrl+V 貼上或貼網址，不用先整理雲端硬碟；
- *            可先讓 AI 分析參考圖的風格與配色，再用同樣風格生成底圖並換上自家產品。
- *  - 產品：去背產品圖同樣直接上傳，走 /v1/images/edits 一起送進模型；雲端硬碟只是可選的常用素材庫。
+ *  - 參考圖：直接在側邊欄拖放、選檔、Ctrl+V 貼上或貼網址，不用先整理雲端硬碟。
+ *  - 生圖：走 Responses API 的 image_generation 工具，也就是 ChatGPT 生圖背後同一套機制：
+ *          GPT 先看懂中文與圖片，自己寫指令、呼叫生圖、記住上一輪，之後用中文繼續改。
+ *          input_fidelity=high 用來保住產品包裝與 logo 的細節。
  *  - 合成：側邊欄用 canvas 把 AI 底圖 + 真實去背產品 PNG + 中文標題 + 角標 + logo 疊成草稿，
  *          數字與 logo 保證正確，給設計師接手微調。
  *
@@ -34,8 +35,7 @@ const API_KEY_PROP = "OPENAI_API_KEY";
 
 // 依序嘗試，哪個模型可用就用哪個。三行文案 token 極少，直接用大模型，品質差很多。
 const TEXT_MODEL_CANDIDATES = ["gpt-4.1", "gpt-4o", "gpt-4.1-mini"];
-const IMAGE_MODEL = "gpt-image-1";
-const IMAGE_QUALITY = "medium"; // low / medium / high，high 一張成本約 3～4 倍
+const IMAGE_QUALITY = "medium"; // 預設生圖品質 low / medium / high，high 一張成本約 3～4 倍
 
 const LABELS = { PRODUCT: "品類", AD_NAME: "廣告名稱", COPY: "文案", BUDGET: "預算分配" };
 const PRODUCT_SHEET = "產品資料";
@@ -48,7 +48,8 @@ const DRIVE_FOLDERS = {
   OUTPUT: "橘子工坊生圖"            // 產出存這裡（存檔時自動建立）
 };
 const VISION_MODEL_CANDIDATES = ["gpt-4.1", "gpt-4o"];
-const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 單張上限（側邊欄已先縮圖）
+// 生圖對話用的模型：GPT 負責看圖、寫指令、呼叫 image_generation 工具
+const CHAT_IMAGE_MODELS = ["gpt-5", "gpt-4.1"];
 
 // ============================================================
 // 品牌規範（文案）
@@ -177,19 +178,8 @@ const PALETTES = [
   { key: "自訂", en: "", textColor: "#FFFFFF", textStroke: "#333333", badgeColor: "#D9520A" }
 ];
 
-/** 視覺風格：固定英文描述，模型不能改 */
-const VISUAL_STYLES = [
-  { key: "清新自然光", en: "Style: bright natural daylight photography, soft diffused window light from the upper left, gentle shadows, realistic materials, airy and clean." },
-  { key: "高彩度促銷", en: "Style: high-saturation e-commerce promotional graphic, bold flat color blocks, subtle radial glow behind the product zone, energetic but uncluttered." },
-  { key: "情境敘事", en: "Style: lifestyle editorial photography of a real Taiwanese home (laundry corner, balcony, kitchen), warm and relatable, shallow depth of field, no people faces." },
-  { key: "極簡棚拍", en: "Style: minimal studio product photography, seamless paper backdrop, single soft key light, one clean floor-to-wall horizon line, no props except one or two." },
-  { key: "節慶時事", en: "Style: festive seasonal key visual, celebratory props (streamers, confetti, ribbons) kept to the edges, sparkle highlights, still clean in the center." },
-  { key: "3D 立體插畫", en: "Style: soft 3D rendered illustration, rounded shapes, matte pastel materials, gentle ambient occlusion, toy-like friendly look." }
-];
-
 /**
- * 版面：同時用在 Prompt 文字與 canvas 合成。
- * zones 為畫面比例 (0~1)：headline 標題區、products 產品區、badge 角標位置。
+ * 留白版面：en 給「只畫背景」模式當指令，zones 給第四步 canvas 合成用（畫面比例 0~1）。
  */
 const LAYOUTS = [
   {
@@ -211,20 +201,6 @@ const LAYOUTS = [
 
 const RATIOS = ["9:16", "1:1", "16:9", "4:5"];
 const SIZE_MAP = { "9:16": "1024x1536", "4:5": "1024x1536", "16:9": "1536x1024", "1:1": "1024x1024" };
-
-/** 所有生圖共用的硬規則 */
-const IMAGE_HARD_RULES = [
-  "This is a BACKGROUND PLATE for an e-commerce ad. Real product photos and Chinese headline text will be composited on top later.",
-  "ABSOLUTELY NO text, letters, numbers, logos, watermarks, price tags, labels or signage anywhere in the image.",
-  "Do NOT invent or draw any product bottle, box, pouch or packaging unless product reference images are provided; if they are provided, reproduce them faithfully and place them ONLY inside the product zone described in the layout.",
-  "Single soft light direction, no harsh multi-source shadows, so cut-out products composite naturally.",
-  "Keep the reserved text areas genuinely empty and low-contrast: no busy patterns, no small objects, no strong highlights there.",
-  "The background is an EMPTY STAGE with no hero object. Absolutely no hanging shirt or garment in the center, no washing machine, no suitcase or luggage, no appliance, no furniture other than the surface itself. Props are small, sit at the edges, and are limited to laundry context: a folded towel, a small stack of folded clothes, a laundry basket, a small green plant, water droplets, bubbles, citrus slices. NO shoes, hats, bags, food, drinks, electronics or toys.",
-  "Photorealistic quality, sharp focus, no blur on the main surfaces, no people faces, no hands."
-].join(" ");
-
-/** 沒有交產品圖給模型時再加這句：桌面淨空，之後用真實去背圖疊上 */
-const NO_PRODUCT_RULE = "There are NO products in this image. The flat surface described in the composition stays completely empty in its center; real product photos will be placed there afterwards.";
 
 // ============================================================
 // 選單
@@ -580,24 +556,6 @@ ${trendBlock}
 const REF_KEY = "跟參考圖一樣";
 
 /**
- * 組最終英文 Prompt：主色調（程式寫死或參考圖背景色）→ 留白版面 → 業務中文描述翻成的英文 → 硬規則。
- * sceneStyleEn 來自 translateBackgroundZh，已含風格、光線、材質、邊緣小道具。
- */
-function buildImagePrompt(input, sceneStyleEn) {
-  const ref = input.refAnalysis || null;
-  const palette = PALETTES.find(p => p.key === input.palette) || PALETTES[0];
-  let paletteEn;
-  if (input.palette === REF_KEY && ref && (ref.backgroundPaletteEn || ref.paletteEn)) paletteEn = "Dominant color palette of the BACKGROUND (matched from the reference image's background, not its product or text): " + (ref.backgroundPaletteEn || ref.paletteEn);
-  else if (palette.key === "自訂") paletteEn = "Dominant color palette: " + (input.customPalette || "designer's choice") + ".";
-  else paletteEn = palette.en;
-  const layout = LAYOUTS.find(l => l.key === input.layout) || LAYOUTS[0];
-  const ratio = input.ratio || "9:16";
-  const body = sceneStyleEn || (VISUAL_STYLES[0].en + " Scene: a clean home laundry corner, a folded white towel at the left edge.");
-
-  return [paletteEn, layout.en, body, "Aspect ratio " + ratio + ".", IMAGE_HARD_RULES].join("\n\n");
-}
-
-/**
  * 側邊欄呼叫：把參考圖分析與文案情境，整理成一段業務看得懂、可以直接改的中文背景描述。
  */
 function describeBackgroundZh(input) {
@@ -620,25 +578,6 @@ ${parts.join("\n\n")}
 只回傳 JSON。`;
   const schema = { type: "object", properties: { zh: { type: "string" } }, required: ["zh"], additionalProperties: false };
   return callChatJson(prompt, "background_description", schema);
-}
-
-/** 把業務改好的中文背景描述翻成給生圖模型的英文（只翻背景，過濾掉不該出現的東西） */
-function translateBackgroundZh(zh) {
-  zh = String(zh || "").trim();
-  if (!zh) return { en: "" };
-  const prompt = `把下面這段「背景圖」的中文描述翻成給圖像生成模型的英文，2～4 句。
-規則：
-- 忠實翻譯環境、顏色、光線、材質、風格、邊緣小道具與留空位置。中文有提到顏色就保留。
-- 若中文提到產品、包裝、文字、logo、價格，直接省略不翻（背景圖不畫這些）。
-- 若中文提到掛著的衣服、洗衣機、行李箱、家電等主體物件，改寫成「留空」而不是畫出來。
-- 不要自己加新的元素。
-
-中文描述：
-${zh}
-
-只回傳 JSON。`;
-  const schema = { type: "object", properties: { en: { type: "string" } }, required: ["en"], additionalProperties: false };
-  return callChatJson(prompt, "background_translation", schema);
 }
 
 /** 側邊欄呼叫：生成三版文案草稿 + 場景 + 組好的生圖 Prompt */
@@ -715,231 +654,143 @@ function getFileBase64(fileId) {
 // 生圖
 // ============================================================
 
-function appendBytes(dst, src) {
-  const CHUNK = 20000;
-  for (let i = 0; i < src.length; i += CHUNK) {
-    Array.prototype.push.apply(dst, src.slice(i, i + CHUNK));
+/**
+ * 第一輪對話的開場指令。之後的輪次只送業務的中文，靠 previous_response_id 延續。
+ * mode: "full" 完整稿（含標題文字，像 ChatGPT 直接生一張廣告）／ "background" 只畫背景（之後用程式疊真實文字與產品）
+ */
+function buildChatInstruction(input) {
+  const ratio = input.ratio || "9:16";
+  const lines = [];
+  lines.push(`你是「${BRAND.name}」的資深電商視覺設計師，投放平台是 ${BRAND.platform}，受眾是 ${BRAND.audience}`);
+  lines.push(`請直接使用圖片生成工具產出一張 ${ratio} 的圖，不要先反問，不確定的地方自己做合理判斷。之後我會用中文請你修改，每次修改只動我提到的部分，其他完全保持。`);
+  lines.push("");
+  if (input.mode === "background") {
+    lines.push("【這次要畫的是「背景底圖」】");
+    lines.push("- 不要畫任何產品、包裝、文字、logo、價格。真實產品照與中文標題之後會由程式疊上去。");
+    lines.push("- 背景是空舞台：不能有掛著的衣服、洗衣機、行李箱、家電等主體物件。小道具只放邊緣，限洗衣情境（毛巾、摺好的衣物、籐籃、小綠植、水珠、泡泡、橘子切片）。");
+    const layout = LAYOUTS.find(l => l.key === input.layout) || LAYOUTS[0];
+    lines.push("- 留白配置（英文原文）：" + layout.en);
+    lines.push("- 單一柔和光源，方便之後合成去背產品。");
+  } else {
+    lines.push("【這次要畫的是「完整的廣告主視覺」】");
+    lines.push("- 畫面要有電商促銷圖的完成度：主視覺、光影、材質、質感、氛圍，像專業設計師做的成品。");
+    if (input.headline || input.subline || input.badge) {
+      lines.push("- 圖上的文字只能有下面這幾組，繁體中文，字要大、正確、清楚，不可以出現任何其他文字：");
+      if (input.headline) lines.push("  主標：「" + input.headline + "」");
+      if (input.subline) lines.push("  副標：「" + input.subline + "」");
+      if (input.badge) lines.push("  角標：「" + input.badge + "」");
+    } else {
+      lines.push("- 圖上不要出現任何文字（標題之後由程式疊上）。");
+    }
+    if (input.productImages && input.productImages.length) {
+      lines.push("- 我會附上真實產品的去背圖：必須忠實重現它的形狀、配色、包裝版面與包裝上的文字，不可以重新設計或改字。包裝上看不清的小字寧可留白或保持模糊，不要自己編字。");
+    }
   }
+  lines.push("");
+  if (input.referenceImages && input.referenceImages.length) {
+    lines.push("【參考圖的用法】只借它的配色、氛圍、光線、構圖密度。不要抄它的文字、logo、價格、他牌產品；若參考圖裡有他牌 logo 或名人角色，一律排除。");
+  }
+  if (input.refAnalysis) {
+    lines.push("【先前對參考圖的分析】" + input.refAnalysis.summaryZh + (input.refAnalysis.backgroundPaletteEn ? "　背景色：" + input.refAnalysis.backgroundPaletteEn : ""));
+  }
+  const productInfo = input.productInfo;
+  if (input.product) lines.push("【商品】" + input.product + (productInfo ? "。賣點：" + productInfo.sellingPoints : ""));
+  lines.push("【品牌事實，不可違反】" + BRAND.facts.slice(0, 3).join("；"));
+  lines.push("【禁止】療效宣稱字眼、他牌 logo、真人臉部。");
+  return lines.join("\n");
 }
 
-/** 手動組 multipart/form-data，因為 UrlFetchApp 的物件 payload 不支援同名多檔 image[] */
-function buildMultipart(fields, files) {
-  const boundary = "----OrangeHouseBoundary" + Utilities.getUuid().replace(/-/g, "");
-  const enc = s => Utilities.newBlob(s).getBytes();
-  const out = [];
-  Object.keys(fields).forEach(k => {
-    appendBytes(out, enc("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + k + "\"\r\n\r\n" + fields[k] + "\r\n"));
-  });
-  files.forEach(f => {
-    appendBytes(out, enc("--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + f.field + "\"; filename=\"" + f.name + "\"\r\nContent-Type: " + f.mime + "\r\n\r\n"));
-    appendBytes(out, f.bytes);
-    appendBytes(out, enc("\r\n"));
-  });
-  appendBytes(out, enc("--" + boundary + "--\r\n"));
-  return { contentType: "multipart/form-data; boundary=" + boundary, bytes: out };
-}
-
-function handleImageError(code, body) {
+function extractResponsesError(code, body) {
   if (code === 401) throw new Error("API Key 無效或已被刪除。請重新執行「設定 OpenAI API Key」。");
   if (body.indexOf("must be verified") !== -1 || (code === 403 && body.indexOf("organization") !== -1)) {
     throw new Error("這個 OpenAI 組織尚未完成生圖功能所需的身份驗證。\n請到 platform.openai.com/settings/organization/general 完成 Organization Verification 後再試。");
   }
-  if (code === 429 && body.indexOf("insufficient_quota") !== -1) {
-    throw new Error("OpenAI 帳戶額度不足。請到 platform.openai.com → Settings → Billing 儲值。");
-  }
-  if (code === 429 || code >= 500) throw new Error("生圖服務暫時忙線或已達速率上限，請稍候再試一次。");
-  if (body.indexOf("safety") !== -1 || body.indexOf("moderation") !== -1) {
-    throw new Error("Prompt 被安全系統擋下。請把 Prompt 裡可能敏感的字眼改掉再試。");
-  }
-  throw new Error("生圖失敗（" + code + "）：\n" + body.substring(0, 300));
-}
-
-function decodeUploads(list, label) {
-  return (list || []).map((im, i) => {
-    if (!im || !im.base64) throw new Error(label + "第 " + (i + 1) + " 張圖片資料不完整，請移除後重新加入。");
-    const bytes = Utilities.base64Decode(im.base64);
-    if (bytes.length > MAX_UPLOAD_BYTES) throw new Error(label + "「" + (im.name || i + 1) + "」超過 6MB，請換小一點的圖。");
-    const mime = im.mime || "image/png";
-    const ext = mime === "image/jpeg" ? "jpg" : (mime === "image/webp" ? "webp" : "png");
-    return { field: "image[]", name: label + (i + 1) + "." + ext, mime: mime, bytes: bytes };
-  });
+  if (code === 429 && body.indexOf("insufficient_quota") !== -1) throw new Error("OpenAI 帳戶額度不足。請到 platform.openai.com → Settings → Billing 儲值。");
+  if (code === 429 || code >= 500) throw new Error("服務暫時忙線或已達速率上限，請稍候再試一次。");
+  if (body.indexOf("safety") !== -1 || body.indexOf("moderation") !== -1) throw new Error("內容被安全系統擋下。請把可能敏感的字眼改掉再試。");
+  throw new Error("API 錯誤（" + code + "）：\n" + body.substring(0, 300));
 }
 
 /**
- * 側邊欄呼叫：產生圖片，回傳 base64。
- * input.productImages / input.referenceImages 為 [{name, mime, base64}]，由側邊欄直接上傳（已縮圖）。
- * 有任何一張 → /v1/images/edits 帶參考圖；否則 → /v1/images/generations 純文字。
+ * 側邊欄呼叫：生圖對話。第一輪帶開場指令與圖片；之後只帶業務的中文與 previousResponseId。
+ * input: { text, mode, ratio, quality, previousResponseId, productImages, referenceImages, refAnalysis,
+ *          product, productInfo, headline, subline, badge, layout }
+ * 回傳: { responseId, base64, text, revisedPrompt, model }
  */
-function generateImage(input) {
+function chatImage(input) {
   const apiKey = requireApiKey();
-  if (!input.descriptionZh && !input.imagePrompt) throw new Error("請先在「這張背景要長什麼樣」寫一段描述（分析參考圖或生成文案後會自動填）。");
   const size = SIZE_MAP[input.ratio] || "1024x1024";
-  if (!input.imagePrompt) {
-    const en = translateBackgroundZh(input.descriptionZh).en;
-    input.imagePrompt = buildImagePrompt(input, en);
-  }
+  const quality = ["low", "medium", "high"].indexOf(input.quality) !== -1 ? input.quality : IMAGE_QUALITY;
+  const firstTurn = !input.previousResponseId;
+  const userText = String(input.text || "").trim();
+  if (!userText && firstTurn) throw new Error("請先用中文寫這張圖要長什麼樣。");
 
-  const productFiles = decodeUploads(input.productImages, "product");
-  const referenceFiles = decodeUploads(input.referenceImages, "reference");
-  const useEdits = productFiles.length + referenceFiles.length > 0;
-
-  let prompt = input.imagePrompt;
-  if (!productFiles.length) prompt = prompt + "\n\n" + NO_PRODUCT_RULE;
-  if (useEdits) {
-    const notes = [];
-    if (productFiles.length) {
-      notes.push("The first " + productFiles.length + " attached image(s) are the REAL PRODUCTS (cut-out, transparent background). Reproduce their shape, colors and label design as faithfully as possible, do not redesign them, and place them standing naturally ONLY inside the product zone described in the layout, with correct perspective and a soft contact shadow.");
-    }
-    if (referenceFiles.length) {
-      notes.push("The last " + referenceFiles.length + " attached image(s) are REFERENCE images for mood, color and lighting ONLY. Do NOT copy their composition, their density, their text, numbers, logos, badges or any products in them. The composition rules below override anything seen in the reference images.");
-    }
-    prompt = notes.join(" ") + "\n\n" + prompt;
-  }
-
-  let res;
-  if (useEdits) {
-    const mp = buildMultipart({ model: IMAGE_MODEL, prompt: prompt, size: size, quality: IMAGE_QUALITY, n: "1" }, productFiles.concat(referenceFiles));
-    res = UrlFetchApp.fetch("https://api.openai.com/v1/images/edits", {
-      method: "post",
-      contentType: mp.contentType,
-      headers: { Authorization: "Bearer " + apiKey },
-      payload: mp.bytes,
-      muteHttpExceptions: true
+  const content = [];
+  if (firstTurn) {
+    content.push({ type: "input_text", text: buildChatInstruction(input) + "\n\n【業務的要求】\n" + (userText || "依上面的設定產出一張。") });
+    (input.productImages || []).forEach((im, i) => {
+      content.push({ type: "input_text", text: "【真實產品去背圖 " + (i + 1) + "】" });
+      content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/png") + ";base64," + im.base64, detail: "high" });
+    });
+    (input.referenceImages || []).forEach((im, i) => {
+      content.push({ type: "input_text", text: "【參考圖 " + (i + 1) + "，只借氛圍】" });
+      content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/jpeg") + ";base64," + im.base64, detail: "low" });
     });
   } else {
-    res = UrlFetchApp.fetch("https://api.openai.com/v1/images/generations", {
-      method: "post",
-      contentType: "application/json",
-      headers: { Authorization: "Bearer " + apiKey },
-      payload: JSON.stringify({ model: IMAGE_MODEL, prompt: prompt, size: size, quality: IMAGE_QUALITY, n: 1 }),
-      muteHttpExceptions: true
-    });
+    content.push({ type: "input_text", text: userText + "\n（只改我提到的部分，其他保持與上一張一致。直接產出新圖。）" });
   }
 
-  const code = res.getResponseCode();
-  const body = res.getContentText();
-  if (code !== 200) handleImageError(code, body);
+  const tool = { type: "image_generation", size: size, quality: quality, output_format: "png" };
+  if (firstTurn && input.productImages && input.productImages.length) tool.input_fidelity = "high";
+  else if (!firstTurn) tool.input_fidelity = "high";
 
-  const json = JSON.parse(body);
-  return { base64: json.data[0].b64_json, mode: useEdits ? "edits" : "generations", finalPrompt: prompt };
-}
-
-/**
- * 側邊欄呼叫：讓模型「看」參考圖，回傳中文摘要與英文的配色／風格／場景描述。
- * 對應你們的實際流程：先在網路找到想要的樣子 → 讓 AI 描述 → 用同樣風格生成並換上自家產品。
- */
-function analyzeReferences(input) {
-  const apiKey = requireApiKey();
-  const images = input.images || [];
-  if (!images.length) throw new Error("請先加入至少一張參考圖。");
-
-  const content = [{
-    type: "text",
-    text: `你是資深電商視覺設計師。以下是業務在網路上找到、想要「做成這種感覺」的參考圖${images.length > 1 ? "（共 " + images.length + " 張，請歸納共同點）" : ""}。
-${input.note ? "業務補充：" + input.note : ""}
-
-請分析並回傳 JSON：
-- summaryZh：用繁體中文 2～3 句，講這張圖的視覺重點（配色、氛圍、構圖、材質），並明確分開講「背景是什麼顏色、什麼環境」與「產品／文字是什麼顏色」，讓業務跟設計師能快速對齊。
-- paletteEn：英文，一句話描述「整張圖」的主色與輔色（可含近似 hex）。
-- backgroundPaletteEn：英文，一句話只描述「背景環境」的顏色（天空、牆面、桌面、遠景），刻意排除產品包裝、logo、標題文字、色塊的顏色。我們只會重畫背景，所以這一項最重要。例如參考圖整體是橘白，但背景是藍天白雲，就要寫藍天白雲。
-- styleEn：英文，1～2 句描述攝影／插畫風格、光線、材質、氛圍。不要提到圖中的文字、logo、價格或任何他牌產品。
-- sceneEn：英文，1～2 句只描述「背景環境」：地點、材質、季節感，以及放在邊緣的最多 2 個小道具。不能有主體物件（掛著的衣服、洗衣機、行李箱、家電）。不要寫顏色、不要寫文字、不要寫產品。
-- layoutHint：從這三個選一個最接近圖中留白配置的：「上標題．下產品」「左產品．右標題」「中央產品．上下標題」。
-- cautionsZh：繁體中文，若圖中有他牌 logo、名人、卡通角色等不能照抄的元素，一句話提醒；沒有就空字串。`
-  }];
-  images.forEach(im => {
-    content.push({ type: "image_url", image_url: { url: "data:" + (im.mime || "image/png") + ";base64," + im.base64, detail: "low" } });
-  });
-
-  const schema = {
-    type: "object",
-    properties: {
-      summaryZh: { type: "string" }, paletteEn: { type: "string" }, backgroundPaletteEn: { type: "string" }, styleEn: { type: "string" },
-      sceneEn: { type: "string" }, layoutHint: { type: "string" }, cautionsZh: { type: "string" }
-    },
-    required: ["summaryZh", "paletteEn", "backgroundPaletteEn", "styleEn", "sceneEn", "layoutHint", "cautionsZh"],
-    additionalProperties: false
+  const basePayload = {
+    input: [{ role: "user", content: content }],
+    tools: [tool],
+    tool_choice: { type: "image_generation" }
   };
-  const payload = {
-    messages: [{ role: "user", content: content }],
-    temperature: 0.4,
-    response_format: { type: "json_schema", json_schema: { name: "reference_analysis", strict: true, schema: schema } }
-  };
-  const options = {
-    method: "post", contentType: "application/json",
-    headers: { Authorization: "Bearer " + apiKey }, muteHttpExceptions: true
-  };
+  if (input.previousResponseId) basePayload.previous_response_id = input.previousResponseId;
 
   let lastError = "";
-  for (let i = 0; i < VISION_MODEL_CANDIDATES.length; i++) {
-    options.payload = JSON.stringify(Object.assign({ model: VISION_MODEL_CANDIDATES[i] }, payload));
-    const res = UrlFetchApp.fetch("https://api.openai.com/v1/chat/completions", options);
-    const code = res.getResponseCode();
-    const body = res.getContentText();
-    if (code === 200) return JSON.parse(JSON.parse(body).choices[0].message.content);
-    if (code === 401) throw new Error("API Key 無效或已被刪除。請重新執行「設定 OpenAI API Key」。");
-    if (code === 429 && body.indexOf("insufficient_quota") !== -1) throw new Error("OpenAI 帳戶額度不足，請到 Billing 儲值。");
-    lastError = "（" + code + "）" + body.substring(0, 200);
+  for (let i = 0; i < CHAT_IMAGE_MODELS.length; i++) {
+    const model = CHAT_IMAGE_MODELS[i];
+    let payload = Object.assign({ model: model }, basePayload);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = UrlFetchApp.fetch("https://api.openai.com/v1/responses", {
+        method: "post", contentType: "application/json",
+        headers: { Authorization: "Bearer " + apiKey },
+        payload: JSON.stringify(payload), muteHttpExceptions: true
+      });
+      const code = res.getResponseCode(), body = res.getContentText();
+      if (code === 200) {
+        const out = JSON.parse(body);
+        const imgCall = (out.output || []).find(o => o.type === "image_generation_call");
+        const msg = (out.output || []).find(o => o.type === "message");
+        const msgText = msg && msg.content ? msg.content.filter(c => c.type === "output_text").map(c => c.text).join("\n") : "";
+        if (!imgCall || !imgCall.result) {
+          throw new Error("模型這次沒有產圖，只回了文字：\n" + (msgText || "（無）") + "\n請把要求講得更具體，或直接說「請直接產圖」。");
+        }
+        return { responseId: out.id, base64: imgCall.result, text: msgText, revisedPrompt: imgCall.revised_prompt || "", model: model };
+      }
+      // tool_choice 不被接受時，拿掉再試一次
+      if (code === 400 && body.indexOf("tool_choice") !== -1 && payload.tool_choice) {
+        payload = Object.assign({}, payload); delete payload.tool_choice; continue;
+      }
+      if (code === 404 || (code === 400 && body.indexOf("model") !== -1 && (body.indexOf("does not exist") !== -1 || body.indexOf("not found") !== -1))) {
+        lastError = "模型 " + model + " 無法使用"; break;
+      }
+      if (code === 400 && body.indexOf("previous_response_id") !== -1) {
+        throw new Error("上一輪對話已失效（可能過期），請按「重新開始對話」。");
+      }
+      if ((code === 429 && body.indexOf("insufficient_quota") === -1) || code >= 500) {
+        lastError = "模型 " + model + " 暫時無法回應（" + code + "）";
+        if (attempt === 0) { Utilities.sleep(2500); continue; }
+        break;
+      }
+      extractResponsesError(code, body);
+    }
   }
-  throw new Error("參考圖分析失敗 " + lastError);
-}
-
-/** 側邊欄呼叫：貼網址時由伺服器端抓圖（瀏覽器跨網域抓不到），回傳 dataUrl */
-function fetchImageFromUrl(url) {
-  url = String(url || "").trim();
-  if (!/^https?:\/\//i.test(url)) throw new Error("網址要以 http:// 或 https:// 開頭。");
-  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { "User-Agent": "Mozilla/5.0" } });
-  if (res.getResponseCode() !== 200) throw new Error("抓不到這個網址（" + res.getResponseCode() + "）。有些網站擋機器人，改用右鍵另存圖片再拖進來。");
-  const blob = res.getBlob();
-  const mime = (blob.getContentType() || "").split(";")[0];
-  if (!/^image\/(png|jpeg|webp|gif)$/.test(mime)) throw new Error("這個網址不是圖片檔（" + mime + "）。請對圖片本身按右鍵「複製圖片網址」，或直接把圖拖進來。");
-  const bytes = blob.getBytes();
-  if (bytes.length > 15 * 1024 * 1024) throw new Error("圖片超過 15MB，請換小一點的。");
-  return { dataUrl: "data:" + mime + ";base64," + Utilities.base64Encode(bytes), mime: mime };
-}
-
-/**
- * 側邊欄呼叫：業務改了中文描述後，拿上一張背景當輸入，只改「改動的地方」，其他保持。
- * input: { previousBase64, previousZh, newZh, ratio, keepSurfaceEmpty }
- */
-function reviseBackground(input) {
-  const apiKey = requireApiKey();
-  if (!input.previousBase64) throw new Error("沒有上一張背景可以微調，請先生成一次。");
-  if (!input.newZh) throw new Error("背景描述是空的。");
-  if (String(input.newZh).trim() === String(input.previousZh || "").trim()) throw new Error("描述沒有改動。先改「這張背景要長什麼樣」裡的文字，再按微調。");
-  const size = SIZE_MAP[input.ratio] || "1024x1024";
-
-  const diffPrompt = `你是電商視覺的美術指導。業務對「背景圖」的描述從舊版改成新版，請比對兩者，寫成給圖像編輯模型的英文指令。
-規則：
-- 兩句："Keep: ..." 列出沒變、必須保持的；"Change: ..." 只列出真的有改動的部分，具體到顏色（可給近似 hex）、位置、物件。
-- 不要出現產品、包裝、文字、logo 的描述；若新版提到主體物件（掛著的衣服、洗衣機、行李箱），改成留空。
-- 不要自己加新的元素。
-
-舊版：
-${input.previousZh || "（無）"}
-
-新版：
-${input.newZh}
-
-只回傳 JSON。`;
-  const schema = { type: "object", properties: { en: { type: "string" } }, required: ["en"], additionalProperties: false };
-  const en = callChatJson(diffPrompt, "background_revision", schema).en;
-
-  const prompt = [
-    "Edit the attached background image according to this direction: " + en,
-    "Everything not mentioned in the direction must stay exactly as it is: same composition, same camera angle, same lighting, same objects and their positions.",
-    input.keepSurfaceEmpty === false ? "" : NO_PRODUCT_RULE,
-    "ABSOLUTELY NO text, letters, numbers, logos, watermarks, price tags or packaging anywhere in the image. Photorealistic quality, sharp focus."
-  ].filter(Boolean).join("\n\n");
-
-  const files = decodeUploads([{ name: "previous", mime: "image/png", base64: input.previousBase64 }], "previous");
-  const mp = buildMultipart({ model: IMAGE_MODEL, prompt: prompt, size: size, quality: IMAGE_QUALITY, n: "1" }, files);
-  const res = UrlFetchApp.fetch("https://api.openai.com/v1/images/edits", {
-    method: "post", contentType: mp.contentType, headers: { Authorization: "Bearer " + apiKey }, payload: mp.bytes, muteHttpExceptions: true
-  });
-  const code = res.getResponseCode(), body = res.getContentText();
-  if (code !== 200) handleImageError(code, body);
-  return { base64: JSON.parse(body).data[0].b64_json, directiveEn: en, finalPrompt: prompt };
+  throw new Error("生圖失敗（" + lastError + "）。稍候再試，或把這則訊息貼給工程師。");
 }
 
 /** 側邊欄呼叫：把 base64 圖存進雲端硬碟輸出資料夾 */
