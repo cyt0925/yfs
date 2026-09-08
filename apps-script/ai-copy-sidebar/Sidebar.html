@@ -198,54 +198,44 @@
 <section id="secImage" class="collapsed">
   <h2 onclick="toggle('secImage')"><span class="num">3</span>生成背景<span class="chev"></span></h2>
   <div class="body">
-    <label style="margin-top:0">產品怎麼進畫面</label>
-    <div class="radio-group" id="productModeGroup">
-      <label class="on"><input type="radio" name="productMode" value="overlay" checked onchange="onProductModeChange()">
-        <div><b>AI 只畫背景，產品用真實去背圖疊上（推薦）</b><span class="d">包裝上的字、logo 保證正確。第四步可以拖曳擺位。</span></div></label>
-      <label><input type="radio" name="productMode" value="draw" onchange="onProductModeChange()">
-        <div><b>讓 AI 把產品畫進場景（進階）</b><span class="d">形狀與配色會像，但包裝文字一定會變成亂碼，只能當構圖參考，不能出稿。</span></div></label>
-    </div>
-    <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px">
-      <input type="checkbox" id="sendRefs" style="margin-top:3px" onchange="updateImageInputsHint()">
-      <span>連參考圖本身一起送給生圖模型 <span class="opt">（預設只送 AI 分析出來的文字。附上成品圖時，模型會照抄它塞滿的版面，留白會失效。）</span></span>
-    </label>
+    <label style="margin-top:0">這張背景要長什麼樣 <span class="opt">（中文。分析參考圖或生成文案後會自動填好，直接改就好）</span></label>
+    <textarea id="bgDesc" style="min-height:96px" placeholder="例：淺藍色天空漸層的背景，下方是淺色木桌，柔和的自然光從左上打進來。左邊桌角放一條摺好的白毛巾，右邊一小盆綠植。上方三分之一留空放標題，桌面中央留空放產品。" oninput="descTouched = true; updateReviseState()"></textarea>
+    <div class="hint" id="bgDescHint"></div>
 
-    <div class="two">
+    <div class="three">
       <div><label>主色調</label><select id="palette" onchange="onPaletteChange()"></select></div>
-      <div><label>視覺風格</label><select id="visualStyle" onchange="rebuildPrompt()"></select></div>
+      <div><label>留白版面</label><select id="layout"></select></div>
+      <div><label>比例</label><select id="ratio"></select></div>
     </div>
     <div id="customPaletteWrap" style="display:none">
-      <label>自訂顏色描述 <span class="opt">（英文較準）</span></label>
-      <input type="text" id="customPalette" placeholder="e.g. deep navy with warm gold accents" oninput="rebuildPromptDebounced()">
+      <label>自訂顏色 <span class="opt">（中英文皆可）</span></label>
+      <input type="text" id="customPalette" placeholder="例：深藍配金色">
     </div>
-    <div class="two">
-      <div><label>留白版面</label><select id="layout" onchange="rebuildPrompt()"></select></div>
-      <div><label>圖片比例</label><select id="ratio" onchange="rebuildPrompt()"></select></div>
-    </div>
-    <div class="hint" id="imageInputsHint"></div>
 
-    <label>背景場景 <span class="opt">（模型會照這句畫環境；文案不會再蓋掉參考圖的場景）</span></label>
-    <div class="chips" id="sceneChips">
-      <button class="chip" data-src="ref" onclick="setSceneSource('ref')">用參考圖的場景</button>
-      <button class="chip" data-src="copy" onclick="setSceneSource('copy')">用文案的情境</button>
-      <button class="chip" data-src="custom" onclick="setSceneSource('custom')">自己寫</button>
-    </div>
-    <textarea id="sceneText" style="min-height:48px;font-size:12px" placeholder="例：a bright balcony laundry corner, a folded white towel at the left edge" oninput="sceneSource='custom'; markSceneChips(); rebuildPromptDebounced()"></textarea>
-    <div class="hint" id="sceneHint"></div>
-
-    <label>生圖 Prompt <span class="opt">（可直接修改）</span></label>
-    <textarea id="imagePrompt" class="prompt-box" placeholder="生成文案或分析參考圖後會自動組出 Prompt；也可以自己貼一段。"></textarea>
-    <button class="small-btn" onclick="rebuildPrompt(true)">依上方選項重組 Prompt</button>
-
-    <label>想保留什麼、想改什麼 <span class="opt">（中文就好，例：保留水波和藍色，毛巾拿掉，上方留更多空）</span></label>
-    <textarea id="bgInstruction" style="min-height:48px" placeholder="第一次生成可以先空著；看到圖再寫要怎麼改"></textarea>
     <div class="two">
       <button class="primary-btn" id="genImageBtn" onclick="generateImage()">生成背景</button>
-      <button class="secondary-btn" id="reviseBtn" style="margin-top:12px" onclick="reviseBackground()" disabled>依指示微調這張背景</button>
+      <button class="secondary-btn" id="reviseBtn" style="margin-top:12px" onclick="reviseBackground()" disabled>微調上一張</button>
     </div>
-    <div class="hint">「生成背景」會帶著指示重畫一張新的；「微調」是拿上一張圖只改你說的部分，其他保持。</div>
+    <div class="hint">看到圖之後，直接改上面的描述：「生成背景」重畫一張新的；「微調上一張」只改你動到的地方，其他保持。</div>
     <div class="status" id="imageStatus"></div>
     <div class="result" id="imageResult"></div>
+
+    <details class="lib" style="margin-top:10px">
+      <summary>進階選項（平常不用動）</summary>
+      <label>產品怎麼進畫面</label>
+      <div class="radio-group" id="productModeGroup">
+        <label class="on"><input type="radio" name="productMode" value="overlay" checked onchange="onProductModeChange()">
+          <div><b>AI 只畫背景，產品用真實去背圖疊上（預設）</b><span class="d">包裝上的字、logo 保證正確。</span></div></label>
+        <label><input type="radio" name="productMode" value="draw" onchange="onProductModeChange()">
+          <div><b>讓 AI 把產品畫進場景</b><span class="d">包裝文字一定會變亂碼，只能當構圖參考，不能出稿。</span></div></label>
+      </div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:400;margin-top:8px">
+        <input type="checkbox" id="sendRefs" style="margin-top:3px">
+        <span>連參考圖本身一起送給生圖模型 <span class="opt">（模型會照抄它塞滿的版面與產品，預設只送分析文字）</span></span>
+      </label>
+      <label>實際送出的英文 Prompt <span class="opt">（唯讀，除錯用）</span></label>
+      <textarea id="promptEn" class="prompt-box" readonly style="min-height:80px;background:var(--surface)"></textarea>
+    </details>
   </div>
 </section>
 
@@ -332,8 +322,9 @@
   let angles = [], selectedAngle = null;
   let copyResult = null, selectedCopyIndex = -1;
   let refAnalysis = null;
-  let refScene = "", copyScene = "";        // 兩個來源的場景描述
-  let sceneSource = "ref";                  // ref | copy | custom
+  let copyScene = "";                       // 文案模型寫的情境（英文，只拿來組中文描述）
+  let descTouched = false;                  // 業務有沒有手改過中文描述
+  let lastGeneratedZh = "";                 // 上一張背景用的中文描述
   let currentImageBase64 = "", currentImageMode = "", currentDriveUrl = "";
   const refImages = [], prodImages = [];   // {id, name, mime, base64, dataUrl, source, opaque}
   let assets = { products: { exists: false, files: [] }, references: { exists: false, files: [] }, logo: null };
@@ -358,7 +349,6 @@
       options = opts;
       fillSelect($("tone"), opts.tones); $("tone").insertAdjacentHTML("afterbegin", '<option value="">請選擇</option>'); $("tone").value = "";
       fillSelect($("palette"), opts.palettes, "key");
-      fillSelect($("visualStyle"), opts.visualStyles);
       fillSelect($("layout"), opts.layouts, "key");
       fillSelect($("ratio"), opts.ratios); $("ratio").value = "9:16";
     });
@@ -481,12 +471,9 @@
   }
   function invalidateAnalysis(reason) {
     if (!refAnalysis) return;
-    refAnalysis = null; refScene = "";
+    refAnalysis = null;
     if ($("palette").value === REF_KEY) $("palette").value = options ? options.palettes[0].key : "";
-    if ($("visualStyle").value === REF_KEY) $("visualStyle").value = options ? options.visualStyles[0] : "";
-    if (sceneSource === "ref") { sceneSource = copyScene ? "copy" : "custom"; applyScene(); }
-    $("analysisBox").innerHTML = '<div class="notice show">參考圖' + reason + '，舊的分析已作廢。請重新按「讓 AI 分析參考圖」，否則生圖會用預設配色。</div>';
-    rebuildPrompt(true);
+    $("analysisBox").innerHTML = '<div class="notice show">參考圖' + reason + '，舊的分析已作廢。請重新按「讓 AI 分析參考圖」，否則背景描述與配色會沿用舊的。</div>';
   }
   function renderImageList(kind) {
     const list = kind === "ref" ? refImages : prodImages;
@@ -501,7 +488,7 @@
       const n = prodImages.filter(im => im.opaque).length;
       setNotice("prodNotice", n ? "有 " + n + " 張產品圖看起來沒有去背（四邊都不透明），疊上去會帶一塊底色。請用去背 PNG，或在第三步改選「讓 AI 把產品畫進場景」。" : "");
     }
-    updateImageInputsHint(); updateComposeHint(); scheduleRender();
+    updateComposeHint(); scheduleRender();
   }
   ["dropRef", "dropProd"].forEach(id => {
     const el = $(id), kind = id === "dropRef" ? "ref" : "prod";
@@ -550,13 +537,11 @@
         $("analysisBox").innerHTML = '<div class="analysis"><div class="t">AI 看到的重點</div>' + escapeHtml(res.summaryZh) +
           (res.cautionsZh ? '<div class="c">⚠ ' + escapeHtml(res.cautionsZh) + '</div>' : "") +
           (res.backgroundPaletteEn ? '<div class="hint">背景顏色：' + escapeHtml(res.backgroundPaletteEn) + '</div>' : '') +
-          '<div class="hint">已把主色調與視覺風格切到「' + REF_KEY + '」（只套用背景的顏色），留白版面建議「' + escapeHtml(res.layoutHint) + '」，背景場景改用參考圖的環境。生圖時只送這段分析文字，不附參考圖本身（第三步可改）。</div></div>';
-        ensureRefOption($("palette")); ensureRefOption($("visualStyle"));
-        $("palette").value = REF_KEY; $("visualStyle").value = REF_KEY; $("customPaletteWrap").style.display = "none";
+          '<div class="hint">主色調已切到「' + REF_KEY + '」（只套用背景的顏色），留白版面建議「' + escapeHtml(res.layoutHint) + '」。第三步的中文背景描述已依這張參考圖重寫。</div></div>';
+        ensureRefOption($("palette"));
+        $("palette").value = REF_KEY; $("customPaletteWrap").style.display = "none";
         if ((options.layouts || []).some(l => l.key === res.layoutHint)) $("layout").value = res.layoutHint;
-        refScene = res.sceneEn || "";
-        sceneSource = "ref"; applyScene();
-        rebuildPrompt(true); open("secImage");
+        refreshDescription(true); open("secImage");
       }).catch(err => { $("analyzeBtn").disabled = false; setStatus("analyzeStatus", err.message, true); });
   }
   function ensureRefOption(sel) { if (!Array.from(sel.options).some(o => o.value === REF_KEY)) sel.insertAdjacentHTML("afterbegin", '<option value="' + REF_KEY + '">' + REF_KEY + '</option>'); }
@@ -566,7 +551,7 @@
     return {
       product: $("product").value.trim(), sellingPoint: $("sellingPoint").value.trim(), tone: $("tone").value, trend: $("trend").value.trim(),
       angle: selectedAngle, productInfo: ctx ? ctx.productInfo : null,
-      palette: $("palette").value, customPalette: $("customPalette").value.trim(), visualStyle: $("visualStyle").value,
+      palette: $("palette").value, customPalette: $("customPalette").value.trim(),
       layout: $("layout").value, ratio: $("ratio").value || "9:16", refAnalysis: refAnalysis
     };
   }
@@ -590,8 +575,7 @@
       $("genCopyBtn").disabled = false; setStatus("copyStatus", "點一版當這次的選定文案（需求單會用到）。", false);
       copyResult = result; selectedCopyIndex = -1; renderCards();
       copyScene = result.scene || "";
-      if (!refAnalysis && sceneSource !== "custom") sceneSource = "copy";   // 有參考圖時不蓋掉參考圖的場景
-      applyScene(); rebuildPrompt(true); open("secImage");
+      refreshDescription(false); open("secImage");
     }).catch(err => { $("genCopyBtn").disabled = false; setStatus("copyStatus", err.message, true); });
   }
   function renderCards() {
@@ -610,90 +594,77 @@
   // ---------- ③ 生圖 ----------
   function onProductModeChange() {
     document.querySelectorAll("#productModeGroup label").forEach(l => l.classList.toggle("on", l.querySelector("input").checked));
-    updateImageInputsHint();
   }
-  function onPaletteChange() { $("customPaletteWrap").style.display = $("palette").value === "自訂" ? "block" : "none"; rebuildPrompt(); }
-  let rebuildTimer = null;
-  function rebuildPromptDebounced() { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildPrompt(), 400); }
-  function rebuildPrompt(force) {
-    if (!$("sceneText").value && !refAnalysis && !force) return;
-    const input = collectCopyInput(); input.scene = $("sceneText").value.trim();
-    run("rebuildImagePrompt")(input).then(res => { $("imagePrompt").value = res.imagePrompt; });
+  function onPaletteChange() { $("customPaletteWrap").style.display = $("palette").value === "自訂" ? "block" : "none"; }
+
+  // 用參考圖分析＋文案情境，請模型寫一段中文背景描述。force=true 表示參考圖剛分析完，一定覆寫。
+  function refreshDescription(force) {
+    if (!refAnalysis && !copyScene) return;
+    if (!force && descTouched && $("bgDesc").value.trim()) { $("bgDescHint").textContent = "文案已產生新的情境，但你改過描述，所以沒有覆寫。想重寫可清空描述再生成一次文案。"; return; }
+    $("bgDescHint").textContent = "整理中文背景描述中…";
+    run("describeBackgroundZh")({ refAnalysis: refAnalysis, copyScene: copyScene, product: $("product").value.trim() })
+      .then(res => {
+        if (res.zh) { $("bgDesc").value = res.zh; descTouched = false; }
+        $("bgDescHint").textContent = refAnalysis ? "已依參考圖寫好。不對的地方直接改中文。" : "已依文案情境寫好。不對的地方直接改中文。";
+        updateReviseState();
+      })
+      .catch(err => { $("bgDescHint").textContent = "描述整理失敗：" + err.message; });
   }
-  function setSceneSource(src) {
-    if (src === "ref" && !refScene) { $("sceneHint").textContent = "還沒有參考圖的場景，先在第一步按「讓 AI 分析參考圖」。"; return; }
-    if (src === "copy" && !copyScene) { $("sceneHint").textContent = "還沒有文案的情境，先在第二步生成文案。"; return; }
-    sceneSource = src; applyScene(); rebuildPrompt(true);
+  function updateReviseState() {
+    const changed = currentImageBase64 && $("bgDesc").value.trim() && $("bgDesc").value.trim() !== lastGeneratedZh;
+    $("reviseBtn").disabled = !changed;
+    $("reviseBtn").textContent = changed ? "微調上一張（只改我改的地方）" : "微調上一張";
   }
-  function applyScene() {
-    if (sceneSource === "ref") $("sceneText").value = refScene;
-    else if (sceneSource === "copy") $("sceneText").value = copyScene;
-    markSceneChips();
+
+  function showImageResult(result, msg) {
+    currentImageBase64 = result.base64;
+    const dataUrl = "data:image/png;base64," + result.base64;
+    $("imageResult").innerHTML = '<img src="' + dataUrl + '"><div class="actions"><a href="' + dataUrl + '" download="ai-background.png">下載背景</a><button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div><div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
+    $("promptEn").value = result.finalPrompt || "";
+    setStatus("imageStatus", msg, false);
+    lastGeneratedZh = $("bgDesc").value.trim(); updateReviseState();
+    updateComposeHint(); open("secCompose"); startCompose();
   }
-  function markSceneChips() {
-    document.querySelectorAll("#sceneChips .chip").forEach(c => c.classList.toggle("on", c.dataset.src === sceneSource));
-    const h = [];
-    if (refScene) h.push("參考圖場景：" + refScene);
-    if (copyScene) h.push("文案情境：" + copyScene);
-    $("sceneHint").textContent = h.join("　｜　");
-  }
-  function updateImageInputsHint() {
-    const draw = productMode() === "draw", sendRefs = $("sendRefs").checked;
-    const parts = [];
-    parts.push(refImages.length ? (sendRefs ? "會附 " + refImages.length + " 張參考圖給模型" : "參考圖只送分析文字") : "沒有參考圖");
-    parts.push(draw ? (prodImages.length ? "會請 AI 把 " + prodImages.length + " 張產品畫進去（文字會亂）" : "選了 AI 畫產品，但還沒放產品圖") : "AI 只畫背景，桌面留空");
-    $("imageInputsHint").textContent = parts.join("　｜　");
-  }
-  async function generateImage() {
-    let prompt = $("imagePrompt").value.trim();
-    if (!prompt) { setStatus("imageStatus", "沒有 Prompt，請先生成文案、分析參考圖，或自己貼一段。", true); return; }
+
+  function generateImage() {
+    const zh = $("bgDesc").value.trim();
+    if (!zh) { setStatus("imageStatus", "請先寫「這張背景要長什麼樣」，或先分析參考圖／生成文案讓它自動填。", true); return; }
     const draw = productMode() === "draw", sendRefs = $("sendRefs").checked;
     if (refImages.length && !refAnalysis && $("palette").value !== "自訂") {
-      setStatus("imageStatus", "提醒：目前參考圖還沒分析（或分析已作廢），這次會用「" + $("palette").value + "」配色生成。想照參考圖就先回第一步按分析。", false);
-    }
-    const instruction = $("bgInstruction").value.trim();
-    if (instruction) {
-      $("genImageBtn").disabled = true; setStatus("imageStatus", "翻譯修改指示中…", false);
-      try { const t = await run("translateInstruction")(instruction); if (t.en) prompt += "\n\nAdditional direction from the marketer: " + t.en; }
-      catch (e) { $("genImageBtn").disabled = false; setStatus("imageStatus", "指示翻譯失敗：" + e.message, true); return; }
+      setStatus("imageStatus", "提醒：參考圖還沒分析（或分析已作廢），這次用「" + $("palette").value + "」配色。想照參考圖就先回第一步按分析。", false);
     }
     const productImages = draw ? prodImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })) : [];
     const referenceImages = sendRefs ? refImages.map(im => ({ name: im.name, mime: im.mime, base64: im.base64 })) : [];
-    $("genImageBtn").disabled = true; $("imageResult").innerHTML = ""; currentDriveUrl = "";
-    const n = productImages.length + referenceImages.length;
-    setStatus("imageStatus", n ? "帶 " + n + " 張圖生成中…約 20～60 秒" : "生成背景中…約 10～30 秒", false);
-    run("generateImage")({ imagePrompt: prompt, ratio: $("ratio").value || "9:16", productImages: productImages, referenceImages: referenceImages })
-      .then(result => {
-        $("genImageBtn").disabled = false; $("reviseBtn").disabled = false;
-        currentImageBase64 = result.base64; currentImageMode = draw && productImages.length ? "draw" : "background";
-        let msg = currentImageMode === "draw"
-          ? "⚠ AI 已把產品畫進畫面。包裝文字是模型編的，只能當構圖參考，不能出稿。第四步預設不再疊真實產品。"
-          : "背景完成。到第四步把真實產品圖與標題疊上去，位置可以拖。";
-        if (sendRefs) msg += "\n⚠ 這次附了參考圖本身，若畫面裡出現長得像參考圖的產品或文字，那是模型照抄的，不能用；取消勾選再生成一次。";
-        msg += "\n不滿意的地方可以在上方「想保留什麼、想改什麼」寫下來，按「微調這張背景」。";
-        setStatus("imageStatus", msg, false);
-        const dataUrl = "data:image/png;base64," + result.base64;
-        $("imageResult").innerHTML = '<img src="' + dataUrl + '"><div class="actions"><a href="' + dataUrl + '" download="ai-background.png">下載背景</a><button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div><div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
-        $("overlayProducts").checked = currentImageMode !== "draw";
-        updateComposeHint(); open("secCompose"); startCompose();
-      }).catch(err => { $("genImageBtn").disabled = false; setStatus("imageStatus", err.message, true); });
+    $("genImageBtn").disabled = true; $("reviseBtn").disabled = true; $("imageResult").innerHTML = ""; currentDriveUrl = "";
+    setStatus("imageStatus", "生成背景中…約 15～40 秒", false);
+    run("generateImage")({
+      descriptionZh: zh, palette: $("palette").value, customPalette: $("customPalette").value.trim(),
+      layout: $("layout").value, ratio: $("ratio").value || "9:16", refAnalysis: refAnalysis,
+      productImages: productImages, referenceImages: referenceImages
+    }).then(result => {
+      $("genImageBtn").disabled = false;
+      currentImageMode = draw && productImages.length ? "draw" : "background";
+      let msg = currentImageMode === "draw"
+        ? "⚠ AI 已把產品畫進畫面。包裝文字是模型編的，只能當構圖參考，不能出稿。"
+        : "背景完成，已自動進入第四步。不滿意就直接改上面的中文描述，再按「微調上一張」。";
+      if (sendRefs) msg += "\n⚠ 這次附了參考圖本身，畫面裡若出現像參考圖的產品或文字，那是模型照抄的，不能用。";
+      $("overlayProducts").checked = currentImageMode !== "draw";
+      showImageResult(result, msg);
+    }).catch(err => { $("genImageBtn").disabled = false; updateReviseState(); setStatus("imageStatus", err.message, true); });
   }
+
   function reviseBackground() {
-    const instruction = $("bgInstruction").value.trim();
+    const zh = $("bgDesc").value.trim();
     if (!currentImageBase64) { setStatus("imageStatus", "還沒有背景可以微調，先按「生成背景」。", true); return; }
-    if (!instruction) { setStatus("imageStatus", "請先在「想保留什麼、想改什麼」寫下修改指示。", true); return; }
+    if (zh === lastGeneratedZh) { setStatus("imageStatus", "描述沒有改動。先改「這張背景要長什麼樣」，再按微調。", true); return; }
     $("reviseBtn").disabled = true; $("genImageBtn").disabled = true; currentDriveUrl = "";
-    setStatus("imageStatus", "依指示微調中…約 20～40 秒", false);
-    run("reviseBackground")({ previousBase64: currentImageBase64, instruction: instruction, ratio: $("ratio").value || "9:16", keepSurfaceEmpty: productMode() !== "draw" })
+    setStatus("imageStatus", "比對你改了什麼、微調中…約 20～40 秒", false);
+    run("reviseBackground")({ previousBase64: currentImageBase64, previousZh: lastGeneratedZh, newZh: zh, ratio: $("ratio").value || "9:16", keepSurfaceEmpty: productMode() !== "draw" })
       .then(result => {
-        $("reviseBtn").disabled = false; $("genImageBtn").disabled = false;
-        currentImageBase64 = result.base64;
-        setStatus("imageStatus", "已微調。送給模型的指令：" + result.directiveEn + "\n還要改就再寫、再按一次；想從頭來就按「生成背景」。", false);
-        const dataUrl = "data:image/png;base64," + result.base64;
-        $("imageResult").innerHTML = '<img src="' + dataUrl + '"><div class="actions"><a href="' + dataUrl + '" download="ai-background.png">下載背景</a><button onclick="saveToDrive(currentImageBase64, \'ai-background\', \'imageDriveStatus\', true)">存到雲端硬碟</button></div><div class="status show" id="imageDriveStatus" style="margin-top:6px"></div>';
-        startCompose();
+        $("genImageBtn").disabled = false;
+        showImageResult(result, "已微調。這次送出的指令：" + result.directiveEn + "\n還要改就再改描述、再按微調；想從頭來就按「生成背景」。");
       })
-      .catch(err => { $("reviseBtn").disabled = false; $("genImageBtn").disabled = false; setStatus("imageStatus", err.message, true); });
+      .catch(err => { $("genImageBtn").disabled = false; updateReviseState(); setStatus("imageStatus", err.message, true); });
   }
 
   function saveToDrive(base64, prefix, statusId, remember) {
@@ -902,10 +873,9 @@
     }
     lines.push("", "視覺方向：");
     lines.push("・主色調：" + $("palette").value + ($("palette").value === "自訂" && $("customPalette").value ? "（" + $("customPalette").value + "）" : ""));
-    lines.push("・風格：" + $("visualStyle").value + "　留白版面：" + $("layout").value + "　比例：" + $("ratio").value);
+    lines.push("・留白版面：" + $("layout").value + "　比例：" + $("ratio").value);
     if (refAnalysis) lines.push("・參考圖重點：" + refAnalysis.summaryZh + (refAnalysis.cautionsZh ? "\n・注意：" + refAnalysis.cautionsZh : ""));
-    if ($("sceneText").value.trim()) lines.push("・背景場景：" + $("sceneText").value.trim());
-    if ($("bgInstruction").value.trim()) lines.push("・對背景的要求：" + $("bgInstruction").value.trim());
+    if ($("bgDesc").value.trim()) lines.push("・背景描述：" + $("bgDesc").value.trim());
     if ($("composeNote").value.trim()) lines.push("・給設計師的備註：" + $("composeNote").value.trim());
     if ($("refNote").value.trim()) lines.push("・業務補充：" + $("refNote").value.trim());
     lines.push("・參考圖 " + refImages.length + " 張、產品去背圖 " + prodImages.length + " 張（另附）");
@@ -917,6 +887,6 @@
   function copyBrief(btn) { writeClipboard($("briefBox").textContent, () => { btn.textContent = "已複製 ✓"; setTimeout(() => btn.textContent = "複製需求單", 2200); }); }
 
   // ---------- 啟動 ----------
-  loadFormOptions(); loadContext(); loadAssets(); updateImageInputsHint(); markSceneChips();
+  loadFormOptions(); loadContext(); loadAssets();
   setInterval(() => loadContext(true), 4000);
 </script>

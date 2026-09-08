@@ -386,7 +386,6 @@ function getFormOptions() {
   return {
     tones: TONES,
     palettes: PALETTES,
-    visualStyles: VISUAL_STYLES.map(s => s.key),
     layouts: LAYOUTS,
     ratios: RATIOS
   };
@@ -580,31 +579,66 @@ ${trendBlock}
 
 const REF_KEY = "跟參考圖一樣";
 
-function buildImagePrompt(input, scene) {
+/**
+ * 組最終英文 Prompt：主色調（程式寫死或參考圖背景色）→ 留白版面 → 業務中文描述翻成的英文 → 硬規則。
+ * sceneStyleEn 來自 translateBackgroundZh，已含風格、光線、材質、邊緣小道具。
+ */
+function buildImagePrompt(input, sceneStyleEn) {
   const ref = input.refAnalysis || null;
   const palette = PALETTES.find(p => p.key === input.palette) || PALETTES[0];
   let paletteEn;
   if (input.palette === REF_KEY && ref && (ref.backgroundPaletteEn || ref.paletteEn)) paletteEn = "Dominant color palette of the BACKGROUND (matched from the reference image's background, not its product or text): " + (ref.backgroundPaletteEn || ref.paletteEn);
   else if (palette.key === "自訂") paletteEn = "Dominant color palette: " + (input.customPalette || "designer's choice") + ".";
   else paletteEn = palette.en;
-
-  let styleEn;
-  if (input.visualStyle === REF_KEY && ref && ref.styleEn) styleEn = "Style (matched from the reference image): " + ref.styleEn;
-  else styleEn = (VISUAL_STYLES.find(s => s.key === input.visualStyle) || VISUAL_STYLES[0]).en;
-
   const layout = LAYOUTS.find(l => l.key === input.layout) || LAYOUTS[0];
   const ratio = input.ratio || "9:16";
-  // 場景優先順序由側邊欄決定（參考圖 → 文案 → 自訂）；這裡只做後備
-  if (!scene && ref && ref.sceneEn) scene = ref.sceneEn;
+  const body = sceneStyleEn || (VISUAL_STYLES[0].en + " Scene: a clean home laundry corner, a folded white towel at the left edge.");
 
-  return [
-    paletteEn,
-    layout.en,
-    styleEn,
-    "Scene: " + (scene || "a clean home laundry corner with a folded white towel and a small green plant."),
-    "Aspect ratio " + ratio + ".",
-    IMAGE_HARD_RULES
-  ].join("\n\n");
+  return [paletteEn, layout.en, body, "Aspect ratio " + ratio + ".", IMAGE_HARD_RULES].join("\n\n");
+}
+
+/**
+ * 側邊欄呼叫：把參考圖分析與文案情境，整理成一段業務看得懂、可以直接改的中文背景描述。
+ */
+function describeBackgroundZh(input) {
+  const ref = input.refAnalysis || null;
+  const parts = [];
+  if (ref) parts.push("參考圖分析（英文）：\n背景顏色：" + (ref.backgroundPaletteEn || ref.paletteEn) + "\n風格：" + ref.styleEn + "\n環境：" + ref.sceneEn);
+  if (input.copyScene) parts.push("文案想呼應的情境（英文）：" + input.copyScene);
+  if (!parts.length) return { zh: "" };
+
+  const prompt = `你是電商視覺的美術指導。請把下面的資料整理成一段「背景圖」的中文描述，給業務看、讓業務可以直接修改。
+要求：
+- 繁體中文，3～4 句，口語、具體，像跟設計師交代。
+- 依序講：背景是什麼環境與顏色、光線與質感、邊緣放什麼小道具（最多 2 個）、哪一區要留空給標題與產品。
+- 這是「背景」，不能提到產品、包裝、文字、logo，也不能有掛著的衣服、洗衣機、行李箱這類主體物件。
+- ${ref ? "以參考圖分析為主；文案情境只拿來挑小道具，不要把文案的故事整個搬進畫面。" : "依文案情境挑一個乾淨的環境，不要把故事整個搬進畫面。"}
+- 商品是「${input.product || "橘子工坊清潔用品"}」，道具要跟它的使用情境相關。
+
+${parts.join("\n\n")}
+
+只回傳 JSON。`;
+  const schema = { type: "object", properties: { zh: { type: "string" } }, required: ["zh"], additionalProperties: false };
+  return callChatJson(prompt, "background_description", schema);
+}
+
+/** 把業務改好的中文背景描述翻成給生圖模型的英文（只翻背景，過濾掉不該出現的東西） */
+function translateBackgroundZh(zh) {
+  zh = String(zh || "").trim();
+  if (!zh) return { en: "" };
+  const prompt = `把下面這段「背景圖」的中文描述翻成給圖像生成模型的英文，2～4 句。
+規則：
+- 忠實翻譯環境、顏色、光線、材質、風格、邊緣小道具與留空位置。中文有提到顏色就保留。
+- 若中文提到產品、包裝、文字、logo、價格，直接省略不翻（背景圖不畫這些）。
+- 若中文提到掛著的衣服、洗衣機、行李箱、家電等主體物件，改寫成「留空」而不是畫出來。
+- 不要自己加新的元素。
+
+中文描述：
+${zh}
+
+只回傳 JSON。`;
+  const schema = { type: "object", properties: { en: { type: "string" } }, required: ["en"], additionalProperties: false };
+  return callChatJson(prompt, "background_translation", schema);
 }
 
 /** 側邊欄呼叫：生成三版文案草稿 + 場景 + 組好的生圖 Prompt */
@@ -623,14 +657,7 @@ function generateCopy(input) {
     required: ["copy1", "copy2", "copy3", "scene"],
     additionalProperties: false
   };
-  const out = callChatJson(buildCopyPrompt(input), "ad_copy_draft", schema);
-  out.imagePrompt = buildImagePrompt(input, out.scene);
-  return out;
-}
-
-/** 側邊欄呼叫：只重組 Prompt（換主色調／版面／風格時不用重跑文案） */
-function rebuildImagePrompt(input) {
-  return { imagePrompt: buildImagePrompt(input, input.scene) };
+  return callChatJson(buildCopyPrompt(input), "ad_copy_draft", schema);
 }
 
 // ============================================================
@@ -745,8 +772,12 @@ function decodeUploads(list, label) {
  */
 function generateImage(input) {
   const apiKey = requireApiKey();
-  if (!input.imagePrompt) throw new Error("沒有生圖 Prompt 可以使用，請先生成文案或自己貼一段。");
+  if (!input.descriptionZh && !input.imagePrompt) throw new Error("請先在「這張背景要長什麼樣」寫一段描述（分析參考圖或生成文案後會自動填）。");
   const size = SIZE_MAP[input.ratio] || "1024x1024";
+  if (!input.imagePrompt) {
+    const en = translateBackgroundZh(input.descriptionZh).en;
+    input.imagePrompt = buildImagePrompt(input, en);
+  }
 
   const productFiles = decodeUploads(input.productImages, "product");
   const referenceFiles = decodeUploads(input.referenceImages, "reference");
@@ -868,37 +899,31 @@ function fetchImageFromUrl(url) {
 }
 
 /**
- * 側邊欄呼叫：把業務用中文寫的「想保留什麼、想改什麼」翻成給生圖模型的英文指令。
- * 只翻譯與具體化，不加油添醋；同時把「保留」與「修改」分開。
- */
-function translateInstruction(text) {
-  text = String(text || "").trim();
-  if (!text) return { en: "" };
-  const prompt = `你是電商視覺的美術指導。業務用中文寫了對「背景圖」的修改要求，請翻成給圖像生成模型的英文指令。
-規則：
-- 只翻譯與具體化業務的意思，不要自己加新的元素。
-- 分成兩句：第一句 "Keep: ..." 列出要保留的；第二句 "Change: ..." 列出要改的。沒有的那句就省略。
-- 顏色請給具體色名或近似 hex。
-- 不要出現任何文字、logo、產品包裝的描述（背景圖不畫這些）。
-
-業務的要求：
-${text}
-
-只回傳 JSON。`;
-  const schema = { type: "object", properties: { en: { type: "string" } }, required: ["en"], additionalProperties: false };
-  return callChatJson(prompt, "instruction_translation", schema);
-}
-
-/**
- * 側邊欄呼叫：拿上一張背景當輸入，只改業務指定的部分，其他保持。
- * input: { previousBase64, instruction, ratio, keepSurfaceEmpty }
+ * 側邊欄呼叫：業務改了中文描述後，拿上一張背景當輸入，只改「改動的地方」，其他保持。
+ * input: { previousBase64, previousZh, newZh, ratio, keepSurfaceEmpty }
  */
 function reviseBackground(input) {
   const apiKey = requireApiKey();
-  if (!input.previousBase64) throw new Error("沒有上一張背景可以修改，請先生成一次。");
-  if (!input.instruction) throw new Error("請先在「想保留什麼、想改什麼」寫下修改指示。");
+  if (!input.previousBase64) throw new Error("沒有上一張背景可以微調，請先生成一次。");
+  if (!input.newZh) throw new Error("背景描述是空的。");
+  if (String(input.newZh).trim() === String(input.previousZh || "").trim()) throw new Error("描述沒有改動。先改「這張背景要長什麼樣」裡的文字，再按微調。");
   const size = SIZE_MAP[input.ratio] || "1024x1024";
-  const en = translateInstruction(input.instruction).en || input.instruction;
+
+  const diffPrompt = `你是電商視覺的美術指導。業務對「背景圖」的描述從舊版改成新版，請比對兩者，寫成給圖像編輯模型的英文指令。
+規則：
+- 兩句："Keep: ..." 列出沒變、必須保持的；"Change: ..." 只列出真的有改動的部分，具體到顏色（可給近似 hex）、位置、物件。
+- 不要出現產品、包裝、文字、logo 的描述；若新版提到主體物件（掛著的衣服、洗衣機、行李箱），改成留空。
+- 不要自己加新的元素。
+
+舊版：
+${input.previousZh || "（無）"}
+
+新版：
+${input.newZh}
+
+只回傳 JSON。`;
+  const schema = { type: "object", properties: { en: { type: "string" } }, required: ["en"], additionalProperties: false };
+  const en = callChatJson(diffPrompt, "background_revision", schema).en;
 
   const prompt = [
     "Edit the attached background image according to this direction: " + en,
@@ -914,7 +939,7 @@ function reviseBackground(input) {
   });
   const code = res.getResponseCode(), body = res.getContentText();
   if (code !== 200) handleImageError(code, body);
-  return { base64: JSON.parse(body).data[0].b64_json, directiveEn: en };
+  return { base64: JSON.parse(body).data[0].b64_json, directiveEn: en, finalPrompt: prompt };
 }
 
 /** 側邊欄呼叫：把 base64 圖存進雲端硬碟輸出資料夾 */
