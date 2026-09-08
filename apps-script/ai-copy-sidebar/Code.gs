@@ -194,17 +194,17 @@ const VISUAL_STYLES = [
 const LAYOUTS = [
   {
     key: "上標題．下產品",
-    en: "Layout: the TOP 35% of the frame must be a calm, low-detail area (plain color or very soft gradient) reserved for a headline. The BOTTOM 40% is a simple flat surface (table, floor, or platform) where products will stand. Decorative elements only in the upper-left and right edges, never in the center.",
+    en: "Composition: the upper third of the picture is ONLY plain empty sky, a plain wall, or a smooth soft gradient. Nothing hangs, stands or floats there: no clothes line, no shirt, no plants, no props, no objects of any kind. All objects sit in the lower half of the frame. The lower 40% is a simple flat surface (table, floor, shelf or platform) seen slightly from above, with its center completely clear. Small props only at the far left and far right edges of that surface.",
     zones: { headline: { x: 0.06, y: 0.05, w: 0.88, h: 0.28 }, products: { x: 0.05, y: 0.55, w: 0.90, h: 0.38 }, badge: "top-right", logo: "top-left" }
   },
   {
     key: "左產品．右標題",
-    en: "Layout: the RIGHT 45% of the frame must be a calm, low-detail area (plain color or very soft gradient) reserved for a headline. The LEFT 50% is a simple flat surface where products will stand. Decorative elements only along the bottom edge and top-left corner.",
+    en: "Composition: the entire right half of the picture is ONLY plain empty wall, sky or a smooth soft gradient with no objects at all. All objects are in the left half. The left half is a simple flat surface (table or shelf) whose center is completely clear, with one or two small props at its far left edge only.",
     zones: { headline: { x: 0.52, y: 0.12, w: 0.44, h: 0.40 }, products: { x: 0.03, y: 0.30, w: 0.48, h: 0.60 }, badge: "top-right", logo: "top-left" }
   },
   {
     key: "中央產品．上下標題",
-    en: "Layout: the TOP 25% and BOTTOM 15% must be calm, low-detail bands reserved for text. The CENTER 55% is an open stage with a soft spotlight where products will stand. Decorative elements only at the far left and right edges.",
+    en: "Composition: the top quarter and the bottom 15% of the picture are ONLY plain empty background (sky, wall or smooth gradient) with no objects. The middle band is an open, empty stage or tabletop with a soft spotlight, its center completely clear. Small props only at the far left and right edges of the stage.",
     zones: { headline: { x: 0.08, y: 0.04, w: 0.84, h: 0.20 }, products: { x: 0.10, y: 0.30, w: 0.80, h: 0.52 }, badge: "top-right", logo: "top-left" }
   }
 ];
@@ -219,8 +219,12 @@ const IMAGE_HARD_RULES = [
   "Do NOT invent or draw any product bottle, box, pouch or packaging unless product reference images are provided; if they are provided, reproduce them faithfully and place them ONLY inside the product zone described in the layout.",
   "Single soft light direction, no harsh multi-source shadows, so cut-out products composite naturally.",
   "Keep the reserved text areas genuinely empty and low-contrast: no busy patterns, no small objects, no strong highlights there.",
+  "Props are limited to laundry and home-cleaning context only: folded clothes, towels, a laundry basket, a small green plant, water droplets, bubbles, citrus slices. NO shoes, hats, bags, food, drinks, electronics, toys or furniture other than the surface itself.",
   "Photorealistic quality, sharp focus, no blur on the main surfaces, no people faces, no hands."
 ].join(" ");
+
+/** 沒有交產品圖給模型時再加這句：桌面淨空，之後用真實去背圖疊上 */
+const NO_PRODUCT_RULE = "There are NO products in this image. The flat surface described in the composition stays completely empty in its center; real product photos will be placed there afterwards.";
 
 // ============================================================
 // 選單
@@ -747,13 +751,14 @@ function generateImage(input) {
   const useEdits = productFiles.length + referenceFiles.length > 0;
 
   let prompt = input.imagePrompt;
+  if (!productFiles.length) prompt = prompt + "\n\n" + NO_PRODUCT_RULE;
   if (useEdits) {
     const notes = [];
     if (productFiles.length) {
       notes.push("The first " + productFiles.length + " attached image(s) are the REAL PRODUCTS (cut-out, transparent background). Reproduce their shape, colors and label design as faithfully as possible, do not redesign them, and place them standing naturally ONLY inside the product zone described in the layout, with correct perspective and a soft contact shadow.");
     }
     if (referenceFiles.length) {
-      notes.push("The last " + referenceFiles.length + " attached image(s) are REFERENCE images for the look we want. Match their overall mood, composition density, lighting and color feeling. Do NOT copy any text, numbers, logos, badges or third-party products that appear in them.");
+      notes.push("The last " + referenceFiles.length + " attached image(s) are REFERENCE images for mood, color and lighting ONLY. Do NOT copy their composition, their density, their text, numbers, logos, badges or any products in them. The composition rules below override anything seen in the reference images.");
     }
     prompt = notes.join(" ") + "\n\n" + prompt;
   }
