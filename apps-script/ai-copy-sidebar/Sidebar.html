@@ -224,6 +224,15 @@
     </div>
     <div class="hint" id="imageInputsHint"></div>
 
+    <label>背景場景 <span class="opt">（模型會照這句畫環境；文案不會再蓋掉參考圖的場景）</span></label>
+    <div class="chips" id="sceneChips">
+      <button class="chip" data-src="ref" onclick="setSceneSource('ref')">用參考圖的場景</button>
+      <button class="chip" data-src="copy" onclick="setSceneSource('copy')">用文案的情境</button>
+      <button class="chip" data-src="custom" onclick="setSceneSource('custom')">自己寫</button>
+    </div>
+    <textarea id="sceneText" style="min-height:48px;font-size:12px" placeholder="例：a bright balcony laundry corner, a folded white towel at the left edge" oninput="sceneSource='custom'; markSceneChips(); rebuildPromptDebounced()"></textarea>
+    <div class="hint" id="sceneHint"></div>
+
     <label>生圖 Prompt <span class="opt">（可直接修改）</span></label>
     <textarea id="imagePrompt" class="prompt-box" placeholder="生成文案或分析參考圖後會自動組出 Prompt；也可以自己貼一段。"></textarea>
     <button class="small-btn" onclick="rebuildPrompt(true)">依上方選項重組 Prompt</button>
@@ -313,7 +322,9 @@
   let productTouched = false, lastContextKey = "";
   let angles = [], selectedAngle = null;
   let copyResult = null, selectedCopyIndex = -1;
-  let currentScene = "", refAnalysis = null;
+  let refAnalysis = null;
+  let refScene = "", copyScene = "";        // 兩個來源的場景描述
+  let sceneSource = "ref";                  // ref | copy | custom
   let currentImageBase64 = "", currentImageMode = "", currentDriveUrl = "";
   const refImages = [], prodImages = [];   // {id, name, mime, base64, dataUrl, source, opaque}
   let assets = { products: { exists: false, files: [] }, references: { exists: false, files: [] }, logo: null };
@@ -516,11 +527,13 @@
         $("analyzeBtn").disabled = false; setStatus("analyzeStatus", "", false); refAnalysis = res;
         $("analysisBox").innerHTML = '<div class="analysis"><div class="t">AI 看到的重點</div>' + escapeHtml(res.summaryZh) +
           (res.cautionsZh ? '<div class="c">⚠ ' + escapeHtml(res.cautionsZh) + '</div>' : "") +
-          '<div class="hint">已把主色調與視覺風格切到「' + REF_KEY + '」，留白版面建議「' + escapeHtml(res.layoutHint) + '」。生圖時只會送這段分析文字，不會附參考圖本身（第三步可改）。</div></div>';
+          (res.backgroundPaletteEn ? '<div class="hint">背景顏色：' + escapeHtml(res.backgroundPaletteEn) + '</div>' : '') +
+          '<div class="hint">已把主色調與視覺風格切到「' + REF_KEY + '」（只套用背景的顏色），留白版面建議「' + escapeHtml(res.layoutHint) + '」，背景場景改用參考圖的環境。生圖時只送這段分析文字，不附參考圖本身（第三步可改）。</div></div>';
         ensureRefOption($("palette")); ensureRefOption($("visualStyle"));
         $("palette").value = REF_KEY; $("visualStyle").value = REF_KEY; $("customPaletteWrap").style.display = "none";
         if ((options.layouts || []).some(l => l.key === res.layoutHint)) $("layout").value = res.layoutHint;
-        if (!currentScene) currentScene = res.sceneEn || "";
+        refScene = res.sceneEn || "";
+        sceneSource = "ref"; applyScene();
         rebuildPrompt(true); open("secImage");
       }).catch(err => { $("analyzeBtn").disabled = false; setStatus("analyzeStatus", err.message, true); });
   }
@@ -553,8 +566,10 @@
     $("genCopyBtn").disabled = true; $("cards").innerHTML = ""; setStatus("copyStatus", "生成中…約 5～15 秒", false);
     run("generateCopy")(input).then(result => {
       $("genCopyBtn").disabled = false; setStatus("copyStatus", "點一版當這次的選定文案（需求單會用到）。", false);
-      copyResult = result; selectedCopyIndex = -1; renderCards(); currentScene = result.scene || currentScene;
-      $("imagePrompt").value = result.imagePrompt || ""; open("secImage");
+      copyResult = result; selectedCopyIndex = -1; renderCards();
+      copyScene = result.scene || "";
+      if (!refAnalysis && sceneSource !== "custom") sceneSource = "copy";   // 有參考圖時不蓋掉參考圖的場景
+      applyScene(); rebuildPrompt(true); open("secImage");
     }).catch(err => { $("genCopyBtn").disabled = false; setStatus("copyStatus", err.message, true); });
   }
   function renderCards() {
@@ -579,9 +594,26 @@
   let rebuildTimer = null;
   function rebuildPromptDebounced() { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildPrompt(), 400); }
   function rebuildPrompt(force) {
-    if (!currentScene && !refAnalysis && !force) return;
-    const input = collectCopyInput(); input.scene = currentScene;
+    if (!$("sceneText").value && !refAnalysis && !force) return;
+    const input = collectCopyInput(); input.scene = $("sceneText").value.trim();
     run("rebuildImagePrompt")(input).then(res => { $("imagePrompt").value = res.imagePrompt; });
+  }
+  function setSceneSource(src) {
+    if (src === "ref" && !refScene) { $("sceneHint").textContent = "還沒有參考圖的場景，先在第一步按「讓 AI 分析參考圖」。"; return; }
+    if (src === "copy" && !copyScene) { $("sceneHint").textContent = "還沒有文案的情境，先在第二步生成文案。"; return; }
+    sceneSource = src; applyScene(); rebuildPrompt(true);
+  }
+  function applyScene() {
+    if (sceneSource === "ref") $("sceneText").value = refScene;
+    else if (sceneSource === "copy") $("sceneText").value = copyScene;
+    markSceneChips();
+  }
+  function markSceneChips() {
+    document.querySelectorAll("#sceneChips .chip").forEach(c => c.classList.toggle("on", c.dataset.src === sceneSource));
+    const h = [];
+    if (refScene) h.push("參考圖場景：" + refScene);
+    if (copyScene) h.push("文案情境：" + copyScene);
+    $("sceneHint").textContent = h.join("　｜　");
   }
   function updateImageInputsHint() {
     const draw = productMode() === "draw", sendRefs = $("sendRefs").checked;
@@ -716,7 +748,7 @@
 
     // 產品：以中心點排一列，底部對齊
     if ($("overlayProducts").checked && prodImgs.length) {
-      let targetH = H * 0.30 * productScale;
+      let targetH = H * 0.40 * productScale;
       const gap = W * 0.03;
       let widths = prodImgs.map(im => im.naturalWidth / im.naturalHeight * targetH);
       let total = widths.reduce((a, b) => a + b, 0) + gap * (prodImgs.length - 1);
@@ -819,6 +851,7 @@
     lines.push("・主色調：" + $("palette").value + ($("palette").value === "自訂" && $("customPalette").value ? "（" + $("customPalette").value + "）" : ""));
     lines.push("・風格：" + $("visualStyle").value + "　留白版面：" + $("layout").value + "　比例：" + $("ratio").value);
     if (refAnalysis) lines.push("・參考圖重點：" + refAnalysis.summaryZh + (refAnalysis.cautionsZh ? "\n・注意：" + refAnalysis.cautionsZh : ""));
+    if ($("sceneText").value.trim()) lines.push("・背景場景：" + $("sceneText").value.trim());
     if ($("refNote").value.trim()) lines.push("・業務補充：" + $("refNote").value.trim());
     lines.push("・參考圖 " + refImages.length + " 張、產品去背圖 " + prodImages.length + " 張（另附）");
     if (currentDriveUrl) lines.push("・AI 草稿：" + currentDriveUrl);
@@ -829,6 +862,6 @@
   function copyBrief(btn) { writeClipboard($("briefBox").textContent, () => { btn.textContent = "已複製 ✓"; setTimeout(() => btn.textContent = "複製需求單", 2200); }); }
 
   // ---------- 啟動 ----------
-  loadFormOptions(); loadContext(); loadAssets(); updateImageInputsHint();
+  loadFormOptions(); loadContext(); loadAssets(); updateImageInputsHint(); markSceneChips();
   setInterval(() => loadContext(true), 4000);
 </script>

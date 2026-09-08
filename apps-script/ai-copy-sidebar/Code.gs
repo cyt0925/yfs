@@ -219,7 +219,7 @@ const IMAGE_HARD_RULES = [
   "Do NOT invent or draw any product bottle, box, pouch or packaging unless product reference images are provided; if they are provided, reproduce them faithfully and place them ONLY inside the product zone described in the layout.",
   "Single soft light direction, no harsh multi-source shadows, so cut-out products composite naturally.",
   "Keep the reserved text areas genuinely empty and low-contrast: no busy patterns, no small objects, no strong highlights there.",
-  "Props are limited to laundry and home-cleaning context only: folded clothes, towels, a laundry basket, a small green plant, water droplets, bubbles, citrus slices. NO shoes, hats, bags, food, drinks, electronics, toys or furniture other than the surface itself.",
+  "The background is an EMPTY STAGE with no hero object. Absolutely no hanging shirt or garment in the center, no washing machine, no suitcase or luggage, no appliance, no furniture other than the surface itself. Props are small, sit at the edges, and are limited to laundry context: a folded towel, a small stack of folded clothes, a laundry basket, a small green plant, water droplets, bubbles, citrus slices. NO shoes, hats, bags, food, drinks, electronics or toys.",
   "Photorealistic quality, sharp focus, no blur on the main surfaces, no people faces, no hands."
 ].join(" ");
 
@@ -570,9 +570,10 @@ ${trendBlock}
 - 每行最多 2 個 emoji，可以完全不用。
 
 【生圖場景描述規則（scene 欄位）】
-- 英文，1～2 句，只描述「背景場景與道具」：地點、材質、季節感、1～3 個小道具。
+- 英文，1～2 句，只描述「背景環境」：地點（牆面、桌面、陽台、窗邊）、材質、季節感，最多 2 個放在邊緣的小道具（毛巾、摺好的衣物、小植物）。
+- 背景是空舞台，不能有主體物件：不要寫掛著的衣服、洗衣機、行李箱、家電、家具。
 - 不要寫任何顏色（顏色由設計師另外指定）、不要寫版面配置、不要寫文字或產品、不要寫光線。
-- 場景要跟三則文案的共同情境呼應，例如文案講健身汗臭，場景就是明亮的家庭洗衣角落加一條運動毛巾。
+- 場景可以輕輕呼應文案情境（例如文案講汗臭，邊緣放一條運動毛巾），但不要把文案的故事整個搬進畫面。
 
 只回傳 JSON。`;
 }
@@ -583,7 +584,7 @@ function buildImagePrompt(input, scene) {
   const ref = input.refAnalysis || null;
   const palette = PALETTES.find(p => p.key === input.palette) || PALETTES[0];
   let paletteEn;
-  if (input.palette === REF_KEY && ref && ref.paletteEn) paletteEn = "Dominant color palette (matched from the reference image): " + ref.paletteEn;
+  if (input.palette === REF_KEY && ref && (ref.backgroundPaletteEn || ref.paletteEn)) paletteEn = "Dominant color palette of the BACKGROUND (matched from the reference image's background, not its product or text): " + (ref.backgroundPaletteEn || ref.paletteEn);
   else if (palette.key === "自訂") paletteEn = "Dominant color palette: " + (input.customPalette || "designer's choice") + ".";
   else paletteEn = palette.en;
 
@@ -593,7 +594,8 @@ function buildImagePrompt(input, scene) {
 
   const layout = LAYOUTS.find(l => l.key === input.layout) || LAYOUTS[0];
   const ratio = input.ratio || "9:16";
-  if (ref && ref.sceneEn && !scene) scene = ref.sceneEn;
+  // 場景優先順序由側邊欄決定（參考圖 → 文案 → 自訂）；這裡只做後備
+  if (!scene && ref && ref.sceneEn) scene = ref.sceneEn;
 
   return [
     paletteEn,
@@ -806,10 +808,11 @@ function analyzeReferences(input) {
 ${input.note ? "業務補充：" + input.note : ""}
 
 請分析並回傳 JSON：
-- summaryZh：用繁體中文 2～3 句，講這張圖的視覺重點（配色、氛圍、構圖、材質），讓業務跟設計師能快速對齊。
-- paletteEn：英文，一句話描述主色與輔色（可含近似 hex），供生圖模型使用。
+- summaryZh：用繁體中文 2～3 句，講這張圖的視覺重點（配色、氛圍、構圖、材質），並明確分開講「背景是什麼顏色、什麼環境」與「產品／文字是什麼顏色」，讓業務跟設計師能快速對齊。
+- paletteEn：英文，一句話描述「整張圖」的主色與輔色（可含近似 hex）。
+- backgroundPaletteEn：英文，一句話只描述「背景環境」的顏色（天空、牆面、桌面、遠景），刻意排除產品包裝、logo、標題文字、色塊的顏色。我們只會重畫背景，所以這一項最重要。例如參考圖整體是橘白，但背景是藍天白雲，就要寫藍天白雲。
 - styleEn：英文，1～2 句描述攝影／插畫風格、光線、材質、氛圍。不要提到圖中的文字、logo、價格或任何他牌產品。
-- sceneEn：英文，1～2 句描述背景場景與道具（地點、材質、季節感、1～3 個小道具）。不要寫顏色、不要寫文字、不要寫產品。
+- sceneEn：英文，1～2 句只描述「背景環境」：地點、材質、季節感，以及放在邊緣的最多 2 個小道具。不能有主體物件（掛著的衣服、洗衣機、行李箱、家電）。不要寫顏色、不要寫文字、不要寫產品。
 - layoutHint：從這三個選一個最接近圖中留白配置的：「上標題．下產品」「左產品．右標題」「中央產品．上下標題」。
 - cautionsZh：繁體中文，若圖中有他牌 logo、名人、卡通角色等不能照抄的元素，一句話提醒；沒有就空字串。`
   }];
@@ -820,10 +823,10 @@ ${input.note ? "業務補充：" + input.note : ""}
   const schema = {
     type: "object",
     properties: {
-      summaryZh: { type: "string" }, paletteEn: { type: "string" }, styleEn: { type: "string" },
+      summaryZh: { type: "string" }, paletteEn: { type: "string" }, backgroundPaletteEn: { type: "string" }, styleEn: { type: "string" },
       sceneEn: { type: "string" }, layoutHint: { type: "string" }, cautionsZh: { type: "string" }
     },
-    required: ["summaryZh", "paletteEn", "styleEn", "sceneEn", "layoutHint", "cautionsZh"],
+    required: ["summaryZh", "paletteEn", "backgroundPaletteEn", "styleEn", "sceneEn", "layoutHint", "cautionsZh"],
     additionalProperties: false
   };
   const payload = {
