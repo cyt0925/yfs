@@ -156,7 +156,7 @@
         <button class="link" onclick="autoPlaceHeadline()">標題自動找留白</button>
       </div>
       <details class="more">
-        <summary>圖上文字、字色、大小</summary>
+        <summary>圖上文字、字色、大小 <span id="textSource" style="color:var(--citrus)"></span></summary>
         <input type="text" id="headline" placeholder="主標（空白就用選定文案第一行）" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
         <input type="text" id="subline" placeholder="優惠（例：買2箱送150點）" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
         <div class="two" style="margin-top:6px">
@@ -207,7 +207,7 @@
 
 <script>
   // ---------- 狀態 ----------
-  let options = null, ctx = null, productTouched = false, lastContextKey = "";
+  let options = null, ctx = null, productTouched = false, lastContextKey = "", currentColKey = "";
   let angles = [], selectedAngle = null, copyResult = null, selectedCopyIndex = -1, copyScene = "";
   let chatTouched = false, chat = { responseId: "", turns: [] };
   const images = [];              // {id, name, mime, base64, dataUrl, kind:'ref'|'prod', opaque}
@@ -254,12 +254,39 @@
   }
   function renderContext(c) {
     if (!c.ok) { $("ctx").innerHTML = '<span class="warn">' + esc(c.message) + '</span>'; return; }
-    if (!productTouched) $("product").value = c.product || "";
+    const colKey = c.sheetName + "!" + c.columnLabel;
+    const switched = currentColKey && colKey !== currentColKey;
+    if (colKey !== currentColKey) {
+      // 換欄：所有跟欄位綁定的內容全部重來，不能留上一欄的
+      currentColKey = colKey; productTouched = false;
+      ["headline", "subline", "price", "badge", "note"].forEach(id => { $(id).value = ""; });
+      $("product").value = c.product || "";
+      if (switched) {
+        copyResult = null; selectedCopyIndex = -1; angles = []; selectedAngle = null; copyScene = "";
+        $("cards").innerHTML = ""; $("angles").innerHTML = ""; setStatus("copyStatus", "", false);
+        if (!chat.responseId) { $("chatText").value = ""; chatTouched = false; }
+        if (chat.responseId) setStatus("imageStatus", "⚠ 已切到 " + c.columnLabel + " 欄，但目前的生圖對話是上一欄的。要用新欄位的文字請按「重來」。", true);
+        else setStatus("imageStatus", "已切到 " + c.columnLabel + " 欄，圖上文字已更新。", false);
+      }
+    } else if (!productTouched) { $("product").value = c.product || ""; }
     $("productInfoHint").textContent = c.productInfo ? "賣點：" + c.productInfo.sellingPoints : "";
-    prefillCompose(c); checkMismatch();
+    prefillCompose(c); checkMismatch(); scheduleRender();
     $("ctx").innerHTML = '<b>' + esc(c.sheetName) + '</b> ' + esc(c.columnLabel) + ' 欄　' + esc(c.adName || c.product || "") +
       (c.hasApiKey ? "" : '　<span class="warn">尚未設定 API Key（選單 → AI 文案工具）</span>') +
       '　<button class="link" onclick="productTouched=false; loadContext()">重讀</button>';
+    $("textSource").textContent = "圖上文字來自 " + c.columnLabel + " 欄";
+  }
+
+  // 送出前強制重讀目前欄位；欄位變了就先更新畫面並擋下這次
+  function ensureFreshColumn() {
+    return run("getColumnContext")().then(c => {
+      if (!c.ok) { ctx = c; renderContext(c); throw new Error(c.message); }
+      const colKey = c.sheetName + "!" + c.columnLabel;
+      const changed = colKey !== currentColKey;
+      lastContextKey = JSON.stringify(c); ctx = c; renderContext(c);
+      if (changed) throw new Error("你已經點到 " + c.columnLabel + " 欄，欄位內容已更新。確認一下再按一次。");
+      return c;
+    });
   }
   function prefillCompose(c) {
     const lines = String(c.copyText || "").split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -301,10 +328,14 @@
   }
   function selectAngle(i) { selectedAngle = selectedAngle === angles[i] ? null : angles[i]; renderAngles(); }
   function generateCopy() {
-    const i = copyInput();
-    if (!i.product || !i.tone) return setStatus("copyStatus", "先填商品、選調性。", true);
-    $("genCopyBtn").disabled = true; $("cards").innerHTML = ""; setStatus("copyStatus", "生成中…", false);
-    run("generateCopy")(i).then(r => {
+    if (!$("tone").value) return setStatus("copyStatus", "先選調性。", true);
+    $("genCopyBtn").disabled = true; setStatus("copyStatus", "確認欄位…", false);
+    ensureFreshColumn().then(() => {
+      const i = copyInput();
+      if (!i.product) throw new Error("先填商品。");
+      $("cards").innerHTML = ""; setStatus("copyStatus", "生成中…", false);
+      return run("generateCopy")(i);
+    }).then(r => {
       $("genCopyBtn").disabled = false; setStatus("copyStatus", "", false);
       copyResult = r; selectedCopyIndex = -1; renderCards(); copyScene = r.scene || "";
       prefillChat(false);
@@ -424,6 +455,13 @@
   function pushBubble(kind, html) { const el = document.createElement("div"); el.className = "bubble " + kind; el.innerHTML = html; $("chatLog").appendChild(el); return el; }
 
   function sendChat() {
+    const text0 = $("chatText").value.trim(), first0 = !chat.responseId;
+    if (!text0) return setStatus("imageStatus", first0 ? "先用中文說這張圖要長什麼樣。" : "要改什麼？", true);
+    $("sendBtn").disabled = true; setStatus("imageStatus", "確認欄位…", false);
+    ensureFreshColumn().then(() => { $("sendBtn").disabled = false; sendChatNow(); })
+      .catch(e => { $("sendBtn").disabled = false; setStatus("imageStatus", e.message, true); });
+  }
+  function sendChatNow() {
     const text = $("chatText").value.trim(), first = !chat.responseId;
     if (!text) return setStatus("imageStatus", first ? "先用中文說這張圖要長什麼樣。" : "要改什麼？", true);
     const mode = chipValue("modeChips"), quality = chipValue("qualityChips"), ratio = chipValue("ratioChips") || "9:16";
