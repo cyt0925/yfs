@@ -997,7 +997,9 @@ function updateFromGitHub() {
     } else {
       ui.alert(
         "更新完成",
-        "已寫入：" + result.updated.join("、") + "\n" + result.commit +
+        "已寫入：" + (result.updated.join("、") || "（無）") +
+        (result.removed.length ? "\n已移除重複的舊程式檔：" + result.removed.join("、") : "") +
+        "\n" + result.commit +
         "\n\n請重新整理整個試算表分頁，再從選單重開側邊欄。API Key 不受影響。",
         ui.ButtonSet.OK
       );
@@ -1024,20 +1026,31 @@ function applyGitHubUpdate() {
     return { name: f.name, type: f.type, source: fetchGitHubRaw_(f.path, ghToken) };
   });
 
-  // 3. 比對，全部一樣就不寫
+  // 3. 找出專案裡「同一份程式」的舊檔。
+  //    使用者第一次可能是貼在預設檔「程式碼.gs」而不是「Code.gs」，用程式裡的標記認，
+  //    不然會變成兩個檔各宣告一次 const，整個專案語法錯誤、選單消失。
+  const MARKER = /const API_KEY_PROP\s*=/;
+  const isOurServerFile = function (f) { return f.type === "SERVER_JS" && MARKER.test(f.source || ""); };
+  const fetchedNames = {};
+  fetched.forEach(function (f) { fetchedNames[f.name] = true; });
   const byName = {};
   currentFiles.forEach(function (f) { byName[f.name] = f; });
+  const oldServer = currentFiles.filter(isOurServerFile);
+  if (!byName.Code && oldServer.length === 1) byName.Code = oldServer[0];
+
+  // 4. 比對，全部一樣就不寫
   const norm = function (s) { return String(s || "").replace(/\r\n/g, "\n").trim(); };
   const changed = fetched.filter(function (f) {
     const c = byName[f.name];
     return !c || norm(c.source) !== norm(f.source);
   });
+  const duplicates = currentFiles.filter(function (f) { return !fetchedNames[f.name] && isOurServerFile(f); });
   const commit = describeLatestCommit_(ghToken);
-  if (!changed.length) return { unchanged: true, commit: commit };
+  if (!changed.length && !duplicates.length) return { unchanged: true, commit: commit };
 
-  // 4. 合併：同名覆蓋，其餘保留，再一次寫回（API 要求每次都要帶完整檔案清單含 manifest）
+  // 5. 合併：同名覆蓋、重複的舊程式檔移除、其餘保留，一次寫回（API 要求每次帶完整檔案清單含 manifest）
   const merged = currentFiles.filter(function (f) {
-    return !fetched.some(function (n) { return n.name === f.name; });
+    return !fetchedNames[f.name] && !isOurServerFile(f);
   }).concat(fetched);
   const put = UrlFetchApp.fetch(apiBase, {
     method: "put",
@@ -1047,7 +1060,12 @@ function applyGitHubUpdate() {
     muteHttpExceptions: true,
   });
   if (put.getResponseCode() !== 200) throw new Error(explainScriptApiError_(put));
-  return { unchanged: false, updated: changed.map(function (f) { return f.name; }), commit: commit };
+  return {
+    unchanged: false,
+    updated: changed.map(function (f) { return f.name; }),
+    removed: duplicates.map(function (f) { return f.name; }),
+    commit: commit,
+  };
 }
 
 function fetchGitHubRaw_(path, ghToken) {
