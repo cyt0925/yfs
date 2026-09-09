@@ -74,6 +74,7 @@
   .bubble { border-radius: 10px; padding: 6px 10px; font-size: 12.5px; }
   .bubble.user { background: var(--surface-2); justify-self: end; white-space: pre-wrap; max-width: 90%; }
   .bubble.ai { background: var(--info-bg); border: 1px solid #F3D9C4; color: var(--ink-2); }
+  .bubble .auto { color: var(--ink-2); font-size: 11.5px; }
 
   .stage-wrap { margin-top: 8px; display: none; }
   #stage { width: 100%; display: block; border-radius: 8px; border: 1px solid var(--rule); touch-action: none; cursor: grab; background: var(--surface); }
@@ -138,7 +139,7 @@
     <div class="status" id="trayStatus"></div>
 
     <div class="chatlog" id="chatLog"></div>
-    <textarea id="chatText" style="min-height:72px;margin-top:8px" placeholder="用中文說這張圖要長什麼樣。產圖後繼續打字＝修改上一張。"></textarea>
+    <textarea id="chatText" style="min-height:72px;margin-top:8px" placeholder="用中文說這張圖要長什麼樣。產圖後繼續打字或改下面的標籤＝修改上一張。"></textarea>
     <div style="display:flex;gap:6px;margin-top:4px;align-items:center">
       <button class="link" id="styleHintBtn" onclick="styleHint()">依文案產生風格提示 →</button>
       <span class="hint" id="styleHintStatus" style="margin:0"></span>
@@ -458,16 +459,38 @@
   function invalidateChat() { if (chat.responseId && images.length) setStatus("imageStatus", "圖片有變動。目前對話不會帶入新圖，按「重來」才會重新附上。", false); }
   function pushBubble(kind, html) { const el = document.createElement("div"); el.className = "bubble " + kind; el.innerHTML = html; $("chatLog").appendChild(el); return el; }
 
+  // 第二輪起，標籤與圖上文字欄位若跟上一次送出時不同，自動翻成中文一起送，不必再打字
+  let lastSent = null;
+  function chipLabel(groupId) { const on = $(groupId).querySelector(".chip.on"); return on ? on.textContent : ""; }
+  function snapshotSettings() {
+    return { mode: chipValue("modeChips"), textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips"),
+      fields: { headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(), note: $("note").value.trim() } };
+  }
+  function diffSettings(prev, cur) {
+    if (!prev) return { changes: null, summary: [] };
+    const changes = {}, summary = [];
+    if (cur.mode !== prev.mode) { changes.mode = cur.mode; summary.push(chipLabel("modeChips")); }
+    if (cur.textLayout !== prev.textLayout) { changes.textLayout = cur.textLayout; summary.push("排法 → " + chipLabel("textLayoutChips")); }
+    if (cur.accent !== prev.accent) { changes.accent = cur.accent; summary.push("強調色 → " + chipLabel("accentChips")); }
+    const names = { headline: "主標", subline: "優惠", price: "價格", badge: "徽章", note: "註記" };
+    Object.keys(names).forEach(k => {
+      if (cur.fields[k] !== prev.fields[k]) { changes.fields = changes.fields || {}; changes.fields[k] = cur.fields[k]; summary.push(names[k] + " → " + (cur.fields[k] || "拿掉")); }
+    });
+    return { changes: summary.length ? changes : null, summary: summary };
+  }
   function sendChat() {
     const text0 = $("chatText").value.trim(), first0 = !chat.responseId;
-    if (!text0) return setStatus("imageStatus", first0 ? "先用中文說這張圖要長什麼樣。" : "要改什麼？", true);
+    const pending = first0 ? null : diffSettings(lastSent, snapshotSettings()).changes;
+    if (!text0 && !pending) return setStatus("imageStatus", first0 ? "先用中文說這張圖要長什麼樣。" : "要改什麼？打幾個字，或改下面的標籤再按產圖。", true);
     $("sendBtn").disabled = true; setStatus("imageStatus", "確認欄位…", false);
     ensureFreshColumn().then(() => { $("sendBtn").disabled = false; sendChatNow(); })
       .catch(e => { $("sendBtn").disabled = false; setStatus("imageStatus", e.message, true); });
   }
   function sendChatNow() {
     const text = $("chatText").value.trim(), first = !chat.responseId;
-    if (!text) return setStatus("imageStatus", first ? "先用中文說這張圖要長什麼樣。" : "要改什麼？", true);
+    const snap = snapshotSettings();
+    const diff = first ? { changes: null, summary: [] } : diffSettings(lastSent, snap);
+    if (!text && !diff.changes) return setStatus("imageStatus", first ? "先用中文說這張圖要長什麼樣。" : "要改什麼？打幾個字，或改下面的標籤再按產圖。", true);
     const mode = chipValue("modeChips"), quality = chipValue("qualityChips"), ratio = chipValue("ratioChips") || "9:16";
     // 講「重新設計／改稿／重做」又只有參考圖時，把參考圖當原稿處理（保留內容），不然模型會把內容全丟掉
     let srcList = sources(), refList = refs(), autoSource = false;
@@ -483,9 +506,11 @@
       brand: $("brand").value, product: $("product").value.trim(), adName: ctx && ctx.ok ? ctx.adName : "", sheetName: ctx && ctx.ok ? ctx.sheetName : "", productInfo: ctx ? ctx.productInfo : null,
       headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(), note: $("note").value.trim(),
       hookCopy: copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "",
-      layout: $("layout").value, textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips"), variantIndex: variantIndex
+      layout: $("layout").value, textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips"), variantIndex: variantIndex,
+      changes: diff.changes
     };
-    pushBubble("user", esc(text)); $("chatText").value = "";
+    const bubbleHtml = (diff.summary.length ? '<span class="auto">' + esc(diff.summary.join("；")) + '</span>' : "") + (diff.summary.length && text ? "<br>" : "") + esc(text);
+    pushBubble("user", bubbleHtml); $("chatText").value = "";
     $("sendBtn").disabled = true; $("resetChatBtn").disabled = true;
     const wait = pushBubble("ai", "產圖中…約 30～90 秒");
     const notes = [];
@@ -499,10 +524,11 @@
       $("promptEn").value = res.revisedPrompt || "";
       updateOverlayDefaults(mode);
       showTurn(chat.turns.length - 1);
-      setStatus("imageStatus", "要改就繼續打字。", false);
+      lastSent = snap;
+      setStatus("imageStatus", "要改就繼續打字，或直接改下面的標籤、圖上文字，再按產圖。", false);
     }).catch(e => { $("sendBtn").disabled = false; $("resetChatBtn").disabled = !chat.responseId; wait.innerHTML = '<span class="warn">' + esc(e.message) + '</span>'; $("chatText").value = text; });
   }
-  function resetChat() { variantIndex++; chat = { responseId: "", turns: [] }; $("chatLog").innerHTML = ""; $("versions").innerHTML = ""; $("promptEn").value = ""; $("resetChatBtn").disabled = true; chatTouched = false; setStatus("imageStatus", "", false); }
+  function resetChat() { variantIndex++; lastSent = null; chat = { responseId: "", turns: [] }; $("chatLog").innerHTML = ""; $("versions").innerHTML = ""; $("promptEn").value = ""; $("resetChatBtn").disabled = true; chatTouched = false; setStatus("imageStatus", "", false); }
   function showTurn(i) {
     currentImageBase64 = chat.turns[i].base64; currentDriveUrl = "";
     $("versions").innerHTML = chat.turns.map((t, k) => '<img src="data:image/png;base64,' + t.base64 + '" class="' + (k === i ? 'current' : '') + '" title="第 ' + (k + 1) + ' 版" onclick="showTurn(' + k + ')">').join("");

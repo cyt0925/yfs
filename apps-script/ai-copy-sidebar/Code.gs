@@ -847,13 +847,46 @@ function extractResponsesError(code, body) {
  *          product, productInfo, headline, subline, price, badge, note, hookCopy, layout, textLayout, accent, variantIndex }
  * 回傳: { responseId, base64, text, revisedPrompt, model }
  */
+/**
+ * 第二輪起，側邊欄把「標籤／圖上文字欄位跟上一次送出的差異」整理成 changes 送來，
+ * 這裡翻成完整指令接在使用者的話前面。不然改標籤模型根本不知道。
+ * changes = { mode?: "full"|"background", textLayout?: key, accent?: key,
+ *             fields?: { headline?, subline?, price?, badge?, note? } }（只含有變動的）
+ */
+function describeChanges_(changes, variantIndex) {
+  if (!changes || typeof changes !== "object") return "";
+  const out = [];
+  if (changes.mode === "background") {
+    out.push("【改成只畫背景】整張圖不要任何文字、不要產品，把原本文字與產品的位置留成乾淨的空間，其餘氛圍、配色、光線與上一張一致。");
+  } else if (changes.mode === "full") {
+    out.push("【改成完整稿】把文字與產品都畫進圖裡，依下面的規格排版。");
+  }
+  if (changes.textLayout) {
+    out.push("【改排法】把所有文字依這個排法重排（位置一定要跟上一張不同）：\n" +
+      (TEXT_LAYOUTS[changes.textLayout] || pickAutoLayout(variantIndex)));
+  }
+  if (changes.accent) {
+    out.push("【改強調色】" + (ACCENTS[changes.accent] || ACCENTS.auto));
+  }
+  const f = changes.fields || {};
+  const names = { headline: "主標", subline: "優惠／副標", price: "價格", badge: "賣點徽章", note: "小字註記" };
+  const fieldLines = Object.keys(names).filter(k => Object.prototype.hasOwnProperty.call(f, k)).map(k => {
+    const v = String(f[k] || "").trim();
+    return v ? names[k] + "改成「" + v + "」（一字不差）" : "拿掉" + names[k];
+  });
+  if (fieldLines.length) out.push("【改圖上文字】" + fieldLines.join("；") + "。其他文字維持原樣。");
+  return out.join("\n\n");
+}
+
 function chatImage(input) {
   const apiKey = requireApiKey();
   const size = SIZE_MAP[input.ratio] || "1024x1024";
   const quality = ["low", "medium", "high"].indexOf(input.quality) !== -1 ? input.quality : IMAGE_QUALITY;
   const firstTurn = !input.previousResponseId;
   const userText = String(input.text || "").trim();
+  const changeText = firstTurn ? "" : describeChanges_(input.changes, input.variantIndex);
   if (!userText && firstTurn) throw new Error("請先用中文寫這張圖要長什麼樣。");
+  if (!userText && !changeText) throw new Error("要改什麼？打幾個字，或改下面的標籤再按產圖。");
 
   const content = [];
   if (firstTurn) {
@@ -879,7 +912,10 @@ function chatImage(input) {
       content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/jpeg") + ";base64," + im.base64, detail: "low" });
     });
   } else {
-    content.push({ type: "input_text", text: userText + "\n（只改我提到的部分，其他保持與上一張一致。直接產出新圖。）" });
+    const parts = [];
+    if (changeText) parts.push(changeText);
+    if (userText) parts.push(userText);
+    content.push({ type: "input_text", text: parts.join("\n\n") + "\n（只改上面提到的部分，其他保持與上一張一致。直接產出新圖。）" });
   }
 
   // 不指定 image model，讓 OpenAI 用目前最新的（實測已是 gpt-image-2）。
