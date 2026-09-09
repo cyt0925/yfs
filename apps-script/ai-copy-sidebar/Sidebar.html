@@ -1,4 +1,3 @@
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@700;900&display=swap" rel="stylesheet">
 <style>
   :root {
     --citrus: #D9520A; --citrus-dark: #B8440A;
@@ -161,11 +160,10 @@
       <canvas id="stage"></canvas>
       <div class="versions" id="versions"></div>
       <div class="chipgroups" style="margin-top:8px">
-        <div class="chips"><span class="chip" id="chipText" onclick="toggleOverlay('overlayText')">疊標題</span><span class="chip" id="chipProd" onclick="toggleOverlay('overlayProducts')">疊產品</span><span class="chip" id="chipLogo" onclick="toggleOverlay('overlayLogo')">疊 logo</span></div>
-        <button class="link" onclick="autoPlaceHeadline()">標題自動找留白</button>
+        <div class="chips"><span class="chip" id="chipProd" onclick="toggleOverlay('overlayProducts')">疊上真實產品圖（可拖曳）</span></div>
       </div>
       <details class="more">
-        <summary>圖上文字、字色、大小 <span id="textSource" style="color:var(--citrus)"></span></summary>
+        <summary>圖上文字（給模型畫進圖裡） <span id="textSource" style="color:var(--citrus)"></span></summary>
         <input type="text" id="headline" placeholder="主標（空白就用選定文案第一行）" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
         <input type="text" id="subline" placeholder="優惠（例：買2箱送150點）" style="margin-top:6px" oninput="checkMismatch(); scheduleRender()">
         <div class="two" style="margin-top:6px">
@@ -175,22 +173,9 @@
         <input type="text" id="note" placeholder="小字註記（例：限量須登記）" style="margin-top:6px">
         <div class="notice" id="mismatchNotice"></div>
         <div class="two" style="margin-top:6px">
-          <select id="palette" onchange="onPaletteChange(); scheduleRender()"></select>
-          <select id="textColor" onchange="scheduleRender()">
-            <option value="auto">字色：依主色調</option>
-            <option value="#FFFFFF|#B8440A">白字橘邊</option>
-            <option value="#FFFFFF|#1B4F9C">白字藍邊</option>
-            <option value="#FFFFFF|#222222">白字黑邊</option>
-            <option value="#D9520A|#FFFFFF">橘字白邊</option>
-            <option value="#1B3F8B|#FFFFFF">藍字白邊</option>
-            <option value="#1C1815|#FFFFFF">黑字白邊</option>
-          </select>
+          <div><label style="margin:0;font-weight:400">疊圖產品大小</label><input type="range" id="productScale" min="40" max="180" value="100" oninput="scheduleRender()"></div>
+          <select id="layout" style="align-self:end" onchange="resetPositions()"></select>
         </div>
-        <div class="two" style="margin-top:6px">
-          <div><label style="margin:0;font-weight:400">字級</label><input type="range" id="textScale" min="50" max="180" value="100" oninput="scheduleRender()"></div>
-          <div><label style="margin:0;font-weight:400">產品大小</label><input type="range" id="productScale" min="40" max="180" value="100" oninput="scheduleRender()"></div>
-        </div>
-        <select id="layout" style="margin-top:6px" onchange="resetPositions()"></select>
         <textarea id="composeNote" style="min-height:40px;margin-top:6px" placeholder="給設計師的備註（進需求單）"></textarea>
       </details>
       <div class="btns">
@@ -222,7 +207,7 @@
   const images = [];              // {id, name, mime, base64, dataUrl, kind:'ref'|'prod', opaque}
   let logoDataUrl = "";
   let currentImageBase64 = "", currentDriveUrl = "";
-  const overlay = { overlayText: true, overlayProducts: true, overlayLogo: true };
+  const overlay = { overlayProducts: true };
   const CATEGORY_KWS = ["洗衣膠囊", "膠囊", "洗衣精", "洗碗精", "洗衣槽", "地板", "蔬果", "洗手", "衛生紙", "廚房紙巾", "濕巾", "抽取式"];
   let uid = 0;
 
@@ -250,7 +235,6 @@
     run("getFormOptions")().then(o => {
       options = o;
       $("tone").innerHTML = '<option value="">調性</option>' + o.tones.map(t => '<option>' + esc(t) + '</option>').join("");
-      $("palette").innerHTML = o.palettes.map(p => '<option value="' + esc(p.key) + '">主色調：' + esc(p.key) + '</option>').join("");
       $("layout").innerHTML = o.layouts.map(l => '<option value="' + esc(l.key) + '">版面：' + esc(l.key) + '</option>').join("");
       $("ratioChips").innerHTML = o.ratios.map((r, i) => '<span class="chip' + (i === 0 ? ' on' : '') + '" data-v="' + r + '">' + r + '</span>').join("");
     });
@@ -446,8 +430,7 @@
       const files = res.products.files.map(f => ({ f: f, kind: "prod" })).concat(res.references.files.map(f => ({ f: f, kind: "ref" })));
       $("libHint").textContent = files.length ? "點一下加入。" + (res.logo ? "　logo：" + res.logo.name : "") : "雲端硬碟沒有常用素材（選單「建立雲端硬碟常用素材庫」可建立，非必要）。";
       $("libTray").innerHTML = files.map(x => '<div class="tile lib ' + x.kind + '" onclick=\'addFromLibrary(' + JSON.stringify({ id: x.f.id, name: x.f.name, kind: x.kind }).replace(/'/g, "&#39;") + ')\'>' + (x.f.thumb ? '<img src="' + x.f.thumb + '">' : '') + '<span class="kind">' + (x.kind === "prod" ? "產品" : "參考") + '</span></div>').join("");
-      if (res.logo) run("getFileBase64")(res.logo.id).then(r => { logoDataUrl = r.dataUrl; updateOverlayChips(); scheduleRender(); }).catch(() => {});
-      window.__libHasLogo = !!res.logo;
+      if (res.logo) run("getFileBase64")(res.logo.id).then(r => { logoDataUrl = r.dataUrl; }).catch(() => {});
     }).catch(e => { $("libHint").textContent = e.message; });
   }
   function addFromLibrary(f) {
@@ -520,63 +503,37 @@
     startCompose();
   }
   function updateOverlayDefaults(mode) {
-    overlay.overlayText = mode === "background"; overlay.overlayProducts = mode === "background" && prods().length > 0; overlay.overlayLogo = mode === "background";
+    overlay.overlayProducts = mode === "background" && prods().length > 0;
     updateOverlayChips(); scheduleRender();
   }
   function toggleOverlay(k) { overlay[k] = !overlay[k]; updateOverlayChips(); scheduleRender(); }
   function updateOverlayChips() {
-    $("chipText").classList.toggle("on", overlay.overlayText);
     $("chipProd").classList.toggle("on", overlay.overlayProducts); $("chipProd").style.display = prods().length ? "" : "none";
-    $("chipLogo").classList.toggle("on", overlay.overlayLogo); $("chipLogo").style.display = (logoDataUrl || logos().length) ? "" : "none";
   }
-  function onPaletteChange() {}
 
   // ---------- 成品預覽（可拖曳） ----------
-  const comp = { headline: { cx: 0.5, cy: 0.18 }, products: { cx: 0.5, cy: 0.74 }, badge: { cx: 0.85, cy: 0.05 } };
-  let bgImg = null, prodImgs = [], logoImg = null, hitBoxes = [], drag = null, renderTimer = null;
+  const comp = { products: { cx: 0.5, cy: 0.74 } };
+  let bgImg = null, prodImgs = [], hitBoxes = [], drag = null, renderTimer = null;
   const full = document.createElement("canvas");
-  const FONT = "'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif";
   const loadImage = src => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error("圖片載入失敗")); im.src = src; });
-  const palette = () => (options && options.palettes || []).find(p => p.key === $("palette").value) || { textColor: "#FFFFFF", textStroke: "#333333", badgeColor: "#D9520A" };
   const zones = () => ((options.layouts || []).find(l => l.key === $("layout").value) || options.layouts[0]).zones;
-  function resetPositions() { if (!options) return; const z = zones(); comp.headline = { cx: z.headline.x + z.headline.w / 2, cy: z.headline.y + z.headline.h / 2 }; comp.products = { cx: z.products.x + z.products.w / 2, cy: z.products.y + z.products.h / 2 }; comp.badge = { cx: z.badge === "top-left" ? 0.15 : 0.85, cy: 0.05 }; render(); }
-  function autoPlaceHeadline() {
-    if (!bgImg) return;
-    const W = 64, H = Math.round(64 * bgImg.naturalHeight / bgImg.naturalWidth), c = document.createElement("canvas"); c.width = W; c.height = H;
-    const g = c.getContext("2d"); g.drawImage(bgImg, 0, 0, W, H); const d = g.getImageData(0, 0, W, H).data;
-    const lum = (x, y) => { const i = (y * W + x) * 4; return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
-    const cands = [{ cx: 0.5, cy: 0.16, w: 0.88, h: 0.24 }, { cx: 0.5, cy: 0.86, w: 0.88, h: 0.22 }, { cx: 0.74, cy: 0.3, w: 0.46, h: 0.34 }, { cx: 0.26, cy: 0.3, w: 0.46, h: 0.34 }, { cx: 0.5, cy: 0.5, w: 0.88, h: 0.24 }];
-    let best = null;
-    cands.forEach(cd => {
-      const x0 = Math.max(0, Math.round((cd.cx - cd.w / 2) * W)), x1 = Math.min(W, Math.round((cd.cx + cd.w / 2) * W)), y0 = Math.max(0, Math.round((cd.cy - cd.h / 2) * H)), y1 = Math.min(H, Math.round((cd.cy + cd.h / 2) * H));
-      let n = 0, s = 0, s2 = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const v = lum(x, y); n++; s += v; s2 += v * v; }
-      const sd = Math.sqrt(Math.max(0, s2 / n - (s / n) * (s / n))); if (!best || sd < best.sd) best = { sd: sd, cd: cd };
-    });
-    comp.headline = { cx: best.cd.cx, cy: best.cd.cy }; render();
-  }
+  function resetPositions() { if (!options) return; const z = zones(); comp.products = { cx: z.products.x + z.products.w / 2, cy: z.products.y + z.products.h / 2 }; render(); }
   async function startCompose() {
     if (!currentImageBase64) return;
     try {
-      try { await document.fonts.load("900 40px 'Noto Sans TC'"); await document.fonts.load("700 40px 'Noto Sans TC'"); } catch (e) {}
       bgImg = await loadImage("data:image/png;base64," + currentImageBase64);
       full.width = bgImg.naturalWidth; full.height = bgImg.naturalHeight;
       prodImgs = await Promise.all(prods().map(im => loadImage(im.dataUrl)));
-      const logoSrc = logos().length ? logos()[0].dataUrl : logoDataUrl;
-      logoImg = logoSrc ? await loadImage(logoSrc).catch(() => null) : null;
       $("stageWrap").style.display = "block"; $("briefBox").style.display = "none";
-      resetPositions(); if (overlay.overlayText) autoPlaceHeadline(); else render();
+      resetPositions();
       updateOverlayChips();
     } catch (e) { setStatus("composeStatus", e.message, true); }
   }
   function scheduleRender() { if (!bgImg) return; clearTimeout(renderTimer); renderTimer = setTimeout(render, 30); }
-  function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
-  function fitFont(g, text, maxW, start, weight) { let s = start; while (s > 12) { g.font = weight + " " + s + "px " + FONT; if (g.measureText(text).width <= maxW) break; s -= 2; } return s; }
-  function outlined(g, text, x, y, size, fill, stroke) { g.textAlign = "center"; g.textBaseline = "alphabetic"; g.lineJoin = "round"; g.lineWidth = Math.max(2, size * 0.14); g.strokeStyle = stroke; g.strokeText(text, x, y); g.fillStyle = fill; g.fillText(text, x, y); }
   function render() {
     if (!bgImg) return;
     const W = full.width, H = full.height, g = full.getContext("2d"); g.clearRect(0, 0, W, H); g.drawImage(bgImg, 0, 0, W, H); hitBoxes = [];
-    const pal = palette(), tc = $("textColor").value, fill = tc === "auto" ? pal.textColor : tc.split("|")[0], stroke = tc === "auto" ? pal.textStroke : tc.split("|")[1];
-    const ts = parseInt($("textScale").value, 10) / 100, ps = parseInt($("productScale").value, 10) / 100;
+    const ps = parseInt($("productScale").value, 10) / 100;
     if (overlay.overlayProducts && prodImgs.length) {
       let th = H * 0.40 * ps; const gap = W * 0.03; let ws = prodImgs.map(im => im.naturalWidth / im.naturalHeight * th); let total = ws.reduce((a, b) => a + b, 0) + gap * (prodImgs.length - 1);
       if (total > W * 0.94) { const k = W * 0.94 / total; th *= k; ws = ws.map(w => w * k); total = W * 0.94; }
@@ -584,21 +541,6 @@
       prodImgs.forEach((im, i) => { const w = ws[i]; g.save(); g.fillStyle = "rgba(0,0,0,0.22)"; g.filter = "blur(" + Math.round(W * 0.012) + "px)"; g.beginPath(); g.ellipse(x + w / 2, bottom - th * 0.01, w * 0.42, th * 0.035, 0, 0, Math.PI * 2); g.fill(); g.restore(); g.drawImage(im, x, bottom - th, w, th); x += w + gap; });
       hitBoxes.push({ key: "products", x: comp.products.cx * W - total / 2, y: bottom - th, w: total, h: th });
     }
-    const headline = overlay.overlayText ? $("headline").value.trim() : "", subline = overlay.overlayText ? [$("subline").value.trim(), $("price").value.trim()].filter(Boolean).join("　") : "", badge = overlay.overlayText ? $("badge").value.trim() : "";
-    if (headline || subline) {
-      const maxW = W * 0.9, s1 = headline ? fitFont(g, headline, maxW, W * 0.085 * ts, "900") : 0, s2 = subline ? fitFont(g, subline, maxW, W * 0.058 * ts, "700") : 0;
-      const bh = s1 + (s1 && s2 ? s1 * 0.25 : 0) + s2, cx = comp.headline.cx * W, top = comp.headline.cy * H - bh / 2; let y = top, mw = 0;
-      if (headline) { y += s1; outlined(g, headline, cx, y, s1, fill, stroke); g.font = "900 " + s1 + "px " + FONT; mw = Math.max(mw, g.measureText(headline).width); y += s1 * 0.25; }
-      if (subline) { y += s2; outlined(g, subline, cx, y, s2, fill, stroke); g.font = "700 " + s2 + "px " + FONT; mw = Math.max(mw, g.measureText(subline).width); }
-      hitBoxes.push({ key: "headline", x: cx - mw / 2 - 10, y: top - 10, w: mw + 20, h: bh + 20 });
-    }
-    if (badge) {
-      const size = Math.round(W * 0.034 * ts); g.font = "700 " + size + "px " + FONT;
-      const px = size * 0.7, py = size * 0.45, bw = Math.min(W * 0.9, g.measureText(badge).width + px * 2), bh = size + py * 2, bx = comp.badge.cx * W - bw / 2, by = comp.badge.cy * H - bh / 2;
-      g.fillStyle = pal.badgeColor || "#D9520A"; roundRect(g, bx, by, bw, bh, bh / 2); g.fill(); g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(badge, bx + bw / 2, by + bh / 2 + size * 0.04, bw - px);
-      hitBoxes.push({ key: "badge", x: bx, y: by, w: bw, h: bh });
-    }
-    if (overlay.overlayLogo && logoImg) { const lh = H * 0.05, lw = logoImg.naturalWidth / logoImg.naturalHeight * lh, m = W * 0.03; g.drawImage(logoImg, zones().logo === "top-right" ? W - m - lw : m, m, lw, lh); }
     const stage = $("stage"), dw = stage.clientWidth || 360, dh = Math.round(dw * H / W);
     if (stage.width !== dw || stage.height !== dh) { stage.width = dw; stage.height = dh; }
     const sg = stage.getContext("2d"); sg.clearRect(0, 0, dw, dh); sg.drawImage(full, 0, 0, dw, dh);
@@ -632,7 +574,7 @@
     L.push("品牌：" + $("brand").value + "　商品：" + ($("product").value.trim() || "（未填）"));
     const t = [$("headline").value, $("subline").value, $("price").value, $("badge").value, $("note").value].filter(Boolean).join("／"); if (t) L.push("圖上文字：" + t);
     if (copyResult) { const p = selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : null; L.push("", p ? "選定文案（" + $("tone").value + "）：\n" + p : "文案候選：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((x, i) => "版本" + (i + 1) + "：\n" + x).join("\n\n")); }
-    L.push("", "視覺：" + (chipValue("modeChips") === "background" ? "只畫背景＋程式疊字" : "完整稿") + "　比例 " + (chipValue("ratioChips") || "9:16") + "　主色調 " + $("palette").value);
+    L.push("", "視覺：" + (chipValue("modeChips") === "background" ? "只畫背景＋疊真實產品圖" : "完整稿") + "　比例 " + (chipValue("ratioChips") || "1:1"));
     if (chat.turns.length) L.push("生圖對話：\n" + chat.turns.map((x, i) => "  " + (i + 1) + ". " + x.text).join("\n"));
     L.push("參考圖 " + refs().length + " 張、原稿 " + sources().length + " 張、版型 " + layouts().length + " 張、產品去背圖 " + prods().length + " 張、logo " + logos().length + " 張（另附）");
     if ($("composeNote").value.trim()) L.push("備註：" + $("composeNote").value.trim());
