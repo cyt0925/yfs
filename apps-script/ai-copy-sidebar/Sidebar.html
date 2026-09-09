@@ -139,6 +139,10 @@
 
     <div class="chatlog" id="chatLog"></div>
     <textarea id="chatText" style="min-height:72px;margin-top:8px" placeholder="用中文說這張圖要長什麼樣。產圖後繼續打字＝修改上一張。"></textarea>
+    <div style="display:flex;gap:6px;margin-top:4px;align-items:center">
+      <button class="link" id="styleHintBtn" onclick="styleHint()">依文案產生風格提示 →</button>
+      <span class="hint" id="styleHintStatus" style="margin:0"></span>
+    </div>
     <div class="chipgroups">
       <div class="chips" id="modeChips"><span class="chip on" data-v="full">完整稿</span><span class="chip" data-v="background">只畫背景</span></div>
       <div class="chips" id="qualityChips"><span class="chip" data-v="low">草稿</span><span class="chip on" data-v="medium">一般</span><span class="chip" data-v="high">精細</span></div>
@@ -337,7 +341,6 @@
     }).then(r => {
       $("genCopyBtn").disabled = false; setStatus("copyStatus", "", false);
       copyResult = r; selectedCopyIndex = -1; renderCards(); copyScene = r.scene || "";
-      prefillChat(false);
     }).catch(e => { $("genCopyBtn").disabled = false; setStatus("copyStatus", e.message, true); });
   }
   function renderCards() {
@@ -443,11 +446,14 @@
   bindChips("modeChips", v => updateOverlayDefaults(v));
   bindChips("qualityChips"); bindChips("ratioChips"); bindChips("textLayoutChips"); bindChips("accentChips");
   $("chatText").addEventListener("input", () => { chatTouched = true; });
-  function prefillChat(force) {
-    if (chat.responseId || !copyScene) return;
-    if (!force && chatTouched && $("chatText").value.trim()) return;
-    run("describeBackgroundZh")({ refAnalysis: null, copyScene: copyScene, product: $("product").value.trim() })
-      .then(r => { if (r.zh && !chat.responseId && (!chatTouched || force)) { $("chatText").value = r.zh; chatTouched = false; } }).catch(() => {});
+  // 按鈕觸發：依選定文案寫一段風格提示進對話框（不會自動跑）
+  function styleHint() {
+    const hook = copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "";
+    if (!hook && !copyScene) { $("styleHintStatus").textContent = "先在「文案」生成並點選一版。"; return; }
+    $("styleHintBtn").disabled = true; $("styleHintStatus").textContent = hook ? "整理中…" : "還沒點選文案，先用文案模型的情境，整理中…";
+    run("describeBackgroundZh")({ hookCopy: hook, copyScene: copyScene, product: $("product").value.trim(), brand: $("brand").value, adName: ctx && ctx.ok ? ctx.adName : "", sheetName: ctx && ctx.ok ? ctx.sheetName : "", mode: chipValue("modeChips") })
+      .then(r => { $("styleHintBtn").disabled = false; if (r.zh) { $("chatText").value = r.zh; chatTouched = true; } $("styleHintStatus").textContent = r.zh ? "已填入，可以改再產圖。" : "沒有可用的文案。"; })
+      .catch(e => { $("styleHintBtn").disabled = false; $("styleHintStatus").textContent = e.message; });
   }
   function invalidateChat() { if (chat.responseId && images.length) setStatus("imageStatus", "圖片有變動。目前對話不會帶入新圖，按「重來」才會重新附上。", false); }
   function pushBubble(kind, html) { const el = document.createElement("div"); el.className = "bubble " + kind; el.innerHTML = html; $("chatLog").appendChild(el); return el; }
@@ -496,7 +502,7 @@
       setStatus("imageStatus", "要改就繼續打字。", false);
     }).catch(e => { $("sendBtn").disabled = false; $("resetChatBtn").disabled = !chat.responseId; wait.innerHTML = '<span class="warn">' + esc(e.message) + '</span>'; $("chatText").value = text; });
   }
-  function resetChat() { chat = { responseId: "", turns: [] }; $("chatLog").innerHTML = ""; $("versions").innerHTML = ""; $("promptEn").value = ""; $("resetChatBtn").disabled = true; chatTouched = false; prefillChat(true); setStatus("imageStatus", "", false); }
+  function resetChat() { chat = { responseId: "", turns: [] }; $("chatLog").innerHTML = ""; $("versions").innerHTML = ""; $("promptEn").value = ""; $("resetChatBtn").disabled = true; chatTouched = false; setStatus("imageStatus", "", false); }
   function showTurn(i) {
     currentImageBase64 = chat.turns[i].base64; currentDriveUrl = "";
     $("versions").innerHTML = chat.turns.map((t, k) => '<img src="data:image/png;base64,' + t.base64 + '" class="' + (k === i ? 'current' : '') + '" title="第 ' + (k + 1) + ' 版" onclick="showTurn(' + k + ')">').join("");
