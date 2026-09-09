@@ -105,9 +105,10 @@
   <h2 onclick="toggle('secCopy')">文案<span class="chev"></span></h2>
   <div class="body">
     <div class="two">
-      <div><label style="margin-top:0">商品</label><input type="text" id="product" placeholder="洗衣膠囊*3盒" oninput="productTouched = true; checkMismatch()"></div>
+      <div><label style="margin-top:0">品牌 <span id="brandAuto" style="font-weight:400;color:var(--muted)"></span></label><select id="brand" onchange="brandTouched = true"></select></div>
       <div><label style="margin-top:0">調性</label><select id="tone"></select></div>
     </div>
+    <label>商品</label><input type="text" id="product" placeholder="洗衣膠囊*3盒" oninput="productTouched = true; checkMismatch()">
     <div class="hint" id="productInfoHint"></div>
     <label>時事／梗料 <span style="font-weight:400;color:var(--muted)">（選填）</span></label>
     <textarea id="trend" style="min-height:44px" placeholder="事件＋跟洗衣清潔的關聯，例：颱風假在家追劇，衣服堆到週一"></textarea>
@@ -213,14 +214,14 @@
 
 <script>
   // ---------- 狀態 ----------
-  let options = null, ctx = null, productTouched = false, lastContextKey = "", currentColKey = "";
+  let options = null, ctx = null, productTouched = false, brandTouched = false, lastContextKey = "", currentColKey = "";
   let angles = [], selectedAngle = null, copyResult = null, selectedCopyIndex = -1, copyScene = "";
   let chatTouched = false, chat = { responseId: "", turns: [] };
   const images = [];              // {id, name, mime, base64, dataUrl, kind:'ref'|'prod', opaque}
   let logoDataUrl = "";
   let currentImageBase64 = "", currentDriveUrl = "";
   const overlay = { overlayText: true, overlayProducts: true, overlayLogo: true };
-  const CATEGORY_KWS = ["洗衣膠囊", "膠囊", "洗衣精", "洗碗精", "洗衣槽", "地板", "蔬果", "洗手"];
+  const CATEGORY_KWS = ["洗衣膠囊", "膠囊", "洗衣精", "洗碗精", "洗衣槽", "地板", "蔬果", "洗手", "衛生紙", "廚房紙巾", "濕巾", "抽取式"];
   let uid = 0;
 
   const $ = id => document.getElementById(id);
@@ -264,7 +265,7 @@
     const switched = currentColKey && colKey !== currentColKey;
     if (colKey !== currentColKey) {
       // 換欄：所有跟欄位綁定的內容全部重來，不能留上一欄的
-      currentColKey = colKey; productTouched = false;
+      currentColKey = colKey; productTouched = false; brandTouched = false;
       ["headline", "subline", "price", "badge", "note"].forEach(id => { $(id).value = ""; });
       $("product").value = c.product || "";
       if (switched) {
@@ -275,6 +276,8 @@
         else setStatus("imageStatus", "已切到 " + c.columnLabel + " 欄，圖上文字已更新。", false);
       }
     } else if (!productTouched) { $("product").value = c.product || ""; }
+    if (c.brands && $("brand").options.length !== c.brands.length) $("brand").innerHTML = c.brands.map(b => '<option>' + esc(b) + '</option>').join("");
+    if (!brandTouched) { $("brand").value = c.brandGuess || "橘子工坊"; $("brandAuto").textContent = c.brandGuess ? "（自動偵測）" : "（偵測不到，預設橘子工坊，請確認）"; }
     $("productInfoHint").textContent = c.productInfo ? "賣點：" + c.productInfo.sellingPoints : "";
     prefillCompose(c); checkMismatch(); scheduleRender();
     $("ctx").innerHTML = '<b>' + esc(c.sheetName) + '</b> ' + esc(c.columnLabel) + ' 欄　' + esc(c.adName || c.product || "") +
@@ -307,7 +310,11 @@
     }
     if (!$("note").value) { const n = lines.find(l => /(限量|須登記|需登記|僅供參考|依網頁公告)/.test(l) && l.length <= 20); if (n) $("note").value = clean(n); }
     if (!$("price").value && prices[0]) { const m = prices[0].match(/\$?\s*[\d,]+(?:\.\d+)?\s*(?:\/\s*[一-鿿a-zA-Z]+)?(?:\s*up)?/i); $("price").value = m ? ("$" + m[0].replace(/^\$?\s*/, "").trim()) : clean(prices[0]); }
-    if (!$("badge").value) { const m = (String(c.budgetText || "") + " " + String(c.copyText || "") + " " + String(c.adName || "")).match(/(\d{1,2}\/\d{1,2})(?:\s*[-~～–]\s*\d{1,2}\/\d{1,2})?/); if (m) $("badge").value = m[1] + " momo限定"; }
+    if (!$("badge").value) {
+      // 日期來源優先順序：上檔日期列 → 廣告名稱 → 預算分配 → 文案
+      const src = [c.dateText, c.adName, c.budgetText, c.copyText].map(x => String(x || ""));
+      for (const t of src) { const m = t.match(/(\d{1,2}\/\d{1,2})(?:\s*[-~～–]\s*(\d{1,2}\/\d{1,2}))?/); if (m) { $("badge").value = (m[2] ? m[1] + "-" + m[2] : m[1]) + " momo限定"; break; } }
+    }
   }
   function checkMismatch() {
     const product = ($("product").value + " " + (ctx && ctx.ok ? ctx.adName : "")).toLowerCase();
@@ -319,7 +326,7 @@
 
   // ---------- 文案 ----------
   function copyInput() {
-    return { product: $("product").value.trim(), sellingPoint: $("sellingPoint").value.trim(), tone: $("tone").value, trend: $("trend").value.trim(), angle: selectedAngle, productInfo: ctx ? ctx.productInfo : null };
+    return { brand: $("brand").value, product: $("product").value.trim(), adName: ctx && ctx.ok ? ctx.adName : "", sheetName: ctx && ctx.ok ? ctx.sheetName : "", sellingPoint: $("sellingPoint").value.trim(), tone: $("tone").value, trend: $("trend").value.trim(), angle: selectedAngle, productInfo: ctx ? ctx.productInfo : null };
   }
   function proposeAngles() {
     const i = copyInput();
@@ -477,7 +484,7 @@
       referenceImages: first && $("sendRefs").checked ? refs().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       layoutImages: first ? layouts().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       logoImages: first ? logos().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
-      product: $("product").value.trim(), productInfo: ctx ? ctx.productInfo : null,
+      brand: $("brand").value, product: $("product").value.trim(), adName: ctx && ctx.ok ? ctx.adName : "", sheetName: ctx && ctx.ok ? ctx.sheetName : "", productInfo: ctx ? ctx.productInfo : null,
       headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(), note: $("note").value.trim(),
       hookCopy: copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "",
       layout: $("layout").value, textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips")
@@ -611,7 +618,7 @@
   function buildBrief() {
     const L = ["【橘子工坊 素材需求單】"];
     if (ctx && ctx.ok) L.push("檔期／欄位：" + ctx.sheetName + " " + ctx.columnLabel + " 欄" + (ctx.budgetText ? "（" + ctx.budgetText + "）" : ""));
-    L.push("商品：" + ($("product").value.trim() || "（未填）"));
+    L.push("品牌：" + $("brand").value + "　商品：" + ($("product").value.trim() || "（未填）"));
     const t = [$("headline").value, $("subline").value, $("price").value, $("badge").value, $("note").value].filter(Boolean).join("／"); if (t) L.push("圖上文字：" + t);
     if (copyResult) { const p = selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : null; L.push("", p ? "選定文案（" + $("tone").value + "）：\n" + p : "文案候選：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((x, i) => "版本" + (i + 1) + "：\n" + x).join("\n\n")); }
     L.push("", "視覺：" + (chipValue("modeChips") === "background" ? "只畫背景＋程式疊字" : "完整稿") + "　比例 " + (chipValue("ratioChips") || "9:16") + "　主色調 " + $("palette").value);

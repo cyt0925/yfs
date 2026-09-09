@@ -39,7 +39,7 @@ const API_KEY_PROP = "OPENAI_API_KEY";
 const TEXT_MODEL_CANDIDATES = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-4.1"];   // 文案用 Luna 省錢，不夠好再往前換
 const IMAGE_QUALITY = "medium"; // 預設生圖品質 low / medium / high，high 一張成本約 3～4 倍
 
-const LABELS = { PRODUCT: "品類", AD_NAME: "廣告名稱", COPY: "文案", BUDGET: "預算分配" };
+const LABELS = { PRODUCT: "品類", AD_NAME: "廣告名稱", COPY: "文案", BUDGET: "預算分配", DATE: "上檔日期" };
 const PRODUCT_SHEET = "產品資料";
 
 // 雲端硬碟只是「可選」的常用素材庫。沒建也能用，所有圖都可以直接在側邊欄上傳。
@@ -80,6 +80,31 @@ const BRAND = {
     "常用 hashtag：#橘子工坊 #洗衣膠囊 #洗衣精 #0添加 #天然配方 #無螢光劑 #適用幼兒衣物"
   ]
 };
+
+/**
+ * 多品牌：這張表不只橘子工坊。key 是品牌名，keywords 用來從品類／廣告名稱／分頁名自動偵測。
+ * facts 只寫確定的事，不確定的交給「產品資料」分頁或業務補充。
+ */
+const BRAND_PROFILES = {
+  "橘子工坊": { keywords: ["橘子工坊", "Orange House", "橘油"], facts: BRAND.facts, hashtags: "#橘子工坊 #天然配方 #無螢光劑", note: "家用清潔品牌，主色橘。" },
+  "五月花": { keywords: ["五月花", "May Flower", "衛生紙", "抽取式", "廚房紙巾", "紙品", "濕巾"], facts: ["永豐餘旗下家用紙品牌，品項含抽取式衛生紙、廚房紙巾、濕式衛生紙等。", "賣點以「產品資料」分頁或業務補充為準，不可自行編造成分或認證。"], hashtags: "#五月花", note: "家用紙品牌，包裝常見深藍或藍紫底。" },
+  "得意": { keywords: ["得意"], facts: ["永豐餘旗下家用紙品牌。", "賣點以「產品資料」分頁或業務補充為準。"], hashtags: "#得意", note: "家用紙品牌。" },
+  "蒲公英": { keywords: ["蒲公英"], facts: ["永豐餘旗下環保再生紙品牌。", "賣點以「產品資料」分頁或業務補充為準。"], hashtags: "#蒲公英", note: "環保紙品牌，主色綠。" },
+  "其他": { keywords: [], facts: ["品牌資訊以業務補充與產品圖為準。"], hashtags: "", note: "" }
+};
+function detectBrand(text) {
+  text = String(text || "");
+  const keys = Object.keys(BRAND_PROFILES);
+  for (let i = 0; i < keys.length; i++) {
+    if (BRAND_PROFILES[keys[i]].keywords.some(k => text.indexOf(k) !== -1)) return keys[i];
+  }
+  return "";
+}
+function resolveBrand(input) {
+  const name = (input && input.brand && BRAND_PROFILES[input.brand]) ? input.brand
+    : detectBrand([input && input.product, input && input.adName, input && input.sheetName].join(" ")) || "橘子工坊";
+  return Object.assign({ name: name }, BRAND_PROFILES[name]);
+}
 
 // 「產品資料」分頁不存在或找不到品項時的後備知識
 const PRODUCT_FACTS = {
@@ -354,6 +379,9 @@ function getColumnContext() {
     adName: adName,
     copyText: readCell(LABELS.COPY),
     budgetText: readCell(LABELS.BUDGET),
+    dateText: readCell(LABELS.DATE),
+    brandGuess: detectBrand(product + " " + adName + " " + sheet.getName()),
+    brands: Object.keys(BRAND_PROFILES),
     productInfo: getProductInfo(product),
     hasApiKey: !!PropertiesService.getScriptProperties().getProperty(API_KEY_PROP)
   };
@@ -457,12 +485,13 @@ function brandBlock(input) {
     ? "已知賣點：" + info.sellingPoints + "\n常見情境：" + info.scenes
     : "（沒有這個品項的資料，請依商品名稱合理推斷，不要編造成分）";
 
-  return `【品牌】${BRAND.name}，投放平台：${BRAND.platform}
+  const brand = resolveBrand(input);
+  return `【品牌】${brand.name}，投放平台：${BRAND.platform}。${brand.note || ""}
 【受眾】${BRAND.audience}
 【語氣】
 ${BRAND.voice.map(v => "- " + v).join("\n")}
 【品牌事實（只能用這些，不可自行加成分或功效）】
-${BRAND.facts.map(v => "- " + v).join("\n")}
+${brand.facts.map(v => "- " + v).join("\n")}
 【禁止】
 ${BRAND.banned.map(v => "- " + v).join("\n")}
 
@@ -536,7 +565,7 @@ function buildCopyPrompt(input) {
       ? "\n→ 時事型但沒有時事，改用普遍的季節或生活情境（天氣、上班、家務、放假），不要臆測近期新聞。"
       : "");
 
-  return `你是「${BRAND.name}」的社群廣告文案手，專寫 ${BRAND.platform} 的短文案。你只負責「前段情境鉤子」，後段的價格、優惠、贈品由業務另外填寫。
+  return `你是「${resolveBrand(input).name}」的社群廣告文案手，專寫 ${BRAND.platform} 的短文案。你只負責「前段情境鉤子」，後段的價格、優惠、贈品由業務另外填寫。
 
 ${brandBlock(input)}
 
@@ -558,7 +587,7 @@ ${trendBlock}
 
 【文案規則】
 - 每則 3 行，繁體中文台灣用語。
-- 第一行是鉤子，一定要有畫面或情緒，讓人想往下看；第二行帶到 ${BRAND.name} 與商品；第三行收尾（結果畫面、金句或回收梗）。
+- 第一行是鉤子，一定要有畫面或情緒，讓人想往下看；第二行帶到 ${resolveBrand(input).name} 與商品；第三行收尾（結果畫面、金句或回收梗）。
 - 三個版本的切角要真的不同（不同情境、不同人物視角、不同情緒），不可以只是換同義詞。
 - 絕對不可出現任何價格、折扣、贈品、mo點、日期等具體數字或優惠條件。
 - 每行最多 2 個 emoji，可以完全不用。
@@ -673,7 +702,7 @@ function getFileBase64(fileId) {
 
 /** 橘子工坊 momo CPAS 素材的固定版型（從設計師歷年成品歸納，設計師可直接改這段） */
 const HOUSE_TEMPLATE = [
-  "【橘子工坊 momo 素材固定版型，除非業務另外指定，一律照此排】",
+  "【永豐餘消費品 momo 素材固定版型，除非業務另外指定，一律照此排】",
   "1. 品牌 logo 放左上角（聯名時兩個 logo 並排在上方）。",
   "2. 標題 1～2 行，商品名可直接寫進標題。位置依【文字排法】。字體處理見下方【字體規格】。",
   "3. 三到四個圓形賣點徽章（白底或半透明圓形＋小圖示＋4～6 字），散布在產品旁邊，不能擋到產品正面。",
@@ -715,7 +744,10 @@ const ACCENTS = {
 function buildChatInstruction(input) {
   const ratio = input.ratio || "9:16";
   const lines = [];
-  lines.push(`你是「${BRAND.name}」的資深電商視覺設計師，投放平台是 ${BRAND.platform}，受眾是 ${BRAND.audience}`);
+  const brand = resolveBrand(input);
+  lines.push(`你是永豐餘消費品旗下品牌「${brand.name}」的資深電商視覺設計師，投放平台是 ${BRAND.platform}，受眾是 ${BRAND.audience}`);
+  lines.push(`【品牌鐵律】這張圖的品牌是「${brand.name}」${brand.note ? "（" + brand.note + "）" : ""}。畫面中不可出現任何其他品牌的名稱或 logo，尤其不可把它畫成「橘子工坊」。沒有附 logo 圖就不要自己畫 logo，把左上角留空。`);
+  lines.push("【數字鐵律】日期、價格、優惠、規格只能用下面業務給的欄位；參考圖、版型圖、產品圖上出現的日期與價格一律不可沿用。");
   lines.push(`請直接使用圖片生成工具產出一張 ${ratio} 的圖，不要先反問，不確定的地方自己做合理判斷。之後我會用中文請你修改，每次修改只動我提到的部分，其他完全保持。`);
   lines.push("");
   if (input.mode === "background") {
@@ -767,7 +799,7 @@ function buildChatInstruction(input) {
   }
   const productInfo = input.productInfo;
   if (input.product) lines.push("【商品】" + input.product + (productInfo ? "。賣點：" + productInfo.sellingPoints : ""));
-  lines.push("【品牌事實，不可違反】" + BRAND.facts.slice(0, 3).join("；"));
+  lines.push("【品牌事實，不可違反】" + brand.facts.slice(0, 3).join("；"));
   lines.push("【禁止】療效宣稱字眼、他牌 logo、真人臉部。");
   return lines.join("\n");
 }
