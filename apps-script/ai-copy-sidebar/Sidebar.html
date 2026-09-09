@@ -149,7 +149,7 @@
       <div class="chips" id="ratioChips"></div>
     </div>
     <div class="chipgroups" style="margin-top:4px">
-      <div class="chips" id="textLayoutChips" title="文字怎麼排"><span class="chip on" data-v="auto">排法自動變化</span><span class="chip" data-v="band">底部資訊帶</span><span class="chip" data-v="tag">價格牌</span><span class="chip" data-v="center">置中疊排</span><span class="chip" data-v="side">左字右圖</span></div>
+      <div class="chips" id="textLayoutChips" title="文字怎麼排"><span class="chip on" data-v="auto">排法自動輪替</span><span class="chip" data-v="tag">價格牌</span><span class="chip" data-v="center">置中疊排</span><span class="chip" data-v="side">左字右圖</span><span class="chip" data-v="top">上字下圖</span><span class="chip" data-v="band">底部資訊帶</span></div>
     </div>
     <div class="chipgroups" style="margin-top:4px">
       <div class="chips" id="accentChips" title="強調色"><span class="chip on" data-v="auto">強調色依背景</span><span class="chip" data-v="yellow">亮黃</span><span class="chip" data-v="orange">品牌橘</span><span class="chip" data-v="white">白字深邊</span><span class="chip" data-v="navy">深藍</span></div>
@@ -207,7 +207,7 @@
   // ---------- 狀態 ----------
   let options = null, ctx = null, productTouched = false, brandTouched = false, lastContextKey = "", currentColKey = "";
   let angles = [], selectedAngle = null, copyResult = null, selectedCopyIndex = -1, copyScene = "";
-  let chatTouched = false, chat = { responseId: "", turns: [] };
+  let chatTouched = false, chat = { responseId: "", turns: [] }, variantIndex = 0;   // 每開新對話換一種排法
   const images = [];              // {id, name, mime, base64, dataUrl, kind:'ref'|'prod', opaque}
   let logoDataUrl = "";
   let currentImageBase64 = "", currentDriveUrl = "";
@@ -483,7 +483,7 @@
       brand: $("brand").value, product: $("product").value.trim(), adName: ctx && ctx.ok ? ctx.adName : "", sheetName: ctx && ctx.ok ? ctx.sheetName : "", productInfo: ctx ? ctx.productInfo : null,
       headline: $("headline").value.trim(), subline: $("subline").value.trim(), price: $("price").value.trim(), badge: $("badge").value.trim(), note: $("note").value.trim(),
       hookCopy: copyResult && selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : "",
-      layout: $("layout").value, textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips")
+      layout: $("layout").value, textLayout: chipValue("textLayoutChips"), accent: chipValue("accentChips"), variantIndex: variantIndex
     };
     pushBubble("user", esc(text)); $("chatText").value = "";
     $("sendBtn").disabled = true; $("resetChatBtn").disabled = true;
@@ -502,7 +502,7 @@
       setStatus("imageStatus", "要改就繼續打字。", false);
     }).catch(e => { $("sendBtn").disabled = false; $("resetChatBtn").disabled = !chat.responseId; wait.innerHTML = '<span class="warn">' + esc(e.message) + '</span>'; $("chatText").value = text; });
   }
-  function resetChat() { chat = { responseId: "", turns: [] }; $("chatLog").innerHTML = ""; $("versions").innerHTML = ""; $("promptEn").value = ""; $("resetChatBtn").disabled = true; chatTouched = false; setStatus("imageStatus", "", false); }
+  function resetChat() { variantIndex++; chat = { responseId: "", turns: [] }; $("chatLog").innerHTML = ""; $("versions").innerHTML = ""; $("promptEn").value = ""; $("resetChatBtn").disabled = true; chatTouched = false; setStatus("imageStatus", "", false); }
   function showTurn(i) {
     currentImageBase64 = chat.turns[i].base64; currentDriveUrl = "";
     $("versions").innerHTML = chat.turns.map((t, k) => '<img src="data:image/png;base64,' + t.base64 + '" class="' + (k === i ? 'current' : '') + '" title="第 ' + (k + 1) + ' 版" onclick="showTurn(' + k + ')">').join("");
