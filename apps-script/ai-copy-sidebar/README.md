@@ -32,7 +32,7 @@ Google Sheets 的 Apps Script 側邊欄，掛在 CPAS 廣告素材入稿表上�
    - 若按更新後出現「Apps Script API has not been used in project 數字…」，代表腳本掛在 Google 自動配的隱藏 Cloud 專案上，那個專案沒辦法開 API。要換成自己建的專案（整份試算表只要做一次）：
      a. https://console.cloud.google.com → 建立專案（名稱隨意），記下「專案編號」（一串數字，不是專案 ID）。
      b. 該專案 → API 和服務 → 程式庫 → 搜「Apps Script API」→ 啟用。
-     c. API 和服務 → OAuth 同意畫面 → 使用者類型「內部」→ 填應用程式名稱與信箱 → 儲存。
+     c. API 和服務 → OAuth 同意畫面（Google Auth Platform）→ 填應用程式名稱與信箱。目標對象：帳號是 Google Workspace 選「內部」；不是（會顯示「您並非 Google Workspace 使用者」）就選「外部」，建好後到「目標對象」按「發布應用程式」推到正式環境（不用送驗證）。停在測試模式的話授權每 7 天會過期，要一直重授權。同事第一次授權會看到「Google 尚未驗證這個應用程式」，按「進階 → 前往（不安全）→ 允許」即可。
      d. Apps Script 編輯器 → 專案設定 → Google Cloud Platform (GCP) 專案 → 變更專案 → 貼上專案編號 → 設定專案。
      e. 重新整理試算表，再按更新，重新授權一次（其他同事下次開側邊欄也會被要求重新授權一次，正常）。
 2. Apps Script 編輯器 → 左側齒輪「專案設定」→ 勾「在編輯器中顯示 appsscript.json 資訊清單檔案」。
