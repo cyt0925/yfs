@@ -609,28 +609,29 @@ ${trendBlock}
 }
 
 /**
- * 側邊欄呼叫：把參考圖分析與文案情境，整理成一段業務看得懂、可以直接改的中文背景描述。
+ * 側邊欄呼叫（按鈕觸發，不自動）：依選定文案寫一段「風格提示」給生圖對話框。
+ * input: { hookCopy, copyScene, product, brand, adName, sheetName, mode }
+ * mode=full → 整張主視覺的方向；mode=background → 只描述背景。
  */
 function describeBackgroundZh(input) {
-  const ref = input.refAnalysis || null;
-  const parts = [];
-  if (ref) parts.push("參考圖分析（英文）：\n背景顏色：" + (ref.backgroundPaletteEn || ref.paletteEn) + "\n風格：" + ref.styleEn + "\n環境：" + ref.sceneEn);
-  if (input.copyScene) parts.push("文案想呼應的情境（英文）：" + input.copyScene);
-  if (!parts.length) return { zh: "" };
+  const brand = resolveBrand(input);
+  const copy = String(input.hookCopy || "").trim();
+  const scene = String(input.copyScene || "").trim();
+  if (!copy && !scene) return { zh: "" };
+  const isBg = input.mode === "background";
+  const prompt = `你是「${brand.name}」的資深電商視覺設計師。業務選定了一段 momo 廣告文案，請把它轉成一段給圖像生成 AI 的「${isBg ? "背景描述" : "視覺風格提示"}」，繁體中文、口語、3～5 句，像在跟設計師交代。
+${isBg
+  ? "只描述背景環境：地點、主色調、光線、材質、邊緣的 1～2 個小道具，哪一區留空放標題與產品。不能有產品、文字、logo，也不能有掛著的衣服、家電、行李箱等主體物件。"
+  : "依序講：(1) 主視覺概念：從文案找出能視覺化的字眼或梗，主視覺要怎麼表現它；(2) 場景與氛圍；(3) 主色調與強調色（要跟品牌和文案情緒相配，不要習慣性用黃色）；(4) 光線與質感；(5) 產品怎麼擺、佔多大。不要寫任何具體的價格、日期、優惠數字，那些由欄位提供。"}
+商品：${input.product || "（未填）"}${brand.note ? "　品牌調性：" + brand.note : ""}
 
-  const prompt = `你是電商視覺的美術指導。請把下面的資料整理成一段「背景圖」的中文描述，給業務看、讓業務可以直接修改。
-要求：
-- 繁體中文，3～4 句，口語、具體，像跟設計師交代。
-- 依序講：背景是什麼環境與顏色、光線與質感、邊緣放什麼小道具（最多 2 個）、哪一區要留空給標題與產品。
-- 這是「背景」，不能提到產品、包裝、文字、logo，也不能有掛著的衣服、洗衣機、行李箱這類主體物件。
-- ${ref ? "以參考圖分析為主；文案情境只拿來挑小道具，不要把文案的故事整個搬進畫面。" : "依文案情境挑一個乾淨的環境，不要把故事整個搬進畫面。"}
-- 商品是「${input.product || "橘子工坊清潔用品"}」，道具要跟它的使用情境相關。
-
-${parts.join("\n\n")}
+【文案】
+${copy || "（無）"}
+${scene ? "\n【文案模型建議的情境】\n" + scene : ""}
 
 只回傳 JSON。`;
   const schema = { type: "object", properties: { zh: { type: "string" } }, required: ["zh"], additionalProperties: false };
-  return callChatJson(prompt, "background_description", schema);
+  return callChatJson(prompt, "style_hint", schema);
 }
 
 /** 側邊欄呼叫：生成三版文案草稿 + 場景 + 組好的生圖 Prompt */
