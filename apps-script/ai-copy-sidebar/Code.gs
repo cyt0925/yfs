@@ -1084,7 +1084,18 @@ function explainScriptApiError_(res) {
   const code = res.getResponseCode();
   let msg = "";
   try { msg = JSON.parse(res.getContentText()).error.message || ""; } catch (e) { msg = res.getContentText().slice(0, 300); }
-  if (code === 403 && /Apps Script API|has not been used|not enabled|PERMISSION_DENIED/i.test(msg)) {
+  if (code === 403 && /has not been used in project|is disabled/i.test(msg)) {
+    const m = msg.match(/project (\d+)/);
+    const proj = m ? m[1] : "";
+    return "這不是個人設定的問題，是這個腳本掛著的 Google Cloud 專案" + (proj ? "（編號 " + proj + "）" : "") + "沒有開 Apps Script API。\n\n" +
+      "解法：換成自己建立的 Google Cloud 專案（只要做一次，之後大家共用）：\n" +
+      "1. console.cloud.google.com → 建立專案，記下「專案編號」（一串數字）。\n" +
+      "2. 該專案 → API 和服務 → 程式庫 → 搜「Apps Script API」→ 啟用。\n" +
+      "3. API 和服務 → OAuth 同意畫面 → 使用者類型選「內部」→ 填名稱與信箱 → 儲存。\n" +
+      "4. Apps Script 編輯器 → 專案設定 → Google Cloud Platform (GCP) 專案 → 變更專案 → 貼上專案編號。\n" +
+      "5. 重新整理試算表，再按一次更新並重新授權。\n\n（" + msg + "）";
+  }
+  if (code === 403 && /Apps Script API|not enabled|PERMISSION_DENIED/i.test(msg)) {
     return "還沒開啟 Google Apps Script API。\n請用同一個 Google 帳號到 https://script.google.com/home/usersettings 開啟，等 1～2 分鐘再按一次更新。\n\n（" + msg + "）";
   }
   if (code === 401 || (code === 403 && /insufficient|scope/i.test(msg))) {
