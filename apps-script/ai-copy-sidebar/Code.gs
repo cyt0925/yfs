@@ -92,17 +92,23 @@ const BRAND_PROFILES = {
   "蒲公英": { keywords: ["蒲公英"], facts: ["永豐餘旗下環保再生紙品牌。", "賣點以「產品資料」分頁或業務補充為準。"], hashtags: "#蒲公英", note: "環保紙品牌，主色綠。" },
   "其他": { keywords: [], facts: ["品牌資訊以業務補充與產品圖為準。"], hashtags: "", note: "" }
 };
-function detectBrand(text) {
+function detectBrand(text, sheetName) {
   text = String(text || "");
   const keys = Object.keys(BRAND_PROFILES);
   for (let i = 0; i < keys.length; i++) {
     if (BRAND_PROFILES[keys[i]].keywords.some(k => text.indexOf(k) !== -1)) return keys[i];
   }
+  // 關鍵字找不到時用分頁名粗猜：有「紙」→ 五月花（紙品最常見）、有「潔」→ 橘子工坊
+  const sn = String(sheetName || "");
+  if (/紙/.test(sn)) return "五月花";
+  if (/潔/.test(sn)) return "橘子工坊";
   return "";
 }
+/** 「Always on」「常態」這類是投放型態，不是商品名 */
+function isCampaignWord(t) { return /^(always\s*on|常態|常駐|長期|例行)$/i.test(String(t || "").trim()); }
 function resolveBrand(input) {
   const name = (input && input.brand && BRAND_PROFILES[input.brand]) ? input.brand
-    : detectBrand([input && input.product, input && input.adName, input && input.sheetName].join(" ")) || "橘子工坊";
+    : detectBrand([input && input.product, input && input.adName].join(" "), input && input.sheetName) || "其他";
   return Object.assign({ name: name }, BRAND_PROFILES[name]);
 }
 
@@ -369,7 +375,7 @@ function getColumnContext() {
   };
   const adName = readCell(LABELS.AD_NAME);
   let product = readCell(LABELS.PRODUCT);
-  if (!product) product = adName;
+  if (!product || isCampaignWord(product)) product = isCampaignWord(adName) ? "" : adName;
 
   return {
     ok: true,
@@ -380,7 +386,8 @@ function getColumnContext() {
     copyText: readCell(LABELS.COPY),
     budgetText: readCell(LABELS.BUDGET),
     dateText: readCell(LABELS.DATE),
-    brandGuess: detectBrand(product + " " + adName + " " + sheet.getName()),
+    brandGuess: detectBrand(product + " " + adName, sheet.getName()),
+    brandGuessIsWeak: !detectBrand(product + " " + adName, "") && !!detectBrand("", sheet.getName()),
     brands: Object.keys(BRAND_PROFILES),
     productInfo: getProductInfo(product),
     hasApiKey: !!PropertiesService.getScriptProperties().getProperty(API_KEY_PROP)
@@ -746,8 +753,12 @@ function buildChatInstruction(input) {
   const lines = [];
   const brand = resolveBrand(input);
   lines.push(`你是永豐餘消費品旗下品牌「${brand.name}」的資深電商視覺設計師，投放平台是 ${BRAND.platform}，受眾是 ${BRAND.audience}`);
-  lines.push(`【品牌鐵律】這張圖的品牌是「${brand.name}」${brand.note ? "（" + brand.note + "）" : ""}。畫面中不可出現任何其他品牌的名稱或 logo，尤其不可把它畫成「橘子工坊」。沒有附 logo 圖就不要自己畫 logo，把左上角留空。`);
-  lines.push("【數字鐵律】日期、價格、優惠、規格只能用下面業務給的欄位；參考圖、版型圖、產品圖上出現的日期與價格一律不可沿用。");
+  const hasSource = input.sourceImages && input.sourceImages.length;
+  if (brand.name === "其他" && hasSource) lines.push("【品牌鐵律】品牌以附上的原稿為準，原稿上是什麼品牌就是什麼品牌，不可改成別的。");
+  else lines.push(`【品牌鐵律】這張圖的品牌是「${brand.name}」${brand.note ? "（" + brand.note + "）" : ""}。畫面中不可出現任何其他品牌的名稱或 logo，尤其不可把它畫成「橘子工坊」。沒有附 logo 圖${hasSource ? "且原稿上也沒有 logo" : ""}就不要自己畫 logo，把左上角留空。`);
+  lines.push(hasSource
+    ? "【數字鐵律】日期、價格、優惠、規格以原稿為準；若下面業務有給欄位，欄位覆蓋原稿對應的那一項。參考圖、版型圖上的數字一律不可沿用。"
+    : "【數字鐵律】日期、價格、優惠、規格只能用下面業務給的欄位；參考圖、版型圖、產品圖上出現的日期與價格一律不可沿用。");
   lines.push(`請直接使用圖片生成工具產出一張 ${ratio} 的圖，不要先反問，不確定的地方自己做合理判斷。之後我會用中文請你修改，每次修改只動我提到的部分，其他完全保持。`);
   lines.push("");
   if (input.mode === "background") {
@@ -767,7 +778,12 @@ function buildChatInstruction(input) {
       lines.push(ACCENTS[input.accent] || ACCENTS.auto);
     }
     lines.push("");
-    lines.push("【圖上的文字，只能有這幾組，不可多加任何字】");
+    if (hasSource) {
+      lines.push("【原稿的用法】附上的原稿是要重新設計的舊稿：品牌、產品、所有文字內容與數字都以它為準，一字不差地保留；只重新設計背景主題、構圖、字體處理、光影與氛圍，做成一張全新但資訊相同的稿。原稿裡的產品照要忠實重現。下面若有給欄位，就用欄位的值覆蓋原稿對應的那一項（例如換日期或換價格）。");
+      lines.push("【欄位覆蓋（有給才覆蓋）】");
+    } else {
+      lines.push("【圖上的文字，只能有這幾組，不可多加任何字】");
+    }
     const headline = input.headline || (input.hookCopy ? String(input.hookCopy).split(/\r?\n/)[0] : "");
     if (headline) lines.push("- 主標：「" + headline + "」");
     if (input.subline) lines.push("- 優惠：「" + input.subline + "」（放底部資訊帶左側）");
@@ -776,7 +792,7 @@ function buildChatInstruction(input) {
     if (input.note) lines.push("- 小字註記：「" + input.note + "」（最小字級，資訊帶最下緣）");
     const badges = (input.productInfo && input.productInfo.sellingPoints ? String(input.productInfo.sellingPoints).split(/[、,，]/) : []).map(t => t.trim()).filter(t => t && t.length <= 8).slice(0, 4);
     if (badges.length) lines.push("- 賣點徽章：" + badges.map(b => "「" + b + "」").join(""));
-    if (!headline && !input.subline && !input.price && !input.badge) lines.push("- （沒有給文字，這張不要有任何文字）");
+    if (!headline && !input.subline && !input.price && !input.badge) lines.push(hasSource ? "- （沒有欄位要覆蓋，文字全照原稿）" : "- （沒有給文字，這張不要有任何文字）");
     if (input.hookCopy) {
       lines.push("");
       lines.push("【這次的文案，主視覺要扣住它】\n" + input.hookCopy);
@@ -817,7 +833,7 @@ function extractResponsesError(code, body) {
 
 /**
  * 側邊欄呼叫：生圖對話。第一輪帶開場指令與圖片；之後只帶業務的中文與 previousResponseId。
- * input: { text, mode, ratio, quality, previousResponseId, productImages, referenceImages, layoutImages, logoImages,
+ * input: { text, mode, ratio, quality, previousResponseId, productImages, referenceImages, sourceImages, layoutImages, logoImages,
  *          product, productInfo, headline, subline, price, badge, note, hookCopy, layout, textLayout, accent }
  * 回傳: { responseId, base64, text, revisedPrompt, model }
  */
@@ -835,6 +851,10 @@ function chatImage(input) {
     (input.productImages || []).forEach((im, i) => {
       content.push({ type: "input_text", text: "【真實產品去背圖 " + (i + 1) + "】" });
       content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/png") + ";base64," + im.base64, detail: "high" });
+    });
+    (input.sourceImages || []).forEach((im, i) => {
+      content.push({ type: "input_text", text: "【原稿 " + (i + 1) + "，內容全部保留，只重新設計】" });
+      content.push({ type: "input_image", image_url: "data:" + (im.mime || "image/jpeg") + ";base64," + im.base64, detail: "high" });
     });
     (input.logoImages || []).forEach((im, i) => {
       content.push({ type: "input_text", text: "【品牌 logo " + (i + 1) + "，原樣放左上角】" });

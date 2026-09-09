@@ -56,6 +56,8 @@
   .tile { position: relative; width: 84px; border: 2px solid var(--rule); border-radius: 8px; padding: 3px; background: #fff; }
   .tile.prod { border-color: var(--citrus); }
   .tile.layout { border-color: #1B4F9C; }
+  .tile.source { border-color: #7A3E9D; }
+  .tile.source .kind { border-color: #7A3E9D; color: #7A3E9D; font-weight: 600; }
   .tile.logo { border-color: var(--good); }
   .tile.layout .kind { border-color: #1B4F9C; color: #1B4F9C; font-weight: 600; }
   .tile.logo .kind { border-color: var(--good); color: var(--good); font-weight: 600; }
@@ -128,7 +130,7 @@
   <h2 onclick="toggle('secImage')">圖<span class="chev"></span></h2>
   <div class="body">
     <div class="drop" id="drop" onclick="document.getElementById('fileAny').click()">
-      <b>把參考圖、自家舊稿（版型）、產品去背圖、logo 拖進來</b>，或 Ctrl+V 貼上。點標籤切換類型
+      <b>把參考圖、要改的舊稿（原稿）、版型、產品去背圖、logo 拖進來</b>，或 Ctrl+V 貼上。點標籤切換類型
       <input type="file" id="fileAny" accept="image/*" multiple onchange="addFiles(this.files); this.value=''">
     </div>
     <div class="urlrow"><input type="text" id="urlInput" placeholder="或貼圖片網址"><button class="btn ghost" onclick="addUrl()">加入</button></div>
@@ -239,9 +241,9 @@
       if (onChange) onChange(c.dataset.v);
     });
   }
-  const KINDS = ["ref", "layout", "prod", "logo"], KIND_LABEL = { ref: "參考", layout: "版型", prod: "產品", logo: "logo" };
+  const KINDS = ["ref", "source", "layout", "prod", "logo"], KIND_LABEL = { ref: "參考", source: "原稿", layout: "版型", prod: "產品", logo: "logo" };
   const byKind = k => images.filter(i => i.kind === k);
-  const prods = () => byKind("prod"), refs = () => byKind("ref"), layouts = () => byKind("layout"), logos = () => byKind("logo");
+  const prods = () => byKind("prod"), refs = () => byKind("ref"), sources = () => byKind("source"), layouts = () => byKind("layout"), logos = () => byKind("logo");
 
   // ---------- 初始化 ----------
   function loadFormOptions() {
@@ -277,7 +279,7 @@
       }
     } else if (!productTouched) { $("product").value = c.product || ""; }
     if (c.brands && $("brand").options.length !== c.brands.length) $("brand").innerHTML = c.brands.map(b => '<option>' + esc(b) + '</option>').join("");
-    if (!brandTouched) { $("brand").value = c.brandGuess || "橘子工坊"; $("brandAuto").textContent = c.brandGuess ? "（自動偵測）" : "（偵測不到，預設橘子工坊，請確認）"; }
+    if (!brandTouched) { $("brand").value = c.brandGuess || "其他"; $("brandAuto").textContent = c.brandGuess ? (c.brandGuessIsWeak ? "（依分頁名猜的，請確認）" : "（自動偵測）") : "（偵測不到，請選）"; }
     $("productInfoHint").textContent = c.productInfo ? "賣點：" + c.productInfo.sellingPoints : "";
     prefillCompose(c); checkMismatch(); scheduleRender();
     $("ctx").innerHTML = '<b>' + esc(c.sheetName) + '</b> ' + esc(c.columnLabel) + ' 欄　' + esc(c.adName || c.product || "") +
@@ -414,7 +416,7 @@
     $("tray").innerHTML = images.map(im =>
       '<div class="tile ' + im.kind + (im.opaque && im.kind === "prod" ? ' opaque' : '') + '" title="' + esc(im.name) + '">' +
         '<button class="x" onclick="removeImage(\'' + im.id + '\')">×</button><img src="' + im.dataUrl + '">' +
-        '<button class="kind" title="點一下切換：參考 → 版型 → 產品 → logo" onclick="cycleKind(\'' + im.id + '\')">' + KIND_LABEL[im.kind] + ' ⇄</button>' +
+        '<button class="kind" title="點一下切換：參考（借氛圍）→ 原稿（保留內容重設計）→ 版型（照排版）→ 產品 → logo" onclick="cycleKind(\'' + im.id + '\')">' + KIND_LABEL[im.kind] + ' ⇄</button>' +
       '</div>').join("");
     const opaque = prods().filter(im => im.opaque).length;
     setNotice("trayNotice", opaque ? opaque + " 張標成「產品」的圖沒有去背，疊圖會帶白底。" : "");
@@ -478,10 +480,15 @@
     const text = $("chatText").value.trim(), first = !chat.responseId;
     if (!text) return setStatus("imageStatus", first ? "先用中文說這張圖要長什麼樣。" : "要改什麼？", true);
     const mode = chipValue("modeChips"), quality = chipValue("qualityChips"), ratio = chipValue("ratioChips") || "9:16";
+    // 講「重新設計／改稿／重做」又只有參考圖時，把參考圖當原稿處理（保留內容），不然模型會把內容全丟掉
+    let srcList = sources(), refList = refs(), autoSource = false;
+    if (first && !srcList.length && refList.length && /重新設計|重設計|改稿|重做|重畫|改版|翻新/.test(text)) { srcList = refList; refList = []; autoSource = true; }
+    const noText = !$("headline").value.trim() && !$("subline").value.trim() && !$("price").value.trim() && !$("badge").value.trim() && !(copyResult && selectedCopyIndex >= 0);
     const payload = {
       text: text, mode: mode, ratio: ratio, quality: quality, previousResponseId: chat.responseId || "",
       productImages: first ? prods().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
-      referenceImages: first && $("sendRefs").checked ? refs().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
+      sourceImages: first ? srcList.map(im => ({ mime: im.mime, base64: im.base64 })) : [],
+      referenceImages: first && $("sendRefs").checked ? refList.map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       layoutImages: first ? layouts().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       logoImages: first ? logos().map(im => ({ mime: im.mime, base64: im.base64 })) : [],
       brand: $("brand").value, product: $("product").value.trim(), adName: ctx && ctx.ok ? ctx.adName : "", sheetName: ctx && ctx.ok ? ctx.sheetName : "", productInfo: ctx ? ctx.productInfo : null,
@@ -491,7 +498,11 @@
     };
     pushBubble("user", esc(text)); $("chatText").value = "";
     $("sendBtn").disabled = true; $("resetChatBtn").disabled = true;
-    const wait = pushBubble("ai", "產圖中…約 30～90 秒"); setStatus("imageStatus", "", false);
+    const wait = pushBubble("ai", "產圖中…約 30～90 秒");
+    const notes = [];
+    if (autoSource) notes.push("你說要重新設計，已把參考圖當「原稿」處理：品牌、文字、數字都會保留。只想借氛圍請把它標回「參考」並換個說法。");
+    if (first && mode === "full" && noText && !srcList.length) notes.push("提醒：圖上文字欄位全空、也沒選定文案，這張不會有標題。要文字就先生成文案或打開「圖上文字」填。");
+    setStatus("imageStatus", notes.join("\n"), false);
     run("chatImage")(payload).then(res => {
       $("sendBtn").disabled = false; $("resetChatBtn").disabled = false;
       chat.responseId = res.responseId; chat.turns.push({ text: text, base64: res.base64, mode: mode });
@@ -623,7 +634,7 @@
     if (copyResult) { const p = selectedCopyIndex >= 0 ? [copyResult.copy1, copyResult.copy2, copyResult.copy3][selectedCopyIndex] : null; L.push("", p ? "選定文案（" + $("tone").value + "）：\n" + p : "文案候選：\n" + [copyResult.copy1, copyResult.copy2, copyResult.copy3].map((x, i) => "版本" + (i + 1) + "：\n" + x).join("\n\n")); }
     L.push("", "視覺：" + (chipValue("modeChips") === "background" ? "只畫背景＋程式疊字" : "完整稿") + "　比例 " + (chipValue("ratioChips") || "9:16") + "　主色調 " + $("palette").value);
     if (chat.turns.length) L.push("生圖對話：\n" + chat.turns.map((x, i) => "  " + (i + 1) + ". " + x.text).join("\n"));
-    L.push("參考圖 " + refs().length + " 張、版型 " + layouts().length + " 張、產品去背圖 " + prods().length + " 張、logo " + logos().length + " 張（另附）");
+    L.push("參考圖 " + refs().length + " 張、原稿 " + sources().length + " 張、版型 " + layouts().length + " 張、產品去背圖 " + prods().length + " 張、logo " + logos().length + " 張（另附）");
     if ($("composeNote").value.trim()) L.push("備註：" + $("composeNote").value.trim());
     L.push(currentDriveUrl ? "AI 草稿：" + currentDriveUrl : "AI 草稿：請先按「存雲端」取得連結");
     L.push("AI 草稿僅供構圖與氛圍參考，產品與文字以原始檔為準。");
