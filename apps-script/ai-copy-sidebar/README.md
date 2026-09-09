@@ -24,6 +24,18 @@ Google Sheets 的 Apps Script 側邊欄，掛在 CPAS 廣告素材入稿表上�
 5. 「AI 文案工具 → 設定 OpenAI API Key」貼上金鑰。第一次會要求授權：選帳號 → 進階 → 前往專案 → 允許。
 6. 「AI 文案工具 → 開啟 AI 文案側邊欄」，開始用。
 
+## 之後更新：一鍵從 GitHub 更新，不用再貼程式碼
+
+一次性設定（每個會按「更新」的人各做一次，其他人只用側邊欄不用做）：
+
+1. 用同一個 Google 帳號到 https://script.google.com/home/usersettings ，把「Google Apps Script API」打開。
+2. Apps Script 編輯器 → 左側齒輪「專案設定」→ 勾「在編輯器中顯示 appsscript.json 資訊清單檔案」。
+3. 左側會多出 `appsscript.json`，把 repo 裡的 `appsscript.json` 全部貼進去取代，Ctrl+S。
+4. 回試算表重新整理，「AI 文案工具 → 更新程式到最新版（從 GitHub）」。第一次會再要求授權一次（多了「修改 Apps Script 專案」權限，這是讓它能寫回自己）。
+
+之後每次有新版本，按同一個選單就好。它會比對 GitHub 上的 `Code.gs`、`Sidebar.html`、`appsscript.json`，有差才寫回，寫完提醒重新整理。API Key 存在指令碼屬性，不會被更新動到。
+更新來源寫在 `Code.gs` 的 `UPDATE_SOURCE`（目前指向 `claude/enable-apps-script-42hub0` 分支）；日後合併到 `main` 就把 `branch` 改成 `main`。repo 若改成私有，在「專案設定 → 指令碼屬性」加 `GITHUB_TOKEN`（fine-grained token，只要 Contents: Read）。
+
 選用項目，不做也能用：
 
 - 「建立產品資料分頁」：新增「產品資料」分頁並填入範本，A 欄關鍵字只要包含在「品類」文字裡就自動帶入賣點。

@@ -246,6 +246,8 @@ function onOpen() {
     .addItem("設定 OpenAI API Key", "setApiKey")
     .addItem("建立產品資料分頁（選用）", "setupProductSheet")
     .addItem("建立雲端硬碟常用素材庫（選用）", "setupDriveFolders")
+    .addSeparator()
+    .addItem("更新程式到最新版（從 GitHub）", "updateFromGitHub")
     .addToUi();
 }
 
@@ -961,4 +963,132 @@ function saveImageToDrive(input) {
   const file = folder.createFile(blob);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   return { url: file.getUrl() };
+}
+
+// ───────────────────────────────────────────────────────────────
+// 自我更新：從 GitHub 抓最新的 Code.gs / Sidebar.html / appsscript.json，
+// 透過 Apps Script API 寫回這個專案。以後不用再手動貼程式碼。
+//
+// 一次性設定（每個要按「更新」的人）：
+//   1. 到 https://script.google.com/home/usersettings 開啟「Google Apps Script API」。
+//   2. Apps Script 編輯器 → 專案設定 → 勾「在編輯器中顯示 appsscript.json 資訊清單檔案」，
+//      把 repo 裡的 appsscript.json 貼進去（裡面宣告了 script.projects 權限）。
+//   3. 第一次按「更新」會再要求授權一次。
+// ───────────────────────────────────────────────────────────────
+const UPDATE_SOURCE = {
+  owner: "cyt0925",
+  repo: "yfs",
+  branch: "claude/enable-apps-script-42hub0",
+  dir: "apps-script/ai-copy-sidebar",
+  files: [
+    { name: "Code",       type: "SERVER_JS", path: "Code.gs" },
+    { name: "Sidebar",    type: "HTML",      path: "Sidebar.html" },
+    { name: "appsscript", type: "JSON",      path: "appsscript.json" },
+  ],
+};
+const GITHUB_TOKEN_PROP = "GITHUB_TOKEN";   // repo 若改成私有才需要；在 Apps Script「專案設定 → 指令碼屬性」加 GITHUB_TOKEN
+
+function updateFromGitHub() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const result = applyGitHubUpdate();
+    if (result.unchanged) {
+      ui.alert("已經是最新版", "GitHub 上的程式碼和目前一樣，不需要更新。\n" + result.commit, ui.ButtonSet.OK);
+    } else {
+      ui.alert(
+        "更新完成",
+        "已寫入：" + result.updated.join("、") + "\n" + result.commit +
+        "\n\n請重新整理整個試算表分頁，再從選單重開側邊欄。API Key 不受影響。",
+        ui.ButtonSet.OK
+      );
+    }
+  } catch (e) {
+    ui.alert("更新失敗", String(e.message || e), ui.ButtonSet.OK);
+  }
+}
+
+function applyGitHubUpdate() {
+  const scriptId = ScriptApp.getScriptId();
+  const token = ScriptApp.getOAuthToken();
+  const apiBase = "https://script.googleapis.com/v1/projects/" + scriptId + "/content";
+  const headers = { Authorization: "Bearer " + token };
+
+  // 1. 讀目前專案內容（保留使用者自己另外加的檔案）
+  const cur = UrlFetchApp.fetch(apiBase, { headers: headers, muteHttpExceptions: true });
+  if (cur.getResponseCode() !== 200) throw new Error(explainScriptApiError_(cur));
+  const currentFiles = JSON.parse(cur.getContentText()).files || [];
+
+  // 2. 從 GitHub 抓新版
+  const ghToken = PropertiesService.getScriptProperties().getProperty(GITHUB_TOKEN_PROP);
+  const fetched = UPDATE_SOURCE.files.map(function (f) {
+    return { name: f.name, type: f.type, source: fetchGitHubRaw_(f.path, ghToken) };
+  });
+
+  // 3. 比對，全部一樣就不寫
+  const byName = {};
+  currentFiles.forEach(function (f) { byName[f.name] = f; });
+  const norm = function (s) { return String(s || "").replace(/\r\n/g, "\n").trim(); };
+  const changed = fetched.filter(function (f) {
+    const c = byName[f.name];
+    return !c || norm(c.source) !== norm(f.source);
+  });
+  const commit = describeLatestCommit_(ghToken);
+  if (!changed.length) return { unchanged: true, commit: commit };
+
+  // 4. 合併：同名覆蓋，其餘保留，再一次寫回（API 要求每次都要帶完整檔案清單含 manifest）
+  const merged = currentFiles.filter(function (f) {
+    return !fetched.some(function (n) { return n.name === f.name; });
+  }).concat(fetched);
+  const put = UrlFetchApp.fetch(apiBase, {
+    method: "put",
+    contentType: "application/json",
+    headers: headers,
+    payload: JSON.stringify({ files: merged }),
+    muteHttpExceptions: true,
+  });
+  if (put.getResponseCode() !== 200) throw new Error(explainScriptApiError_(put));
+  return { unchanged: false, updated: changed.map(function (f) { return f.name; }), commit: commit };
+}
+
+function fetchGitHubRaw_(path, ghToken) {
+  const url = "https://raw.githubusercontent.com/" + UPDATE_SOURCE.owner + "/" + UPDATE_SOURCE.repo + "/" +
+    UPDATE_SOURCE.branch + "/" + UPDATE_SOURCE.dir + "/" + path + "?t=" + Date.now();
+  const opt = { muteHttpExceptions: true, headers: { "Cache-Control": "no-cache" } };
+  if (ghToken) opt.headers.Authorization = "token " + ghToken;
+  const res = UrlFetchApp.fetch(url, opt);
+  if (res.getResponseCode() !== 200) {
+    throw new Error("從 GitHub 抓 " + path + " 失敗（HTTP " + res.getResponseCode() + "）。" +
+      "請確認 UPDATE_SOURCE 的 branch 還存在；repo 若是私有，請在指令碼屬性加 GITHUB_TOKEN。");
+  }
+  return res.getContentText("UTF-8");
+}
+
+function describeLatestCommit_(ghToken) {
+  try {
+    const url = "https://api.github.com/repos/" + UPDATE_SOURCE.owner + "/" + UPDATE_SOURCE.repo +
+      "/commits?sha=" + encodeURIComponent(UPDATE_SOURCE.branch) + "&path=" + encodeURIComponent(UPDATE_SOURCE.dir) + "&per_page=1";
+    const opt = { muteHttpExceptions: true, headers: { Accept: "application/vnd.github+json" } };
+    if (ghToken) opt.headers.Authorization = "token " + ghToken;
+    const res = UrlFetchApp.fetch(url, opt);
+    if (res.getResponseCode() !== 200) return "";
+    const c = JSON.parse(res.getContentText())[0];
+    if (!c) return "";
+    const when = (c.commit.committer && c.commit.committer.date) ? c.commit.committer.date.replace("T", " ").replace("Z", " UTC") : "";
+    return "GitHub 最新版本：" + c.sha.slice(0, 7) + "　" + c.commit.message.split("\n")[0] + (when ? "　(" + when + ")" : "");
+  } catch (e) {
+    return "";
+  }
+}
+
+function explainScriptApiError_(res) {
+  const code = res.getResponseCode();
+  let msg = "";
+  try { msg = JSON.parse(res.getContentText()).error.message || ""; } catch (e) { msg = res.getContentText().slice(0, 300); }
+  if (code === 403 && /Apps Script API|has not been used|not enabled|PERMISSION_DENIED/i.test(msg)) {
+    return "還沒開啟 Google Apps Script API。\n請用同一個 Google 帳號到 https://script.google.com/home/usersettings 開啟，等 1～2 分鐘再按一次更新。\n\n（" + msg + "）";
+  }
+  if (code === 401 || (code === 403 && /insufficient|scope/i.test(msg))) {
+    return "缺少 script.projects 授權。\n請確認 appsscript.json 已貼上、存檔，然後重新整理試算表，再按一次更新（會跳出授權畫面）。\n\n（" + msg + "）";
+  }
+  return "Apps Script API 回應 HTTP " + code + "：" + msg;
 }
