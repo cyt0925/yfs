@@ -552,7 +552,8 @@ def file_stamp():
 # （例如 export_batch_items）沒有 id 欄位，硬加 RETURNING id 會直接
 # 出錯，所以只白名單有 id 的這幾張。
 _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
-                     "SIGN_BATCHES", "SIGNED_DOCS")
+                     "SIGN_BATCHES", "SIGNED_DOCS",
+                     "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES")
 
 
 def _wants_returning_id(sql):
@@ -685,6 +686,122 @@ def ensure_data_dir():
     return moved
 
 
+
+# ---------------------------------------------------------------- 業績總表自動化
+# 「業績總表自動化」模組（master.py）自己的表，全部以 mst_ 開頭，跟酷澎
+# 訂單管理的 orders／po_headers 完全分開：這個模組吃的是同一份整合表，
+# 但它服務的是「專案報價檔 → 總表」那條人工流程，資料要能讓 OP 自己改
+# 交貨日、出貨數量、備註而不影響訂單管理那邊的判斷，所以不共用資料列。
+#
+# 設計重點跟 orders 一樣：
+# 1. 唯一鍵是 (line, po_number, sku_id)——一張 PO 多個 SKU，不能只用 PO。
+# 2. 交貨日是「會被改的欄位」，不進主鍵；OP 改了交貨日整張 PO 一起搬。
+# 3. 人改過的欄位（出貨數量、交貨日、備註）之後匯入永遠不再覆蓋，各自
+#    一個 _overridden 旗標。
+# 4. 總表要的每日箱數不存起來——每次都從 mst_orders 現算（出貨數量 ÷
+#    箱入數，依交貨日 + 國條加總），OP 一改數字總表立刻跟著變，這正是
+#    要取代「重做樞紐 + VLOOKUP」的地方。
+SCHEMA_MASTER_SQLITE = """
+CREATE TABLE IF NOT EXISTS mst_products (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    line          TEXT NOT NULL,
+    barcode       TEXT NOT NULL,
+    sku_id        TEXT DEFAULT '',
+    yf_sku        TEXT DEFAULT '',
+    brand         TEXT DEFAULT '',
+    product_name  TEXT DEFAULT '',
+    box_size      INTEGER,
+    note          TEXT DEFAULT '',
+    updated_by    TEXT DEFAULT '',
+    updated_at    TEXT DEFAULT '',
+    UNIQUE(line, barcode)
+);
+
+CREATE TABLE IF NOT EXISTS mst_orders (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    line                    TEXT NOT NULL,
+    po_number               TEXT NOT NULL,
+    sku_id                  TEXT NOT NULL,
+    barcode                 TEXT DEFAULT '',
+    yf_sku                  TEXT DEFAULT '',
+    brand                   TEXT DEFAULT '',
+    product_name            TEXT DEFAULT '',
+    warehouse               TEXT DEFAULT '',
+    order_type              TEXT DEFAULT '',
+    unit                    TEXT DEFAULT '',
+    unit_price              REAL,
+    qty_coupang             INTEGER,
+    qty_file_ship           INTEGER,
+    qty_ship                INTEGER,
+    qty_ship_overridden     INTEGER NOT NULL DEFAULT 0,
+    box_size_file           INTEGER,
+    delivery_date_file      TEXT DEFAULT '',
+    delivery_date           TEXT DEFAULT '',
+    delivery_date_overridden INTEGER NOT NULL DEFAULT 0,
+    remarks_file            TEXT DEFAULT '',
+    remarks                 TEXT DEFAULT '',
+    remarks_overridden      INTEGER NOT NULL DEFAULT 0,
+    source_file             TEXT DEFAULT '',
+    first_seen_at           TEXT DEFAULT '',
+    last_seen_at            TEXT DEFAULT '',
+    updated_at              TEXT DEFAULT '',
+    version                 INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(line, po_number, sku_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mst_orders_line_date ON mst_orders(line, delivery_date);
+CREATE INDEX IF NOT EXISTS idx_mst_orders_barcode ON mst_orders(line, barcode);
+
+CREATE TABLE IF NOT EXISTS mst_quotas (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    line        TEXT NOT NULL,
+    barcode     TEXT NOT NULL,
+    month       TEXT NOT NULL,           -- 'YYYY-MM'
+    qty_cases   REAL,
+    note        TEXT DEFAULT '',
+    updated_by  TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT '',
+    UNIQUE(line, barcode, month)
+);
+
+CREATE TABLE IF NOT EXISTS mst_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    line        TEXT DEFAULT '',
+    po_number   TEXT DEFAULT '',
+    sku_id      TEXT DEFAULT '',
+    barcode     TEXT DEFAULT '',
+    field       TEXT NOT NULL,
+    field_label TEXT NOT NULL,
+    old_value   TEXT DEFAULT '',
+    new_value   TEXT DEFAULT '',
+    operator    TEXT NOT NULL,
+    source      TEXT NOT NULL,           -- import / manual / system
+    note        TEXT DEFAULT '',
+    changed_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mst_import_batches (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename       TEXT DEFAULT '',
+    operator       TEXT DEFAULT '',
+    rows_total     INTEGER DEFAULT 0,
+    rows_new       INTEGER DEFAULT 0,
+    rows_updated   INTEGER DEFAULT 0,
+    rows_identical INTEGER DEFAULT 0,
+    committed      INTEGER NOT NULL DEFAULT 0,
+    payload_json   TEXT DEFAULT '',
+    created_at     TEXT DEFAULT '',
+    committed_at   TEXT DEFAULT ''
+);
+"""
+
+# PostgreSQL 版：只差自動編號的寫法（SERIAL）跟 REAL → DOUBLE PRECISION，
+# 其餘欄位、唯一鍵、索引一律相同，兩邊行為才會一致。
+SCHEMA_MASTER_POSTGRES = (
+    SCHEMA_MASTER_SQLITE
+    .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+    .replace(" REAL", " DOUBLE PRECISION")
+)
+
 ORDER_ROWS_VIEW = """
 DROP VIEW IF EXISTS order_rows;
 CREATE VIEW order_rows AS
@@ -715,6 +832,7 @@ def init_db():
     conn = get_conn()
     try:
         conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
+        conn.executescript(SCHEMA_MASTER_POSTGRES if IS_POSTGRES else SCHEMA_MASTER_SQLITE)
         _migrate_columns(conn)
         # orders／po_headers 表可能剛剛才被 _migrate_columns 補上新欄位，
         # 上面 executescript 建出來的 view 是舊欄位版本，要重建一次才會
