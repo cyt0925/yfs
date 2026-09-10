@@ -145,7 +145,8 @@
       <button id="btn-clear" class="btn btn-g btn-sm"><i class="bi bi-x-circle"></i> 清除篩選</button>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <a id="btn-export-1" class="btn btn-o"><i class="bi bi-file-earmark-excel"></i> 匯出 Excel</a>
+      <a id="btn-export-daily" class="btn btn-p" title="一個交貨日一個分頁、PO 之間黃色空白列隔開，跟專案報價檔一樣的長相"><i class="bi bi-calendar-week"></i> 匯出報價檔格式</a>
+      <a id="btn-export-1" class="btn btn-o" title="總表格式：一列一個國條，往右是各交貨日箱數、月加總、配額、剩餘"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
     </div>
 
     <div class="card p-4 mb-4">
@@ -298,6 +299,7 @@ document.querySelectorAll(".m-tab").forEach(b => b.addEventListener("click", () 
 }));
 function refresh() {
   $("#btn-export-1").href = $("#btn-export-2").href = `/api/master/export?line=${encodeURIComponent(state.line)}&month=${state.month}`;
+  $("#btn-export-daily").href = `/api/master/export/daily?line=${encodeURIComponent(state.line)}&month=${state.month}`;
   if (state.tab === "orders") loadOrders();
   else if (state.tab === "summary") loadSummary();
   else loadProducts();

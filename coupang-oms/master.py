@@ -1096,6 +1096,90 @@ def api_export():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+
+@master_bp.route("/api/master/export/daily")
+def api_export_daily():
+    """匯出成同事熟悉的「專案報價檔」長相：一個交貨日一個分頁（分頁名像
+    0724交貨），欄位順序照報價檔，同一張 PO 的品項放一起，PO 之間用一列黃色
+    空白列隔開，PO 單號寫在 R 欄（報價檔就是這樣放的，標題雖然叫「交貨日」
+    但裡面一直是 PO 單號＋日期＋倉別）。
+
+    價格欄：報價檔的「單價(含稅)」原本是 VLOOKUP 主檔的業務報價，這個模組
+    沒有存業務報價，所以「單價(含稅)」跟「酷澎下單價(含稅)」都填整合表的
+    酷澎下單單價；箱單價 = 單價 × 箱入數，總計 = 箱單價 × 出貨箱數。"""
+    line = norm_text(request.args.get("line")); month = norm_text(request.args.get("month")) or _this_month()
+    if not line or not _valid_month(month):
+        return jsonify({"error": "請選線別與月份。"}), 400
+    conn = get_conn()
+    try:
+        sql, params = _order_query(line, month)
+        orders = [_decorate(o) for o in _rows(conn.execute(sql, params))]
+    finally:
+        conn.close()
+
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    head = ["SKU ID", "永豐料號", "國條", "品類", "品牌", "品名", "下單數量(酷澎單位)",
+            "出貨數量", "箱入數", "出貨數量(箱)", "單價(含稅)", "酷澎下單價(含稅)",
+            "箱單價(含稅)", "總計(含稅)", "備註", "驗收完成請打勾", "簽單完成請打勾", "交貨日"]
+    yellow = PatternFill("solid", fgColor="FFFF00")
+    head_fill = PatternFill("solid", fgColor="F8CBAD")
+    bold = Font(bold=True)
+
+    by_date = collections.OrderedDict()
+    for o in orders:
+        by_date.setdefault(o["delivery_date"] or "", collections.OrderedDict()) \
+               .setdefault(o["po_number"], []).append(o)
+
+    wb = openpyxl.Workbook(); wb.remove(wb.active)
+    # 報價檔的分頁順序是最新日期在最前面
+    for date in sorted(by_date.keys(), key=lambda d: d or "0000", reverse=True):
+        pos = by_date[date]
+        if date:
+            d = _dt.date.fromisoformat(date)
+            title = f"{d.month:02d}{d.day:02d}交貨"
+            label_date = f"{d.month}/{d.day}交貨"
+        else:
+            title, label_date = "未排日期", ""
+        ws = wb.create_sheet(title[:31])
+        ws.append(head)
+        for c in ws[1]:
+            c.font = bold; c.fill = head_fill
+        first_group = True
+        for po, rows in pos.items():
+            if not first_group:
+                ws.append([None] * len(head))
+                for c in ws[ws.max_row]:
+                    c.fill = yellow
+            first_group = False
+            for i, o in enumerate(rows):
+                box = o["box_size"]; price = o["unit_price"]
+                box_price = (price * box) if (price is not None and box) else None
+                total = (box_price * o["cases"]) if (box_price is not None and o["cases"] is not None) else None
+                po_cell = (f"{po}_{label_date}({o['warehouse']})" if o["warehouse"] else f"{po}_{label_date}") if i == 0 else None
+                ws.append([o["sku_id"], o["yf_sku"], o["barcode"], "", o["brand"], o["product_name"],
+                           o["qty_coupang"], o["qty_ship"], box, o["cases"], price, price,
+                           box_price, total, o["remarks"], "", "", po_cell])
+        ws.freeze_panes = "A2"
+        widths = [16, 15, 15, 8, 14, 44, 10, 9, 8, 11, 10, 12, 11, 12, 18, 8, 8, 30]
+        for i, w in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        for row in ws.iter_rows(min_row=2, min_col=1, max_col=3):
+            for c in row:
+                c.number_format = "@"
+        for row in ws.iter_rows(min_row=2, min_col=18, max_col=18):
+            for c in row:
+                c.alignment = Alignment(horizontal="left")
+
+    if not wb.sheetnames:
+        ws = wb.create_sheet("無資料"); ws.append(["這個月沒有任何訂單"])
+
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    fname = f"{line}_專案報價檔格式_{month}.xlsx"
+    return send_file(out, as_attachment=True, download_name=fname,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 # ---------------------------------------------------------------- 歷程
 
 @master_bp.route("/api/master/logs")

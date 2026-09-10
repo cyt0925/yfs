@@ -260,6 +260,26 @@ def main():
     ws3 = wb["訂單明細"]
     check("訂單明細有 53 列", ws3.max_row - 1 == 53, str(ws3.max_row - 1))
 
+    print("\n【10b】匯出專案報價檔格式（一天一個分頁）")
+    res = client.get(f"/api/master/export/daily?line={LINE}&month={MONTH}")
+    check("匯出成功", res.status_code == 200)
+    wbd = openpyxl.load_workbook(io.BytesIO(res.data))
+    check("分頁 = 有出貨的交貨日，命名像 0724交貨，最新在前",
+          wbd.sheetnames == ["0724交貨", "0723交貨", "0721交貨"], str(wbd.sheetnames))
+    wsd = wbd["0724交貨"]
+    hdrd = [c.value for c in wsd[1]]
+    check("欄位順序照報價檔（A SKU ID … J 出貨數量(箱) … R 交貨日）",
+          hdrd[0] == "SKU ID" and hdrd[2] == "國條" and hdrd[9] == "出貨數量(箱)" and hdrd[17] == "交貨日", str(hdrd[:4]))
+    r_cells = [wsd.cell(r, 18).value for r in range(2, wsd.max_row + 1)]
+    po_cells = [v for v in r_cells if v]
+    check("R 欄只在每張 PO 第一列寫「PO_日期(倉別)」，7/24 有 2 張 PO",
+          len(po_cells) == 2 and all("_7/24交貨(" in v for v in po_cells), str(po_cells))
+    yellow_rows = [r for r in range(2, wsd.max_row + 1)
+                   if wsd.cell(r, 1).fill.fgColor.rgb in ("00FFFF00", "FFFFFF00") and wsd.cell(r, 1).value is None]
+    check("PO 之間有一列黃色空白列隔開", len(yellow_rows) == 1, str(yellow_rows))
+    row_x = next(r for r in wsd.iter_rows(min_row=2, values_only=True) if str(r[2]) == "6903148182406")
+    check("出貨數量(箱) 是值：240 ÷ 24 = 10，總計 = 單價×箱入數×箱數", row_x[9] == 10 and row_x[13] == row_x[10] * row_x[8] * 10, str(row_x[7:14]))
+
     print("\n【11】歷程")
     logs = client.get(f"/api/master/logs?line={LINE}&po={po}").get_json()["logs"]
     check("PO 改期、出貨數量調整都留下歷程", any(l["field"] == "delivery_date" for l in logs) and any(l["field"] == "qty_ship" for l in logs))
