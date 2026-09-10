@@ -425,6 +425,7 @@ def api_orders():
     dates = [d for d in (request.args.get("dates") or "").split(",") if d]
     pos = [p for p in (request.args.get("pos") or "").split(",") if p]
     brands = [b for b in (request.args.get("brands") or "").split(",") if b]
+    warehouses = [w for w in (request.args.get("warehouses") or "").split(",") if w]
     q = norm_text(request.args.get("q"))
     conn = get_conn()
     try:
@@ -438,7 +439,9 @@ def api_orders():
     facet_dates = collections.OrderedDict()
     facet_pos = collections.OrderedDict()
     facet_brands = collections.Counter()
+    facet_wh = collections.Counter()
     for o in rows:
+        facet_wh[o["warehouse"] or ""] += 1
         d = o["delivery_date"] or ""
         fd = facet_dates.setdefault(d, {"date": d, "cases": 0.0, "rows": 0,
                                         "pos": set(), "missing_box": 0})
@@ -469,6 +472,8 @@ def api_orders():
             return False
         if brands and o["brand"] not in brands:
             return False
+        if warehouses and (o["warehouse"] or "") not in warehouses:
+            return False
         if q:
             hay = " ".join(str(o.get(k) or "") for k in
                            ("po_number", "sku_id", "barcode", "yf_sku", "brand",
@@ -485,6 +490,7 @@ def api_orders():
             "dates": list(facet_dates.values()),
             "pos": list(facet_pos.values()),
             "brands": [{"brand": b, "rows": n} for b, n in sorted(facet_brands.items())],
+            "warehouses": [{"warehouse": w, "rows": n} for w, n in sorted(facet_wh.items())],
         },
     })
 

@@ -111,6 +111,12 @@ def main():
     res = client.get(f"/api/master/orders?line={LINE}&month={MONTH}&dates=2026-07-21")
     check("勾單一日期只回那天的品項", all(r["delivery_date"] == "2026-07-21" for r in res.get_json()["rows"])
           and res.get_json()["count"] > 0)
+    whs = {w["warehouse"] for w in od["facets"]["warehouses"]}
+    check("倉別篩選面有 TAO1", "TAO1" in whs, str(whs))
+    res = client.get(f"/api/master/orders?line={LINE}&month={MONTH}&warehouses=TAO1")
+    check("勾倉別 TAO1 只回 TAO1 的品項", res.get_json()["count"] > 0 and all(r["warehouse"] == "TAO1" for r in res.get_json()["rows"]))
+    res = client.get(f"/api/master/orders?line={LINE}&month={MONTH}&warehouses=TAO9")
+    check("勾一個不存在的倉別回 0 筆", res.get_json()["count"] == 0)
     res = client.get(f"/api/master/orders?line={LINE}&month={MONTH}&q=ARIEL")
     check("搜尋 ARIEL 只回 ARIEL", res.get_json()["count"] > 0 and
           all("ARIEL" in (r["brand"] + r["product_name"]).upper() for r in res.get_json()["rows"]))

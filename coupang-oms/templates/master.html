@@ -139,6 +139,10 @@
         <button id="dd-brand-btn" class="btn btn-o"><i class="bi bi-tags"></i> 品牌 <span id="dd-brand-n" class="badge bd-blue hidden"></span></button>
         <div id="dd-brand" class="dd-menu hidden"></div>
       </div>
+      <div class="dd">
+        <button id="dd-wh-btn" class="btn btn-o"><i class="bi bi-building"></i> 倉別 <span id="dd-wh-n" class="badge bd-blue hidden"></span></button>
+        <div id="dd-wh" class="dd-menu hidden"></div>
+      </div>
       <label class="chip" id="chip-edited"><input type="checkbox" id="f-edited" class="hidden"> 只看人工調整過</label>
       <label class="chip" id="chip-missing"><input type="checkbox" id="f-missing" class="hidden"> 只看算不出箱數</label>
       <input id="q" type="text" placeholder="搜尋 PO、國條、品名…" class="cell-in" style="width:220px;text-align:left">
@@ -256,7 +260,7 @@
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const fmt = n => n == null ? "" : (Number.isInteger(n) ? n : Number(n).toFixed(2).replace(/\.?0+$/, ""));
-const state = { line: "", month: "", tab: "orders", dates: new Set(), pos: new Set(), brands: new Set(),
+const state = { line: "", month: "", tab: "orders", dates: new Set(), pos: new Set(), brands: new Set(), warehouses: new Set(),
                 edited: false, missing: false, q: "", facets: null, rows: [] };
 
 function toast(msg, kind="ok") {
@@ -307,7 +311,7 @@ function refresh() {
 
 /* ════════════════ 訂單明細 ════════════════ */
 function clearFilters(reload=true) {
-  state.dates.clear(); state.pos.clear(); state.brands.clear(); state.edited = state.missing = false; state.q = "";
+  state.dates.clear(); state.pos.clear(); state.brands.clear(); state.warehouses.clear(); state.edited = state.missing = false; state.q = "";
   $("#q").value = ""; $("#f-edited").checked = false; $("#f-missing").checked = false;
   $("#chip-edited").classList.remove("on"); $("#chip-missing").classList.remove("on");
   if (reload) loadOrders();
@@ -319,7 +323,7 @@ $("#chip-missing").addEventListener("click", e => { e.preventDefault(); state.mi
 
 async function loadOrders() {
   const p = new URLSearchParams({ line: state.line, month: state.month, q: state.q,
-    dates: [...state.dates].join(","), pos: [...state.pos].join(","), brands: [...state.brands].join(",") });
+    dates: [...state.dates].join(","), pos: [...state.pos].join(","), brands: [...state.brands].join(","), warehouses: [...state.warehouses].join(",") });
   let data;
   try { data = await api("/api/master/orders?" + p); } catch (e) { toast(e.message, "err"); return; }
   state.facets = data.facets; state.rows = data.rows;
@@ -367,9 +371,15 @@ function renderDropdowns() {
     : `<div class="muted text-sm p-2">沒有品牌資料</div>`;
   brMenu.querySelectorAll("input").forEach(cb => cb.addEventListener("change", () => { cb.checked ? state.brands.add(cb.dataset.brand) : state.brands.delete(cb.dataset.brand); loadOrders(); }));
   const n2 = $("#dd-brand-n"); n2.textContent = state.brands.size; n2.classList.toggle("hidden", !state.brands.size);
+  const whMenu = $("#dd-wh");
+  const whs = f.warehouses || [];
+  whMenu.innerHTML = whs.length ? whs.map(w => `<label><input type="checkbox" data-wh="${esc(w.warehouse)}" ${state.warehouses.has(w.warehouse) ? "checked" : ""}> ${esc(w.warehouse) || "（未填倉別）"}<span class="muted" style="margin-left:auto">${w.rows}</span></label>`).join("")
+    : `<div class="muted text-sm p-2">沒有倉別資料</div>`;
+  whMenu.querySelectorAll("input").forEach(cb => cb.addEventListener("change", () => { cb.checked ? state.warehouses.add(cb.dataset.wh) : state.warehouses.delete(cb.dataset.wh); loadOrders(); }));
+  const n3 = $("#dd-wh-n"); n3.textContent = state.warehouses.size; n3.classList.toggle("hidden", !state.warehouses.size);
 }
-[["#dd-po-btn","#dd-po"],["#dd-brand-btn","#dd-brand"]].forEach(([b, m]) => {
-  $(b).addEventListener("click", e => { e.stopPropagation(); $(m).classList.toggle("hidden"); [ "#dd-po", "#dd-brand" ].filter(x => x !== m).forEach(x => $(x).classList.add("hidden")); });
+[["#dd-po-btn","#dd-po"],["#dd-brand-btn","#dd-brand"],["#dd-wh-btn","#dd-wh"]].forEach(([b, m]) => {
+  $(b).addEventListener("click", e => { e.stopPropagation(); $(m).classList.toggle("hidden"); [ "#dd-po", "#dd-brand", "#dd-wh" ].filter(x => x !== m).forEach(x => $(x).classList.add("hidden")); });
 });
 document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd-menu").forEach(m => m.classList.add("hidden")); });
 
