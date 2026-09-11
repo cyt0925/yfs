@@ -152,7 +152,8 @@
       <button id="btn-clear" class="btn btn-g btn-sm"><i class="bi bi-x-circle"></i> 清除篩選</button>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <a id="btn-export-daily" class="btn btn-p" title="一個交貨日一個分頁、PO 之間黃色空白列隔開，跟專案報價檔一樣的長相"><i class="bi bi-calendar-week"></i> 匯出報價檔格式</a>
+      <span class="badge bd-warn hidden" id="filter-hint" title="匯出報價檔格式會照這個範圍">已篩選</span>
+      <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁、PO 之間黃色空白列隔開，跟專案報價檔一樣。沒篩就是整個月。"><i class="bi bi-calendar-week"></i> 匯出報價檔格式</a>
       <a id="btn-export-1" class="btn btn-o" title="總表格式：一列一個國條，往右是各交貨日箱數、月加總、配額、剩餘"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
     </div>
 
@@ -306,11 +307,18 @@ document.querySelectorAll(".m-tab").forEach(b => b.addEventListener("click", () 
 }));
 function refresh() {
   $("#btn-export-1").href = $("#btn-export-2").href = `/api/master/export?line=${encodeURIComponent(state.line)}&month=${state.month}`;
-  $("#btn-export-daily").href = `/api/master/export/daily?line=${encodeURIComponent(state.line)}&month=${state.month}`;
+  $("#btn-export-daily").href = dailyExportUrl();
   if (state.tab === "orders") loadOrders();
   else if (state.tab === "summary") loadSummary();
   else loadProducts();
 }
+
+function filterParams() {
+  return new URLSearchParams({ line: state.line, month: state.month, q: state.q,
+    dates: [...state.dates].join(","), pos: [...state.pos].join(","), brands: [...state.brands].join(","),
+    warehouses: [...state.warehouses].join(","), edited: state.edited ? "1" : "", missing: state.missing ? "1" : "" });
+}
+function dailyExportUrl() { return "/api/master/export/daily?" + filterParams(); }
 
 /* ════════════════ 訂單明細 ════════════════ */
 function clearFilters(reload=true) {
@@ -321,12 +329,13 @@ function clearFilters(reload=true) {
 }
 $("#btn-clear").addEventListener("click", () => clearFilters());
 $("#q").addEventListener("input", e => { state.q = e.target.value.trim(); clearTimeout(window._qt); window._qt = setTimeout(loadOrders, 250); });
-$("#chip-edited").addEventListener("click", e => { e.preventDefault(); state.edited = !state.edited; $("#chip-edited").classList.toggle("on", state.edited); renderOrders(); });
-$("#chip-missing").addEventListener("click", e => { e.preventDefault(); state.missing = !state.missing; $("#chip-missing").classList.toggle("on", state.missing); renderOrders(); });
+$("#chip-edited").addEventListener("click", e => { e.preventDefault(); state.edited = !state.edited; $("#chip-edited").classList.toggle("on", state.edited); loadOrders(); });
+$("#chip-missing").addEventListener("click", e => { e.preventDefault(); state.missing = !state.missing; $("#chip-missing").classList.toggle("on", state.missing); loadOrders(); });
 
 async function loadOrders() {
-  const p = new URLSearchParams({ line: state.line, month: state.month, q: state.q,
-    dates: [...state.dates].join(","), pos: [...state.pos].join(","), brands: [...state.brands].join(","), warehouses: [...state.warehouses].join(",") });
+  const p = filterParams();
+  $("#btn-export-daily").href = dailyExportUrl();
+  $("#filter-hint").classList.toggle("hidden", !(state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing));
   let data;
   try { data = await api("/api/master/orders?" + p); } catch (e) { toast(e.message, "err"); return; }
   state.facets = data.facets; state.rows = data.rows;
@@ -387,9 +396,7 @@ function renderDropdowns() {
 document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd-menu").forEach(m => m.classList.add("hidden")); });
 
 function renderOrders() {
-  let rows = state.rows;
-  if (state.edited) rows = rows.filter(r => r.qty_ship_overridden || r.delivery_date_overridden || r.remarks_overridden);
-  if (state.missing) rows = rows.filter(r => r.cases == null);
+  const rows = state.rows;   // 後端已照全部篩選條件過濾，匯出用同一組條件
   $("#orders-count").textContent = rows.length ? `${rows.length} 筆 · 合計 ${fmt(rows.reduce((s, r) => s + (r.cases || 0), 0))} 箱` : "";
   if (!rows.length) {
     $("#orders-list").innerHTML = `<div class="card p-10 text-center muted">${state.rows.length ? "沒有符合篩選的資料" : `${state.month} 這個月「${esc(state.line)}」還沒有任何訂單，先按上面的「上傳訂單彙總表」。`}</div>`;

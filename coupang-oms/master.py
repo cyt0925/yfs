@@ -465,17 +465,43 @@ def _decorate(o):
     return o
 
 
+def _read_filters(args):
+    """畫面上的篩選條件：日期、PO、品牌、倉別、關鍵字。訂單列表跟匯出共用，
+    這樣「匯出」出來的一定就是 OP 眼前看到的那些列，不會多也不會少。"""
+    split = lambda k: [x for x in (args.get(k) or "").split(",") if x]  # noqa: E731
+    return {"dates": split("dates"), "pos": split("pos"), "brands": split("brands"),
+            "warehouses": split("warehouses"), "q": norm_text(args.get("q")),
+            "edited": args.get("edited") == "1", "missing": args.get("missing") == "1"}
+
+
+def _keep(o, f):
+    if f["dates"] and (o["delivery_date"] or "") not in f["dates"]:
+        return False
+    if f["pos"] and o["po_number"] not in f["pos"]:
+        return False
+    if f["brands"] and o["brand"] not in f["brands"]:
+        return False
+    if f["warehouses"] and (o["warehouse"] or "") not in f["warehouses"]:
+        return False
+    if f["edited"] and not (o["qty_ship_overridden"] or o["delivery_date_overridden"] or o["remarks_overridden"]):
+        return False
+    if f["missing"] and o["cases"] is not None:
+        return False
+    if f["q"]:
+        hay = " ".join(str(o.get(k) or "") for k in
+                       ("po_number", "sku_id", "barcode", "yf_sku", "brand", "product_name", "remarks"))
+        if f["q"].lower() not in hay.lower():
+            return False
+    return True
+
+
 @master_bp.route("/api/master/orders")
 def api_orders():
     line = norm_text(request.args.get("line"))
     month = norm_text(request.args.get("month"))
     if month and not _valid_month(month):
         return jsonify({"error": "月份格式要像 2026-09。"}), 400
-    dates = [d for d in (request.args.get("dates") or "").split(",") if d]
-    pos = [p for p in (request.args.get("pos") or "").split(",") if p]
-    brands = [b for b in (request.args.get("brands") or "").split(",") if b]
-    warehouses = [w for w in (request.args.get("warehouses") or "").split(",") if w]
-    q = norm_text(request.args.get("q"))
+    filters = _read_filters(request.args)
     conn = get_conn()
     try:
         sql, params = _order_query(line, month)
@@ -514,24 +540,7 @@ def api_orders():
     for fp in facet_pos.values():
         fp["cases"] = round(fp["cases"], 2)
 
-    def keep(o):
-        if dates and (o["delivery_date"] or "") not in dates:
-            return False
-        if pos and o["po_number"] not in pos:
-            return False
-        if brands and o["brand"] not in brands:
-            return False
-        if warehouses and (o["warehouse"] or "") not in warehouses:
-            return False
-        if q:
-            hay = " ".join(str(o.get(k) or "") for k in
-                           ("po_number", "sku_id", "barcode", "yf_sku", "brand",
-                            "product_name", "remarks"))
-            if q.lower() not in hay.lower():
-                return False
-        return True
-
-    shown = [o for o in rows if keep(o)]
+    shown = [o for o in rows if _keep(o, filters)]
     total_cases = round(sum(o["cases"] or 0 for o in shown), 2)
     return jsonify({
         "rows": shown, "count": len(shown), "total_cases": total_cases,
@@ -1166,10 +1175,13 @@ def api_export_daily():
     line = norm_text(request.args.get("line")); month = norm_text(request.args.get("month")) or _this_month()
     if not line or not _valid_month(month):
         return jsonify({"error": "請選線別與月份。"}), 400
+    # 匯出的就是畫面上篩出來的：點了日期就只有那幾天、勾了 PO 就只有那幾張，
+    # 什麼都沒篩才是整個月。
+    filters = _read_filters(request.args)
     conn = get_conn()
     try:
         sql, params = _order_query(line, month)
-        orders = [_decorate(o) for o in _rows(conn.execute(sql, params))]
+        orders = [o for o in (_decorate(x) for x in _rows(conn.execute(sql, params))) if _keep(o, filters)]
     finally:
         conn.close()
 
@@ -1228,10 +1240,17 @@ def api_export_daily():
                 c.alignment = Alignment(horizontal="left")
 
     if not wb.sheetnames:
-        ws = wb.create_sheet("無資料"); ws.append(["這個月沒有任何訂單"])
+        ws = wb.create_sheet("無資料"); ws.append(["目前的篩選條件下沒有任何訂單"])
 
     out = io.BytesIO(); wb.save(out); out.seek(0)
-    fname = f"{line}_專案報價檔格式_{month}.xlsx"
+    # 檔名帶出篩選範圍：只選一天就叫「0805交貨」，選幾天就用「篩選」，整月就是月份
+    if filters["dates"] and len(filters["dates"]) == 1 and filters["dates"][0]:
+        d = _dt.date.fromisoformat(filters["dates"][0]); scope = f"{d.month:02d}{d.day:02d}交貨"
+    elif any(filters[k] for k in ("dates", "pos", "brands", "warehouses", "q", "edited", "missing")):
+        scope = f"{month}_篩選"
+    else:
+        scope = month
+    fname = f"{line}_專案報價檔格式_{scope}.xlsx"
     return send_file(out, as_attachment=True, download_name=fname,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 

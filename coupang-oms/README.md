@@ -56,7 +56,7 @@ python app.py                     # 或 Windows 上雙擊 START.bat
 ```bash
 python test_flow.py      # 訂單管理主流程，184 項檢查
 python test_purchase.py  # 採購表轉換（跟訂單管理完全獨立），60 項檢查
-python test_master.py    # 業績總表自動化（獨立模組），88 項檢查
+python test_master.py    # 業績總表自動化（獨立模組），93 項檢查
 ```
 
 ## 核心防呆（這幾條是系統的命）
@@ -127,7 +127,7 @@ python test_master.py    # 業績總表自動化（獨立模組），88 項檢�
 - 所有變動（匯入、手動、改期、配額）都寫進 `mst_logs`，分得出來源。
 
 驗證：`python test_master.py`（用 `samples/master/` 的真實訂單彙總表與總表範例跑
-完整流程，88 項檢查）。
+完整流程，93 項檢查）。
 
 ## 檔案
 

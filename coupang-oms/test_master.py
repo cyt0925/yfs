@@ -316,6 +316,21 @@ def main():
     row_x = next(r for r in wsd.iter_rows(min_row=2, values_only=True) if str(r[2]) == "6903148182406")
     check("出貨數量(箱) 是值：240 ÷ 24 = 10，總計 = 單價×箱入數×箱數", row_x[9] == 10 and row_x[13] == row_x[10] * row_x[8] * 10, str(row_x[7:14]))
 
+    res = client.get(f"/api/master/export/daily?line={LINE}&month={MONTH}&dates=2026-07-21")
+    wbf = openpyxl.load_workbook(io.BytesIO(res.data))
+    check("點了 7/21 再匯出：只有 0721交貨 一個分頁", wbf.sheetnames == ["0721交貨"], str(wbf.sheetnames))
+    from urllib.parse import unquote
+    cd = unquote(res.headers.get("Content-Disposition", ""))
+    check("檔名帶出那一天", "0721交貨" in cd, cd[:120])
+    res = client.get(f"/api/master/export/daily?line={LINE}&month={MONTH}&pos=13000000370675")
+    wbp = openpyxl.load_workbook(io.BytesIO(res.data))
+    po_cells = [c.value for c in wbp.worksheets[0]["R"] if c.value and str(c.value).startswith("13000000")]
+    check("勾一張 PO 再匯出：分頁裡只有那張 PO", len(wbp.sheetnames) == 1 and len(po_cells) == 1 and po_cells[0].startswith("13000000370675"), str(po_cells))
+    res = client.get(f"/api/master/export/daily?line={LINE}&month={MONTH}&warehouses=TAO9")
+    check("篩到沒資料：檔案裡說明「目前的篩選條件下沒有任何訂單」", openpyxl.load_workbook(io.BytesIO(res.data)).sheetnames == ["無資料"])
+    res = client.get(f"/api/master/orders?line={LINE}&month={MONTH}&edited=1")
+    check("「只看人工調整過」改由後端過濾", res.get_json()["count"] > 0 and all(r["qty_ship_overridden"] or r["delivery_date_overridden"] or r["remarks_overridden"] for r in res.get_json()["rows"]))
+
     print("\n【11】歷程")
     logs = client.get(f"/api/master/logs?line={LINE}&po={po}").get_json()["logs"]
     check("PO 改期、出貨數量調整都留下歷程", any(l["field"] == "delivery_date" for l in logs) and any(l["field"] == "qty_ship" for l in logs))
