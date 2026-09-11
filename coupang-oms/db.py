@@ -741,6 +741,7 @@ CREATE TABLE IF NOT EXISTS mst_orders (
     remarks_file            TEXT DEFAULT '',
     remarks                 TEXT DEFAULT '',
     remarks_overridden      INTEGER NOT NULL DEFAULT 0,
+    missing_in_file         INTEGER NOT NULL DEFAULT 0,
     source_file             TEXT DEFAULT '',
     first_seen_at           TEXT DEFAULT '',
     last_seen_at            TEXT DEFAULT '',
@@ -834,6 +835,7 @@ def init_db():
         conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
         conn.executescript(SCHEMA_MASTER_POSTGRES if IS_POSTGRES else SCHEMA_MASTER_SQLITE)
         _migrate_columns(conn)
+        _migrate_master_columns(conn)
         # orders／po_headers 表可能剛剛才被 _migrate_columns 補上新欄位，
         # 上面 executescript 建出來的 view 是舊欄位版本，要重建一次才會
         # 抓到新欄位（不然要等下次重啟才會生效）。SQLite 的
@@ -843,6 +845,20 @@ def init_db():
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_master_columns(conn):
+    """mst_ 表的欄位升級，做法跟 _migrate_columns 一樣：CREATE TABLE IF NOT EXISTS
+    不會替既有的表補欄位，每加一欄就在這裡補一次 ALTER TABLE。"""
+    if IS_POSTGRES:
+        existing = {r["column_name"] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'mst_orders'")}
+    else:
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(mst_orders)")}
+    if "missing_in_file" not in existing:
+        conn.execute(
+            "ALTER TABLE mst_orders ADD COLUMN missing_in_file INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrate_columns(conn):

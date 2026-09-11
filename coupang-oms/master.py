@@ -205,6 +205,10 @@ def _diff_import(conn, rows):
             if not _same(existing.get(field), value):
                 changes.append({"field": field, "label": COUPANG_FIELDS[field],
                                 "old": existing.get(field), "new": value})
+        if existing["missing_in_file"]:
+            # 之前被酷澎拿掉、這次又出現：就算欄位都一樣也要讓 OP 在預覽看到
+            changes.append({"field": "missing_in_file", "label": "品項重新出現",
+                            "old": "檔案已無此品項", "new": "恢復"})
         if changes:
             updated.append({
                 "row": r, "existing_id": existing["id"], "changes": changes,
@@ -216,7 +220,24 @@ def _diff_import(conn, rows):
             })
         else:
             identical.append(r)
-    return new, updated, identical, list(missing.values())
+    # 酷澎把品項數量下修到 0 時，匯出的表裡那一列會直接消失，不是留一列 0。
+    # 「資料庫有、檔案沒有」平常代表上傳的只是片段、不能動；但如果這張 PO 本身
+    # 有出現在檔案裡、底下某個品項卻沒帶到，那就是被酷澎拿掉了——不刪列（報價
+    # 檔的做法是留著寫 0、備註打單缺貨），出貨數量歸 0，標記讓 OP 看得到。
+    file_keys = {(r["line"], r["po_number"], r["sku_id"]) for r in rows}
+    file_pos = {(r["line"], r["po_number"]) for r in rows}
+    removed = []
+    for line, po in sorted(file_pos):
+        for ex in _rows(conn.execute(
+                "SELECT * FROM mst_orders WHERE line = ? AND po_number = ?", (line, po))):
+            if (line, po, ex["sku_id"]) in file_keys or ex["missing_in_file"]:
+                continue
+            removed.append({"id": ex["id"], "line": line, "po_number": po,
+                            "sku_id": ex["sku_id"], "barcode": ex["barcode"],
+                            "product_name": ex["product_name"],
+                            "qty_coupang": ex["qty_coupang"], "qty_ship": ex["qty_ship"],
+                            "delivery_date": ex["delivery_date"]})
+    return new, updated, identical, list(missing.values()), removed
 
 
 @master_bp.route("/api/master/import/preview", methods=["POST"])
@@ -231,8 +252,8 @@ def api_import_preview():
 
     conn = get_conn()
     try:
-        new, updated, identical, missing = _diff_import(conn, rows)
-        payload = {"rows": rows, "missing_products": missing,
+        new, updated, identical, missing, removed = _diff_import(conn, rows)
+        payload = {"rows": rows, "missing_products": missing, "removed": removed,
                    "filename": upload.filename}
         cur = conn.execute(
             """INSERT INTO mst_import_batches
@@ -248,6 +269,10 @@ def api_import_preview():
 
     by_line = collections.Counter(r["line"] for r in rows)
     dates = sorted({r["delivery_date"] for r in rows if r["delivery_date"]})
+    if by_line.get(UNCLASSIFIED_LINE):
+        warnings = list(warnings) + [
+            f"有 {by_line[UNCLASSIFIED_LINE]} 筆沒有「線別」，先歸到「{UNCLASSIFIED_LINE}」；"
+            "要看它們請在上方線別選單切到「未分類」。"]
     return jsonify({
         "batch_id": batch_id, "filename": upload.filename,
         "rows_total": len(rows), "new_count": len(new),
@@ -256,6 +281,7 @@ def api_import_preview():
         "new_preview": new[:300],
         "updated": [{k: v for k, v in u.items() if k != "row"} for u in updated[:300]],
         "missing_products": missing,
+        "removed": removed, "removed_count": len(removed),
     })
 
 
@@ -303,6 +329,20 @@ def api_import_commit():
                      "product_new", "新增主檔", "", m.get("box_size"),
                      operator, "import", data.get("filename", ""))
                 products_added += 1
+
+        removed_n = 0
+        for rm in data.get("removed", []):
+            ex = _row(conn.execute("SELECT * FROM mst_orders WHERE id = ?", (rm["id"],)))
+            if ex is None or ex["missing_in_file"]:
+                continue
+            conn.execute(
+                """UPDATE mst_orders SET qty_ship = 0, missing_in_file = 1, last_seen_at = ?,
+                   updated_at = ?, version = version + 1 WHERE id = ?""",
+                (stamp, stamp, ex["id"]))
+            _log(conn, ex["line"], ex["po_number"], ex["sku_id"], ex["barcode"],
+                 "qty_ship", "出貨數量", ex["qty_ship"], 0, operator, "import",
+                 "這次的整合表裡這張 PO 已沒有這個品項，出貨數量歸 0")
+            removed_n += 1
 
         for r in rows:
             line = r["line"] or UNCLASSIFIED_LINE
@@ -358,6 +398,14 @@ def api_import_commit():
             if (not existing["remarks_overridden"]
                     and not _same(existing["remarks"], r["remarks_file"])):
                 sets.append("remarks = ?"); vals.append(r["remarks_file"]); changed = True
+            if existing["missing_in_file"]:
+                # 之前被酷澎拿掉、現在又出現了：解除標記，出貨數量照一般規則重新同步
+                sets.append("missing_in_file = 0"); changed = True
+                if not existing["qty_ship_overridden"] and "qty_ship = ?" not in sets:
+                    sets.append("qty_ship = ?"); vals.append(ship)
+                _log(conn, line, r["po_number"], r["sku_id"], r["barcode"],
+                     "missing_in_file", "品項重新出現", 1, 0, operator, "import",
+                     "整合表裡又有這個品項了")
             sets.append("last_seen_at = ?"); vals.append(stamp)
             sets.append("source_file = ?"); vals.append(r["source_file"])
             if changed:
@@ -380,7 +428,8 @@ def api_import_commit():
     finally:
         conn.close()
     return jsonify({"ok": True, "inserted": inserted, "updated": updated_n,
-                    "identical": identical_n, "products_added": products_added})
+                    "identical": identical_n, "products_added": products_added,
+                    "removed": removed_n})
 
 
 # ---------------------------------------------------------------- 訂單明細

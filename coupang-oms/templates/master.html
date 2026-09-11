@@ -440,7 +440,7 @@ function renderOrders() {
           <td style="max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
           <td>${esc(r.brand)}</td>
           <td class="num muted">${fmt(r.qty_coupang)}</td>
-          <td class="num"><input class="cell-in qty ${r.qty_ship_overridden ? "edited" : ""}" value="${r.qty_ship ?? ""}" title="${r.qty_ship_overridden ? "人工調整過，匯入不會覆蓋（整合表是 " + fmt(r.qty_file_ship ?? r.qty_coupang) + "）" : "整合表的出貨數量"}">
+          <td class="num">${r.missing_in_file ? `<span class="badge bd-bad" title="最近一次上傳的整合表裡，這張 PO 已經沒有這個品項（酷澎把數量下修到 0 時整列會消失）。列保留、出貨數量歸 0；之後檔案裡再出現會自動恢復。">檔案已無此品項</span><br>` : ""}<input class="cell-in qty ${r.qty_ship_overridden ? "edited" : ""}" value="${r.qty_ship ?? ""}" title="${r.qty_ship_overridden ? "人工調整過，匯入不會覆蓋（整合表是 " + fmt(r.qty_file_ship ?? r.qty_coupang) + "）" : "整合表的出貨數量"}">
             ${r.qty_ship_overridden ? `<button class="btn btn-g btn-sm qty-reset" title="恢復成整合表數字"><i class="bi bi-arrow-counterclockwise"></i></button>` : ""}</td>
           <td>${esc(r.unit)}</td>
           <td class="num">${fmt(r.box_size) || "—"} ${boxBadge}</td>
@@ -542,10 +542,12 @@ async function previewImport(file) {
       <div class="stat"><b style="color:var(--ok)">${d.new_count}</b><span>新增</span></div>
       <div class="stat"><b style="color:var(--warn)">${d.updated_count}</b><span>內容有變</span></div>
       <div class="stat"><b class="muted">${d.identical_count}</b><span>沒變（略過）</span></div>
+      ${d.removed_count ? `<div class="stat" style="border-color:#fecaca;background:var(--badbg)"><b style="color:var(--bad)">${d.removed_count}</b><span>檔案裡消失的品項</span></div>` : ""}
     </div>
     <div class="text-sm mb-2">線別：${lines || "<span class='muted'>沒有線別欄</span>"}　交貨日：${d.dates.map(x => `<span class="badge bd-gray">${esc(x)}</span>`).join(" ")}</div>
     ${d.warnings.length ? `<div class="card p-3 mb-3 text-sm" style="background:var(--warnbg);border-color:#fcd34d"><b>提醒</b><ul class="list-disc pl-5">${d.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
     ${changes ? `<b class="text-sm">內容有變的品項</b><div class="tbl-wrap mb-3" style="max-height:260px"><table class="m"><thead><tr><th>PO</th><th>國條</th><th>品名</th><th>變動</th></tr></thead><tbody>${changes}</tbody></table></div>` : ""}
+    ${d.removed && d.removed.length ? `<b class="text-sm" style="color:var(--bad)">這張 PO 在檔案裡，但底下這些品項不見了（${d.removed.length}）— 匯入後會留著、出貨數量歸 0</b><div class="tbl-wrap mb-3" style="max-height:220px"><table class="m"><thead><tr><th>PO</th><th>國條</th><th>品名</th><th class="num">下單</th><th class="num">目前出貨</th><th>交貨日</th></tr></thead><tbody>${d.removed.map(x => `<tr><td class="mono">${esc(x.po_number)}</td><td class="mono">${esc(x.barcode)}</td><td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.product_name)}</td><td class="num">${fmt(x.qty_coupang)}</td><td class="num">${fmt(x.qty_ship)}</td><td>${esc(x.delivery_date)}</td></tr>`).join("")}</tbody></table></div>` : ""}
     ${missing ? `<b class="text-sm">主檔還沒有的國條（${d.missing_products.length}）</b><div class="tbl-wrap" style="max-height:220px"><table class="m"><thead><tr><th>線別</th><th>國條</th><th>品名</th><th class="num">整合表箱入數</th></tr></thead><tbody>${missing}</tbody></table></div>` : `<div class="text-sm" style="color:var(--ok)"><i class="bi bi-check-circle"></i> 所有國條主檔都有</div>`}`;
   $("#btn-commit").classList.remove("hidden");
   $("#imp-addmissing-wrap").classList.toggle("hidden", !missing);
@@ -556,7 +558,7 @@ $("#btn-commit").addEventListener("click", async () => {
   try {
     const d = await api("/api/master/import/commit", { method: "POST", headers: {"Content-Type":"application/json"},
       body: JSON.stringify({ batch_id: pendingBatch, add_missing_products: $("#imp-addmissing").checked }) });
-    toast(`匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.products_added ? `，主檔新增 ${d.products_added} 筆` : ""}`);
+    toast(`匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.removed ? `，${d.removed} 筆品項在檔案裡消失（已歸 0 保留）` : ""}${d.products_added ? `，主檔新增 ${d.products_added} 筆` : ""}`);
     $("#dlg-import").close(); await initHeader(); refresh();
   } catch (e) { toast(e.message, "err"); }
   finally { $("#btn-commit").disabled = false; }

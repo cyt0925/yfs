@@ -202,6 +202,32 @@ def main():
           r_a["qty_coupang"] == 200 and r_a["qty_ship"] == 48, f"{r_a['qty_coupang']} / {r_a['qty_ship']}")
     check("沒人工調整的那筆：出貨數量跟著整合表變", r_b["qty_ship"] == r_b["qty_file_ship"])
 
+    print("\n【7b】酷澎把品項拿掉：PO 在檔案裡、品項消失 → 留列、出貨歸 0、標記；再出現就恢復")
+    wb = openpyxl.load_workbook(ORDERS_XLSX)
+    ws = wb.active
+    hdr = [c.value for c in ws[1]]; ci = {h: i + 1 for i, h in enumerate(hdr)}
+    gone_sku = None
+    for r in range(ws.max_row, 1, -1):
+        if str(ws.cell(r, ci["PO單號"]).value) == "13000000370675":
+            gone_sku = str(ws.cell(r, ci["SKU ID"]).value); ws.delete_rows(r); break
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    res = client.post("/api/master/import/preview", data={"file": (buf, "少一筆.xlsx")}, content_type="multipart/form-data")
+    pv4 = res.get_json()
+    check("預覽抓到 1 筆「PO 在、品項不在」", pv4["removed_count"] == 1 and pv4["removed"][0]["sku_id"] == gone_sku, str(pv4["removed"]))
+    check("沒被錯認成刪除其他 PO（其他 PO 沒出現在檔案裡的品項不算）", all(x["po_number"] == "13000000370675" for x in pv4["removed"]))
+    client.post("/api/master/import/commit", json={"batch_id": pv4["batch_id"]})
+    rows5 = client.get(f"/api/master/orders?line={LINE}&month={MONTH}&pos=13000000370675").get_json()["rows"]
+    gone = next((r for r in rows5 if r["sku_id"] == gone_sku), None)
+    check("那筆還在畫面上（沒被刪）", gone is not None)
+    check("出貨數量歸 0、箱數 0、標記檔案已無此品項", gone["qty_ship"] == 0 and gone["cases"] == 0 and gone["missing_in_file"] == 1, str((gone["qty_ship"], gone["cases"], gone["missing_in_file"])))
+    check("下單數量保留原值（看得出原本下了多少）", gone["qty_coupang"] and gone["qty_coupang"] > 0)
+    res = upload(client, "/api/master/import/preview", ORDERS_XLSX)
+    pv5 = res.get_json()
+    check("再上傳完整檔：那筆被列為有變（重新出現）", any(x["sku_id"] == gone_sku for x in pv5["updated"]) or pv5["updated_count"] >= 1, str(pv5["updated_count"]))
+    client.post("/api/master/import/commit", json={"batch_id": pv5["batch_id"]})
+    back = next(r for r in client.get(f"/api/master/orders?line={LINE}&month={MONTH}&pos=13000000370675").get_json()["rows"] if r["sku_id"] == gone_sku)
+    check("重新出現：標記解除、出貨數量回到整合表的值", back["missing_in_file"] == 0 and back["qty_ship"] == (back["qty_file_ship"] if back["qty_file_ship"] is not None else back["qty_coupang"]), str((back["missing_in_file"], back["qty_ship"])))
+
     print("\n【8】商品主檔：從總表匯入、手動維護、孤兒國條")
     res = upload(client, "/api/master/products/import", MASTER_XLSX, line=LINE)
     check("總表匯入主檔成功", res.status_code == 200, str(res.get_json()))
@@ -234,7 +260,11 @@ def main():
     s2 = client.get(f"/api/master/summary?line={LINE}&month={MONTH}").get_json()
     r_sum2 = next(r for r in s2["rows"] if r["barcode"] == "6903148182406")
     check("剩餘可供貨 = 350 − 2 = 348（總表 BE = O − BD）", r_sum2["remaining"] == 348.0, str(r_sum2["remaining"]))
+    # 7b 那兩次匯入把這筆的版本號往上加過（下單數量 200 → 62），要重新讀一次才拿得到
+    # 現在的版本；拿舊版本去改會被防互蓋擋下——那是正確行為，不是 bug。
+    r_a = next(r for r in client.get(f"/api/master/orders?line={LINE}&month={MONTH}").get_json()["rows"] if r["id"] == oid)
     res = jput(client, f"/api/master/orders/{oid}", {"version": r_a["version"], "qty_ship": 240})
+    check("改出貨數量成功（用最新版本號）", res.status_code == 200, str(res.get_json())[:120])
     s3 = client.get(f"/api/master/summary?line={LINE}&month={MONTH}").get_json()
     r_sum3 = next(r for r in s3["rows"] if r["barcode"] == "6903148182406")
     check("改出貨數量後總表立刻重算：240÷24=10，剩餘 340（不用重上傳）",
