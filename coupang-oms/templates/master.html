@@ -169,8 +169,8 @@
   <!-- ══════════ 總表 ══════════ -->
   <section id="tab-summary" class="hidden">
     <div class="flex items-center gap-2 flex-wrap mb-4">
-      <button id="btn-quota" class="btn btn-p"><i class="bi bi-upload"></i> 匯入配額</button>
-      <span class="kbd">配額那一欄可以直接點進去改，改完按 Enter。剩餘 = 配額 − 當月加總。</span>
+      <button id="btn-quota" class="btn btn-p hidden"><i class="bi bi-upload"></i> 匯入配額</button>
+      <span class="kbd">一列一個國條，往右是各交貨日的出貨箱數，最右邊是這個月的加總。改了訂單明細這裡會自己跟著變。</span>
       <div class="flex-1"></div>
       <a id="btn-export-2" class="btn btn-o"><i class="bi bi-file-earmark-excel"></i> 匯出 Excel</a>
     </div>
@@ -566,16 +566,13 @@ async function loadSummary() {
   catch (e) { toast(e.message, "err"); return; }
   $("#sum-stats").innerHTML = `
     <div class="stat"><b>${fmt(s.month_total)}</b><span>${Number(state.month.slice(5))} 月出貨總箱數</span></div>
-    <div class="stat"><b>${fmt(s.quota_total)}</b><span>配額合計（CS）</span></div>
-    <div class="stat"><b class="${s.quota_total - s.month_total < 0 ? "neg" : ""}">${fmt(s.quota_total - s.month_total)}</b><span>剩餘合計</span></div>
     <div class="stat"><b>${s.dates.length}</b><span>有出貨的交貨日</span></div>
     ${s.missing_box_rows ? `<div class="stat" style="border-color:#fcd34d;background:var(--warnbg)"><b style="color:var(--warn)">${s.missing_box_rows}</b><span>筆算不出箱數（缺箱入數）</span></div>` : ""}
     ${s.not_in_master ? `<div class="stat" style="border-color:#fcd34d;background:var(--warnbg)"><b style="color:var(--warn)">${s.not_in_master}</b><span>個國條不在主檔</span></div>` : ""}`;
   const md = d => { const [y, m, dd] = d.split("-"); return `${Number(m)}/${Number(dd)}`; };
   let html = `<thead><tr><th class="sticky-l" style="z-index:3">國條</th><th>品名</th><th>品牌</th><th class="num">箱入數</th>${s.dates.map(d => `<th class="num">${md(d)}<br><span style="font-weight:400;font-size:11px">交貨</span></th>`).join("")}
-    <th class="num" style="background:var(--b900)">${Number(state.month.slice(5))}月TTL</th><th class="num" style="background:var(--b900)">配額(CS)</th><th class="num" style="background:var(--b900)">剩餘可供貨</th><th>備註</th></tr></thead><tbody>`;
+    <th class="num" style="background:var(--b900)">${Number(state.month.slice(5))}月TTL</th><th>備註</th></tr></thead><tbody>`;
   for (const r of s.rows) {
-    const rem = r.remaining;
     html += `<tr data-bc="${esc(r.barcode)}">
       <td class="mono sticky-l">${esc(r.barcode)} ${r.in_master ? "" : `<span class="badge bd-warn" title="主檔沒有這個國條">未建檔</span>`}</td>
       <td style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
@@ -583,11 +580,9 @@ async function loadSummary() {
       <td class="num">${r.box_size ? fmt(r.box_size) : `<span class="neg">缺</span>`}</td>
       ${s.dates.map(d => `<td class="num">${r.by_date[d] != null ? fmt(r.by_date[d]) : `<span class="muted">·</span>`}</td>`).join("")}
       <td class="num" style="background:var(--b50)"><b>${fmt(r.month_total)}</b>${r.missing_box ? ` <span class="badge bd-warn" title="${r.missing_box} 筆沒算進去">!</span>` : ""}</td>
-      <td class="num" style="background:var(--b50)"><input class="cell-in quota" value="${r.quota ?? ""}" placeholder="—" title="${esc(r.quota_note)}"></td>
-      <td class="num ${rem == null ? "muted" : rem < 0 ? "neg" : "pos"}" style="background:var(--b50)"><b>${rem == null ? "—" : fmt(rem)}</b></td>
       <td class="muted" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.note)}</td></tr>`;
   }
-  html += `</tbody><tfoot><tr style="font-weight:700;background:var(--b100)"><td class="sticky-l" style="background:var(--b100)">合計</td><td></td><td></td><td></td>${s.dates.map(d => `<td class="num">${fmt(s.totals_by_date[d])}</td>`).join("")}<td class="num">${fmt(s.month_total)}</td><td class="num">${fmt(s.quota_total)}</td><td class="num ${s.quota_total - s.month_total < 0 ? "neg" : ""}">${fmt(s.quota_total - s.month_total)}</td><td></td></tr></tfoot>`;
+  html += `</tbody><tfoot><tr style="font-weight:700;background:var(--b100)"><td class="sticky-l" style="background:var(--b100)">合計</td><td></td><td></td><td></td>${s.dates.map(d => `<td class="num">${fmt(s.totals_by_date[d])}</td>`).join("")}<td class="num">${fmt(s.month_total)}</td><td></td></tr></tfoot>`;
   $("#sum-table").innerHTML = html;
   $("#sum-table").querySelectorAll("input.quota").forEach(inp => {
     inp.dataset.orig = inp.value;

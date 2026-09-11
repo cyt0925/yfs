@@ -258,11 +258,11 @@ def main():
     wb = openpyxl.load_workbook(io.BytesIO(res.data))
     check("三個工作表：總表、每日合計、訂單明細", wb.sheetnames == ["總表", "每日合計", "訂單明細"], str(wb.sheetnames))
     ws = wb["總表"]; hdr = [c.value for c in ws[1]]
-    check("總表日期欄用「7/24交貨」寫法，最右邊是 TTL／配額／剩餘",
-          "7/24交貨" in hdr and hdr[-4:-1] == ["7月TTL下單總箱數", "7月配額(CS)", "剩餘可供貨量(CS)"], str(hdr[-5:]))
-    bc_col = hdr.index("國條"); rem_col = hdr.index("剩餘可供貨量(CS)"); d24_col = hdr.index("7/24交貨")
+    check("總表日期欄用「7/24交貨」寫法，最右邊是 TTL、備註（配額／剩餘先不放）",
+          "7/24交貨" in hdr and hdr[-2:] == ["7月TTL下單總箱數", "備註"] and "剩餘可供貨量(CS)" not in hdr, str(hdr[-4:]))
+    bc_col = hdr.index("國條"); ttl_col = hdr.index("7月TTL下單總箱數"); d24_col = hdr.index("7/24交貨")
     r_x = next(r for r in ws.iter_rows(min_row=2, values_only=True) if str(r[bc_col]) == "6903148182406")
-    check("匯出的數字是值不是公式：6903148182406 7/24 = 10、剩餘 = 390", r_x[d24_col] == 10 and r_x[rem_col] == 390, f"{r_x[d24_col]} / {r_x[rem_col]}")
+    check("匯出的數字是值不是公式：6903148182406 7/24 = 10、7月TTL = 10", r_x[d24_col] == 10 and r_x[ttl_col] == 10, f"{r_x[d24_col]} / {r_x[ttl_col]}")
     ws3 = wb["訂單明細"]
     check("訂單明細有 53 列", ws3.max_row - 1 == 53, str(ws3.max_row - 1))
 

@@ -1042,19 +1042,20 @@ def api_export():
     wb = openpyxl.Workbook()
     ws = wb.active; ws.title = "總表"
     mm = int(month[5:7])
+    # 配額／剩餘可供貨量兩欄先不放（畫面上也先收起來），要開回來時把 r["quota"]、
+    # r["remaining"] 加回這裡與 head 即可，後端 _build_summary 一直有算。
     head = ["國條", "SKU ID", "永豐料號", "品牌", "品名", "箱入數"] + \
            [_md(d) for d in s["dates"]] + \
-           [f"{mm}月TTL下單總箱數", f"{mm}月配額(CS)", "剩餘可供貨量(CS)", "備註"]
+           [f"{mm}月TTL下單總箱數", "備註"]
     ws.append(head)
     for r in s["rows"]:
         ws.append([r["barcode"], r["sku_id"], r["yf_sku"], r["brand"], r["product_name"],
                    r["box_size"]] +
                   [r["by_date"].get(d) for d in s["dates"]] +
-                  [r["month_total"], r["quota"], r["remaining"],
-                   ("；".join(x for x in (r["note"], r["quota_note"]) if x))])
+                  [r["month_total"], r["note"]])
     ws.append([])
     ws.append(["合計", "", "", "", "", ""] + [s["totals_by_date"].get(d) for d in s["dates"]] +
-              [s["month_total"], s["quota_total"], None, ""])
+              [s["month_total"], ""])
     bold = Font(bold=True); fill = PatternFill("solid", fgColor="DBEAFE")
     for c in ws[1]:
         c.font = bold; c.fill = fill; c.alignment = Alignment(horizontal="center", wrap_text=True)
