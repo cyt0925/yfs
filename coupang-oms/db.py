@@ -702,10 +702,17 @@ def ensure_data_dir():
 #    箱入數，依交貨日 + 國條加總），OP 一改數字總表立刻跟著變，這正是
 #    要取代「重做樞紐 + VLOOKUP」的地方。
 SCHEMA_MASTER_SQLITE = """
+CREATE TABLE IF NOT EXISTS mst_meta (
+    key     TEXT PRIMARY KEY,
+    value   TEXT DEFAULT ''
+);
+
+-- 商品主檔：全公司一份，鍵是國條。線別不是商品的屬性（總表裡本來就沒有
+-- 線別欄），lines_seen 是「這個國條曾出現在哪些線別的訂單裡」，由匯入訂單時
+-- 自動學來，不用人選。
 CREATE TABLE IF NOT EXISTS mst_products (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    line          TEXT NOT NULL,
-    barcode       TEXT NOT NULL,
+    barcode       TEXT NOT NULL UNIQUE,
     sku_id        TEXT DEFAULT '',
     yf_sku        TEXT DEFAULT '',
     brand         TEXT DEFAULT '',
@@ -716,16 +723,19 @@ CREATE TABLE IF NOT EXISTS mst_products (
     box_size      INTEGER,
     note          TEXT DEFAULT '',        -- 總表 Note（報價檔 O 欄備註）
     auto_created  INTEGER NOT NULL DEFAULT 0,  -- 由匯入訂單自動建立、箱入數還沒人核對
+    lines_seen    TEXT DEFAULT '',        -- 出現過的原始線別，逗號分隔
     updated_by    TEXT DEFAULT '',
-    updated_at    TEXT DEFAULT '',
-    UNIQUE(line, barcode)
+    updated_at    TEXT DEFAULT ''
 );
 
+-- 訂單明細：鍵是 (PO, SKU)，跟訂單管理一樣。線別是每一列自己帶的原始值
+-- （寶僑／瑪氏／CPG-潔品／CPG-紙品…），同一張 PO 可以跨線別；群組化（CPG-*
+-- → 紙潔）在讀取時用設定對照，不存進來。
 CREATE TABLE IF NOT EXISTS mst_orders (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-    line                    TEXT NOT NULL,
     po_number               TEXT NOT NULL,
     sku_id                  TEXT NOT NULL,
+    line                    TEXT DEFAULT '',
     barcode                 TEXT DEFAULT '',
     yf_sku                  TEXT DEFAULT '',
     brand                   TEXT DEFAULT '',
@@ -751,11 +761,13 @@ CREATE TABLE IF NOT EXISTS mst_orders (
     last_seen_at            TEXT DEFAULT '',
     updated_at              TEXT DEFAULT '',
     version                 INTEGER NOT NULL DEFAULT 1,
-    UNIQUE(line, po_number, sku_id)
+    UNIQUE(po_number, sku_id)
 );
-CREATE INDEX IF NOT EXISTS idx_mst_orders_line_date ON mst_orders(line, delivery_date);
-CREATE INDEX IF NOT EXISTS idx_mst_orders_barcode ON mst_orders(line, barcode);
+CREATE INDEX IF NOT EXISTS idx_mst_orders_date ON mst_orders(delivery_date);
+CREATE INDEX IF NOT EXISTS idx_mst_orders_barcode ON mst_orders(barcode);
+CREATE INDEX IF NOT EXISTS idx_mst_orders_po ON mst_orders(po_number);
 
+-- 月配額：line 放的是線別群組名稱（寶僑／紙潔／瑪氏）
 CREATE TABLE IF NOT EXISTS mst_quotas (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     line        TEXT NOT NULL,
@@ -783,6 +795,7 @@ CREATE TABLE IF NOT EXISTS mst_logs (
     note        TEXT DEFAULT '',
     changed_at  TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_mst_logs_po ON mst_logs(po_number);
 
 CREATE TABLE IF NOT EXISTS mst_import_batches (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -799,8 +812,6 @@ CREATE TABLE IF NOT EXISTS mst_import_batches (
 );
 """
 
-# PostgreSQL 版：只差自動編號的寫法（SERIAL）跟 REAL → DOUBLE PRECISION，
-# 其餘欄位、唯一鍵、索引一律相同，兩邊行為才會一致。
 SCHEMA_MASTER_POSTGRES = (
     SCHEMA_MASTER_SQLITE
     .replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
@@ -851,39 +862,104 @@ def init_db():
         conn.close()
 
 
-def _migrate_master_columns(conn):
-    """mst_ 表的欄位升級，做法跟 _migrate_columns 一樣：CREATE TABLE IF NOT EXISTS
-    不會替既有的表補欄位，每加一欄就在這裡補一次 ALTER TABLE。"""
-    if IS_POSTGRES:
-        existing = {r["column_name"] for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'mst_orders'")}
-    else:
-        existing = {r["name"] for r in conn.execute("PRAGMA table_info(mst_orders)")}
-    if "missing_in_file" not in existing:
-        conn.execute(
-            "ALTER TABLE mst_orders ADD COLUMN missing_in_file INTEGER NOT NULL DEFAULT 0")
+MST_SCHEMA_VERSION = "2"
 
+
+def _cols(conn, table):
     if IS_POSTGRES:
-        pex = {r["column_name"] for r in conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'mst_products'")}
-    else:
-        pex = {r["name"] for r in conn.execute("PRAGMA table_info(mst_products)")}
-    if "category" not in pex:
-        conn.execute("ALTER TABLE mst_products ADD COLUMN category TEXT DEFAULT ''")
-    if "pgcode" not in pex:
-        conn.execute("ALTER TABLE mst_products ADD COLUMN pgcode TEXT DEFAULT ''")
-    if "cost_price" not in pex:
-        conn.execute("ALTER TABLE mst_products ADD COLUMN cost_price "
-                     + ("DOUBLE PRECISION" if IS_POSTGRES else "REAL"))
-    if "auto_created" not in pex:
-        conn.execute("ALTER TABLE mst_products ADD COLUMN auto_created INTEGER NOT NULL DEFAULT 0")
-    # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，Note 是要進報價檔備註的欄位，
-    # 一次性搬成 auto_created 旗標並清空，之後的匯入不會再寫這句。
-    conn.execute(
-        "UPDATE mst_products SET note = '', auto_created = 1 "
-        "WHERE note = '由匯入自動建立，箱入數請核對'")
+        return {r["column_name"] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?", (table,))}
+    return {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _table_exists(conn, table):
+    if IS_POSTGRES:
+        return conn.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?", (table,)).fetchone() is not None
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?", (table,)).fetchone() is not None
+
+
+def _migrate_master_columns(conn):
+    """mst_ 表的升級。
+
+    v1 → v2：主檔原本的鍵是 (線別, 國條)、訂單是 (線別, PO, SKU)。但線別不是商品
+    的屬性（總表沒有線別欄），同一張 PO 也會跨線別（CPG-潔品／CPG-紙品），所以
+    v2 改成主檔鍵 = 國條、訂單鍵 = (PO, SKU)，線別只是訂單列上的原始值。既有資料
+    整表搬過去：同一國條在不同線別下的主檔合併成一筆（留最新那筆的資料、線別
+    記進 lines_seen）；同一 (PO, SKU) 若在不同線別下重複（理論上不會）留最新。
+    """
+    ver = conn.execute("SELECT value FROM mst_meta WHERE key = 'schema_version'").fetchone()
+    ver = ver["value"] if ver else None
+
+    if ver is None and _table_exists(conn, "mst_products") and "line" in _cols(conn, "mst_products"):
+        # ---- 主檔 ----
+        conn.execute("ALTER TABLE mst_products RENAME TO mst_products_v1")
+        conn.execute(_create_sql("mst_products"))
+        old_cols = _cols(conn, "mst_products_v1")
+        agg = "string_agg(DISTINCT line, ',')" if IS_POSTGRES else "group_concat(DISTINCT line)"
+        rows = conn.execute(
+            f"""SELECT barcode, MAX(id) AS latest_id, {agg} AS lines_seen
+                FROM mst_products_v1 WHERE barcode != '' GROUP BY barcode""").fetchall()
+        for r in rows:
+            src = dict(conn.execute("SELECT * FROM mst_products_v1 WHERE id = ?", (r["latest_id"],)).fetchone())
+            conn.execute(
+                """INSERT INTO mst_products
+                   (barcode, sku_id, yf_sku, brand, product_name, category, pgcode, cost_price,
+                    box_size, note, auto_created, lines_seen, updated_by, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (src["barcode"], src.get("sku_id") or "", src.get("yf_sku") or "", src.get("brand") or "",
+                 src.get("product_name") or "", src.get("category") or "" if "category" in old_cols else "",
+                 src.get("pgcode") or "" if "pgcode" in old_cols else "",
+                 src.get("cost_price") if "cost_price" in old_cols else None,
+                 src.get("box_size"), src.get("note") or "",
+                 src.get("auto_created") or 0 if "auto_created" in old_cols else 0,
+                 r["lines_seen"] or "", src.get("updated_by") or "", src.get("updated_at") or ""))
+        conn.execute("DROP TABLE mst_products_v1")
+
+        # ---- 訂單 ----
+        if _table_exists(conn, "mst_orders"):
+            conn.execute("ALTER TABLE mst_orders RENAME TO mst_orders_v1")
+            conn.execute(_create_sql("mst_orders"))
+            ocols = _cols(conn, "mst_orders_v1")
+            keep = [c for c in _cols(conn, "mst_orders") if c in ocols and c != "id"]
+            latest = conn.execute(
+                "SELECT MAX(id) AS id FROM mst_orders_v1 GROUP BY po_number, sku_id").fetchall()
+            ids = [x["id"] for x in latest]
+            for oid in ids:
+                src = dict(conn.execute("SELECT * FROM mst_orders_v1 WHERE id = ?", (oid,)).fetchone())
+                conn.execute(
+                    f"INSERT INTO mst_orders ({', '.join(keep)}) VALUES ({', '.join('?' for _ in keep)})",
+                    [src.get(c) for c in keep])
+            conn.execute("DROP TABLE mst_orders_v1")
+        for stmt in _index_sql():
+            conn.execute(stmt)
+        ver = None  # 往下寫版本
+
+    # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，一次性搬成旗標並清空。
+    if _table_exists(conn, "mst_products"):
+        conn.execute(
+            "UPDATE mst_products SET note = '', auto_created = 1 "
+            "WHERE note = '由匯入自動建立，箱入數請核對'")
+
+    if ver != MST_SCHEMA_VERSION:
+        conn.execute(
+            """INSERT INTO mst_meta (key, value) VALUES ('schema_version', ?)
+               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (MST_SCHEMA_VERSION,))
+
+
+def _create_sql(table):
+    """從 SCHEMA_MASTER_* 撈出單一張表的 CREATE TABLE 敘述（升級時要重建那張表）。"""
+    schema = SCHEMA_MASTER_POSTGRES if IS_POSTGRES else SCHEMA_MASTER_SQLITE
+    marker = f"CREATE TABLE IF NOT EXISTS {table} ("
+    start = schema.index(marker)
+    end = schema.index(");", start) + 2
+    return schema[start:end]
+
+
+def _index_sql():
+    schema = SCHEMA_MASTER_POSTGRES if IS_POSTGRES else SCHEMA_MASTER_SQLITE
+    return [ln.strip() for ln in schema.splitlines() if ln.strip().startswith("CREATE INDEX")]
 
 
 def _migrate_columns(conn):
