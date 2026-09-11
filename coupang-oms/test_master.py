@@ -63,6 +63,9 @@ def main():
     print("\n【1】頁面與入口")
     res = client.get("/master")
     check("頁面打得開", res.status_code == 200)
+    html = res.get_data(as_text=True)
+    check("分頁順序照流程：① 商品主檔 → ② 訂單明細 → ③ 總表",
+          html.index("① 商品主檔") < html.index("② 訂單明細") < html.index("③ 總表"))
     check("頁面標題是「業績總表自動化」", "業績總表自動化" in res.get_data(as_text=True))
     check("頁面用藍白主題、載入自己的 logo", "logo_master.png" in res.get_data(as_text=True))
     home = client.get("/").get_data(as_text=True)
@@ -91,6 +94,8 @@ def main():
     cm = res.get_json()
     check("新增 53 筆", cm["inserted"] == 53, str(cm))
     check("主檔自動建立的筆數 = 待建數", cm["products_added"] == len(pv["missing_products"]))
+    auto = client.get(f"/api/master/products?line={LINE}").get_json()["products"]
+    check("自動建的主檔標 auto_created、Note 留空", all(x["auto_created"] == 1 and x["note"] == "" for x in auto))
     res = client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"]})
     check("同一批不能重複確認（409）", res.status_code == 409)
 
@@ -236,7 +241,11 @@ def main():
     prods = client.get(f"/api/master/products?line={LINE}").get_json()
     p = next((x for x in prods["products"] if x["barcode"] == "4987176340894"), None)
     check("總表第一列 ARIEL 4987176340894 箱入數 6 進了主檔", p is not None and p["box_size"] == 6, str(p and p["box_size"]))
+    check("品類 Category 進了主檔（Fabric）", p is not None and p["category"] == "Fabric", str(p and p["category"]))
+    check("單價(含稅) 吃總表 COGS 欄（202）", p is not None and p["cost_price"] == 202, str(p and p["cost_price"]))
+    check("PG code 進了主檔", p is not None and p["pgcode"] == "80864486", str(p and p["pgcode"]))
     check("總表 Note（新品／不可超打）帶進備註", any(x["note"] in ("新品", "不可超打") for x in prods["products"]))
+    check("總表裡有的國條，匯入後解除「請核對」", p is not None and p["auto_created"] == 0)
     res = client.post("/api/master/products", json={"line": LINE, "barcode": "6903148355923", "box_size": 16, "product_name": "好自在 無痕早安褲 XL"})
     check("手動補上新品的箱入數", res.status_code == 200 and res.get_json()["product"]["box_size"] == 16)
     rows4 = client.get(f"/api/master/orders?line={LINE}&month={MONTH}").get_json()["rows"]
@@ -314,7 +323,19 @@ def main():
                    if wsd.cell(r, 1).fill.fgColor.rgb in ("00FFFF00", "FFFFFF00") and wsd.cell(r, 1).value is None]
     check("PO 之間有一列黃色空白列隔開", len(yellow_rows) == 1, str(yellow_rows))
     row_x = next(r for r in wsd.iter_rows(min_row=2, values_only=True) if str(r[2]) == "6903148182406")
-    check("出貨數量(箱) 是值：240 ÷ 24 = 10，總計 = 單價×箱入數×箱數", row_x[9] == 10 and row_x[13] == row_x[10] * row_x[8] * 10, str(row_x[7:14]))
+    check("出貨數量(箱) 是值：240 ÷ 24 = 10，總計 = 酷澎下單價×箱入數×箱數", row_x[9] == 10 and row_x[13] == row_x[11] * row_x[8] * 10, str(row_x[7:14]))
+    # A~R 的主檔來源欄：拿總表裡有的 ARIEL 4987176340907（7/21 那張）驗
+    ws21 = wbd["0721交貨"]
+    row_a = next(r for r in ws21.iter_rows(min_row=2, values_only=True) if str(r[2]) == "4987176340856")
+    check("D 品類、K 單價(含稅) 從總表主檔來（Fabric、COGS）", row_a[3] == "Fabric" and row_a[10] is not None, str((row_a[3], row_a[10])))
+    check("B 永豐料號優先用主檔的（4987176340856 → 主檔 F 欄）", row_a[1] == "4987176340856", str(row_a[1]))
+    # 備註 = 總表 Note，OP 手動備註接在後面；凱特那串 P&G／MPO 不進報價檔
+    row_n = next(r for r in wsd.iter_rows(min_row=2, values_only=True) if str(r[2]) == "6903148182406")
+    check("O 備註 = Note＋OP 備註（那筆 OP 打了「不可超打」），整合表自帶的「P&G」沒進來",
+          "不可超打" in str(row_n[14]) and "P&G" not in str(row_n[14]), str(row_n[14]))
+    row_nn = next(r for ws_ in wbd.worksheets for r in ws_.iter_rows(min_row=2, values_only=True) if str(r[2]) == "6903148355923")
+    check("沒 Note 也沒 OP 備註的列，備註留白（不是整合表的 P&G，也不是系統提示）", not row_nn[14], str(row_nn[14]))
+    check("自動建主檔的那句系統提示沒有跑進任何備註", not any("自動建立" in str(r[14] or "") for ws_ in wbd.worksheets for r in ws_.iter_rows(min_row=2, values_only=True)))
 
     res = client.get(f"/api/master/export/daily?line={LINE}&month={MONTH}&dates=2026-07-21")
     wbf = openpyxl.load_workbook(io.BytesIO(res.data))

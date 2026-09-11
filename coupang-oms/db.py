@@ -710,8 +710,12 @@ CREATE TABLE IF NOT EXISTS mst_products (
     yf_sku        TEXT DEFAULT '',
     brand         TEXT DEFAULT '',
     product_name  TEXT DEFAULT '',
+    category      TEXT DEFAULT '',        -- 總表 Category（報價檔 D 欄品類）
+    pgcode        TEXT DEFAULT '',        -- 總表 Pgcode
+    cost_price    REAL,                   -- 總表 COGS (pcs/ w. TAX)（報價檔 K 欄單價(含稅)）
     box_size      INTEGER,
-    note          TEXT DEFAULT '',
+    note          TEXT DEFAULT '',        -- 總表 Note（報價檔 O 欄備註）
+    auto_created  INTEGER NOT NULL DEFAULT 0,  -- 由匯入訂單自動建立、箱入數還沒人核對
     updated_by    TEXT DEFAULT '',
     updated_at    TEXT DEFAULT '',
     UNIQUE(line, barcode)
@@ -859,6 +863,27 @@ def _migrate_master_columns(conn):
     if "missing_in_file" not in existing:
         conn.execute(
             "ALTER TABLE mst_orders ADD COLUMN missing_in_file INTEGER NOT NULL DEFAULT 0")
+
+    if IS_POSTGRES:
+        pex = {r["column_name"] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'mst_products'")}
+    else:
+        pex = {r["name"] for r in conn.execute("PRAGMA table_info(mst_products)")}
+    if "category" not in pex:
+        conn.execute("ALTER TABLE mst_products ADD COLUMN category TEXT DEFAULT ''")
+    if "pgcode" not in pex:
+        conn.execute("ALTER TABLE mst_products ADD COLUMN pgcode TEXT DEFAULT ''")
+    if "cost_price" not in pex:
+        conn.execute("ALTER TABLE mst_products ADD COLUMN cost_price "
+                     + ("DOUBLE PRECISION" if IS_POSTGRES else "REAL"))
+    if "auto_created" not in pex:
+        conn.execute("ALTER TABLE mst_products ADD COLUMN auto_created INTEGER NOT NULL DEFAULT 0")
+    # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，Note 是要進報價檔備註的欄位，
+    # 一次性搬成 auto_created 旗標並清空，之後的匯入不會再寫這句。
+    conn.execute(
+        "UPDATE mst_products SET note = '', auto_created = 1 "
+        "WHERE note = '由匯入自動建立，箱入數請核對'")
 
 
 def _migrate_columns(conn):

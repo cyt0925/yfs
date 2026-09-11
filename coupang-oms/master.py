@@ -316,15 +316,17 @@ def api_import_commit():
                     (m["line"], m["barcode"])))
                 if exists:
                     continue
+                # Note 留空——那是要進報價檔備註的欄位，系統提示不能塞進去；
+                # 「自動建立、還沒人核對」用 auto_created 旗標記，畫面另外標。
                 conn.execute(
                     """INSERT INTO mst_products
                        (line, barcode, sku_id, yf_sku, brand, product_name,
-                        box_size, note, updated_by, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        box_size, note, auto_created, updated_by, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,1,?,?)""",
                     (m["line"], m["barcode"], m.get("sku_id") or "",
                      m.get("yf_sku") or "", m.get("brand") or "",
                      m.get("product_name") or "", m.get("box_size"),
-                     "由匯入自動建立，箱入數請核對", operator, stamp))
+                     "", operator, stamp))
                 _log(conn, m["line"], "", m.get("sku_id") or "", m["barcode"],
                      "product_new", "新增主檔", "", m.get("box_size"),
                      operator, "import", data.get("filename", ""))
@@ -446,7 +448,9 @@ def _order_query(line, month, extra_where="", extra_params=()):
     if extra_where:
         where.append(extra_where); params.extend(extra_params)
     sql = f"""SELECT o.*, p.box_size AS box_size_master, p.note AS note_master,
-                     p.product_name AS name_master
+                     p.product_name AS name_master, p.category AS category,
+                     p.cost_price AS cost_price, p.yf_sku AS yf_sku_master,
+                     p.brand AS brand_master, p.id AS product_id
               FROM mst_orders o
               LEFT JOIN mst_products p ON p.line = o.line AND p.barcode = o.barcode
               WHERE {' AND '.join(where)}
@@ -462,6 +466,11 @@ def _decorate(o):
     o["cases"] = _cases(o.get("qty_ship"), box)
     o["cases_file"] = _cases(o.get("qty_file_ship"), box)
     o["month"] = _month_of(o.get("delivery_date"))
+    o["in_master"] = bool(o.get("product_id"))
+    # 報價檔 O 欄備註：總表 Note 為底，OP 在系統裡打的備註接在後面；
+    # 凱特那串 MPO_… 不進報價檔（它只留在 remarks_file 供查）。
+    op_note = o.get("remarks") if o.get("remarks_overridden") else ""
+    o["export_note"] = "；".join(x for x in (o.get("note_master") or "", op_note or "") if x)
     return o
 
 
@@ -720,11 +729,16 @@ def api_save_product():
     box = norm_int(payload.get("box_size"))
     if payload.get("box_size") not in (None, "") and (box is None or box <= 0):
         return jsonify({"error": "箱入數要是正整數。"}), 400
+    cost = None if payload.get("cost_price") in (None, "") else norm_decimal(payload.get("cost_price"))
+    if payload.get("cost_price") not in (None, "") and cost is None:
+        return jsonify({"error": "單價(含稅)要是數字。"}), 400
     fields = {
         "sku_id": norm_key(payload.get("sku_id")),
         "yf_sku": norm_key(payload.get("yf_sku")),
         "brand": norm_text(payload.get("brand")),
         "product_name": norm_text(payload.get("product_name")),
+        "category": norm_text(payload.get("category")),
+        "pgcode": norm_text(payload.get("pgcode")),
         "note": norm_text(payload.get("note")),
     }
     operator = _operator()
@@ -736,23 +750,28 @@ def api_save_product():
         if existing is None:
             conn.execute(
                 """INSERT INTO mst_products
-                   (line, barcode, sku_id, yf_sku, brand, product_name, box_size, note,
-                    updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   (line, barcode, sku_id, yf_sku, brand, product_name, category, pgcode,
+                    cost_price, box_size, note, updated_by, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (line, barcode, fields["sku_id"], fields["yf_sku"], fields["brand"],
-                 fields["product_name"], box, fields["note"], operator, stamp))
+                 fields["product_name"], fields["category"], fields["pgcode"], cost,
+                 box, fields["note"], operator, stamp))
             _log(conn, line, "", fields["sku_id"], barcode, "product_new", "新增主檔",
                  "", box, operator, "manual")
         else:
             if not _same(existing["box_size"], box):
                 _log(conn, line, "", existing["sku_id"], barcode, "box_size", "箱入數",
                      existing["box_size"], box, operator, "manual")
+            if not _same(existing["note"], fields["note"]):
+                _log(conn, line, "", existing["sku_id"], barcode, "note", "Note",
+                     existing["note"], fields["note"], operator, "manual")
             conn.execute(
                 """UPDATE mst_products SET sku_id = ?, yf_sku = ?, brand = ?,
-                   product_name = ?, box_size = ?, note = ?, updated_by = ?, updated_at = ?
-                   WHERE id = ?""",
+                   product_name = ?, category = ?, pgcode = ?, cost_price = ?, box_size = ?,
+                   note = ?, auto_created = 0, updated_by = ?, updated_at = ? WHERE id = ?""",
                 (fields["sku_id"], fields["yf_sku"], fields["brand"],
-                 fields["product_name"], box, fields["note"], operator, stamp,
-                 existing["id"]))
+                 fields["product_name"], fields["category"], fields["pgcode"], cost, box,
+                 fields["note"], operator, stamp, existing["id"]))
         conn.commit()
         fresh = _row(conn.execute(
             "SELECT * FROM mst_products WHERE line = ? AND barcode = ?", (line, barcode)))
@@ -779,6 +798,9 @@ def api_delete_product(product_id):
 
 _HEADER_ALIASES = {
     "barcode": ["barcode", "國條", "條碼", "條碼(國條)", "國際條碼", "ean"],
+    "category": ["category", "品類", "類別"],
+    "pgcode": ["pgcode", "pg code", "pg_code"],
+    "cost_price": ["cogs (pcs/ w. tax)", "cogs", "cogs(pcs)", "單價(含稅)", "成本(含稅)", "cost"],
     "sku_id": ["skuid", "sku id", "sku_id", "skuno.", "sku編號"],
     "yf_sku": ["永豐料號", "料號"],
     "brand": ["brand", "品牌"],
@@ -843,10 +865,13 @@ def api_import_products():
             if not barcode:
                 continue
             box = norm_int(get(row, "box_size"))
+            cost = norm_decimal(get(row, "cost_price"))
             vals = {
                 "sku_id": norm_key(get(row, "sku_id")), "yf_sku": norm_key(get(row, "yf_sku")),
                 "brand": norm_text(get(row, "brand")),
                 "product_name": norm_text(get(row, "product_name")),
+                "category": norm_text(get(row, "category")),
+                "pgcode": norm_text(get(row, "pgcode")),
                 "note": norm_text(get(row, "note")),
             }
             existing = _row(conn.execute(
@@ -854,20 +879,30 @@ def api_import_products():
             if existing is None:
                 conn.execute(
                     """INSERT INTO mst_products
-                       (line, barcode, sku_id, yf_sku, brand, product_name, box_size, note,
-                        updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                       (line, barcode, sku_id, yf_sku, brand, product_name, category, pgcode,
+                        cost_price, box_size, note, updated_by, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (line, barcode, vals["sku_id"], vals["yf_sku"], vals["brand"],
-                     vals["product_name"], box, vals["note"], operator, stamp))
+                     vals["product_name"], vals["category"], vals["pgcode"], cost, box,
+                     vals["note"], operator, stamp))
                 added += 1
             else:
                 sets, params, changed = [], [], False
                 for k, v in vals.items():
                     if v and not _same(existing[k], v):
                         sets.append(f"{k} = ?"); params.append(v); changed = True
+                        if k == "note":
+                            _log(conn, line, "", existing["sku_id"], barcode, "note", "Note",
+                                 existing["note"], v, operator, "import", upload.filename)
+                if cost is not None and not _same(existing["cost_price"], cost):
+                    sets.append("cost_price = ?"); params.append(cost); changed = True
                 if box and not _same(existing["box_size"], box):
                     sets.append("box_size = ?"); params.append(box); changed = True
                     _log(conn, line, "", existing["sku_id"], barcode, "box_size", "箱入數",
                          existing["box_size"], box, operator, "import", upload.filename)
+                if existing["auto_created"]:
+                    # 總表裡有這個國條，代表箱入數等資料已經被人核過了
+                    sets.append("auto_created = 0"); changed = True
                 if changed:
                     sets += ["updated_by = ?", "updated_at = ?"]; params += [operator, stamp]
                     conn.execute(f"UPDATE mst_products SET {', '.join(sets)} WHERE id = ?",
@@ -1000,7 +1035,7 @@ def api_import_quota():
 def _build_summary(conn, line, month):
     products = _products_map(conn, line)
     orders = [_decorate(o) for o in _rows(conn.execute(
-        """SELECT o.*, p.box_size AS box_size_master
+        """SELECT o.*, p.box_size AS box_size_master, p.id AS product_id
            FROM mst_orders o LEFT JOIN mst_products p ON p.line = o.line AND p.barcode = o.barcode
            WHERE o.line = ? AND o.delivery_date LIKE ?""", (line, month + "%")))]
     quotas = {q["barcode"]: q for q in _rows(conn.execute(
@@ -1033,6 +1068,7 @@ def _build_summary(conn, line, month):
         total = round(e["month_total"], 2) if e else 0.0
         rows.append({
             "barcode": bc,
+            "category": p["category"] if p else "",
             "sku_id": (p or e or {}).get("sku_id", ""),
             "yf_sku": (p or e or {}).get("yf_sku", ""),
             "brand": (p["brand"] if p else e["brand"]) if (p or e) else "",
@@ -1102,26 +1138,26 @@ def api_export():
     mm = int(month[5:7])
     # 配額／剩餘可供貨量兩欄先不放（畫面上也先收起來），要開回來時把 r["quota"]、
     # r["remaining"] 加回這裡與 head 即可，後端 _build_summary 一直有算。
-    head = ["國條", "SKU ID", "永豐料號", "品牌", "品名", "箱入數"] + \
+    head = ["國條", "SKU ID", "永豐料號", "品類", "品牌", "品名", "箱入數"] + \
            [_md(d) for d in s["dates"]] + \
            [f"{mm}月TTL下單總箱數", "備註"]
     ws.append(head)
     for r in s["rows"]:
-        ws.append([r["barcode"], r["sku_id"], r["yf_sku"], r["brand"], r["product_name"],
+        ws.append([r["barcode"], r["sku_id"], r["yf_sku"], r["category"], r["brand"], r["product_name"],
                    r["box_size"]] +
                   [r["by_date"].get(d) for d in s["dates"]] +
                   [r["month_total"], r["note"]])
     ws.append([])
-    ws.append(["合計", "", "", "", "", ""] + [s["totals_by_date"].get(d) for d in s["dates"]] +
+    ws.append(["合計", "", "", "", "", "", ""] + [s["totals_by_date"].get(d) for d in s["dates"]] +
               [s["month_total"], ""])
     bold = Font(bold=True); fill = PatternFill("solid", fgColor="DBEAFE")
     for c in ws[1]:
         c.font = bold; c.fill = fill; c.alignment = Alignment(horizontal="center", wrap_text=True)
     for c in ws[ws.max_row]:
         c.font = bold
-    ws.freeze_panes = "G2"
+    ws.freeze_panes = "H2"
     for i, h in enumerate(head, start=1):
-        ws.column_dimensions[get_column_letter(i)].width = 14 if i not in (5,) else 40
+        ws.column_dimensions[get_column_letter(i)].width = 14 if i not in (6,) else 40
     for row in ws.iter_rows(min_row=2, min_col=1, max_col=3):
         for c in row:
             c.number_format = "@"
@@ -1169,9 +1205,10 @@ def api_export_daily():
     空白列隔開，PO 單號寫在 R 欄（報價檔就是這樣放的，標題雖然叫「交貨日」
     但裡面一直是 PO 單號＋日期＋倉別）。
 
-    價格欄：報價檔的「單價(含稅)」原本是 VLOOKUP 主檔的業務報價，這個模組
-    沒有存業務報價，所以「單價(含稅)」跟「酷澎下單價(含稅)」都填整合表的
-    酷澎下單單價；箱單價 = 單價 × 箱入數，總計 = 箱單價 × 出貨箱數。"""
+    A～R 每一欄照報價檔原本的公式來源填：SKU ID／國條／下單／出貨／酷澎下單價
+    來自整合表；永豐料號／品類／品牌／箱入數／單價(含稅)(=總表 COGS)／備註(=總表
+    Note，OP 手動備註接在後面) 來自商品主檔（就是同事原本 VLOOKUP 總表那五欄）；
+    出貨箱數、箱單價、總計由系統算成值。主檔沒有的國條，主檔來源的欄位留白。"""
     line = norm_text(request.args.get("line")); month = norm_text(request.args.get("month")) or _this_month()
     if not line or not _valid_month(month):
         return jsonify({"error": "請選線別與月份。"}), 400
@@ -1221,13 +1258,19 @@ def api_export_daily():
                     c.fill = yellow
             first_group = False
             for i, o in enumerate(rows):
-                box = o["box_size"]; price = o["unit_price"]
-                box_price = (price * box) if (price is not None and box) else None
+                # 報價檔的公式來源：B 永豐料號／D 品類／E 品牌／I 箱入數／K 單價(含稅)
+                # 都是 VLOOKUP 總表（主檔），主檔沒有才退回整合表自帶的值；
+                # L 酷澎下單價來自整合表；M 箱單價 = L × I；N 總計 = M × J（J = 出貨箱數）。
+                box = o["box_size"]
+                coupang_price = o["unit_price"]
+                cost = o.get("cost_price")
+                box_price = (coupang_price * box) if (coupang_price is not None and box) else None
                 total = (box_price * o["cases"]) if (box_price is not None and o["cases"] is not None) else None
                 po_cell = (f"{po}_{label_date}({o['warehouse']})" if o["warehouse"] else f"{po}_{label_date}") if i == 0 else None
-                ws.append([o["sku_id"], o["yf_sku"], o["barcode"], "", o["brand"], o["product_name"],
-                           o["qty_coupang"], o["qty_ship"], box, o["cases"], price, price,
-                           box_price, total, o["remarks"], "", "", po_cell])
+                ws.append([o["sku_id"], o.get("yf_sku_master") or o["yf_sku"], o["barcode"],
+                           o.get("category") or "", o.get("brand_master") or o["brand"],
+                           o["product_name"], o["qty_coupang"], o["qty_ship"], box, o["cases"],
+                           cost, coupang_price, box_price, total, o["export_note"], "", "", po_cell])
         ws.freeze_panes = "A2"
         widths = [16, 15, 15, 8, 14, 44, 10, 9, 8, 11, 10, 12, 11, 12, 18, 8, 8, 30]
         for i, w in enumerate(widths, start=1):
