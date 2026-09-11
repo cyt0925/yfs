@@ -187,7 +187,7 @@
 
     <div class="flex items-center gap-2 mb-2 text-sm muted">
       <label class="flex items-center gap-1"><input type="checkbox" id="sel-all-po"> 全選這頁的 PO</label>
-      <span class="kbd">勾選 PO 可以批次改交貨日；點 PO 單號打開整張單一次改。出貨數量、備註直接點格子改。</span>
+      <span class="kbd">勾選 PO 可以批次改交貨日；點 PO 單號打開整張單一次改。出貨數量、備註直接點格子改：Enter 或點別處＝存，Esc＝取消。</span>
     </div>
     <div id="orders-list" class="space-y-4"></div>
   </section>
@@ -495,11 +495,15 @@ function startInline(cell) {
   const keep = cell.innerHTML;
   cell.innerHTML = `<input class="${field === "qty_ship" ? "num" : ""}" value="${esc(cur)}" ${field === "qty_ship" ? 'type="number" min="0"' : 'placeholder="OP 備註，例如 打單缺貨"'}>`;
   const inp = cell.querySelector("input"); inp.focus(); inp.select();
+  // done 只負責「同一次編輯不要處理兩遍」（Enter 之後 blur 又會觸發一次）；
+  // 還原畫面的 restore 一定要能執行，不能被 done 擋掉——之前就是這裡卡住，
+  // 沒改值按 Enter／點外面，格子永遠留在輸入框。
   let done = false;
-  const cancel = () => { if (done) return; done = true; delete cell.dataset.editing; cell.innerHTML = keep; bindCell(cell); };
+  const restore = () => { delete cell.dataset.editing; cell.innerHTML = keep; };
+  const cancel = () => { if (done) return; done = true; restore(); };
   const save = async () => {
     if (done) return; done = true;
-    if (String(inp.value) === String(cur)) { cancel(); return; }
+    if (String(inp.value) === String(cur)) { restore(); return; }
     try {
       const body = { version: Number(tr.dataset.ver) }; body[field] = inp.value;
       const d = await api(`/api/master/orders/${tr.dataset.id}`, J(body));
@@ -507,9 +511,9 @@ function startInline(cell) {
       const fresh = document.querySelector(`tr[data-id="${tr.dataset.id}"] td[data-field="${field}"]`);
       if (fresh) fresh.classList.add("save-flash");
       toast(field === "qty_ship" ? `已儲存，出貨 ${fmt(d.row.qty_ship)} → ${d.row.cases == null ? "算不出箱數" : fmt(d.row.cases) + " 箱"}` : "備註已儲存");
-    } catch (e) { if (e.status === 409) loadOrders(); else { toast(e.message, "err"); done = false; cancel(); } }
+    } catch (e) { if (e.status === 409) loadOrders(); else { toast(e.message, "err"); restore(); } }
   };
-  inp.addEventListener("keydown", e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") cancel(); });
   inp.addEventListener("blur", () => setTimeout(save, 0));
 }
 function bindCell(cell) { cell.addEventListener("click", e => { if (e.target.classList.contains("qty-reset")) return; startInline(cell); }); }

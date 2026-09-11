@@ -247,6 +247,12 @@ def main():
     check("PO 的歷程含改期、出貨數量、備註", {l["field"] for l in logs} >= {"delivery_date", "qty_ship", "remarks"})
     check("歷程可用關鍵字查", len(client.get("/api/master/logs?q=打單缺貨").get_json()["logs"]) >= 1)
 
+    if db.IS_POSTGRES:
+        print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")
+        print(f"\n通過 {len(PASS)} 項，失敗 {len(FAIL)} 項")
+        if FAIL:
+            print("失敗項目："); [print("  -", f) for f in FAIL]; sys.exit(1)
+        return
     print("\n【13】v1 舊資料庫升級")
     import sqlite3
     old = os.path.join(_tmp, "v1.db")

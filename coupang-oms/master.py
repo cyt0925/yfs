@@ -56,6 +56,17 @@ COUPANG_FIELDS = {
 }
 
 
+@master_bp.before_request
+def _guard_ready():
+    """資料表初始化失敗時（見 db.init_db），這個模組整個停用、講清楚原因，
+    不要讓使用者看到一堆零散的資料庫錯誤。"""
+    if not getattr(db, "MASTER_READY", False):
+        msg = f"業績總表自動化目前無法使用：{getattr(db, 'MASTER_ERROR', '')}。訂單管理不受影響。"
+        if request.path.startswith("/api/"):
+            return jsonify({"error": msg}), 503
+        return f"<h2 style='font-family:sans-serif;padding:40px'>{msg}</h2>", 503
+
+
 # ---------------------------------------------------------------- 小工具
 
 def _operator():

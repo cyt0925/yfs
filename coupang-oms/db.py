@@ -848,9 +848,20 @@ def init_db():
     conn = get_conn()
     try:
         conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
-        conn.executescript(SCHEMA_MASTER_POSTGRES if IS_POSTGRES else SCHEMA_MASTER_SQLITE)
         _migrate_columns(conn)
-        _migrate_master_columns(conn)
+        # 業績總表自動化的表另外一段、自己一個 try：這個模組出了什麼差錯（例如
+        # 正式站資料庫升級沒跑好）只能讓它那一頁顯示錯誤，不能把訂單管理整個拖垮
+        # ——訂單管理才是同事每天在用的正式作業。
+        global MASTER_READY, MASTER_ERROR
+        try:
+            conn.executescript(SCHEMA_MASTER_POSTGRES if IS_POSTGRES else SCHEMA_MASTER_SQLITE)
+            _migrate_master_columns(conn)
+            conn.commit()
+            MASTER_READY, MASTER_ERROR = True, ""
+        except Exception as exc:  # noqa: BLE001
+            conn.rollback()
+            MASTER_READY, MASTER_ERROR = False, f"{type(exc).__name__}: {exc}"
+            print(f"[業績總表自動化] 資料表初始化失敗，這個模組暫停使用，訂單管理不受影響：{MASTER_ERROR}")
         # orders／po_headers 表可能剛剛才被 _migrate_columns 補上新欄位，
         # 上面 executescript 建出來的 view 是舊欄位版本，要重建一次才會
         # 抓到新欄位（不然要等下次重啟才會生效）。SQLite 的
@@ -863,6 +874,8 @@ def init_db():
 
 
 MST_SCHEMA_VERSION = "2"
+MASTER_READY = False
+MASTER_ERROR = "尚未初始化"
 
 
 def _cols(conn, table):
