@@ -28,6 +28,9 @@
   .card { background:#fff; border:1px solid var(--line2); border-radius:12px; box-shadow:0 1px 2px rgba(30,58,138,.05); }
   .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid transparent; white-space:nowrap; }
   .btn:disabled { opacity:.5; cursor:not-allowed; }
+  /* .btn 的 display:inline-flex 排在 tailwind.css 之後，會蓋掉 Tailwind 的 .hidden，
+     隱藏中的按鈕（匯入配額、確認匯入）反而會露出來——這裡補一條讓 hidden 永遠贏。 */
+  .hidden { display:none !important; }
   .btn-p { background:var(--b700); color:#fff; } .btn-p:hover { background:var(--b800); }
   .btn-o { background:#fff; color:var(--b800); border-color:var(--b200); } .btn-o:hover { background:var(--b50); }
   .btn-g { background:#fff; color:var(--ink2); border-color:var(--line); } .btn-g:hover { background:#f8fafc; }
