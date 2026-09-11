@@ -87,7 +87,7 @@ header{border-bottom:1px solid var(--line);background:
 .brandmark:hover{opacity:.82}
 .brandmark:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 .logo{width:50px;height:50px;flex:none;display:grid;place-items:center}
-.logo svg{width:100%;height:100%;display:block}
+.logo svg,.logo img{width:100%;height:100%;display:block;object-fit:contain}
 .title-block h1{margin:0;font-size:23px;font-weight:800;letter-spacing:-.01em}
 .title-block p{margin:3px 0 0;color:var(--muted);font-size:13.5px}
 .stats{display:flex;gap:10px;flex-wrap:wrap}
@@ -619,16 +619,7 @@ body:not(.signed-in) .signout{display:none}
   <div class="wrap head-inner">
     <div class="brandmark" id="homeLink" role="button" tabindex="0" title="回到首頁">
       <div class="logo" title="永豐商店">
-        <svg viewBox="0 0 100 100" role="img" aria-label="永豐商店">
-          <defs><mask id="yfsMark">
-            <rect width="100" height="100" fill="#fff"/>
-            <circle cx="37" cy="55" r="8.2" fill="#000"/>
-            <rect x="53" y="46" width="17" height="17" rx="3.4" fill="#000"/>
-            <rect x="30" y="64" width="17" height="17" rx="3.4" fill="#000"/>
-            <circle cx="63" cy="73" r="8.2" fill="#000"/>
-          </mask></defs>
-          <path d="M50 8 L88 36 L88 92 L12 92 L12 36 Z" fill="#cf1428" mask="url(#yfsMark)"/>
-        </svg>
+        <img src="sop.image.png" alt="永豐商店" width="50" height="50">
       </div>
       <div class="title-block">
         <span class="eyebrow">永豐商店 · 電子商務部</span>

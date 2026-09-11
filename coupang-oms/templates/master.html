@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>業績總表自動化</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename=logo_file) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  /* ── 藍白主題：藍底白字、白底藍字，跟訂單管理（紅）、採購表轉換（綠金）分開 ── */
+  :root {
+    --b900:#1e3a8a; --b800:#1e40af; --b700:#1d4ed8; --b600:#2563eb; --b500:#3b82f6;
+    --b200:#bfdbfe; --b100:#dbeafe; --b50:#eff6ff;
+    --ink:#0f172a; --ink2:#334155; --muted:#64748b; --line:#cbd5e1; --line2:#e2e8f0;
+    --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7; --bad:#b91c1c; --badbg:#fee2e2;
+  }
+  body { font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#f5f8ff; color:var(--ink); }
+  .hidden { display:none !important; }
+  .m-head { background:linear-gradient(100deg,var(--b900) 0%,var(--b800) 50%,var(--b600) 100%); color:#fff; border-bottom:3px solid var(--b200); }
+  .m-tabs { display:flex; gap:4px; border-bottom:2px solid var(--b200); align-items:flex-end; }
+  .m-tab { padding:10px 18px; font-weight:600; color:var(--muted); border:none; border-bottom:3px solid transparent; margin-bottom:-2px; cursor:pointer; background:none; font-size:14px; }
+  .m-tab.active { color:var(--b800); border-bottom-color:var(--b700); }
+  .m-tab:hover { color:var(--b700); }
+  .card { background:#fff; border:1px solid var(--line2); border-radius:12px; box-shadow:0 1px 2px rgba(30,58,138,.05); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid transparent; white-space:nowrap; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-p { background:var(--b700); color:#fff; } .btn-p:hover { background:var(--b800); }
+  .btn-o { background:#fff; color:var(--b800); border-color:var(--b200); } .btn-o:hover { background:var(--b50); }
+  .btn-g { background:#fff; color:var(--ink2); border-color:var(--line); } .btn-g:hover { background:#f8fafc; }
+  .btn-sm { padding:4px 10px; font-size:12.5px; }
+  .btn-danger { color:var(--bad); border-color:#fecaca; background:#fff; } .btn-danger:hover { background:var(--badbg); }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:12.5px; border:1px solid var(--b200); background:var(--b50); color:var(--b800); cursor:pointer; user-select:none; }
+  .chip.on { background:var(--b700); color:#fff; border-color:var(--b700); }
+  .badge { display:inline-block; padding:1px 7px; border-radius:6px; font-size:11px; font-weight:600; white-space:nowrap; }
+  .bd-ok { background:var(--okbg); color:var(--ok); } .bd-warn { background:var(--warnbg); color:var(--warn); }
+  .bd-bad { background:var(--badbg); color:var(--bad); } .bd-blue { background:var(--b100); color:var(--b800); }
+  .bd-gray { background:#f1f5f9; color:var(--muted); }
+  table.m { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  table.m th { background:var(--b800); color:#fff; font-weight:600; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:2px solid var(--b200); }
+  table.m td { padding:6px 10px; border-bottom:1px solid var(--line2); vertical-align:middle; }
+  table.m tr:hover td { background:var(--b50); }
+  .num { text-align:right; font-variant-numeric:tabular-nums; } th.num { text-align:right; }
+  /* 就地編輯：格子本身可點，點了才變輸入框；存好閃一下綠色 */
+  .inline-cell { cursor:pointer; outline:1px dashed transparent; outline-offset:-1px; transition:background-color .15s, outline-color .15s; border-radius:6px; }
+  .inline-cell:hover { background:var(--b100) !important; outline-color:var(--b500); }
+  .inline-cell.edited { background:#fffbeb; }
+  .inline-cell input { width:100%; min-width:70px; padding:3px 6px; border:1px solid var(--b500); border-radius:6px; font-size:13px; box-shadow:0 0 0 2px var(--b100); outline:none; }
+  .inline-cell input.num { text-align:right; }
+  @keyframes save-flash { 0% { background:#bbf7d0; } 100% { background:transparent; } }
+  .save-flash { animation:save-flash 900ms ease-out; }
+  .grp-date { display:flex; align-items:center; gap:12px; padding:10px 14px; background:var(--b100); border-left:5px solid var(--b700); border-radius:10px 10px 0 0; font-weight:700; color:var(--b900); }
+  .grp-po { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 14px; background:#fff; border-top:1px solid var(--line2); border-bottom:1px solid var(--line2); font-size:13px; }
+  .grp-po .po { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:700; color:var(--b800); cursor:pointer; text-decoration:underline dotted; }
+  .grp-po .po:hover { color:var(--b600); }
+  .grp-po input[type=date] { padding:3px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; }
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .cal .wd { font-size:11px; color:var(--muted); text-align:center; padding:2px 0; font-weight:600; }
+  .cal .day { min-height:64px; border:1px solid var(--line2); border-radius:8px; padding:5px 7px; background:#fff; position:relative; font-size:12px; }
+  .cal .day .n { font-weight:700; color:var(--muted); }
+  .cal .day.has { border-color:var(--b200); cursor:pointer; background:var(--b50); }
+  .cal .day.has:hover { background:var(--b100); }
+  .cal .day.has .n { color:var(--b800); }
+  .cal .day.on { background:var(--b700); border-color:var(--b700); color:#fff; }
+  .cal .day.on .n, .cal .day.on .c, .cal .day.on .p { color:#fff; }
+  .cal .day .c { font-size:15px; font-weight:700; color:var(--b900); font-variant-numeric:tabular-nums; }
+  .cal .day .p { color:var(--muted); font-size:11px; }
+  .cal .day .warn { position:absolute; right:6px; top:5px; color:var(--warn); font-size:11px; }
+  .cal .day.blank { background:transparent; border-color:transparent; }
+  .stat { padding:12px 16px; border-radius:10px; background:#fff; border:1px solid var(--line2); min-width:140px; }
+  .stat b { display:block; font-size:22px; font-variant-numeric:tabular-nums; color:var(--b900); line-height:1.1; }
+  .stat span { font-size:12px; color:var(--muted); }
+  dialog { border:none; border-radius:14px; padding:0; box-shadow:0 20px 60px rgba(15,23,42,.35); max-width:min(1100px,96vw); width:100%; }
+  dialog::backdrop { background:rgba(15,23,42,.45); }
+  .dlg-h { background:var(--b800); color:#fff; padding:12px 18px; display:flex; align-items:center; justify-content:space-between; border-radius:14px 14px 0 0; gap:12px; }
+  .dlg-b { padding:18px; max-height:74vh; overflow:auto; }
+  .dlg-f { padding:12px 18px; border-top:1px solid var(--line2); display:flex; gap:8px; justify-content:flex-end; background:#f8fafc; border-radius:0 0 14px 14px; align-items:center; }
+  .dropzone { border:2px dashed var(--b500); background:var(--b50); border-radius:12px; padding:22px; text-align:center; color:var(--b800); cursor:pointer; }
+  .dropzone.dz-active { background:var(--b100); border-color:var(--b800); }
+  .dropzone.compact { padding:12px 16px; display:flex; align-items:center; gap:12px; text-align:left; }
+  #toast { position:fixed; top:20px; right:20px; z-index:99; padding:12px 18px; border-radius:10px; color:#fff; font-size:14px; box-shadow:0 8px 24px rgba(0,0,0,.25); transform:translateX(120%); transition:transform .25s ease-out; max-width:460px; }
+  #toast.show { transform:none; }
+  .t-ok { background:var(--ok); } .t-err { background:var(--bad); } .t-warn { background:var(--warn); }
+  .sticky-l { position:sticky; left:0; background:#fff; z-index:1; }
+  .neg { color:var(--bad); font-weight:700; } .pos { color:var(--ok); } .muted { color:var(--muted); }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .tbl-wrap { overflow:auto; max-height:70vh; border:1px solid var(--line2); border-radius:10px; background:#fff; }
+  .kbd { font-size:11px; color:var(--muted); }
+  .dd { position:relative; }
+  .dd-menu { position:absolute; top:calc(100% + 4px); left:0; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px rgba(15,23,42,.15); padding:8px; z-index:20; min-width:260px; max-height:320px; overflow:auto; }
+  .dd-menu label { display:flex; gap:8px; align-items:center; padding:4px 6px; font-size:13px; border-radius:6px; cursor:pointer; }
+  .dd-menu label:hover { background:var(--b50); }
+  .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
+  .sel { background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; }
+  .batchbar { position:fixed; left:50%; bottom:18px; transform:translateX(-50%) translateY(calc(100% + 40px)); transition:transform .2s ease-out; background:var(--b900); color:#fff; padding:10px 16px; border-radius:12px; box-shadow:0 12px 40px rgba(15,23,42,.35); display:flex; gap:10px; align-items:center; z-index:50; font-size:14px; }
+  .batchbar.show { transform:translateX(-50%); }
+  .batchbar input[type=date] { padding:4px 8px; border-radius:6px; border:none; font-size:13px; color:var(--ink); }
+  .txt { border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; width:100%; }
+  .txt:focus { outline:none; border-color:var(--b500); box-shadow:0 0 0 2px var(--b100); }
+  .line-tag { font-size:10.5px; padding:0 6px; border-radius:5px; background:#eef2ff; color:#3730a3; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<header class="m-head shadow-lg">
+  <div class="max-w-[1560px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-3">
+      <img src="{{ url_for('static', filename=logo_file) }}" class="h-10 w-auto flex-none" alt="logo">
+      <div>
+        <h1 class="text-lg font-bold leading-tight tracking-tight">業績總表自動化</h1>
+        <p class="text-[11px] leading-tight" style="color:var(--b200)">總表鋪主檔 → 訂單彙總表 → 每日出貨箱數自動算，不用再做樞紐與 VLOOKUP</p>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <button id="btn-groups" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)" title="哪些原始線別要合併顯示（例如 CPG-潔品＋CPG-紙品 → 紙潔）"><i class="bi bi-diagram-3"></i> 線別群組</button>
+    <button id="btn-logs" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-clock-history"></i> 修改歷程</button>
+    <span class="text-xs" style="color:var(--b200)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
+    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+  </div>
+</header>
+
+<main class="max-w-[1560px] mx-auto px-5 py-5">
+  <div class="m-tabs mb-4">
+    <button class="m-tab" data-tab="products"><i class="bi bi-box-seam"></i> ① 商品主檔 <span class="kbd">先匯總表鋪底</span></button>
+    <button class="m-tab active" data-tab="orders"><i class="bi bi-calendar3"></i> ② 訂單明細 <span class="kbd">匯訂單彙總表、改數量交期</span></button>
+    <button class="m-tab" data-tab="summary"><i class="bi bi-table"></i> ③ 總表 <span class="kbd">自動算好</span></button>
+  </div>
+
+  <!-- ══════════ ① 商品主檔 ══════════ -->
+  <section id="tab-products" class="hidden">
+    <div class="card p-4 mb-4">
+      <div id="dz-prod" class="dropzone compact">
+        <i class="bi bi-file-earmark-arrow-up text-2xl"></i>
+        <div class="flex-1"><b>從總表匯入主檔</b> — 把總表 Excel 拖到這裡，或點一下選檔。
+          <div class="kbd">用標題找欄位：國條／Barcode、箱入數必須有；品類 Category、品牌、永豐料號、品名、COGS 單價、Note、PG code 有就帶。只更新有值的欄位。<b>不用選線別</b>——線別由訂單學。</div></div>
+      </div>
+      <input type="file" id="file-prod" accept=".xlsx" class="hidden">
+      <div id="prod-imp-msg" class="text-sm mt-2"></div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap mb-4">
+      <button id="btn-prod-add" class="btn btn-p"><i class="bi bi-plus-lg"></i> 新增商品</button>
+      <select id="prod-line" class="sel"><option value="">全部線別</option></select>
+      <input id="pq" type="text" placeholder="搜尋國條、品名、品類…" class="txt" style="width:240px">
+      <div class="flex-1"></div>
+      <span class="text-sm muted" id="prod-count"></span>
+    </div>
+    <div id="orphans" class="hidden card p-4 mb-4" style="border-color:#fcd34d;background:#fffbeb"></div>
+    <div class="tbl-wrap"><table class="m" id="prod-table"></table></div>
+  </section>
+
+  <!-- ══════════ ② 訂單明細 ══════════ -->
+  <section id="tab-orders">
+    <div id="no-master-banner" class="hidden card p-4 mb-4" style="border-color:#fcd34d;background:#fffbeb">
+      <b style="color:var(--warn)"><i class="bi bi-exclamation-triangle-fill"></i> 商品主檔還是空的</b>
+      <span class="text-sm" style="color:var(--ink2)">　品類、Note、單價(含稅)、箱入數都要從總表來，建議先到「① 商品主檔」把總表拖進去鋪底，再上傳訂單彙總表。</span>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap mb-3">
+      <button id="btn-upload" class="btn btn-p"><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</button>
+      <span class="flex items-center gap-1 ml-2">
+        <button id="m-prev" class="btn btn-g btn-sm" title="上個月"><i class="bi bi-chevron-left"></i></button>
+        <input type="month" id="sel-month" class="sel" style="padding:4px 8px">
+        <button id="m-next" class="btn btn-g btn-sm" title="下個月"><i class="bi bi-chevron-right"></i></button>
+      </span>
+      <div class="dd"><button id="dd-line-btn" class="btn btn-o"><i class="bi bi-diagram-3"></i> 線別 <span id="dd-line-n" class="badge bd-blue hidden"></span></button><div id="dd-line" class="dd-menu hidden"></div></div>
+      <div class="dd"><button id="dd-po-btn" class="btn btn-o"><i class="bi bi-funnel"></i> PO <span id="dd-po-n" class="badge bd-blue hidden"></span></button><div id="dd-po" class="dd-menu hidden" style="min-width:380px"></div></div>
+      <div class="dd"><button id="dd-brand-btn" class="btn btn-o"><i class="bi bi-tags"></i> 品牌 <span id="dd-brand-n" class="badge bd-blue hidden"></span></button><div id="dd-brand" class="dd-menu hidden"></div></div>
+      <div class="dd"><button id="dd-wh-btn" class="btn btn-o"><i class="bi bi-building"></i> 倉別 <span id="dd-wh-n" class="badge bd-blue hidden"></span></button><div id="dd-wh" class="dd-menu hidden"></div></div>
+      <label class="chip" id="chip-edited">只看人工調整過</label>
+      <label class="chip" id="chip-missing">只看算不出箱數</label>
+      <input id="q" type="text" placeholder="搜尋 PO、國條、品名…" class="txt" style="width:200px">
+      <button id="btn-clear" class="btn btn-g btn-sm"><i class="bi bi-x-circle"></i> 清除篩選</button>
+      <div class="flex-1"></div>
+      <span class="text-sm muted" id="orders-count"></span>
+      <span class="badge bd-warn hidden" id="filter-hint" title="匯出報價檔格式會照這個範圍">已篩選</span>
+      <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁、PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月。"><i class="bi bi-calendar-week"></i> 匯出報價檔格式</a>
+    </div>
+
+    <div class="card p-4 mb-4">
+      <div class="flex items-center gap-3 mb-2">
+        <b id="cal-title" class="text-sm" style="color:var(--b900)"></b>
+        <span class="kbd">點日期可以多選，再點一次取消。格子裡是當天出貨總箱數／PO 數。</span>
+        <div class="flex-1"></div>
+        <span id="chip-nodate" class="chip hidden"></span>
+      </div>
+      <div id="cal" class="cal"></div>
+    </div>
+
+    <div class="flex items-center gap-2 mb-2 text-sm muted">
+      <label class="flex items-center gap-1"><input type="checkbox" id="sel-all-po"> 全選這頁的 PO</label>
+      <span class="kbd">勾選 PO 可以批次改交貨日；點 PO 單號打開整張單一次改。出貨數量、備註直接點格子改：Enter 或點別處＝存，Esc＝取消。</span>
+    </div>
+    <div id="orders-list" class="space-y-4"></div>
+  </section>
+
+  <!-- ══════════ ③ 總表 ══════════ -->
+  <section id="tab-summary" class="hidden">
+    <div class="flex items-center gap-2 flex-wrap mb-4">
+      <label class="text-sm muted">線別</label><select id="sum-line" class="sel"></select>
+      <label class="text-sm muted ml-2">月份</label><input type="month" id="sum-month" class="sel" style="padding:4px 8px">
+      <span class="kbd ml-2">一列一個國條，往右是各交貨日出貨箱數，最右邊是這個月的加總。改了訂單明細這裡自己跟著變。</span>
+      <div class="flex-1"></div>
+      <a id="btn-export-daily-2" class="btn btn-o"><i class="bi bi-calendar-week"></i> 匯出這線別的報價檔格式</a>
+      <a id="btn-export-2" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
+    </div>
+    <div class="flex gap-3 flex-wrap mb-4" id="sum-stats"></div>
+    <div class="tbl-wrap"><table class="m" id="sum-table"></table></div>
+  </section>
+</main>
+
+<!-- 批次動作列 -->
+<div id="batchbar" class="batchbar">
+  <b>已勾選 <span id="batch-n">0</span> 張 PO</b>
+  <span>改交貨日</span><input type="date" id="batch-date">
+  <button id="batch-apply" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 套用</button>
+  <button id="batch-reset" class="btn btn-g btn-sm" title="恢復成整合表的交貨日"><i class="bi bi-arrow-counterclockwise"></i> 恢復整合表日期</button>
+  <button id="batch-clear" class="btn btn-g btn-sm"><i class="bi bi-x"></i> 取消勾選</button>
+</div>
+
+<!-- 匯入訂單 -->
+<dialog id="dlg-import">
+  <div class="dlg-h"><b><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b">
+    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">跟上傳 OMS 的整合表是同一份。一份檔可以有多個線別、多個月份，系統照每一列的線別與交貨日自己分。</div></div>
+    <input type="file" id="file-import" accept=".xlsx" class="hidden">
+    <div id="imp-result" class="mt-4 hidden"></div>
+  </div>
+  <div class="dlg-f">
+    <label id="imp-addmissing-wrap" class="hidden flex items-center gap-2 text-sm mr-auto"><input type="checkbox" id="imp-addmissing" checked> 主檔沒有的國條，先用檔案裡的箱入數建進主檔（會標「請核對」，Note 留空）</label>
+    <button data-close class="btn btn-g">取消</button>
+    <button id="btn-commit" class="btn btn-p hidden"><i class="bi bi-check2-circle"></i> 確認匯入</button>
+  </div>
+</dialog>
+
+<!-- PO 視窗 -->
+<dialog id="dlg-po">
+  <div class="dlg-h">
+    <div><b><i class="bi bi-receipt"></i> PO <span id="po-title" class="mono"></span></b> <span id="po-sub" class="text-xs" style="color:var(--b200)"></span></div>
+    <button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="dlg-b">
+    <div class="flex items-center gap-3 flex-wrap mb-3">
+      <label class="text-sm">交貨日（整張 PO 一起搬） <input type="date" id="po-date" class="sel" style="padding:4px 8px"></label>
+      <span id="po-date-note" class="kbd"></span>
+      <button id="po-date-reset" class="btn btn-g btn-sm hidden"><i class="bi bi-arrow-counterclockwise"></i> 恢復整合表日期</button>
+      <div class="flex-1"></div>
+      <span class="text-sm muted">出貨合計 <b id="po-total" style="color:var(--b900)"></b> 箱</span>
+    </div>
+    <div class="grid" style="grid-template-columns:minmax(0,1fr) 320px;gap:14px">
+      <div class="tbl-wrap" style="max-height:52vh"><table class="m" id="po-table"></table></div>
+      <div class="card p-3" style="max-height:52vh;overflow:auto"><b class="text-sm">這張單的修改歷程</b><div id="po-logs" class="text-xs mt-2 space-y-1"></div></div>
+    </div>
+  </div>
+  <div class="dlg-f">
+    <span id="po-msg" class="text-sm mr-auto"></span>
+    <button data-close class="btn btn-g">關閉</button>
+    <button id="po-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存修改</button>
+  </div>
+</dialog>
+
+<!-- 商品編輯 -->
+<dialog id="dlg-prod" style="max-width:620px">
+  <div class="dlg-h"><b id="prod-dlg-title"><i class="bi bi-box-seam"></i> 新增商品</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b grid grid-cols-2 gap-3 text-sm">
+    <label>國條 <input id="p-barcode" class="txt"></label>
+    <label>箱入數 <input id="p-box" type="number" min="1" class="txt"></label>
+    <label>品類（總表 Category） <input id="p-cat" class="txt" placeholder="例如 Fabric、Baby、Fem"></label>
+    <label>單價(含稅)（總表 COGS） <input id="p-cost" type="number" step="0.01" class="txt"></label>
+    <label>SKU ID <input id="p-sku" class="txt"></label>
+    <label>永豐料號 <input id="p-yf" class="txt"></label>
+    <label>品牌 <input id="p-brand" class="txt"></label>
+    <label>PG code <input id="p-pg" class="txt"></label>
+    <label class="col-span-2">品名 <input id="p-name" class="txt"></label>
+    <label class="col-span-2">Note（總表 Note，會放進報價檔備註） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
+  </div>
+  <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="btn-prod-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div>
+</dialog>
+
+<!-- 線別群組 -->
+<dialog id="dlg-groups" style="max-width:640px">
+  <div class="dlg-h"><b><i class="bi bi-diagram-3"></i> 線別群組</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b text-sm space-y-3">
+    <p>訂單彙總表每一列的「線別」是原始值（例如 CPG-潔品、CPG-紙品）。這裡決定畫面上要把它們合併成哪個名字。原始值照實保留在每一列。</p>
+    <div><b>規則</b>：原始線別以 <input id="g-prefix" class="txt" style="width:120px;display:inline-block"> 開頭 → 歸 <input id="g-group" class="txt" style="width:120px;display:inline-block"> <span class="kbd">預設 CPG → 紙潔</span></div>
+    <div><b>逐一指定</b>（優先於規則）</div>
+    <div class="tbl-wrap" style="max-height:300px"><table class="m" id="g-table"></table></div>
+  </div>
+  <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="g-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div>
+</dialog>
+
+<!-- 修改歷程 -->
+<dialog id="dlg-logs">
+  <div class="dlg-h"><b><i class="bi bi-clock-history"></i> 修改歷程</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b">
+    <div class="flex gap-2 mb-3"><input id="lg-q" class="txt" style="width:300px" placeholder="搜 PO、國條、操作者、欄位…"><button id="lg-go" class="btn btn-o btn-sm">查詢</button></div>
+    <div class="tbl-wrap" style="max-height:60vh"><table class="m" id="lg-table"></table></div>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+<div class="ver">版本 {{ build_version }}</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = n => n == null ? "" : (Number.isInteger(n) ? n : Number(n).toFixed(2).replace(/\.?0+$/, ""));
+const state = { month: "", tab: "orders", lines: new Set(), dates: new Set(), pos: new Set(), brands: new Set(), warehouses: new Set(),
+                edited: false, missing: false, q: "", facets: null, rows: [], selected: new Set(), groups: [], sumLine: "", sumMonth: "" };
+
+function toast(msg, kind="ok") {
+  const t = $("#toast"); t.textContent = msg; t.className = "t-" + kind;
+  void t.offsetWidth; t.classList.add("show");
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove("show"), kind === "err" ? 6500 : 3500);
+}
+async function api(url, opts={}) {
+  const res = await fetch(url, opts);
+  let data = {}; try { data = await res.json(); } catch (e) {}
+  if (!res.ok) {
+    const msg = data.message || data.error || `伺服器錯誤 (${res.status})`;
+    if (res.status === 409) toast(msg + "　（重新載入中…）", "err");
+    throw Object.assign(new Error(msg), { status: res.status, data });
+  }
+  return data;
+}
+const J = body => ({ method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
+document.querySelectorAll("dialog [data-close]").forEach(b => b.addEventListener("click", e => e.target.closest("dialog").close()));
+document.querySelectorAll("dialog").forEach(d => d.addEventListener("click", e => { if (e.target === d) d.close(); }));
+function dropzone(el, input, onFile) {
+  el.addEventListener("click", () => input.click());
+  el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("dz-active"); });
+  el.addEventListener("dragleave", () => el.classList.remove("dz-active"));
+  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("dz-active"); if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); });
+  input.addEventListener("change", e => { if (e.target.files[0]) onFile(e.target.files[0]); input.value = ""; });
+}
+window.addEventListener("dragover", e => e.preventDefault()); window.addEventListener("drop", e => e.preventDefault());
+
+/* ── 分頁 ── */
+function setTab(name) {
+  state.tab = name;
+  document.querySelectorAll(".m-tab").forEach(x => x.classList.toggle("active", x.dataset.tab === name));
+  ["orders","summary","products"].forEach(t => $("#tab-"+t).classList.toggle("hidden", t !== name));
+}
+document.querySelectorAll(".m-tab").forEach(b => b.addEventListener("click", () => { setTab(b.dataset.tab); refresh(); }));
+async function loadMeta() {
+  const d = await api("/api/master/lines");
+  state.groups = d.groups;
+  if (!state.month) state.month = localStorage.getItem("mst_month") || d.months[0] || d.this_month;
+  $("#sel-month").value = state.month;
+  const sl = $("#sum-line"); const cur = state.sumLine || localStorage.getItem("mst_sum_line") || d.groups[0] || "";
+  sl.innerHTML = d.groups.map(g => `<option ${g === cur ? "selected" : ""}>${esc(g)}</option>`).join("") || `<option value="">（還沒有訂單）</option>`;
+  state.sumLine = sl.value; state.sumMonth = state.sumMonth || state.month; $("#sum-month").value = state.sumMonth;
+  const pl = $("#prod-line"); const pv = pl.value;
+  pl.innerHTML = `<option value="">全部線別</option>` + d.groups.map(g => `<option ${g === pv ? "selected" : ""}>${esc(g)}</option>`).join("");
+}
+async function checkMaster() {
+  try { const d = await api("/api/master/products"); const empty = !d.products.length; $("#no-master-banner").classList.toggle("hidden", !empty); return empty; }
+  catch (e) { return false; }
+}
+function refresh() {
+  checkMaster();
+  if (state.tab === "orders") loadOrders(); else if (state.tab === "summary") loadSummary(); else loadProducts();
+}
+
+/* ════════════ ② 訂單明細 ════════════ */
+function shiftMonth(delta) {
+  const [y, m] = state.month.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1);
+  setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+}
+function setMonth(v) { if (!v) return; state.month = v; localStorage.setItem("mst_month", v); $("#sel-month").value = v; state.dates.clear(); state.pos.clear(); state.selected.clear(); loadOrders(); }
+$("#m-prev").addEventListener("click", () => shiftMonth(-1)); $("#m-next").addEventListener("click", () => shiftMonth(1));
+$("#sel-month").addEventListener("change", e => setMonth(e.target.value));
+function clearFilters() {
+  state.lines.clear(); state.dates.clear(); state.pos.clear(); state.brands.clear(); state.warehouses.clear(); state.edited = state.missing = false; state.q = "";
+  $("#q").value = ""; $("#chip-edited").classList.remove("on"); $("#chip-missing").classList.remove("on"); loadOrders();
+}
+$("#btn-clear").addEventListener("click", clearFilters);
+$("#q").addEventListener("input", e => { state.q = e.target.value.trim(); clearTimeout(window._qt); window._qt = setTimeout(loadOrders, 250); });
+$("#chip-edited").addEventListener("click", () => { state.edited = !state.edited; $("#chip-edited").classList.toggle("on", state.edited); loadOrders(); });
+$("#chip-missing").addEventListener("click", () => { state.missing = !state.missing; $("#chip-missing").classList.toggle("on", state.missing); loadOrders(); });
+function filterParams() {
+  return new URLSearchParams({ month: state.month, q: state.q, lines: [...state.lines].join(","), dates: [...state.dates].join(","),
+    pos: [...state.pos].join(","), brands: [...state.brands].join(","), warehouses: [...state.warehouses].join(","),
+    edited: state.edited ? "1" : "", missing: state.missing ? "1" : "" });
+}
+function anyFilter() { return state.lines.size || state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing; }
+
+async function loadOrders() {
+  $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams();
+  $("#filter-hint").classList.toggle("hidden", !anyFilter());
+  let data;
+  try { data = await api("/api/master/orders?" + filterParams()); } catch (e) { toast(e.message, "err"); return; }
+  state.facets = data.facets; state.rows = data.rows;
+  renderCalendar(); renderDropdowns(); renderOrders(); renderBatch();
+}
+
+function renderCalendar() {
+  const [y, m] = state.month.split("-").map(Number);
+  $("#cal-title").textContent = `${y} 年 ${m} 月 出貨日曆`;
+  const byDate = Object.fromEntries((state.facets?.dates || []).map(d => [d.date, d]));
+  const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
+  let html = ["日","一","二","三","四","五","六"].map(w => `<div class="wd">${w}</div>`).join("");
+  for (let i = 0; i < first.getDay(); i++) html += `<div class="day blank"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const key = `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const f = byDate[key];
+    html += `<div class="day ${f ? "has" : ""} ${state.dates.has(key) ? "on" : ""}" data-date="${key}"><div class="n">${d}</div>
+      ${f ? `<div class="c">${fmt(f.cases)} <span style="font-size:11px;font-weight:500">箱</span></div><div class="p">${f.po_count} 張 PO · ${f.rows} 品項</div>${f.missing_box ? `<span class="warn" title="${f.missing_box} 筆算不出箱數"><i class="bi bi-exclamation-triangle-fill"></i></span>` : ""}` : ""}</div>`;
+  }
+  $("#cal").innerHTML = html;
+  $("#cal").querySelectorAll(".day.has").forEach(el => el.addEventListener("click", () => { const k = el.dataset.date; state.dates.has(k) ? state.dates.delete(k) : state.dates.add(k); loadOrders(); }));
+  const nd = byDate[""], chip = $("#chip-nodate");
+  if (nd) { chip.classList.remove("hidden"); chip.classList.toggle("on", state.dates.has("")); chip.innerHTML = `<i class="bi bi-calendar-x"></i> 未排日期 ${nd.rows} 筆`; chip.onclick = () => { state.dates.has("") ? state.dates.delete("") : state.dates.add(""); loadOrders(); }; }
+  else chip.classList.add("hidden");
+}
+
+function ddRender(menuId, nId, items, set, key, labelFn) {
+  const menu = $(menuId);
+  menu.innerHTML = items.length ? items.map(it => `<label><input type="checkbox" data-v="${esc(it[key])}" ${set.has(it[key]) ? "checked" : ""}> ${labelFn(it)}</label>`).join("") : `<div class="muted text-sm p-2">沒有資料</div>`;
+  menu.querySelectorAll("input").forEach(cb => cb.addEventListener("change", () => { cb.checked ? set.add(cb.dataset.v) : set.delete(cb.dataset.v); loadOrders(); }));
+  const n = $(nId); n.textContent = set.size; n.classList.toggle("hidden", !set.size);
+}
+function renderDropdowns() {
+  const f = state.facets || {};
+  ddRender("#dd-line", "#dd-line-n", f.lines || [], state.lines, "line", it => `${it.line === "未分類" ? `<span class="badge bd-bad">${esc(it.line)}</span>` : esc(it.line)}<span class="muted" style="margin-left:auto">${it.rows}</span>`);
+  ddRender("#dd-po", "#dd-po-n", f.pos || [], state.pos, "po_number", it => `<span class="mono">${esc(it.po_number)}</span> ${it.lines.map(l => `<span class="line-tag">${esc(l)}</span>`).join("")}<span class="muted" style="margin-left:auto">${esc(it.date || "未排")} · ${fmt(it.cases)} 箱</span>`);
+  ddRender("#dd-brand", "#dd-brand-n", f.brands || [], state.brands, "brand", it => `${esc(it.brand)}<span class="muted" style="margin-left:auto">${it.rows}</span>`);
+  ddRender("#dd-wh", "#dd-wh-n", f.warehouses || [], state.warehouses, "warehouse", it => `${esc(it.warehouse) || "（未填倉別）"}<span class="muted" style="margin-left:auto">${it.rows}</span>`);
+}
+[["#dd-line-btn","#dd-line"],["#dd-po-btn","#dd-po"],["#dd-brand-btn","#dd-brand"],["#dd-wh-btn","#dd-wh"]].forEach(([b, m]) => {
+  $(b).addEventListener("click", e => { e.stopPropagation(); document.querySelectorAll(".dd-menu").forEach(x => { if ("#" + x.id !== m) x.classList.add("hidden"); }); $(m).classList.toggle("hidden"); });
+});
+document.addEventListener("click", e => { if (!e.target.closest(".dd")) document.querySelectorAll(".dd-menu").forEach(m => m.classList.add("hidden")); });
+
+function lineTag(o) { return `<span class="line-tag" title="原始線別：${esc(o.line || "空白")}">${esc(o.line_group)}${o.line && o.line !== o.line_group ? `·${esc(o.line.replace(/^CPG-/, ""))}` : ""}</span>`; }
+
+function renderOrders() {
+  const rows = state.rows;
+  $("#orders-count").textContent = rows.length ? `${rows.length} 筆 · 合計 ${fmt(rows.reduce((s, r) => s + (r.cases || 0), 0))} 箱` : "";
+  if (!rows.length) { $("#orders-list").innerHTML = `<div class="card p-10 text-center muted">${anyFilter() ? "沒有符合篩選的資料" : `${state.month} 這個月還沒有任何訂單，按上面的「上傳訂單彙總表」。`}</div>`; return; }
+  const byDate = new Map();
+  for (const r of rows) { const d = r.delivery_date || ""; if (!byDate.has(d)) byDate.set(d, new Map()); const pos = byDate.get(d); if (!pos.has(r.po_number)) pos.set(r.po_number, []); pos.get(r.po_number).push(r); }
+  const dates = [...byDate.keys()].sort((a, b) => (a || "9999") < (b || "9999") ? -1 : 1);
+  let html = "";
+  for (const d of dates) {
+    const pos = byDate.get(d); const all = [...pos.values()].flat();
+    const total = all.reduce((s, r) => s + (r.cases || 0), 0); const miss = all.filter(r => r.cases == null).length;
+    html += `<div class="card"><div class="grp-date"><i class="bi bi-calendar-event"></i> ${d ? esc(d) + " 交貨" : "未排日期"}
+        <span class="badge bd-blue">${pos.size} 張 PO</span><span class="badge bd-gray">${all.length} 品項</span>
+        <span style="margin-left:auto">出貨合計 <b style="font-size:16px">${fmt(total)}</b> 箱</span>${miss ? `<span class="badge bd-warn">${miss} 筆算不出箱數</span>` : ""}</div>`;
+    for (const [po, list] of pos) {
+      const sub = list.reduce((s, r) => s + (r.cases || 0), 0); const ov = list.some(r => r.delivery_date_overridden);
+      const groups = [...new Set(list.map(r => r.line_group))];
+      html += `<div class="grp-po">
+        <input type="checkbox" class="po-sel" data-po="${esc(po)}" ${state.selected.has(po) ? "checked" : ""} title="勾選後可批次改交貨日">
+        <span class="po" data-po="${esc(po)}" title="點開整張單一次修改">PO ${esc(po)}</span>
+        ${groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join("")}
+        <span class="badge bd-gray">${esc(list[0].warehouse || "—")}</span>
+        <span class="muted">${list.length} 品項 · ${fmt(sub)} 箱</span>
+        <span style="margin-left:auto" class="flex items-center gap-2"><span class="kbd">交貨日</span>
+          <input type="date" value="${esc(d)}" data-po="${esc(po)}" data-old="${esc(d)}" class="po-date">
+          ${ov ? `<span class="badge bd-warn" title="整合表上的交貨日是 ${esc(list[0].delivery_date_file || "空白")}">人工改期</span><button class="btn btn-g btn-sm po-date-reset" data-po="${esc(po)}" data-old="${esc(d)}" title="恢復成整合表的交貨日"><i class="bi bi-arrow-counterclockwise"></i></button>` : ""}
+        </span></div>
+      <div style="overflow:auto"><table class="m"><thead><tr><th>線別</th><th>SKU ID</th><th>國條</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">下單</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">出貨(箱)</th><th>備註 <span class="kbd" style="color:var(--b100)">Note＋OP</span></th><th></th></tr></thead><tbody>`;
+      for (const r of list) {
+        const boxBadge = r.box_source === "master" ? "" : r.box_source === "file" ? `<span class="badge bd-warn" title="主檔沒有這個國條，用整合表自帶的箱入數">檔</span>` : `<span class="badge bd-bad">缺</span>`;
+        html += `<tr data-id="${r.id}" data-ver="${r.version}">
+          <td>${lineTag(r)}${r.line ? "" : ` <span class="badge bd-bad">沒線別</span>`}</td>
+          <td class="mono">${esc(r.sku_id)}</td>
+          <td class="mono">${esc(r.barcode)}${r.in_master ? "" : ` <span class="badge bd-warn" title="總表／主檔沒有這個國條">未建檔</span>`}</td>
+          <td>${esc(r.category || "")}</td>
+          <td style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
+          <td>${esc(r.brand_master || r.brand)}</td>
+          <td class="num muted">${fmt(r.qty_coupang)}</td>
+          <td class="num inline-cell ${r.qty_ship_overridden ? "edited" : ""}" data-field="qty_ship" title="${r.missing_in_file ? "最近一次上傳的整合表裡，這張 PO 已沒有這個品項，出貨數量歸 0（再出現會自動恢復）" : r.qty_ship_overridden ? "人工調整過，匯入不會覆蓋（整合表是 " + fmt(r.qty_file_ship ?? r.qty_coupang) + "）。點一下可改" : "點一下可改"}">
+            ${r.missing_in_file ? `<span class="badge bd-bad">檔案已無此品項</span> ` : ""}<b>${fmt(r.qty_ship)}</b>${r.qty_ship_overridden ? ` <i class="bi bi-arrow-counterclockwise qty-reset" title="恢復成整合表數字" style="cursor:pointer;color:var(--warn)"></i>` : ""}</td>
+          <td>${esc(r.unit)}</td>
+          <td class="num">${fmt(r.box_size) || "—"} ${boxBadge}</td>
+          <td class="num"><b>${r.cases == null ? `<span class="neg">—</span>` : fmt(r.cases)}</b></td>
+          <td class="inline-cell ${r.remarks_overridden ? "edited" : ""}" data-field="remarks" title="${r.remarks_file ? "整合表自帶的備註：" + esc(r.remarks_file) + "（不會進報價檔）。" : ""}點一下可改">
+            ${r.note_master ? `<div class="kbd" style="color:var(--b800)">Note：${esc(r.note_master)}</div>` : ""}<span class="rem-val">${esc(r.remarks_overridden ? r.remarks : "")}</span>${!r.remarks_overridden && !r.note_master ? `<span class="kbd">（OP 備註）</span>` : ""}</td>
+          <td><button class="btn btn-danger btn-sm del" title="刪除這筆"><i class="bi bi-trash"></i></button></td></tr>`;
+      }
+      html += `</tbody></table></div>`;
+    }
+    html += `</div>`;
+  }
+  $("#orders-list").innerHTML = html;
+  bindOrderEdits();
+}
+
+function startInline(cell) {
+  if (cell.dataset.editing) return;
+  const tr = cell.closest("tr"); const field = cell.dataset.field;
+  const row = state.rows.find(r => r.id == tr.dataset.id); if (!row) return;
+  cell.dataset.editing = "1";
+  const cur = field === "qty_ship" ? (row.qty_ship ?? "") : (row.remarks_overridden ? row.remarks : "");
+  const keep = cell.innerHTML;
+  cell.innerHTML = `<input class="${field === "qty_ship" ? "num" : ""}" value="${esc(cur)}" ${field === "qty_ship" ? 'type="number" min="0"' : 'placeholder="OP 備註，例如 打單缺貨"'}>`;
+  const inp = cell.querySelector("input"); inp.focus(); inp.select();
+  // done 只負責「同一次編輯不要處理兩遍」（Enter 之後 blur 又會觸發一次）；
+  // 還原畫面的 restore 一定要能執行，不能被 done 擋掉——之前就是這裡卡住，
+  // 沒改值按 Enter／點外面，格子永遠留在輸入框。
+  let done = false;
+  const restore = () => { delete cell.dataset.editing; cell.innerHTML = keep; };
+  const cancel = () => { if (done) return; done = true; restore(); };
+  const save = async () => {
+    if (done) return; done = true;
+    if (String(inp.value) === String(cur)) { restore(); return; }
+    try {
+      const body = { version: Number(tr.dataset.ver) }; body[field] = inp.value;
+      const d = await api(`/api/master/orders/${tr.dataset.id}`, J(body));
+      await loadOrders();
+      const fresh = document.querySelector(`tr[data-id="${tr.dataset.id}"] td[data-field="${field}"]`);
+      if (fresh) fresh.classList.add("save-flash");
+      toast(field === "qty_ship" ? `已儲存，出貨 ${fmt(d.row.qty_ship)} → ${d.row.cases == null ? "算不出箱數" : fmt(d.row.cases) + " 箱"}` : "備註已儲存");
+    } catch (e) { if (e.status === 409) loadOrders(); else { toast(e.message, "err"); restore(); } }
+  };
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") cancel(); });
+  inp.addEventListener("blur", () => setTimeout(save, 0));
+}
+function bindCell(cell) { cell.addEventListener("click", e => { if (e.target.classList.contains("qty-reset")) return; startInline(cell); }); }
+function bindOrderEdits() {
+  const list = $("#orders-list");
+  list.querySelectorAll("td.inline-cell").forEach(bindCell);
+  list.querySelectorAll(".qty-reset").forEach(b => b.addEventListener("click", async e => {
+    e.stopPropagation(); const tr = b.closest("tr");
+    try { await api(`/api/master/orders/${tr.dataset.id}`, J({ version: Number(tr.dataset.ver), reset_qty_ship: true })); toast("已恢復成整合表數字"); loadOrders(); }
+    catch (err) { if (err.status !== 409) toast(err.message, "err"); else loadOrders(); }
+  }));
+  list.querySelectorAll(".del").forEach(b => b.addEventListener("click", async () => {
+    const tr = b.closest("tr"); if (!confirm("確定刪除這筆品項？會留下歷程。")) return;
+    try { await api(`/api/master/orders/${tr.dataset.id}`, { method: "DELETE" }); toast("已刪除"); loadOrders(); } catch (e) { toast(e.message, "err"); }
+  }));
+  list.querySelectorAll(".po-date").forEach(inp => inp.addEventListener("change", async () => {
+    if (!inp.value) { inp.value = inp.dataset.old; return; }
+    try { const d = await api("/api/master/pos/date", J({ po_numbers: [inp.dataset.po], delivery_date: inp.value, expected: { [inp.dataset.po]: inp.dataset.old } }));
+      toast(`PO ${inp.dataset.po} 已改到 ${d.delivery_date}，${d.moved} 個品項一起搬過去`); loadOrders(); }
+    catch (e) { if (e.status === 409) loadOrders(); else { toast(e.message, "err"); inp.value = inp.dataset.old; } }
+  }));
+  list.querySelectorAll(".po-date-reset").forEach(b => b.addEventListener("click", async () => {
+    try { await api("/api/master/pos/date", J({ po_numbers: [b.dataset.po], reset: true, expected: { [b.dataset.po]: b.dataset.old } })); toast(`PO ${b.dataset.po} 已恢復成整合表的交貨日`); loadOrders(); }
+    catch (e) { if (e.status === 409) loadOrders(); else toast(e.message, "err"); }
+  }));
+  list.querySelectorAll(".po-sel").forEach(cb => cb.addEventListener("change", () => { cb.checked ? state.selected.add(cb.dataset.po) : state.selected.delete(cb.dataset.po); renderBatch(); }));
+  list.querySelectorAll(".grp-po .po").forEach(el => el.addEventListener("click", () => openPo(el.dataset.po)));
+}
+
+/* ── 批次改期 ── */
+function renderBatch() {
+  const n = state.selected.size; $("#batch-n").textContent = n; $("#batchbar").classList.toggle("show", n > 0);
+  const all = [...new Set(state.rows.map(r => r.po_number))]; $("#sel-all-po").checked = all.length > 0 && all.every(p => state.selected.has(p));
+}
+$("#sel-all-po").addEventListener("change", e => { const all = new Set(state.rows.map(r => r.po_number)); if (e.target.checked) all.forEach(p => state.selected.add(p)); else all.forEach(p => state.selected.delete(p)); renderOrders(); renderBatch(); });
+$("#batch-clear").addEventListener("click", () => { state.selected.clear(); renderOrders(); renderBatch(); });
+async function batchMove(reset) {
+  const pos = [...state.selected]; if (!pos.length) return;
+  const date = $("#batch-date").value; if (!reset && !date) { toast("先選要改到哪一天。", "warn"); return; }
+  const expected = {}; for (const r of state.rows) if (state.selected.has(r.po_number)) expected[r.po_number] = expected[r.po_number] ?? (r.delivery_date || "");
+  if (!confirm(reset ? `把 ${pos.length} 張 PO 的交貨日恢復成整合表的日期？` : `把 ${pos.length} 張 PO 全部改到 ${date}？每張單底下所有品項會一起搬。`)) return;
+  try { const d = await api("/api/master/pos/date", J({ po_numbers: pos, delivery_date: date, reset, expected })); toast(`${d.po_count} 張 PO、${d.moved} 個品項${reset ? "已恢復整合表日期" : "已改到 " + d.delivery_date}`); state.selected.clear(); loadOrders(); }
+  catch (e) { if (e.status === 409) loadOrders(); else toast(e.message, "err"); }
+}
+$("#batch-apply").addEventListener("click", () => batchMove(false)); $("#batch-reset").addEventListener("click", () => batchMove(true));
+
+/* ── PO 視窗 ── */
+let PO = null;
+async function openPo(po) {
+  try { PO = await api(`/api/master/pos/${encodeURIComponent(po)}`); } catch (e) { toast(e.message, "err"); return; }
+  $("#po-title").textContent = PO.po_number;
+  $("#po-sub").textContent = `${PO.lines.join("、")}${PO.lines_raw.length > 1 ? "（" + PO.lines_raw.join("／") + "）" : ""} · ${PO.warehouse || "—"} · ${PO.rows.length} 品項`;
+  $("#po-date").value = PO.delivery_date; $("#po-date").dataset.old = PO.delivery_date;
+  $("#po-date-note").textContent = PO.dates.length > 1 ? `這張單的品項目前分在 ${PO.dates.join("、")}，存檔會統一` : (PO.date_overridden ? `人工改期過，整合表是 ${PO.delivery_date_file || "空白"}` : "");
+  $("#po-date-reset").classList.toggle("hidden", !PO.date_overridden);
+  $("#po-total").textContent = fmt(PO.total_cases); $("#po-msg").textContent = "";
+  $("#po-table").innerHTML = `<thead><tr><th>線別</th><th>國條</th><th>品名</th><th class="num">下單</th><th class="num">出貨數量</th><th class="num">箱入數</th><th class="num">出貨(箱)</th><th>OP 備註</th></tr></thead><tbody>
+    ${PO.rows.map(r => `<tr data-id="${r.id}" data-ver="${r.version}">
+      <td>${lineTag(r)}</td><td class="mono">${esc(r.barcode)}</td>
+      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.product_name)}">${esc(r.product_name)}${r.note_master ? `<div class="kbd" style="color:var(--b800)">Note：${esc(r.note_master)}</div>` : ""}</td>
+      <td class="num muted">${fmt(r.qty_coupang)}</td>
+      <td class="num"><input type="number" min="0" class="txt po-qty num ${r.qty_ship_overridden ? "edited" : ""}" style="width:90px;text-align:right;padding:3px 6px" value="${r.qty_ship ?? ""}" data-orig="${r.qty_ship ?? ""}" data-box="${r.box_size ?? ""}"></td>
+      <td class="num">${fmt(r.box_size) || "—"}</td>
+      <td class="num po-cases"><b>${r.cases == null ? "—" : fmt(r.cases)}</b></td>
+      <td><input class="txt po-rem" style="padding:3px 6px" value="${esc(r.remarks_overridden ? r.remarks : "")}" data-orig="${esc(r.remarks_overridden ? r.remarks : "")}" placeholder="例如 打單缺貨"></td></tr>`).join("")}</tbody>`;
+  $("#po-table").querySelectorAll(".po-qty").forEach(inp => inp.addEventListener("input", () => {
+    const box = Number(inp.dataset.box); const c = inp.closest("tr").querySelector(".po-cases b"); c.textContent = box && inp.value !== "" ? fmt(Number(inp.value) / box) : "—";
+    let tot = 0; $("#po-table").querySelectorAll(".po-qty").forEach(i => { const b = Number(i.dataset.box); if (b && i.value !== "") tot += Number(i.value) / b; }); $("#po-total").textContent = fmt(tot);
+  }));
+  $("#po-logs").innerHTML = PO.logs.length ? PO.logs.map(l => `<div style="border-bottom:1px solid var(--line2);padding:3px 0"><span class="muted">${esc(l.changed_at)}</span> <b>${esc(l.operator)}</b> <span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span><br>${esc(l.field_label)}${l.barcode ? ` <span class="mono kbd">${esc(l.barcode)}</span>` : ""}：${esc(fmt(l.old_value) || "空")} → <b>${esc(fmt(l.new_value) || "空")}</b>${l.note ? `<div class="kbd">${esc(l.note)}</div>` : ""}</div>`).join("") : `<div class="muted">還沒有修改紀錄</div>`;
+  $("#dlg-po").showModal();
+}
+$("#po-date-reset").addEventListener("click", async () => {
+  try { await api(`/api/master/pos/${encodeURIComponent(PO.po_number)}/save`, J({ reset_date: true, expected_date: $("#po-date").dataset.old, items: [] })); toast("已恢復成整合表的交貨日"); openPo(PO.po_number); loadOrders(); }
+  catch (e) { if (e.status === 409) { $("#dlg-po").close(); loadOrders(); } else toast(e.message, "err"); }
+});
+$("#po-save").addEventListener("click", async () => {
+  if (!PO) return;
+  const items = [];
+  $("#po-table").querySelectorAll("tbody tr").forEach(tr => {
+    const q = tr.querySelector(".po-qty"), r = tr.querySelector(".po-rem"); const it = { id: Number(tr.dataset.id), version: Number(tr.dataset.ver) }; let touched = false;
+    if (q.value !== q.dataset.orig) { it.qty_ship = q.value; touched = true; }
+    if (r.value !== r.dataset.orig) { it.remarks = r.value; touched = true; }
+    if (touched) items.push(it);
+  });
+  const body = { items }; const nd = $("#po-date").value;
+  if (nd && nd !== $("#po-date").dataset.old) { body.delivery_date = nd; body.expected_date = $("#po-date").dataset.old; }
+  if (!items.length && !body.delivery_date) { $("#po-msg").textContent = "沒有任何變動。"; return; }
+  $("#po-save").disabled = true;
+  try { const d = await api(`/api/master/pos/${encodeURIComponent(PO.po_number)}/save`, J(body)); toast(`已儲存，記錄了 ${d.changed} 項變更`); $("#dlg-po").close(); loadOrders(); }
+  catch (e) { if (e.status === 409) { $("#dlg-po").close(); loadOrders(); } else $("#po-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+  finally { $("#po-save").disabled = false; }
+});
+
+/* ── 匯入訂單 ── */
+let pendingBatch = null;
+$("#btn-upload").addEventListener("click", () => { $("#imp-result").classList.add("hidden"); $("#btn-commit").classList.add("hidden"); $("#imp-addmissing-wrap").classList.add("hidden"); pendingBatch = null; $("#dlg-import").showModal(); });
+dropzone($("#dz"), $("#file-import"), previewImport);
+async function previewImport(file) {
+  const fd = new FormData(); fd.append("file", file);
+  const box = $("#imp-result"); box.classList.remove("hidden"); box.innerHTML = `<p class="muted">解析中…</p>`;
+  let d; try { d = await api("/api/master/import/preview", { method: "POST", body: fd }); }
+  catch (e) { box.innerHTML = `<div class="badge bd-bad" style="font-size:13px;padding:8px 12px">${esc(e.message)}</div>`; return; }
+  pendingBatch = d.batch_id;
+  const lines = Object.entries(d.lines).map(([l, n]) => `<span class="badge ${l === "未分類" ? "bd-bad" : "bd-blue"}">${esc(l)} ${n} 筆</span>`).join(" ");
+  const raws = Object.entries(d.lines_raw).map(([l, n]) => `${esc(l) || "（空白）"} ${n}`).join("、");
+  const months = [...new Set(d.dates.map(x => x.slice(0, 7)))];
+  const changes = d.updated.map(u => `<tr><td class="mono">${esc(u.po_number)}</td><td class="mono">${esc(u.barcode)}</td><td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.product_name)}</td>
+     <td>${u.changes.map(c => `<div><span class="muted">${esc(c.label)}</span> ${esc(fmt(c.old) || "空白")} → <b>${esc(fmt(c.new) || "空白")}</b>${(c.field === "qty_file_ship" && u.qty_ship_overridden) || (c.field === "delivery_date_file" && u.delivery_date_overridden) ? ` <span class="badge bd-warn">人工調整過，不覆蓋</span>` : ""}</div>`).join("")}</td></tr>`).join("");
+  const missing = d.missing_products.map(m => `<tr><td>${esc(m.line) || "—"}</td><td class="mono">${esc(m.barcode)}</td><td>${esc(m.product_name)}</td><td class="num">${m.box_size ?? `<span class="neg">空白</span>`}</td></tr>`).join("");
+  box.innerHTML = `
+    <div class="flex gap-3 flex-wrap mb-3">
+      <div class="stat"><b>${d.rows_total}</b><span>讀到的品項 · ${d.po_count} 張 PO</span></div>
+      <div class="stat"><b style="color:var(--ok)">${d.new_count}</b><span>新增</span></div>
+      <div class="stat"><b style="color:var(--warn)">${d.updated_count}</b><span>內容有變</span></div>
+      <div class="stat"><b class="muted">${d.identical_count}</b><span>沒變（略過）</span></div>
+      ${d.removed_count ? `<div class="stat" style="border-color:#fecaca;background:var(--badbg)"><b style="color:var(--bad)">${d.removed_count}</b><span>檔案裡消失的品項</span></div>` : ""}
+    </div>
+    <div class="text-sm mb-1">線別：${lines || "<span class='muted'>沒有線別欄</span>"} <span class="kbd">（檔案原始值：${raws}）</span></div>
+    <div class="text-sm mb-2">月份：${months.map(x => `<span class="badge bd-gray">${esc(x)}</span>`).join(" ")}　交貨日 ${d.dates.length} 天</div>
+    ${d.warnings.length ? `<div class="card p-3 mb-3 text-sm" style="background:var(--warnbg);border-color:#fcd34d"><b>提醒</b><ul class="list-disc pl-5">${d.warnings.slice(0, 12).map(w => `<li>${esc(w)}</li>`).join("")}${d.warnings.length > 12 ? `<li>…還有 ${d.warnings.length - 12} 則</li>` : ""}</ul></div>` : ""}
+    ${d.removed && d.removed.length ? `<b class="text-sm" style="color:var(--bad)">這些 PO 在檔案裡，但底下這些品項不見了（${d.removed.length}）— 匯入後會留著、出貨數量歸 0</b><div class="tbl-wrap mb-3" style="max-height:200px"><table class="m"><thead><tr><th>PO</th><th>國條</th><th>品名</th><th class="num">下單</th><th class="num">目前出貨</th></tr></thead><tbody>${d.removed.map(x => `<tr><td class="mono">${esc(x.po_number)}</td><td class="mono">${esc(x.barcode)}</td><td>${esc(x.product_name)}</td><td class="num">${fmt(x.qty_coupang)}</td><td class="num">${fmt(x.qty_ship)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    ${changes ? `<b class="text-sm">內容有變的品項</b><div class="tbl-wrap mb-3" style="max-height:240px"><table class="m"><thead><tr><th>PO</th><th>國條</th><th>品名</th><th>變動</th></tr></thead><tbody>${changes}</tbody></table></div>` : ""}
+    ${missing ? `<b class="text-sm">主檔還沒有的國條（${d.missing_products.length}）</b><div class="tbl-wrap" style="max-height:200px"><table class="m"><thead><tr><th>線別</th><th>國條</th><th>品名</th><th class="num">整合表箱入數</th></tr></thead><tbody>${missing}</tbody></table></div>` : `<div class="text-sm" style="color:var(--ok)"><i class="bi bi-check-circle"></i> 所有國條主檔都有</div>`}`;
+  $("#btn-commit").classList.remove("hidden"); $("#imp-addmissing-wrap").classList.toggle("hidden", !missing);
+}
+$("#btn-commit").addEventListener("click", async () => {
+  if (!pendingBatch) return; $("#btn-commit").disabled = true;
+  try { const d = await api("/api/master/import/commit", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ batch_id: pendingBatch, add_missing_products: $("#imp-addmissing").checked }) });
+    toast(`匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.removed ? `，${d.removed} 筆品項在檔案裡消失（已歸 0 保留）` : ""}${d.products_added ? `，主檔新增 ${d.products_added} 筆` : ""}`);
+    $("#dlg-import").close(); await loadMeta(); refresh(); }
+  catch (e) { toast(e.message, "err"); } finally { $("#btn-commit").disabled = false; }
+});
+
+/* ════════════ ③ 總表 ════════════ */
+$("#sum-line").addEventListener("change", e => { state.sumLine = e.target.value; localStorage.setItem("mst_sum_line", state.sumLine); loadSummary(); });
+$("#sum-month").addEventListener("change", e => { if (e.target.value) { state.sumMonth = e.target.value; loadSummary(); } });
+async function loadSummary() {
+  if (!state.sumLine) { $("#sum-table").innerHTML = ""; $("#sum-stats").innerHTML = `<div class="muted p-4">還沒有訂單，先到訂單明細上傳。</div>`; return; }
+  $("#btn-export-2").href = `/api/master/export?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`;
+  $("#btn-export-daily-2").href = `/api/master/export/daily?month=${state.sumMonth}&lines=${encodeURIComponent(state.sumLine)}`;
+  let s; try { s = await api(`/api/master/summary?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`); } catch (e) { toast(e.message, "err"); return; }
+  const mm = Number(state.sumMonth.slice(5));
+  $("#sum-stats").innerHTML = `<div class="stat"><b>${fmt(s.month_total)}</b><span>${mm} 月出貨總箱數</span></div><div class="stat"><b>${s.dates.length}</b><span>有出貨的交貨日</span></div><div class="stat"><b>${s.rows.length}</b><span>商品數</span></div>
+    ${s.missing_box_rows ? `<div class="stat" style="border-color:#fcd34d;background:var(--warnbg)"><b style="color:var(--warn)">${s.missing_box_rows}</b><span>筆算不出箱數（缺箱入數）</span></div>` : ""}
+    ${s.not_in_master ? `<div class="stat" style="border-color:#fcd34d;background:var(--warnbg)"><b style="color:var(--warn)">${s.not_in_master}</b><span>個國條不在主檔</span></div>` : ""}`;
+  const md = d => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(dd)}`; };
+  let html = `<thead><tr><th class="sticky-l" style="z-index:3">國條</th><th>線別</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">箱入數</th>${s.dates.map(d => `<th class="num">${md(d)}<br><span style="font-weight:400;font-size:11px">交貨</span></th>`).join("")}<th class="num" style="background:var(--b900)">${mm}月TTL</th><th>備註</th></tr></thead><tbody>`;
+  for (const r of s.rows) html += `<tr><td class="mono sticky-l">${esc(r.barcode)} ${r.in_master ? "" : `<span class="badge bd-warn">未建檔</span>`}</td><td>${r.lines_raw.map(l => `<span class="line-tag">${esc(l) || "空白"}</span>`).join(" ")}</td><td>${esc(r.category || "")}</td>
+      <td style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.product_name)}">${esc(r.product_name)}</td><td>${esc(r.brand)}</td>
+      <td class="num">${r.box_size ? fmt(r.box_size) : `<span class="neg">缺</span>`}</td>
+      ${s.dates.map(d => `<td class="num">${r.by_date[d] != null ? fmt(r.by_date[d]) : `<span class="muted">·</span>`}</td>`).join("")}
+      <td class="num" style="background:var(--b50)"><b>${fmt(r.month_total)}</b>${r.missing_box ? ` <span class="badge bd-warn" title="${r.missing_box} 筆沒算進去">!</span>` : ""}</td>
+      <td class="muted" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.note)}</td></tr>`;
+  html += `</tbody><tfoot><tr style="font-weight:700;background:var(--b100)"><td class="sticky-l" style="background:var(--b100)">合計</td><td></td><td></td><td></td><td></td><td></td>${s.dates.map(d => `<td class="num">${fmt(s.totals_by_date[d])}</td>`).join("")}<td class="num">${fmt(s.month_total)}</td><td></td></tr></tfoot>`;
+  $("#sum-table").innerHTML = html;
+}
+
+/* ════════════ ① 商品主檔 ════════════ */
+let productsCache = [];
+dropzone($("#dz-prod"), $("#file-prod"), async file => {
+  const fd = new FormData(); fd.append("file", file); $("#prod-imp-msg").innerHTML = `<span class="muted">匯入中…</span>`;
+  try { const d = await api("/api/master/products/import", { method: "POST", body: fd });
+    $("#prod-imp-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}</span>`;
+    toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`); loadProducts(); }
+  catch (e) { $("#prod-imp-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+});
+$("#pq").addEventListener("input", () => { clearTimeout(window._pq); window._pq = setTimeout(loadProducts, 200); });
+$("#prod-line").addEventListener("change", loadProducts);
+async function loadProducts() {
+  let d; try { d = await api(`/api/master/products?line=${encodeURIComponent($("#prod-line").value)}&q=${encodeURIComponent($("#pq").value.trim())}`); } catch (e) { toast(e.message, "err"); return; }
+  productsCache = d.products;
+  const orph = $("#orphans");
+  if (d.orphans.length) {
+    orph.classList.remove("hidden");
+    orph.innerHTML = `<b class="text-sm" style="color:var(--warn)"><i class="bi bi-exclamation-triangle-fill"></i> 訂單裡有、主檔還沒有的國條（${d.orphans.length}）</b><p class="kbd mb-2">沒建主檔的國條，箱數用整合表自帶的箱入數算，品類／Note／單價會是空的。按「加入主檔」先建起來，之後再核對。</p>
+      <div class="tbl-wrap" style="max-height:220px"><table class="m"><thead><tr><th>線別</th><th>國條</th><th>品名</th><th>品牌</th><th class="num">整合表箱入數</th><th class="num">訂單筆數</th><th></th></tr></thead><tbody>
+      ${d.orphans.map(o => `<tr><td><span class="line-tag">${esc(o.line_group)}</span></td><td class="mono">${esc(o.barcode)}</td><td>${esc(o.product_name)}</td><td>${esc(o.brand)}</td><td class="num">${o.box_size_file ?? `<span class="neg">空白</span>`}</td><td class="num">${o.order_rows}</td><td><button class="btn btn-o btn-sm add-orphan" data-o='${esc(JSON.stringify(o))}'><i class="bi bi-plus"></i> 加入主檔</button></td></tr>`).join("")}</tbody></table></div>`;
+    orph.querySelectorAll(".add-orphan").forEach(b => b.addEventListener("click", () => { const o = JSON.parse(b.dataset.o); openProductDialog({ barcode: o.barcode, sku_id: o.sku_id, yf_sku: o.yf_sku, brand: o.brand, product_name: o.product_name, box_size: o.box_size_file }); }));
+  } else orph.classList.add("hidden");
+  $("#prod-count").textContent = `${d.total} 筆`;
+  $("#prod-table").innerHTML = `<thead><tr><th>國條</th><th>線別</th><th>SKU ID</th><th>永豐料號</th><th>品類</th><th>品牌</th><th>品名</th><th class="num">箱入數</th><th class="num">單價(含稅)</th><th>Note</th><th class="num">訂單筆數</th><th>最後更新</th><th></th></tr></thead><tbody>
+    ${d.products.length ? d.products.map(p => `<tr data-id="${p.id}">
+      <td class="mono">${esc(p.barcode)}</td>
+      <td>${p.line_groups.length ? p.line_groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join(" ") : `<span class="kbd">尚未出現在訂單</span>`}</td>
+      <td class="mono">${esc(p.sku_id)}</td><td class="mono">${esc(p.yf_sku)}</td><td>${esc(p.category || "")}</td><td>${esc(p.brand)}</td>
+      <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.product_name)}">${esc(p.product_name)}</td>
+      <td class="num">${p.box_size ? fmt(p.box_size) : `<span class="neg">缺</span>`}${p.auto_created ? ` <span class="badge bd-warn" title="匯入訂單時用整合表的箱入數自動建的，還沒人核對；存一次或重匯總表就解除">請核對</span>` : ""}</td>
+      <td class="num">${p.cost_price != null ? fmt(p.cost_price) : `<span class="muted">—</span>`}</td>
+      <td class="muted">${esc(p.note)}</td><td class="num">${p.order_rows}</td><td class="kbd">${esc(p.updated_at)}<br>${esc(p.updated_by)}</td>
+      <td class="whitespace-nowrap"><button class="btn btn-g btn-sm edit" data-p='${esc(JSON.stringify(p))}'><i class="bi bi-pencil"></i></button> <button class="btn btn-danger btn-sm del"><i class="bi bi-trash"></i></button></td></tr>`).join("")
+    : `<tr><td colspan="13" class="text-center muted p-8">還沒有主檔。把總表拖到上面的框裡，或匯入訂單時勾「自動建主檔」。</td></tr>`}</tbody>`;
+  $("#prod-table").querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openProductDialog(JSON.parse(b.dataset.p))));
+  $("#prod-table").querySelectorAll(".del").forEach(b => b.addEventListener("click", async () => { const id = b.closest("tr").dataset.id; if (!confirm("確定刪除這筆主檔？")) return;
+    try { await api(`/api/master/products/${id}`, { method: "DELETE" }); toast("已刪除"); loadProducts(); } catch (e) { toast(e.message, "err"); } }));
+}
+function openProductDialog(p) {
+  $("#prod-dlg-title").innerHTML = p && p.id ? `<i class="bi bi-pencil"></i> 編輯商品` : `<i class="bi bi-box-seam"></i> 新增商品`;
+  $("#p-barcode").value = p?.barcode || ""; $("#p-barcode").readOnly = !!(p && p.id);
+  $("#p-box").value = p?.box_size ?? ""; $("#p-sku").value = p?.sku_id || ""; $("#p-yf").value = p?.yf_sku || "";
+  $("#p-cat").value = p?.category || ""; $("#p-cost").value = p?.cost_price ?? ""; $("#p-pg").value = p?.pgcode || "";
+  $("#p-brand").value = p?.brand || ""; $("#p-name").value = p?.product_name || ""; $("#p-note").value = p?.note || "";
+  $("#dlg-prod").showModal();
+}
+$("#btn-prod-add").addEventListener("click", () => openProductDialog(null));
+$("#btn-prod-save").addEventListener("click", async () => {
+  try { await api("/api/master/products", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ barcode: $("#p-barcode").value, box_size: $("#p-box").value, sku_id: $("#p-sku").value, yf_sku: $("#p-yf").value, brand: $("#p-brand").value, product_name: $("#p-name").value, note: $("#p-note").value, category: $("#p-cat").value, cost_price: $("#p-cost").value, pgcode: $("#p-pg").value }) });
+    toast("主檔已儲存"); $("#dlg-prod").close(); loadProducts(); } catch (e) { toast(e.message, "err"); }
+});
+
+/* ── 線別群組 ── */
+$("#btn-groups").addEventListener("click", async () => {
+  const d = await api("/api/master/line_groups");
+  const rule = d.rules[0] || { prefix: "", group: "" }; $("#g-prefix").value = rule.prefix || ""; $("#g-group").value = rule.group || "";
+  $("#g-table").innerHTML = `<thead><tr><th>檔案裡的原始線別</th><th>目前歸到</th><th>指定為（留空 = 照規則）</th></tr></thead><tbody>${d.raw_lines.map(r => `<tr><td>${esc(r.raw) || "（空白）"}</td><td><span class="line-tag">${esc(r.group)}</span></td><td><input class="txt g-map" data-raw="${esc(r.raw)}" value="${esc(d.map[r.raw] || "")}" placeholder="${esc(r.group)}"></td></tr>`).join("") || `<tr><td colspan="3" class="muted p-4 text-center">還沒有任何訂單，匯入後這裡會列出檔案裡出現過的線別</td></tr>`}</tbody>`;
+  $("#dlg-groups").showModal();
+});
+$("#g-save").addEventListener("click", async () => {
+  const map = {}; $("#g-table").querySelectorAll(".g-map").forEach(i => { if (i.value.trim()) map[i.dataset.raw] = i.value.trim(); });
+  const rules = $("#g-prefix").value.trim() ? [{ prefix: $("#g-prefix").value.trim(), group: $("#g-group").value.trim() }] : [];
+  try { await api("/api/master/line_groups", J({ map, rules })); toast("線別群組已儲存"); $("#dlg-groups").close(); await loadMeta(); refresh(); } catch (e) { toast(e.message, "err"); }
+});
+
+/* ── 修改歷程 ── */
+async function loadLogs() {
+  const d = await api(`/api/master/logs?q=${encodeURIComponent($("#lg-q").value.trim())}&limit=300`);
+  $("#lg-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>PO</th><th>國條</th><th>欄位</th><th>改前</th><th>改後</th><th>說明</th></tr></thead><tbody>${d.logs.map(l => `<tr><td class="kbd">${esc(l.changed_at)}</td><td>${esc(l.operator)}</td><td><span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span></td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode)}</td><td>${esc(l.field_label)}</td><td>${esc(fmt(l.old_value))}</td><td><b>${esc(fmt(l.new_value))}</b></td><td class="kbd">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted p-6 text-center">沒有紀錄</td></tr>`}</tbody>`;
+}
+$("#btn-logs").addEventListener("click", () => { $("#dlg-logs").showModal(); loadLogs(); });
+$("#lg-go").addEventListener("click", loadLogs); $("#lg-q").addEventListener("keydown", e => { if (e.key === "Enter") loadLogs(); });
+
+/* ── 啟動 ── */
+(async () => {
+  await loadMeta();
+  if (await checkMaster()) setTab("products");
+  refresh();
+})();
+</script>
+</body>
+</html>
