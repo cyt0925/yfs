@@ -694,8 +694,8 @@ def ensure_data_dir():
 
 
 
-# ---------------------------------------------------------------- 業績總表自動化
-# 「業績總表自動化」模組（master.py）自己的表，全部以 mst_ 開頭，跟酷澎
+# ---------------------------------------------------------------- 商品主檔自動化
+# 「商品主檔自動化」模組（master.py）自己的表，全部以 mst_ 開頭，跟酷澎
 # 訂單管理的 orders／po_headers 完全分開：這個模組吃的是同一份整合表，
 # 但它服務的是「專案報價檔 → 總表」那條人工流程，資料要能讓 OP 自己改
 # 交貨日、出貨數量、備註而不影響訂單管理那邊的判斷，所以不共用資料列。
@@ -856,7 +856,7 @@ def init_db():
     try:
         conn.executescript(SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE)
         _migrate_columns(conn)
-        # 業績總表自動化的表另外一段、自己一個 try：這個模組出了什麼差錯（例如
+        # 商品主檔自動化的表另外一段、自己一個 try：這個模組出了什麼差錯（例如
         # 正式站資料庫升級沒跑好）只能讓它那一頁顯示錯誤，不能把訂單管理整個拖垮
         # ——訂單管理才是同事每天在用的正式作業。
         global MASTER_READY, MASTER_ERROR
@@ -868,7 +868,7 @@ def init_db():
         except Exception as exc:  # noqa: BLE001
             conn.rollback()
             MASTER_READY, MASTER_ERROR = False, f"{type(exc).__name__}: {exc}"
-            print(f"[業績總表自動化] 資料表初始化失敗，這個模組暫停使用，訂單管理不受影響：{MASTER_ERROR}")
+            print(f"[商品主檔自動化] 資料表初始化失敗，這個模組暫停使用，訂單管理不受影響：{MASTER_ERROR}")
         # orders／po_headers 表可能剛剛才被 _migrate_columns 補上新欄位，
         # 上面 executescript 建出來的 view 是舊欄位版本，要重建一次才會
         # 抓到新欄位（不然要等下次重啟才會生效）。SQLite 的

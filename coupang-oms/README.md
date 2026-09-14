@@ -56,7 +56,7 @@ python app.py                     # 或 Windows 上雙擊 START.bat
 ```bash
 python test_flow.py      # 訂單管理主流程，184 項檢查
 python test_purchase.py  # 採購表轉換（跟訂單管理完全獨立），60 項檢查
-python test_master.py    # 業績總表自動化（獨立模組）
+python test_master.py    # 商品主檔自動化（獨立模組）
 ```
 
 ## 核心防呆（這幾條是系統的命）
@@ -92,10 +92,10 @@ python test_master.py    # 業績總表自動化（獨立模組）
 樣式原封不動保留）。細節看 `purchase.py` 開頭的說明。
 
 
-## 業績總表自動化
+## 商品主檔自動化
 
 跟訂單管理**平行的獨立模組**（`master.py`、`templates/master.html`），首頁按鈕
-「業績總表自動化」進去，網址是 `/master`。表全部以 `mst_` 開頭，不碰訂單管理的
+「商品主檔自動化」進去，網址是 `/master`。表全部以 `mst_` 開頭，不碰訂單管理的
 任何一張表；共用登入、資料庫連線與整合表解析。
 
 取代的是 OP 原本「訂單彙總表 → 專案報價檔（一天一分頁、VLOOKUP 總表）→ 樞紐 →
@@ -146,14 +146,14 @@ coupang-oms/
 ├── normalize.py            欄位正規化，唯一實作
 ├── pdfsign.py               驗收單批次簽名
 ├── purchase.py              採購表轉換（跟訂單管理完全獨立，見上方段落）
-├── master.py                業績總表自動化（獨立模組，見上方段落）
+├── master.py                商品主檔自動化（獨立模組，見上方段落）
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔
 ├── defaults/                設定檔出廠預設值，只在第一次啟動、還沒有這份
 │                             設定時用來種資料（本機模式種進 DATA_DIR 底下
 │                             的檔案；Postgres 模式種進資料庫）
 ├── templates/index.html     訂單管理主頁面
 ├── templates/purchase.html  採購表轉換頁面
-├── templates/master.html    業績總表自動化頁面（藍白主題）
+├── templates/master.html    商品主檔自動化頁面（藍白主題）
 ├── static/                  編譯好的 CSS／圖示／logo（改動見 .build-tools/README.md）
 ├── deploy/nginx-oms.conf    未來搬上戰情室那台 GCP VM 時要用的 nginx
 │                             反向代理設定片段（還沒有 VM 存取權，先進
@@ -161,7 +161,7 @@ coupang-oms/
 ├── START.bat                本機開發用啟動捷徑（雙擊，Windows）
 ├── test_flow.py             訂單管理端到端驗證
 ├── test_purchase.py         採購表轉換端到端驗證
-├── test_master.py           業績總表自動化端到端驗證
+├── test_master.py           商品主檔自動化端到端驗證
 └── samples/                 測試用真實資料（master/ 底下是 7 月、9 月訂單彙總表與總表範例）
 ```
 

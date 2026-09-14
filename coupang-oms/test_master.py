@@ -1,4 +1,4 @@
-"""業績總表自動化的端到端驢證：拿真實的訂單彙總表（7 月單線別、9 月多線別）與
+"""商品主檔自動化的端到端驢證：拿真實的訂單彙總表（7 月單線別、9 月多線別）與
 總表範例跑完整流程。表全部是 mst_ 開頭，不碰訂單管理與採購表轉換的資料。
 
 執行：python test_master.py
@@ -68,7 +68,7 @@ def main():
     check("頁面打得開", res.status_code == 200)
     check("分頁順序照流程：① 商品主檔 → ② 訂單明細 → ③ 總表", html.index("① 商品主檔") < html.index("② 訂單明細") < html.index("③ 總表"))
     check("頂端沒有全域的線別選單（線別是篩選，不是模式）", 'id="sel-line"' not in html)
-    check("OMS 首頁有「業績總表自動化」按鈕", "業績總表自動化" in client.get("/").get_data(as_text=True))
+    check("OMS 首頁有「商品主檔自動化」按鈕", "商品主檔自動化" in client.get("/").get_data(as_text=True))
     meta = client.get("/api/master/lines").get_json()
     check("還沒有資料時線別清單是空的（線別是從資料長出來的）", meta["groups"] == [], str(meta["groups"]))
 

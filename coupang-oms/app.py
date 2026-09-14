@@ -37,7 +37,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-14.7"
+BUILD_VERSION = "2026-09-14.8"
 
 app = Flask(__name__)
 
@@ -61,7 +61,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 # 的說明。掛成 Blueprint 是為了讓這塊邏輯物理上分開在別的檔案，不要
 # 把已經很大的 app.py 越養越肥，也強調這功能真的跟訂單管理無關。
 app.register_blueprint(purchase.purchase_bp)
-# 業績總表自動化：同樣是獨立模組（見 master.py 檔頭），共用登入與資料庫
+# 商品主檔自動化：同樣是獨立模組（見 master.py 檔頭），共用登入與資料庫
 # 連線，但表全部以 mst_ 開頭，不碰訂單管理的任何一張表。
 app.register_blueprint(master.master_bp)
 app.config["BUILD_VERSION"] = BUILD_VERSION
