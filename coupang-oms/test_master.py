@@ -4,6 +4,7 @@
 執行：python test_master.py
 """
 import io
+import re
 import os
 import sys
 import tempfile
@@ -224,7 +225,7 @@ def main():
     wbd = openpyxl.load_workbook(io.BytesIO(res.data))
     check(f"報價檔格式：篩紙潔 + {cpg_date} → 只有 {cpg_tab} 一個分頁", wbd.sheetnames == [cpg_tab], str(wbd.sheetnames))
     cd = unquote(res.headers.get("Content-Disposition", ""))
-    check("檔名帶線別與日期", "紙潔" in cd and cpg_tab in cd, cd[:100])
+    check("檔名就叫專案報價檔", "專案報價檔.xlsx" in cd, cd[:100])
     wsd = wbd[cpg_tab]; hd = [c.value for c in wsd[1]]
     check("A～R 欄位順序照報價檔", hd[0] == "SKU ID" and hd[3] == "品類" and hd[10] == "單價(含稅)" and hd[14] == "備註" and hd[17] == "交貨日")
     pos_cells = [wsd.cell(r, 18).value for r in range(2, wsd.max_row + 1) if wsd.cell(r, 18).value]
@@ -240,6 +241,14 @@ def main():
     check("整合表自帶的 MPO_ 備註沒進報價檔", all("MPO_" not in str(r[14] or "") for r in wsp.iter_rows(min_row=2, values_only=True)))
     res = client.get("/api/master/export/daily?month=2026-09&warehouses=NOPE")
     check("篡到沒資料的檔案有說明", openpyxl.load_workbook(io.BytesIO(res.data)).sheetnames == ["無資料"])
+    check("檔名就叫專案報價檔", "專案報價檔.xlsx" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition"))
+    # 跨月：7 月～9 月一次匯，分頁 0904交貨、0903交貨…新的在前，7 月的也在
+    res = client.get("/api/master/export/daily?month=2026-07&month_to=2026-09")
+    names = openpyxl.load_workbook(io.BytesIO(res.data)).sheetnames
+    check("跨月匯出同時有 9 月與 7 月的分頁", any(n.startswith("09") for n in names) and any(n.startswith("07") for n in names), str(names[:3] + names[-3:]))
+    check("分頁名稱是 MMDD交貨、新的在前", all(re.fullmatch(r"\d{4}交貨|未排日期", n) for n in names) and names[0] > names[-1], str(names[:2]))
+    res = client.get("/api/master/export/daily?month=2026-09&month_to=2026-07")
+    check("起訖顛倒也照樣匯（自動對調）", len(openpyxl.load_workbook(io.BytesIO(res.data)).sheetnames) == len(names))
 
     print("\n【12】歷程")
     logs = client.get(f"/api/master/logs?po={cross_po}").get_json()["logs"]

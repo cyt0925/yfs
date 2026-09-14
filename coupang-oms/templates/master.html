@@ -183,8 +183,9 @@
       <button id="btn-clear" class="btn btn-g btn-sm"><i class="bi bi-x-circle"></i> 清除篩選</button>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <span class="badge bd-warn hidden" id="filter-hint" title="匯出報價檔格式會照這個範圍">已篩選</span>
-      <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁、PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月。"><i class="bi bi-calendar-week"></i> 匯出報價檔格式</a>
+      <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔會照這個範圍">已篩選</span>
+      <label class="text-sm muted" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">匯到</label><input type="month" id="exp-to" class="sel" style="padding:4px 8px" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">
+      <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁（0904交貨、0903交貨…），PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月；「匯到」往後拉可以跨月。"><i class="bi bi-calendar-week"></i> 匯出專案報價檔</a>
     </div>
 
     <div class="card p-4 mb-4">
@@ -211,7 +212,8 @@
       <label class="text-sm muted ml-2">月份</label><input type="month" id="sum-month" class="sel" style="padding:4px 8px">
       <span class="kbd ml-2">一列一個國條，往右是各交貨日出貨箱數，最右邊是這個月的加總。改了訂單明細這裡自己跟著變。</span>
       <div class="flex-1"></div>
-      <a id="btn-export-daily-2" class="btn btn-o"><i class="bi bi-calendar-week"></i> 匯出這線別的報價檔格式</a>
+      <label class="text-sm muted" title="專案報價檔要一次匯好幾個月，把這裡往後拉">匯到</label><input type="month" id="sum-exp-to" class="sel" style="padding:4px 8px">
+      <a id="btn-export-daily-2" class="btn btn-o" title="這個線別的專案報價檔：一個交貨日一個分頁，「匯到」往後拉可以跨月"><i class="bi bi-calendar-week"></i> 匯出這線別的專案報價檔</a>
       <a id="btn-export-2" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
     </div>
     <div class="flex gap-3 flex-wrap mb-4" id="sum-stats"></div>
@@ -309,7 +311,7 @@
   <div class="dlg-b text-sm space-y-3">
     <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:10px 12px;color:#991b1b">
       <b><i class="bi bi-exclamation-octagon-fill"></i> 清掉就回不來了</b>
-      <p class="text-xs mt-1">清空前系統會自動備份一份，但備份放在伺服器上，你不一定拿得回來。正式資料請先「匯出總表」或「匯出報價檔格式」存一份 Excel 再清。</p>
+      <p class="text-xs mt-1">清空前系統會自動備份一份，但備份放在伺服器上，你不一定拿得回來。正式資料請先「匯出總表」或「匯出專案報價檔」存一份 Excel 再清。</p>
     </div>
     <div><b>要清哪些？</b></div>
     <label class="flex items-start gap-2">
@@ -381,10 +383,10 @@ async function loadMeta() {
   const d = await api("/api/master/lines");
   state.groups = d.groups;
   if (!state.month) state.month = localStorage.getItem("mst_month") || d.months[0] || d.this_month;
-  $("#sel-month").value = state.month;
+  $("#sel-month").value = state.month; if (!$("#exp-to").value || $("#exp-to").value < state.month) $("#exp-to").value = state.month;
   const sl = $("#sum-line"); const cur = state.sumLine || localStorage.getItem("mst_sum_line") || d.groups[0] || "";
   sl.innerHTML = d.groups.map(g => `<option ${g === cur ? "selected" : ""}>${esc(g)}</option>`).join("") || `<option value="">（還沒有訂單）</option>`;
-  state.sumLine = sl.value; state.sumMonth = state.sumMonth || state.month; $("#sum-month").value = state.sumMonth;
+  state.sumLine = sl.value; state.sumMonth = state.sumMonth || state.month; $("#sum-month").value = state.sumMonth; if (!$("#sum-exp-to").value || $("#sum-exp-to").value < state.sumMonth) $("#sum-exp-to").value = state.sumMonth;
   const pl = $("#prod-line"); const pv = pl.value;
   pl.innerHTML = `<option value="">全部線別</option>` + d.groups.map(g => `<option ${g === pv ? "selected" : ""}>${esc(g)}</option>`).join("");
 }
@@ -402,7 +404,7 @@ function shiftMonth(delta) {
   const [y, m] = state.month.split("-").map(Number); const d = new Date(y, m - 1 + delta, 1);
   setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
 }
-function setMonth(v) { if (!v) return; state.month = v; localStorage.setItem("mst_month", v); $("#sel-month").value = v; state.dates.clear(); state.pos.clear(); state.selected.clear(); loadOrders(); }
+function setMonth(v) { if (!v) return; state.month = v; localStorage.setItem("mst_month", v); $("#sel-month").value = v; $("#exp-to").value = v; state.dates.clear(); state.pos.clear(); state.selected.clear(); loadOrders(); }
 $("#m-prev").addEventListener("click", () => shiftMonth(-1)); $("#m-next").addEventListener("click", () => shiftMonth(1));
 $("#sel-month").addEventListener("change", e => setMonth(e.target.value));
 function clearFilters() {
@@ -414,10 +416,12 @@ $("#q").addEventListener("input", e => { state.q = e.target.value.trim(); clearT
 $("#chip-edited").addEventListener("click", () => { state.edited = !state.edited; $("#chip-edited").classList.toggle("on", state.edited); loadOrders(); });
 $("#chip-missing").addEventListener("click", () => { state.missing = !state.missing; $("#chip-missing").classList.toggle("on", state.missing); loadOrders(); });
 function filterParams() {
-  return new URLSearchParams({ month: state.month, q: state.q, lines: [...state.lines].join(","), dates: [...state.dates].join(","),
+  const to = $("#exp-to").value; const month_to = (to && to > state.month) ? to : state.month;
+  return new URLSearchParams({ month: state.month, month_to, q: state.q, lines: [...state.lines].join(","), dates: [...state.dates].join(","),
     pos: [...state.pos].join(","), brands: [...state.brands].join(","), warehouses: [...state.warehouses].join(","),
     edited: state.edited ? "1" : "", missing: state.missing ? "1" : "" });
 }
+$("#exp-to").addEventListener("change", () => { $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams(); });
 function anyFilter() { return state.lines.size || state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing; }
 
 async function loadOrders() {
@@ -707,11 +711,13 @@ $("#btn-commit").addEventListener("click", async () => {
 
 /* ════════════ ③ 總表 ════════════ */
 $("#sum-line").addEventListener("change", e => { state.sumLine = e.target.value; localStorage.setItem("mst_sum_line", state.sumLine); loadSummary(); });
-$("#sum-month").addEventListener("change", e => { if (e.target.value) { state.sumMonth = e.target.value; loadSummary(); } });
+$("#sum-month").addEventListener("change", e => { if (e.target.value) { state.sumMonth = e.target.value; $("#sum-exp-to").value = e.target.value; loadSummary(); } });
+$("#sum-exp-to").addEventListener("change", loadSummary);
 async function loadSummary() {
   if (!state.sumLine) { $("#sum-table").innerHTML = ""; $("#sum-stats").innerHTML = `<div class="muted p-4">還沒有訂單，先到訂單明細上傳。</div>`; return; }
   $("#btn-export-2").href = `/api/master/export?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`;
-  $("#btn-export-daily-2").href = `/api/master/export/daily?month=${state.sumMonth}&lines=${encodeURIComponent(state.sumLine)}`;
+  const sto = $("#sum-exp-to").value; const sumTo = (sto && sto > state.sumMonth) ? sto : state.sumMonth;
+  $("#btn-export-daily-2").href = `/api/master/export/daily?month=${state.sumMonth}&month_to=${sumTo}&lines=${encodeURIComponent(state.sumLine)}`;
   let s; try { s = await api(`/api/master/summary?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`); } catch (e) { toast(e.message, "err"); return; }
   const mm = Number(state.sumMonth.slice(5));
   $("#sum-stats").innerHTML = `<div class="stat"><b>${fmt(s.month_total)}</b><span>${mm} 月出貨總箱數</span></div><div class="stat"><b>${s.dates.length}</b><span>有出貨的交貨日</span></div><div class="stat"><b>${s.rows.length}</b><span>商品數</span></div>

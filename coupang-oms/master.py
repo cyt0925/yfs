@@ -497,14 +497,29 @@ def _decorate(o, cfg=None):
 
 
 def _month_orders(conn, month, cfg=None):
-    """某月（含沒排日期的）全部訂單，帶主檔欄位。"""
+    """某月（含沒排日期的）全部訂單，帶主檔欄位。month 可以是一個月或一串月份。"""
+    months = [month] if isinstance(month, str) else list(month or [])
     where = "1=1"
     params = []
-    if month:
-        where = "(o.delivery_date LIKE ? OR o.delivery_date = '' OR o.delivery_date IS NULL)"
-        params = [month + "%"]
+    if months:
+        likes = " OR ".join(["o.delivery_date LIKE ?"] * len(months))
+        where = f"({likes} OR o.delivery_date = '' OR o.delivery_date IS NULL)"
+        params = [m + "%" for m in months]
     sql = f"{_ORDER_SELECT} WHERE {where} ORDER BY o.delivery_date, o.po_number, o.sku_id"
     return [_decorate(o, cfg) for o in _rows(conn.execute(sql, params))]
+
+
+def _month_span(month_from, month_to):
+    """2026-07 ～ 2026-09 → ['2026-07', '2026-08', '2026-09']。起訖顛倒就自動對調。"""
+    a, b = sorted([month_from, month_to])
+    y, m = int(a[:4]), int(a[5:7])
+    out = []
+    while f"{y:04d}-{m:02d}" <= b and len(out) < 36:
+        out.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m > 12:
+            y, m = y + 1, 1
+    return out
 
 
 def _read_filters(args):
@@ -1155,16 +1170,19 @@ def api_export():
 
 @master_bp.route("/api/master/export/daily")
 def api_export_daily():
-    """報價檔格式：一個交貨日一個分頁，A～R 每欄照原本公式的來源填。匯出的就是
-    畫面上篩出來的（線別／日期／PO／倉別／品牌／關鍵字），什麼都沒篩才是整月。"""
+    """專案報價檔：一個交貨日一個分頁（0904交貨、0903交貨…新的在前），A～R 每欄照
+    原本公式的來源填。匯出的就是畫面上篩出來的（線別／日期／PO／倉別／品牌／關鍵字），
+    什麼都沒篩才是整月；帶 month_to 可以一次匯好幾個月。"""
     month = norm_text(request.args.get("month")) or _this_month()
-    if not _valid_month(month):
+    month_to = norm_text(request.args.get("month_to")) or month
+    if not _valid_month(month) or not _valid_month(month_to):
         return jsonify({"error": "月份格式要像 2026-09。"}), 400
+    months = _month_span(month, month_to)       # 可以跨月：7 月～9 月就是三個月的交貨日全部進來
     filters = _read_filters(request.args)
     cfg = _line_groups()
     conn = get_conn()
     try:
-        orders = [o for o in _month_orders(conn, month, cfg) if _keep(o, filters)]
+        orders = [o for o in _month_orders(conn, months, cfg) if _keep(o, filters)]
     finally:
         conn.close()
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -1212,14 +1230,8 @@ def api_export_daily():
                 c.alignment = Alignment(horizontal="left")
     if not wb.sheetnames:
         ws = wb.create_sheet("無資料"); ws.append(["目前的篩選條件下沒有任何訂單"])
-    scope_line = "_".join(filters["lines"]) if filters["lines"] else "全部線別"
-    if len(filters["dates"]) == 1 and filters["dates"][0]:
-        d = _dt.date.fromisoformat(filters["dates"][0]); scope = f"{d.month:02d}{d.day:02d}交貨"
-    elif any(filters[k] for k in ("dates", "pos", "brands", "warehouses", "q", "edited", "missing")):
-        scope = f"{month}_篩選"
-    else:
-        scope = month
-    return _xlsx_response(wb, f"{scope_line}_專案報價檔格式_{scope}.xlsx")
+    # 檔名照同事原本的檔就叫「專案報價檔」，分頁是 0904交貨、0903交貨…新的在前
+    return _xlsx_response(wb, "專案報價檔.xlsx")
 
 
 # ---------------------------------------------------------------- 歷程
