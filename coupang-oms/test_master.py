@@ -276,9 +276,24 @@ def main():
     # 清完再匯一次要能照常用，才算真的清乾淨、沒留下卡住的殘骸
     res = upload(client, "/api/master/products/import", MASTER_XLSX)
     check("清完主檔可以重新匯總表", res.status_code == 200, res.get_data(as_text=True)[:200])
-    res = upload(client, "/api/master/import/preview", SEP_XLSX)
-    pv = res.get_json(); res = client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True})
-    check("清完訂單可以重新匯訂單彙總表", res.status_code == 200 and orders(client, month="2026-09")["count"] > 0, res.get_data(as_text=True)[:200])
+    # 一次丟兩份（7 月＋9 月）：兩份都要讀到，不能只吃第一份
+    files = [(io.BytesIO(open(pth, "rb").read()), os.path.basename(pth)) for pth in (JUL_XLSX, SEP_XLSX)]
+    res = client.post("/api/master/import/preview", data={"file": files}, content_type="multipart/form-data")
+    pv = res.get_json()
+    check("一次上傳兩份彙總表都讀到（53 + 861）", res.status_code == 200 and pv["rows_total"] == 53 + 861, str(pv.get("rows_total")))
+    check("預覽列出兩個檔名", len(pv.get("files", [])) == 2 and "、" in pv["filename"], str(pv.get("files")))
+    check("預覽月份同時有 7 月和 9 月", {d[:7] for d in pv["dates"]} >= {"2026-07", "2026-09"}, str(sorted({d[:7] for d in pv["dates"]})))
+    res = client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True})
+    check("清完訂單可以重新匯訂單彙總表（兩個月一起）", res.status_code == 200 and orders(client, month="2026-09")["count"] == 861 and orders(client, month="2026-07")["count"] == 53, res.get_data(as_text=True)[:200])
+    # 兩份檔案撞到同一張 PO／SKU：以後面那份為準並提醒
+    files = [(io.BytesIO(open(JUL_XLSX, "rb").read()), "a_7月.xlsx"), (io.BytesIO(open(JUL_XLSX, "rb").read()), "b_7月再一份.xlsx")]
+    pv = client.post("/api/master/import/preview", data={"file": files}, content_type="multipart/form-data").get_json()
+    check("跨檔案重複的 PO／SKU 不會重複算", pv["rows_total"] == 53, str(pv["rows_total"]))
+    check("有提醒哪一份跟前面重複", any("b_7月再一份.xlsx" in w and "重複" in w for w in pv["warnings"]), str(pv["warnings"][-1:]))
+    # 其中一份壞掉：整批不收、點名是哪一份
+    files = [(io.BytesIO(open(JUL_XLSX, "rb").read()), "好的.xlsx"), (io.BytesIO(b"not excel"), "壞的.xlsx")]
+    res = client.post("/api/master/import/preview", data={"file": files}, content_type="multipart/form-data")
+    check("一份壞掉整批不收，錯誤訊息點名檔名", res.status_code == 400 and "壞的.xlsx" in res.get_json()["error"], res.get_data(as_text=True)[:200])
 
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")

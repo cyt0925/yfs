@@ -139,7 +139,7 @@
         <div class="flex-1"><b>從總表匯入主檔</b> — 把總表 Excel 拖到這裡，或點一下選檔。
           <div class="kbd">用標題找欄位：國條／Barcode、箱入數必須有；品類 Category、品牌、永豐料號、品名、COGS 單價、Note、PG code 有就帶。只更新有值的欄位。<b>不用選線別</b>——線別由訂單學。</div></div>
       </div>
-      <input type="file" id="file-prod" accept=".xlsx" class="hidden">
+      <input type="file" id="file-prod" accept=".xlsx" multiple class="hidden">
       <div id="prod-imp-msg" class="text-sm mt-2"></div>
     </div>
     <div class="flex items-center gap-2 flex-wrap mb-4">
@@ -225,8 +225,8 @@
 <dialog id="dlg-import">
   <div class="dlg-h"><b><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">
-    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">跟上傳 OMS 的整合表是同一份。一份檔可以有多個線別、多個月份，系統照每一列的線別與交貨日自己分。</div></div>
-    <input type="file" id="file-import" accept=".xlsx" class="hidden">
+    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">跟上傳 OMS 的整合表是同一份。一份檔可以有多個線別、多個月份，系統照每一列的線別與交貨日自己分；也可以一次拖好幾份（例如 7 月＋8 月）。</div></div>
+    <input type="file" id="file-import" accept=".xlsx" multiple class="hidden">
     <div id="imp-result" class="mt-4 hidden"></div>
   </div>
   <div class="dlg-f">
@@ -358,12 +358,13 @@ async function api(url, opts={}) {
 const J = body => ({ method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
 document.querySelectorAll("dialog [data-close]").forEach(b => b.addEventListener("click", e => e.target.closest("dialog").close()));
 document.querySelectorAll("dialog").forEach(d => d.addEventListener("click", e => { if (e.target === d) d.close(); }));
-function dropzone(el, input, onFile) {
+function dropzone(el, input, onFiles) {
+  // 一次拖好幾個檔也全部收（例如 7 月＋8 月兩份彙總表），交給 onFiles 一整串處理
   el.addEventListener("click", () => input.click());
   el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("dz-active"); });
   el.addEventListener("dragleave", () => el.classList.remove("dz-active"));
-  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("dz-active"); if (e.dataTransfer.files[0]) onFile(e.dataTransfer.files[0]); });
-  input.addEventListener("change", e => { if (e.target.files[0]) onFile(e.target.files[0]); input.value = ""; });
+  el.addEventListener("drop", e => { e.preventDefault(); el.classList.remove("dz-active"); const fs = [...e.dataTransfer.files]; if (fs.length) onFiles(fs); });
+  input.addEventListener("change", e => { const fs = [...e.target.files]; if (fs.length) onFiles(fs); input.value = ""; });
 }
 window.addEventListener("dragover", e => e.preventDefault()); window.addEventListener("drop", e => e.preventDefault());
 
@@ -646,8 +647,8 @@ $("#po-save").addEventListener("click", async () => {
 let pendingBatch = null;
 $("#btn-upload").addEventListener("click", () => { $("#imp-result").classList.add("hidden"); $("#btn-commit").classList.add("hidden"); $("#imp-addmissing-wrap").classList.add("hidden"); pendingBatch = null; $("#dlg-import").showModal(); });
 dropzone($("#dz"), $("#file-import"), previewImport);
-async function previewImport(file) {
-  const fd = new FormData(); fd.append("file", file);
+async function previewImport(files) {
+  const fd = new FormData(); files.forEach(f => fd.append("file", f));
   const box = $("#imp-result"); box.classList.remove("hidden"); box.innerHTML = `<p class="muted">解析中…</p>`;
   let d; try { d = await api("/api/master/import/preview", { method: "POST", body: fd }); }
   catch (e) { box.innerHTML = `<div class="badge bd-bad" style="font-size:13px;padding:8px 12px">${esc(e.message)}</div>`; return; }
@@ -660,12 +661,13 @@ async function previewImport(file) {
   const missing = d.missing_products.map(m => `<tr><td>${esc(m.line) || "—"}</td><td class="mono">${esc(m.barcode)}</td><td>${esc(m.product_name)}</td><td class="num">${m.box_size ?? `<span class="neg">空白</span>`}</td></tr>`).join("");
   box.innerHTML = `
     <div class="flex gap-3 flex-wrap mb-3">
-      <div class="stat"><b>${d.rows_total}</b><span>讀到的品項 · ${d.po_count} 張 PO</span></div>
+      <div class="stat"><b>${d.rows_total}</b><span>讀到的品項 · ${d.po_count} 張 PO${d.files && d.files.length > 1 ? ` · ${d.files.length} 份檔案` : ""}</span></div>
       <div class="stat"><b style="color:var(--ok)">${d.new_count}</b><span>新增</span></div>
       <div class="stat"><b style="color:var(--warn)">${d.updated_count}</b><span>內容有變</span></div>
       <div class="stat"><b class="muted">${d.identical_count}</b><span>沒變（略過）</span></div>
       ${d.removed_count ? `<div class="stat" style="border-color:#fecaca;background:var(--badbg)"><b style="color:var(--bad)">${d.removed_count}</b><span>檔案裡消失的品項</span></div>` : ""}
     </div>
+    ${d.files && d.files.length > 1 ? `<div class="text-sm mb-1">檔案：${d.files.map(f => `<span class="badge bd-gray">${esc(f)}</span>`).join(" ")}</div>` : ""}
     <div class="text-sm mb-1">線別：${lines || "<span class='muted'>沒有線別欄</span>"} <span class="kbd">（檔案原始值：${raws}）</span></div>
     <div class="text-sm mb-2">月份：${months.map(x => `<span class="badge bd-gray">${esc(x)}</span>`).join(" ")}　交貨日 ${d.dates.length} 天</div>
     ${d.warnings.length ? `<div class="card p-3 mb-3 text-sm" style="background:var(--warnbg);border-color:#fcd34d"><b>提醒</b><ul class="list-disc pl-5">${d.warnings.slice(0, 12).map(w => `<li>${esc(w)}</li>`).join("")}${d.warnings.length > 12 ? `<li>…還有 ${d.warnings.length - 12} 則</li>` : ""}</ul></div>` : ""}
@@ -708,12 +710,17 @@ async function loadSummary() {
 
 /* ════════════ ① 商品主檔 ════════════ */
 let productsCache = [];
-dropzone($("#dz-prod"), $("#file-prod"), async file => {
-  const fd = new FormData(); fd.append("file", file); $("#prod-imp-msg").innerHTML = `<span class="muted">匯入中…</span>`;
-  try { const d = await api("/api/master/products/import", { method: "POST", body: fd });
-    $("#prod-imp-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}</span>`;
-    toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`); loadProducts(); }
-  catch (e) { $("#prod-imp-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+dropzone($("#dz-prod"), $("#file-prod"), async files => {
+  // 總表一次丟多份就一份一份匯（後面的會蓋前面的同國條），結果逐份列出來
+  const out = []; $("#prod-imp-msg").innerHTML = `<span class="muted">匯入中…</span>`;
+  for (const file of files) {
+    const fd = new FormData(); fd.append("file", file);
+    try { const d = await api("/api/master/products/import", { method: "POST", body: fd });
+      out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${files.length > 1 ? esc(file.name) + " " : ""}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}</span>`);
+      toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`); }
+    catch (e) { out.push(`<span class="neg">${files.length > 1 ? esc(file.name) + "：" : ""}${esc(e.message)}</span>`); }
+  }
+  $("#prod-imp-msg").innerHTML = out.join("<br>"); loadProducts();
 });
 $("#pq").addEventListener("input", () => { clearTimeout(window._pq); window._pq = setTimeout(loadProducts, 200); });
 $("#prod-line").addEventListener("change", loadProducts);

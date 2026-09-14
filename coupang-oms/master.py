@@ -291,26 +291,58 @@ def _diff_import(conn, rows):
     return new, updated, identical, list(missing.values()), removed
 
 
+def _parse_uploads(uploads):
+    """把多份上傳檔各自 parse_workbook 再合併。回傳 (rows, warnings)；任一份壞掉
+    就回傳 ((錯誤訊息, 400), None)，錯誤訊息點名是哪一份壞的，整批都不收。"""
+    merged, warnings, seen = [], [], {}
+    many = len(uploads) > 1
+    for up in uploads:
+        try:
+            rows, warns = parse_workbook(io.BytesIO(up.read()), up.filename)
+        except ImportError_ as exc:
+            msg = f"「{up.filename}」：{exc}" if many else str(exc)
+            if many:
+                msg += "　（有檔案解析失敗，這次全部都沒匯入；修好再一起丟，或分開丟。）"
+            return (msg, 400), None
+        for w in warns:
+            warnings.append(f"「{up.filename}」{w}" if many else w)
+        dup = 0
+        for r in rows:
+            key = (r["po_number"], r["sku_id"])
+            if key in seen:
+                dup += 1
+                merged = [x for x in merged if (x["po_number"], x["sku_id"]) != key]
+            seen[key] = up.filename
+            r["source_file"] = up.filename
+            merged.append(r)
+        if dup:
+            warnings.append(f"「{up.filename}」有 {dup} 筆 PO／SKU 跟前面的檔案重複，以這份為準。")
+    return merged, warnings
+
+
 @master_bp.route("/api/master/import/preview", methods=["POST"])
 def api_import_preview():
-    upload = request.files.get("file")
-    if upload is None or not upload.filename:
+    """一次可以丟好幾份訂單彙總表（例如 7 月一份、8 月一份）。每份各自解析後
+    合成一批預覽；跨檔案撞到同一個 (PO, SKU) 時以後面那份為準並提醒，跟單一
+    檔案內重複的處理方式一致。"""
+    uploads = [u for u in request.files.getlist("file") if u is not None and u.filename]
+    if not uploads:
         return jsonify({"error": "沒有收到檔案。"}), 400
-    try:
-        rows, warnings = parse_workbook(io.BytesIO(upload.read()), upload.filename)
-    except ImportError_ as exc:
-        return jsonify({"error": str(exc)}), 400
+    rows, warnings = _parse_uploads(uploads)
+    if isinstance(rows, tuple):          # (error message, status)
+        return jsonify({"error": rows[0]}), rows[1]
+    filename = "、".join(u.filename for u in uploads)
     cfg = _line_groups()
     conn = get_conn()
     try:
         new, updated, identical, missing, removed = _diff_import(conn, rows)
         payload = {"rows": rows, "missing_products": missing, "removed": removed,
-                   "filename": upload.filename}
+                   "filename": filename}
         cur = conn.execute(
             """INSERT INTO mst_import_batches
                (filename, operator, rows_total, rows_new, rows_updated, rows_identical,
                 committed, payload_json, created_at) VALUES (?,?,?,?,?,?,0,?,?)""",
-            (upload.filename, _operator(), len(rows), len(new), len(updated), len(identical),
+            (filename, _operator(), len(rows), len(new), len(updated), len(identical),
              json.dumps(payload, ensure_ascii=False), now()))
         conn.commit()
         batch_id = cur.lastrowid
@@ -325,7 +357,8 @@ def api_import_preview():
         warnings.append(f"有 {by_raw['']} 筆沒有「線別」，歸到「{UNCLASSIFIED}」，畫面上會標紅；"
                         "請在訂單明細裡確認這幾筆。")
     return jsonify({
-        "batch_id": batch_id, "filename": upload.filename, "rows_total": len(rows),
+        "batch_id": batch_id, "filename": filename, "files": [u.filename for u in uploads],
+        "rows_total": len(rows),
         "new_count": len(new), "updated_count": len(updated), "identical_count": len(identical),
         "lines_raw": dict(by_raw), "lines": dict(by_group), "dates": dates,
         "po_count": len({r["po_number"] for r in rows}), "warnings": warnings,
