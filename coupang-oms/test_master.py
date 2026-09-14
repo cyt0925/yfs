@@ -69,7 +69,7 @@ def main():
     check("頂端沒有全域的線別選單（線別是篩選，不是模式）", 'id="sel-line"' not in html)
     check("OMS 首頁有「業績總表自動化」按鈕", "業績總表自動化" in client.get("/").get_data(as_text=True))
     meta = client.get("/api/master/lines").get_json()
-    check("還沒有資料時線別群組是空的（不寫死任何名字）", meta["groups"] == [], str(meta["groups"]))
+    check("還沒有資料時線別清單是空的（線別是從資料長出來的）", meta["groups"] == [], str(meta["groups"]))
 
     print("\n【2】① 先匯總表鋪主檔（不問線別）")
     res = upload(client, "/api/master/products/import", MASTER_XLSX)
@@ -93,10 +93,10 @@ def main():
     cm = res.get_json()
     check("寫入 861 筆", cm["inserted"] == 861, str(cm))
     meta = client.get("/api/master/lines").get_json()
-    check("線別群組從資料長出來：寶僑／瑪氏／紙潔／未分類", set(meta["groups"]) == {"寶僑", "瑪氏", "紙潔", "未分類"}, str(meta["groups"]))
+    check("線別從資料長出來：寶僑／瑪氏／紙潔／未分類", set(meta["groups"]) == {"寶僑", "瑪氏", "紙潔", "未分類"}, str(meta["groups"]))
     check("月份清單有 2026-09", "2026-09" in meta["months"])
 
-    print("\n【4】訂單明細：篩選面與線別群組")
+    print("\n【4】訂單明細：篩選面與線別")
     od = orders(client, month="2026-09")
     check("9 月 861 筆全帶出", od["count"] == 861)
     lines = {x["line"]: x["rows"] for x in od["facets"]["lines"]}
@@ -123,7 +123,7 @@ def main():
     check("主檔從訂單學到線別：ARIEL 4987176340863 屬於寶僑", p["line_groups"] == ["寶僑"], str(p["line_groups"]))
     p_never = next(x for x in prods if x["barcode"] == "4987176340894")
     check("沒出現在任何訂單的商品，線別空著（尚未出現在訂單）", p_never["line_groups"] == [])
-    check("主檔可用線別群組篩", all("紙潔" in x["line_groups"] for x in client.get("/api/master/products?line=紙潔").get_json()["products"]))
+    check("主檔可用線別篩", all("紙潔" in x["line_groups"] for x in client.get("/api/master/products?line=紙潔").get_json()["products"]))
 
     print("\n【5】就地編輯與防互蓋")
     row = next(r for r in od_pg["rows"] if r["cases"] is not None and r["box_size"] and r["box_size"] > 1)
@@ -197,12 +197,11 @@ def main():
     row7 = next(r for r in orders(client, month="2026-07")["rows"] if r["barcode"] == "6903148182406")
     check("62 袋 ÷ 24 = 2.5833 箱，不湊整", abs(row7["cases"] - 2.5833) < 1e-3)
 
-    print("\n【9】線別群組設定可改")
-    res = jput(client, "/api/master/line_groups", {"rules": [{"prefix": "CPG", "group": "紙潔"}], "map": {"瑪氏": "MARS"}})
-    check("把瑪氏指定成 MARS", res.status_code == 200)
-    check("篩選面跟著變", "MARS" in {x["line"] for x in orders(client, month="2026-09")["facets"]["lines"]})
-    jput(client, "/api/master/line_groups", {"rules": [{"prefix": "CPG", "group": "紙潔"}], "map": {}})
-    check("改回來", "瑪氏" in {x["line"] for x in orders(client, month="2026-09")["facets"]["lines"]})
+    print("\n【9】線別顯示名寫死，沒有設定面板")
+    check("線別群組設定 API 已拿掉", client.get("/api/master/line_groups").status_code == 404)
+    check("頁面上沒有「線別群組」按鈕", "線別群組" not in client.get("/master").get_data(as_text=True))
+    facet_lines = {x["line"] for x in orders(client, month="2026-09")["facets"]["lines"]}
+    check("CPG-潔品／CPG-紙品 在畫面上叫紙潔、原名不出現", "紙潔" in facet_lines and not any(l.startswith("CPG") for l in facet_lines), str(facet_lines))
 
     print("\n【10】總表（現算）")
     s = client.get("/api/master/summary?line=紙潔&month=2026-09").get_json()

@@ -114,7 +114,6 @@
       </div>
     </div>
     <div class="flex-1"></div>
-    <button id="btn-groups" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)" title="哪些原始線別要合併顯示（例如 CPG-潔品＋CPG-紙品 → 紙潔）"><i class="bi bi-diagram-3"></i> 線別群組</button>
     <button id="btn-logs" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-clock-history"></i> 修改歷程</button>
 {% if is_admin %}
     <button id="btn-reset" class="btn btn-o btn-sm" style="background:transparent;color:#fecaca;border-color:#f87171" title="清掉訂單明細或商品主檔（只有管理員看得到）"><i class="bi bi-trash3"></i> 清除資料</button>
@@ -230,7 +229,7 @@
     <div id="imp-result" class="mt-4 hidden"></div>
   </div>
   <div class="dlg-f">
-    <label id="imp-addmissing-wrap" class="hidden flex items-center gap-2 text-sm mr-auto"><input type="checkbox" id="imp-addmissing" checked> 主檔沒有的國條，先用檔案裡的箱入數建進主檔（會標「請核對」，Note 留空）</label>
+    <label id="imp-addmissing-wrap" class="hidden flex items-center gap-2 text-sm mr-auto"><input type="checkbox" id="imp-addmissing" checked> 總表裡還沒有的商品，先用檔案裡的箱入數建進主檔（會標「請核對」，Note 留空）</label>
     <button data-close class="btn btn-g">取消</button>
     <button id="btn-commit" class="btn btn-p hidden"><i class="bi bi-check2-circle"></i> 確認匯入</button>
   </div>
@@ -278,18 +277,6 @@
     <label class="col-span-2">Note（總表 Note，會放進報價檔備註） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
   </div>
   <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="btn-prod-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div>
-</dialog>
-
-<!-- 線別群組 -->
-<dialog id="dlg-groups" style="max-width:640px">
-  <div class="dlg-h"><b><i class="bi bi-diagram-3"></i> 線別群組</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
-  <div class="dlg-b text-sm space-y-3">
-    <p>訂單彙總表每一列的「線別」是原始值（例如 CPG-潔品、CPG-紙品）。這裡決定畫面上要把它們合併成哪個名字。原始值照實保留在每一列。</p>
-    <div><b>規則</b>：原始線別以 <input id="g-prefix" class="txt" style="width:120px;display:inline-block"> 開頭 → 歸 <input id="g-group" class="txt" style="width:120px;display:inline-block"> <span class="kbd">預設 CPG → 紙潔</span></div>
-    <div><b>逐一指定</b>（優先於規則）</div>
-    <div class="tbl-wrap" style="max-height:300px"><table class="m" id="g-table"></table></div>
-  </div>
-  <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="g-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div>
 </dialog>
 
 <!-- 修改歷程 -->
@@ -673,7 +660,7 @@ async function previewImport(files) {
     ${d.warnings.length ? `<div class="card p-3 mb-3 text-sm" style="background:var(--warnbg);border-color:#fcd34d"><b>提醒</b><ul class="list-disc pl-5">${d.warnings.slice(0, 12).map(w => `<li>${esc(w)}</li>`).join("")}${d.warnings.length > 12 ? `<li>…還有 ${d.warnings.length - 12} 則</li>` : ""}</ul></div>` : ""}
     ${d.removed && d.removed.length ? `<b class="text-sm" style="color:var(--bad)">這些 PO 在檔案裡，但底下這些品項不見了（${d.removed.length}）— 匯入後會留著、出貨數量歸 0</b><div class="tbl-wrap mb-3" style="max-height:200px"><table class="m"><thead><tr><th>PO</th><th>國條</th><th>品名</th><th class="num">下單</th><th class="num">目前出貨</th></tr></thead><tbody>${d.removed.map(x => `<tr><td class="mono">${esc(x.po_number)}</td><td class="mono">${esc(x.barcode)}</td><td>${esc(x.product_name)}</td><td class="num">${fmt(x.qty_coupang)}</td><td class="num">${fmt(x.qty_ship)}</td></tr>`).join("")}</tbody></table></div>` : ""}
     ${changes ? `<b class="text-sm">內容有變的品項</b><div class="tbl-wrap mb-3" style="max-height:240px"><table class="m"><thead><tr><th>PO</th><th>國條</th><th>品名</th><th>變動</th></tr></thead><tbody>${changes}</tbody></table></div>` : ""}
-    ${missing ? `<b class="text-sm">主檔還沒有的國條（${d.missing_products.length}）</b><div class="tbl-wrap" style="max-height:200px"><table class="m"><thead><tr><th>線別</th><th>國條</th><th>品名</th><th class="num">整合表箱入數</th></tr></thead><tbody>${missing}</tbody></table></div>` : `<div class="text-sm" style="color:var(--ok)"><i class="bi bi-check-circle"></i> 所有國條主檔都有</div>`}`;
+    ${missing ? `<b class="text-sm">總表裡還沒有的商品（${d.missing_products.length}）</b><div class="tbl-wrap" style="max-height:200px"><table class="m"><thead><tr><th>線別</th><th>國條</th><th>品名</th><th class="num">整合表箱入數</th></tr></thead><tbody>${missing}</tbody></table></div>` : `<div class="text-sm" style="color:var(--ok)"><i class="bi bi-check-circle"></i> 所有國條主檔都有</div>`}`;
   $("#btn-commit").classList.remove("hidden"); $("#imp-addmissing-wrap").classList.toggle("hidden", !missing);
 }
 $("#btn-commit").addEventListener("click", async () => {
@@ -730,7 +717,7 @@ async function loadProducts() {
   const orph = $("#orphans");
   if (d.orphans.length) {
     orph.classList.remove("hidden");
-    orph.innerHTML = `<b class="text-sm" style="color:var(--warn)"><i class="bi bi-exclamation-triangle-fill"></i> 訂單裡有、主檔還沒有的國條（${d.orphans.length}）</b><p class="kbd mb-2">沒建主檔的國條，箱數用整合表自帶的箱入數算，品類／Note／單價會是空的。按「加入主檔」先建起來，之後再核對。</p>
+    orph.innerHTML = `<b class="text-sm" style="color:var(--warn)"><i class="bi bi-exclamation-triangle-fill"></i> 總表裡還沒有的商品（${d.orphans.length}）</b><p class="kbd mb-2">訂單有下、但總表查不到這些商品，所以箱入數只能先用整合表自帶的，品類／Note／單價會是空的（就是以前 VLOOKUP 出 #N/A 的那些）。請補進總表後重匯，或按「加入主檔」先建起來。</p>
       <div class="tbl-wrap" style="max-height:220px"><table class="m"><thead><tr><th>線別</th><th>國條</th><th>品名</th><th>品牌</th><th class="num">整合表箱入數</th><th class="num">訂單筆數</th><th></th></tr></thead><tbody>
       ${d.orphans.map(o => `<tr><td><span class="line-tag">${esc(o.line_group)}</span></td><td class="mono">${esc(o.barcode)}</td><td>${esc(o.product_name)}</td><td>${esc(o.brand)}</td><td class="num">${o.box_size_file ?? `<span class="neg">空白</span>`}</td><td class="num">${o.order_rows}</td><td><button class="btn btn-o btn-sm add-orphan" data-o='${esc(JSON.stringify(o))}'><i class="bi bi-plus"></i> 加入主檔</button></td></tr>`).join("")}</tbody></table></div>`;
     orph.querySelectorAll(".add-orphan").forEach(b => b.addEventListener("click", () => { const o = JSON.parse(b.dataset.o); openProductDialog({ barcode: o.barcode, sku_id: o.sku_id, yf_sku: o.yf_sku, brand: o.brand, product_name: o.product_name, box_size: o.box_size_file }); }));
@@ -763,19 +750,6 @@ $("#btn-prod-add").addEventListener("click", () => openProductDialog(null));
 $("#btn-prod-save").addEventListener("click", async () => {
   try { await api("/api/master/products", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ barcode: $("#p-barcode").value, box_size: $("#p-box").value, sku_id: $("#p-sku").value, yf_sku: $("#p-yf").value, brand: $("#p-brand").value, product_name: $("#p-name").value, note: $("#p-note").value, category: $("#p-cat").value, cost_price: $("#p-cost").value, pgcode: $("#p-pg").value }) });
     toast("主檔已儲存"); $("#dlg-prod").close(); loadProducts(); } catch (e) { toast(e.message, "err"); }
-});
-
-/* ── 線別群組 ── */
-$("#btn-groups").addEventListener("click", async () => {
-  const d = await api("/api/master/line_groups");
-  const rule = d.rules[0] || { prefix: "", group: "" }; $("#g-prefix").value = rule.prefix || ""; $("#g-group").value = rule.group || "";
-  $("#g-table").innerHTML = `<thead><tr><th>檔案裡的原始線別</th><th>目前歸到</th><th>指定為（留空 = 照規則）</th></tr></thead><tbody>${d.raw_lines.map(r => `<tr><td>${esc(r.raw) || "（空白）"}</td><td><span class="line-tag">${esc(r.group)}</span></td><td><input class="txt g-map" data-raw="${esc(r.raw)}" value="${esc(d.map[r.raw] || "")}" placeholder="${esc(r.group)}"></td></tr>`).join("") || `<tr><td colspan="3" class="muted p-4 text-center">還沒有任何訂單，匯入後這裡會列出檔案裡出現過的線別</td></tr>`}</tbody>`;
-  $("#dlg-groups").showModal();
-});
-$("#g-save").addEventListener("click", async () => {
-  const map = {}; $("#g-table").querySelectorAll(".g-map").forEach(i => { if (i.value.trim()) map[i.dataset.raw] = i.value.trim(); });
-  const rules = $("#g-prefix").value.trim() ? [{ prefix: $("#g-prefix").value.trim(), group: $("#g-group").value.trim() }] : [];
-  try { await api("/api/master/line_groups", J({ map, rules })); toast("線別群組已儲存"); $("#dlg-groups").close(); await loadMeta(); refresh(); } catch (e) { toast(e.message, "err"); }
 });
 
 /* ── 修改歷程 ── */

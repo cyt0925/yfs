@@ -18,9 +18,9 @@ OP 原本的做法（見 Word 需求文件）：
      人改過的欄位（出貨數量、交貨日、備註）立旗標，再匯入不覆蓋。
   ③ 總表：不存快照，每次現算。箱數 = 出貨數量 ÷ 箱入數，依交貨日 + 國條加總。
 
-線別群組：檔案裡的原始線別（CPG-潔品、CPG-紙品）照實保留在每一列，畫面上
-篩選、總表、匯出用「群組」（CPG-* → 紙潔）。對照存在 app_settings，可在畫面上改，
-預設規則是「CPG 開頭歸紙潔、空白歸未分類、其他照原名」。
+線別顯示名：檔案裡的原始線別（CPG-潔品、CPG-紙品）照實保留在每一列，畫面上
+篩選、總表、匯出用顯示名（CPG-* → 紙潔、空白 → 未分類、其他照原名）。規則寫死在
+LINE_GROUPS_DEFAULT，不做設定面板。
 """
 import collections
 import datetime as _dt
@@ -41,10 +41,9 @@ from normalize import norm_date, norm_decimal, norm_int, norm_key, norm_text
 master_bp = Blueprint("master", __name__)
 
 UNCLASSIFIED = "未分類"
-LINE_GROUPS_KEY = "mst_line_groups"
 LINE_GROUPS_DEFAULT = {
-    "rules": [{"prefix": "CPG", "group": "紙潔"}],   # 原始線別以這個開頭 → 群組
-    "map": {},                                       # 原始線別 → 群組（明確指定，優先於 rules）
+    "rules": [{"prefix": "CPG", "group": "紙潔"}],   # 原始線別以這個開頭 → 畫面上叫這個名字
+    "map": {},                                       # 原始線別 → 顯示名（明確指定，優先於 rules）
 }
 
 COUPANG_FIELDS = {
@@ -135,17 +134,17 @@ def _md(date_str):
         return date_str or ""
 
 
-# ---------------------------------------------------------------- 線別群組
+# ---------------------------------------------------------------- 線別顯示名
 
 def _line_groups():
-    cfg = db.load_setting(LINE_GROUPS_KEY, LINE_GROUPS_DEFAULT)
-    if not isinstance(cfg, dict):
-        cfg = dict(LINE_GROUPS_DEFAULT)
-    cfg.setdefault("rules", []); cfg.setdefault("map", {})
-    return cfg
+    """線別的顯示規則寫死，不做設定面板（做過，同事看不懂，拿掉了）。
+    要改規則直接改 LINE_GROUPS_DEFAULT。"""
+    return LINE_GROUPS_DEFAULT
 
 
 def _group_of(raw, cfg=None):
+    """檔案裡的原始線別 → 畫面上的線別名。CPG-潔品／CPG-紙品 → 紙潔；空白 → 未分類；
+    其他（寶僑、瑪氏…）照原名。"""
     raw = norm_text(raw)
     if not raw:
         return UNCLASSIFIED
@@ -165,32 +164,6 @@ def _raw_lines_seen(conn):
     for r in conn.execute("SELECT lines_seen FROM mst_products WHERE lines_seen != ''").fetchall():
         seen.update(_split_lines(r["lines_seen"]))
     return sorted(seen)
-
-
-@master_bp.route("/api/master/line_groups")
-def api_line_groups():
-    cfg = _line_groups()
-    conn = get_conn()
-    try:
-        raws = _raw_lines_seen(conn)
-    finally:
-        conn.close()
-    return jsonify({
-        "rules": cfg["rules"], "map": cfg["map"],
-        "raw_lines": [{"raw": r or "", "group": _group_of(r, cfg)} for r in raws],
-        "groups": sorted({_group_of(r, cfg) for r in raws}),
-    })
-
-
-@master_bp.route("/api/master/line_groups", methods=["PUT"])
-def api_save_line_groups():
-    payload = request.get_json(silent=True) or {}
-    mapping = {norm_text(k): norm_text(v) for k, v in (payload.get("map") or {}).items() if norm_text(k)}
-    rules = [{"prefix": norm_text(r.get("prefix")), "group": norm_text(r.get("group"))}
-             for r in (payload.get("rules") or []) if norm_text(r.get("prefix"))]
-    cfg = {"rules": rules, "map": mapping}
-    db.save_setting(LINE_GROUPS_KEY, cfg)
-    return jsonify({"ok": True, **cfg})
 
 
 # ---------------------------------------------------------------- 頁面
@@ -578,7 +551,7 @@ def api_orders():
     finally:
         conn.close()
 
-    # 篩選面在「月份」範圔上算、線別群組除外也一樣，勾了什麼其他選項不會消失
+    # 篩選面在「月份」範圔上算、線別除外也一樣，勾了什麼其他選項不會消失
     f_lines = collections.Counter(); f_dates = collections.OrderedDict()
     f_pos = collections.OrderedDict(); f_brands = collections.Counter(); f_wh = collections.Counter()
     for o in rows:
