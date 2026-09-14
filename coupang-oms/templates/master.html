@@ -782,7 +782,7 @@ async function loadProducts() {
   $("#prod-table").innerHTML = `<thead><tr><th>國條</th><th>線別</th><th>SKU ID</th><th>永豐料號</th><th>品類</th><th>品牌</th><th>品名</th><th class="num">箱入數</th><th class="num">單價(含稅)</th><th>Note</th><th class="num">訂單筆數</th><th>最後更新</th><th></th></tr></thead><tbody>
     ${d.products.length ? d.products.map(p => `<tr data-id="${p.id}">
       <td class="mono">${esc(p.barcode)}</td>
-      <td>${p.line_groups.length ? p.line_groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join(" ") : `<span class="kbd">尚未出現在訂單</span>`}</td>
+      <td>${p.line_groups.length ? p.line_groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join(" ") : (p.order_rows ? `<span class="line-tag" style="color:var(--bad)">未分類</span>` : `<span class="kbd">尚未出現在訂單</span>`)}</td>
       <td class="mono">${esc(p.sku_id)}</td><td class="mono">${esc(p.yf_sku)}</td><td>${esc(p.category || "")}</td><td>${esc(p.brand)}</td>
       <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.product_name)}">${esc(p.product_name)}</td>
       <td class="num">${p.box_size ? fmt(p.box_size) : `<span class="neg">缺</span>`}${p.auto_created ? ` <span class="badge bd-warn" title="匯入訂單時用整合表的箱入數自動建的，還沒人核對；存一次或重匯總表就解除">請核對</span>` : ""}</td>
