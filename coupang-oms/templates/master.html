@@ -135,10 +135,18 @@
     <div class="card p-4 mb-4">
       <div id="dz-prod" class="dropzone compact">
         <i class="bi bi-file-earmark-arrow-up text-2xl"></i>
-        <div class="flex-1"><b>從總表匯入主檔</b> — 把總表 Excel 拖到這裡，或點一下選檔。
+        <div class="flex-1"><b>從總表匯入主檔</b> — 把總表 Excel 拖到這裡，或點一下選檔，可以分幾次加，加完按「匯入主檔」。
           <div class="kbd">用標題找欄位：國條／Barcode、箱入數必須有；品類 Category、品牌、永豐料號、品名、COGS 單價、Note、PG code 有就帶。只更新有值的欄位。<b>不用選線別</b>——線別由訂單學。</div></div>
       </div>
       <input type="file" id="file-prod" accept=".xlsx" multiple class="hidden">
+      <div id="prod-files" class="mt-2 hidden">
+        <div class="flex items-center gap-2 flex-wrap text-sm">
+          <b>已加入的檔案</b><span class="kbd">再拖或再點一次可以繼續加（可以換資料夾），加完按「匯入主檔」</span>
+          <button id="prod-files-clear" class="btn btn-g btn-sm" style="margin-left:auto"><i class="bi bi-x-circle"></i> 全部移除</button>
+          <button id="prod-files-go" class="btn btn-p btn-sm"><i class="bi bi-box-arrow-in-down"></i> 匯入主檔</button>
+        </div>
+        <div id="prod-files-list" class="flex gap-2 flex-wrap mt-2"></div>
+      </div>
       <div id="prod-imp-msg" class="text-sm mt-2"></div>
     </div>
     <div class="flex items-center gap-2 flex-wrap mb-4">
@@ -723,8 +731,23 @@ async function loadSummary() {
 
 /* ════════════ ① 商品主檔 ════════════ */
 let productsCache = [];
-dropzone($("#dz-prod"), $("#file-prod"), async files => {
-  // 總表一次丟多份就一份一份匯（後面的會蓋前面的同國條），結果逐份列出來
+/* 總表也是先加進清單，按「匯入主檔」才一份一份寫進去（後面的會蓋前面的同國條） */
+let stagedProd = [];
+function renderStagedProd() {
+  $("#prod-files").classList.toggle("hidden", !stagedProd.length);
+  $("#prod-files-list").innerHTML = stagedProd.map((f, i) => `<span class="chip" style="cursor:default"><i class="bi bi-file-earmark-excel"></i> ${esc(f.name)} <span class="muted">${(f.size / 1024).toFixed(0)} KB</span> <button data-i="${i}" class="rm-staged-prod" title="移除這個檔" style="margin-left:4px;color:var(--bad)"><i class="bi bi-x-lg"></i></button></span>`).join("");
+  $("#prod-files-list").querySelectorAll(".rm-staged-prod").forEach(b => b.addEventListener("click", () => { stagedProd.splice(Number(b.dataset.i), 1); renderStagedProd(); }));
+}
+dropzone($("#dz-prod"), $("#file-prod"), files => {
+  let dup = 0;
+  files.forEach(f => { if (stagedProd.some(x => x.name === f.name && x.size === f.size)) dup++; else stagedProd.push(f); });
+  if (dup) toast(`${dup} 個檔案已經在清單裡，略過`, "err");
+  $("#prod-imp-msg").innerHTML = ""; renderStagedProd();
+});
+$("#prod-files-clear").addEventListener("click", () => { stagedProd = []; renderStagedProd(); });
+$("#prod-files-go").addEventListener("click", async () => {
+  if (!stagedProd.length) return;
+  const files = stagedProd.slice(); $("#prod-files-go").disabled = true;
   const out = []; $("#prod-imp-msg").innerHTML = `<span class="muted">匯入中…</span>`;
   for (const file of files) {
     const fd = new FormData(); fd.append("file", file);
@@ -733,6 +756,7 @@ dropzone($("#dz-prod"), $("#file-prod"), async files => {
       toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`); }
     catch (e) { out.push(`<span class="neg">${files.length > 1 ? esc(file.name) + "：" : ""}${esc(e.message)}</span>`); }
   }
+  $("#prod-files-go").disabled = false; stagedProd = []; renderStagedProd();
   $("#prod-imp-msg").innerHTML = out.join("<br>"); loadProducts();
 });
 $("#pq").addEventListener("input", () => { clearTimeout(window._pq); window._pq = setTimeout(loadProducts, 200); });
