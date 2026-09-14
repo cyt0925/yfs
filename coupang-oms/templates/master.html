@@ -224,8 +224,15 @@
 <dialog id="dlg-import">
   <div class="dlg-h"><b><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">
-    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">跟上傳 OMS 的整合表是同一份。一份檔可以有多個線別、多個月份，系統照每一列的線別與交貨日自己分；也可以一次拖好幾份（例如 7 月＋8 月）。</div></div>
+    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">跟上傳 OMS 的整合表是同一份。一份檔可以有多個線別、多個月份，系統照每一列的線別與交貨日自己分；可以一次拖好幾份，也可以分幾次從不同資料夾加，加完再按確認匯入。</div></div>
     <input type="file" id="file-import" accept=".xlsx" multiple class="hidden">
+    <div id="imp-files" class="mt-3 hidden">
+      <div class="flex items-center gap-2 flex-wrap text-sm">
+        <b>已加入的檔案</b><span class="kbd">再拖或再點一次可以繼續加（可以換資料夾），加完按右下「確認匯入」</span>
+        <button id="imp-files-clear" class="btn btn-g btn-sm" style="margin-left:auto"><i class="bi bi-x-circle"></i> 全部移除</button>
+      </div>
+      <div id="imp-files-list" class="flex gap-2 flex-wrap mt-2"></div>
+    </div>
     <div id="imp-result" class="mt-4 hidden"></div>
   </div>
   <div class="dlg-f">
@@ -632,8 +639,27 @@ $("#po-save").addEventListener("click", async () => {
 
 /* ── 匯入訂單 ── */
 let pendingBatch = null;
-$("#btn-upload").addEventListener("click", () => { $("#imp-result").classList.add("hidden"); $("#btn-commit").classList.add("hidden"); $("#imp-addmissing-wrap").classList.add("hidden"); pendingBatch = null; $("#dlg-import").showModal(); });
-dropzone($("#dz"), $("#file-import"), previewImport);
+$("#btn-upload").addEventListener("click", () => { stagedFiles = []; renderStaged(); $("#imp-result").classList.add("hidden"); $("#btn-commit").classList.add("hidden"); $("#imp-addmissing-wrap").classList.add("hidden"); pendingBatch = null; $("#dlg-import").showModal(); });
+/* 檔案先放進暫存清單，可以分好幾次、從不同資料夾加；每加一次就把清單裡的全部重新解析一遍，
+   預覽永遠是「目前清單」的結果，按確認匯入才真的寫進去。 */
+let stagedFiles = [];
+function renderStaged() {
+  $("#imp-files").classList.toggle("hidden", !stagedFiles.length);
+  $("#imp-files-list").innerHTML = stagedFiles.map((f, i) => `<span class="chip" style="cursor:default"><i class="bi bi-file-earmark-excel"></i> ${esc(f.name)} <span class="muted">${(f.size / 1024).toFixed(0)} KB</span> <button data-i="${i}" class="rm-staged" title="移除這個檔" style="margin-left:4px;color:var(--bad)"><i class="bi bi-x-lg"></i></button></span>`).join("");
+  $("#imp-files-list").querySelectorAll(".rm-staged").forEach(b => b.addEventListener("click", () => { stagedFiles.splice(Number(b.dataset.i), 1); stagedChanged(); }));
+}
+function stagedChanged() {
+  renderStaged();
+  if (!stagedFiles.length) { $("#imp-result").classList.add("hidden"); $("#btn-commit").classList.add("hidden"); $("#imp-addmissing-wrap").classList.add("hidden"); pendingBatch = null; return; }
+  previewImport(stagedFiles);
+}
+dropzone($("#dz"), $("#file-import"), files => {
+  let dup = 0;
+  files.forEach(f => { if (stagedFiles.some(x => x.name === f.name && x.size === f.size)) dup++; else stagedFiles.push(f); });
+  if (dup) toast(`${dup} 個檔案已經在清單裡，略過`, "err");
+  stagedChanged();
+});
+$("#imp-files-clear").addEventListener("click", () => { stagedFiles = []; stagedChanged(); });
 async function previewImport(files) {
   const fd = new FormData(); files.forEach(f => fd.append("file", f));
   const box = $("#imp-result"); box.classList.remove("hidden"); box.innerHTML = `<p class="muted">解析中…</p>`;
@@ -667,7 +693,7 @@ $("#btn-commit").addEventListener("click", async () => {
   if (!pendingBatch) return; $("#btn-commit").disabled = true;
   try { const d = await api("/api/master/import/commit", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ batch_id: pendingBatch, add_missing_products: $("#imp-addmissing").checked }) });
     toast(`匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.removed ? `，${d.removed} 筆品項在檔案裡消失（已歸 0 保留）` : ""}${d.products_added ? `，主檔新增 ${d.products_added} 筆` : ""}`);
-    $("#dlg-import").close(); await loadMeta(); refresh(); }
+    stagedFiles = []; renderStaged(); $("#dlg-import").close(); await loadMeta(); refresh(); }
   catch (e) { toast(e.message, "err"); } finally { $("#btn-commit").disabled = false; }
 });
 
