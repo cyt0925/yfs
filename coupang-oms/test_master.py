@@ -247,6 +247,39 @@ def main():
     check("PO 的歷程含改期、出貨數量、備註", {l["field"] for l in logs} >= {"delivery_date", "qty_ship", "remarks"})
     check("歷程可用關鍵字查", len(client.get("/api/master/logs?q=打單缺貨").get_json()["logs"]) >= 1)
 
+    print("\n【12b】清除資料（只有管理員）")
+    before_orders = orders(client, month="2026-09")["count"]
+    before_prods = len(client.get("/api/master/products").get_json()["products"])
+    check("清之前有訂單也有主檔", before_orders > 0 and before_prods > 0)
+    app_module._write_users(app_module.get_users(), {"Jerry"})   # 小真暫時不是管理員
+    res = client.post("/api/master/reset", json={"confirm": "清空資料"})
+    check("不是管理員 → 403", res.status_code == 403, str(res.status_code))
+    app_module._write_users(app_module.get_users(), {"Jerry", "小真"})
+    res = client.post("/api/master/reset", json={"confirm": "清空"})
+    check("沒照著打「清空資料」→ 400", res.status_code == 400)
+    res = client.post("/api/master/reset", json={"confirm": "清空資料", "orders": False, "products": False})
+    check("一個範圍都沒勾 → 400", res.status_code == 400)
+    check("擋掉的那幾次什麼都沒清", orders(client, month="2026-09")["count"] == before_orders)
+    res = client.post("/api/master/reset", json={"confirm": "清空資料", "orders": True, "products": False, "keep_logs": True})
+    check("清訂單明細成功", res.status_code == 200 and res.get_json()["ok"], res.get_data(as_text=True))
+    check("訂單清空了", orders(client, month="2026-09")["count"] == 0)
+    check("主檔沒被動到", len(client.get("/api/master/products").get_json()["products"]) == before_prods)
+    logs_after = client.get("/api/master/logs?q=清除資料").get_json()["logs"]
+    check("保留歷程時多記一筆「清除資料」系統紀錄", any(l["field"] == "reset" and l["source"] == "system" and l["operator"] == "小真" for l in logs_after))
+    check("舊歷程還在", len(client.get("/api/master/logs?q=打單缺貨").get_json()["logs"]) >= 1)
+    check("月份清單變空、線別還在（線別是主檔學來的）", client.get("/api/master/lines").get_json()["months"] == [] and client.get("/api/master/lines").get_json()["groups"] != [])
+    res = client.post("/api/master/reset", json={"confirm": "清空資料", "orders": False, "products": True})
+    check("再清主檔（含歷程）", res.status_code == 200 and "商品主檔" in res.get_json()["message"])
+    check("主檔清空了", client.get("/api/master/products").get_json()["products"] == [])
+    check("歷程一併清空", client.get("/api/master/logs").get_json()["logs"] == [])
+    check("主檔也清了之後線別下拉才變空", client.get("/api/master/lines").get_json()["groups"] == [])
+    # 清完再匯一次要能照常用，才算真的清乾淨、沒留下卡住的殘骸
+    res = upload(client, "/api/master/products/import", MASTER_XLSX)
+    check("清完主檔可以重新匯總表", res.status_code == 200, res.get_data(as_text=True)[:200])
+    res = upload(client, "/api/master/import/preview", SEP_XLSX)
+    pv = res.get_json(); res = client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True})
+    check("清完訂單可以重新匯訂單彙總表", res.status_code == 200 and orders(client, month="2026-09")["count"] > 0, res.get_data(as_text=True)[:200])
+
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")
         print(f"\n通過 {len(PASS)} 項，失敗 {len(FAIL)} 項")

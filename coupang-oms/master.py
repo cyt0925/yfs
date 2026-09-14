@@ -73,6 +73,14 @@ def _operator():
     return session.get("user", "")
 
 
+def _is_admin():
+    """管理員名單由訂單管理系統維護（設定 → 帳號），這裡直接借用，不另開一套。
+    app.py 啟動時就 import 了本模組，所以這裡不能在檔頭 import app（會繞圈），
+    等到真的被呼叫時再拿即可。"""
+    import app as _app
+    return _app.is_admin()
+
+
 def _rows(cur):
     return [dict(r) for r in cur.fetchall()]
 
@@ -193,6 +201,7 @@ def master_page():
             if os.path.exists(os.path.join(os.path.dirname(__file__), "static", "logo_master.png"))
             else "logo.png")
     return render_template("master.html", logo_file=logo, logged_in_user=_operator(),
+                           is_admin=_is_admin(),
                            build_version=current_app.config.get("BUILD_VERSION", ""))
 
 
@@ -1208,6 +1217,56 @@ def api_export_daily():
 
 
 # ---------------------------------------------------------------- 歷程
+
+@master_bp.route("/api/master/reset", methods=["POST"])
+def api_reset():
+    """清除資料，跟訂單管理系統的「清空訂單資料」同一套規矩：只有管理員、
+    要照著打「清空資料」四個字、清之前先自動備份（PostgreSQL 模式由 Supabase
+    每日備份頂著，見 db.backup_db）。
+
+    分兩個範圍讓人勾：訂單明細（連匯入預覽的暫存一起）、商品主檔（連配額）。
+    最常見是「試用完把測試訂單清掉，主檔留著繼續用」，所以主檔預設不勾。
+    修改歷程預設一起清；勾「保留」時會多寫一筆系統紀錄，之後查得到這件事。"""
+    if not _is_admin():
+        return jsonify({"error": "只有管理員可以清除資料。"}), 403
+    payload = request.get_json(silent=True) or {}
+    if norm_text(payload.get("confirm")) != "清空資料":
+        return jsonify({"error": "請照著輸入「清空資料」四個字再確認。"}), 400
+    clear_orders = bool(payload.get("orders", True))
+    clear_products = bool(payload.get("products", False))
+    keep_logs = bool(payload.get("keep_logs", False))
+    if not clear_orders and not clear_products:
+        return jsonify({"error": "至少要勾一個要清的範圍。"}), 400
+
+    backup = db.backup_db("mst_reset")
+    conn = get_conn()
+    try:
+        counts = {}
+        for key, table in (("orders", "mst_orders"), ("products", "mst_products"),
+                           ("quotas", "mst_quotas"), ("logs", "mst_logs")):
+            counts[key] = conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+        parts = []
+        if clear_orders:
+            conn.execute("DELETE FROM mst_orders")
+            conn.execute("DELETE FROM mst_import_batches")
+            parts.append(f"訂單明細 {counts['orders']} 筆")
+        if clear_products:
+            conn.execute("DELETE FROM mst_quotas")
+            conn.execute("DELETE FROM mst_products")
+            parts.append(f"商品主檔 {counts['products']} 筆")
+        if keep_logs:
+            _log(conn, "", "", "", "", "reset", "清除資料", "、".join(parts), "已清空",
+                 _operator(), "system", "管理員手動清除，修改歷程保留")
+        else:
+            conn.execute("DELETE FROM mst_logs")
+        conn.commit()
+    finally:
+        conn.close()
+
+    tail = "，修改歷程保留" if keep_logs else "，修改歷程一併清除"
+    note = f"（清空前已自動備份：{os.path.basename(backup)}）" if backup else ""
+    return jsonify({"ok": True, "message": f"已清除 {'、'.join(parts)}{tail}。{note}"})
+
 
 @master_bp.route("/api/master/logs")
 def api_logs():

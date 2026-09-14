@@ -28,6 +28,8 @@
   .btn-p { background:var(--b700); color:#fff; } .btn-p:hover { background:var(--b800); }
   .btn-o { background:#fff; color:var(--b800); border-color:var(--b200); } .btn-o:hover { background:var(--b50); }
   .btn-g { background:#fff; color:var(--ink2); border-color:var(--line); } .btn-g:hover { background:#f8fafc; }
+  .btn-r { background:#dc2626; color:#fff; border-color:#dc2626; } .btn-r:hover { background:#b91c1c; }
+  .btn-r:disabled { background:#fca5a5; border-color:#fca5a5; cursor:not-allowed; }
   .btn-sm { padding:4px 10px; font-size:12.5px; }
   .btn-danger { color:var(--bad); border-color:#fecaca; background:#fff; } .btn-danger:hover { background:var(--badbg); }
   .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:12.5px; border:1px solid var(--b200); background:var(--b50); color:var(--b800); cursor:pointer; user-select:none; }
@@ -114,6 +116,9 @@
     <div class="flex-1"></div>
     <button id="btn-groups" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)" title="哪些原始線別要合併顯示（例如 CPG-潔品＋CPG-紙品 → 紙潔）"><i class="bi bi-diagram-3"></i> 線別群組</button>
     <button id="btn-logs" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-clock-history"></i> 修改歷程</button>
+{% if is_admin %}
+    <button id="btn-reset" class="btn btn-o btn-sm" style="background:transparent;color:#fecaca;border-color:#f87171" title="清掉訂單明細或商品主檔（只有管理員看得到）"><i class="bi bi-trash3"></i> 清除資料</button>
+{% endif %}
     <span class="text-xs" style="color:var(--b200)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
     <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
   </div>
@@ -294,6 +299,35 @@
     <div class="flex gap-2 mb-3"><input id="lg-q" class="txt" style="width:300px" placeholder="搜 PO、國條、操作者、欄位…"><button id="lg-go" class="btn btn-o btn-sm">查詢</button></div>
     <div class="tbl-wrap" style="max-height:60vh"><table class="m" id="lg-table"></table></div>
   </div>
+</dialog>
+
+<!-- 清除資料：只有管理員 -->
+<dialog id="dlg-reset" style="max-width:560px">
+  <div class="dlg-h" style="background:#b91c1c"><b><i class="bi bi-trash3-fill"></i> 清除資料</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b text-sm space-y-3">
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:10px 12px;color:#991b1b">
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 清掉就回不來了</b>
+      <p class="text-xs mt-1">清空前系統會自動備份一份，但備份放在伺服器上，你不一定拿得回來。正式資料請先「匯出總表」或「匯出報價檔格式」存一份 Excel 再清。</p>
+    </div>
+    <div><b>要清哪些？</b></div>
+    <label class="flex items-start gap-2">
+      <input id="rs-orders" type="checkbox" class="w-4 h-4 mt-0.5" checked>
+      <span>訂單明細<span class="block text-xs muted mt-0.5">② 頁所有月份、所有線別的訂單，連還沒確認匯入的預覽一起清。最常用：試用完要正式開始用。</span></span>
+    </label>
+    <label class="flex items-start gap-2">
+      <input id="rs-products" type="checkbox" class="w-4 h-4 mt-0.5">
+      <span>商品主檔<span class="block text-xs muted mt-0.5">① 頁從總表鋪底的資料（含配額）。清掉後要重新匯一次總表，箱數才算得出來。一般不用勾。</span></span>
+    </label>
+    <label class="flex items-start gap-2">
+      <input id="rs-keeplogs" type="checkbox" class="w-4 h-4 mt-0.5">
+      <span>保留修改歷程<span class="block text-xs muted mt-0.5">不勾＝連歷程一起清乾淨。勾起來＝資料清掉但誰改過什麼還查得到，並多記一筆「誰在何時清了什麼」。</span></span>
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-xs muted">請輸入「清空資料」四個字以確認</span>
+      <input id="rs-confirm" class="txt" placeholder="清空資料" autocomplete="off">
+    </label>
+  </div>
+  <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="rs-go" class="btn btn-r" disabled><i class="bi bi-trash3-fill"></i> 清除</button></div>
 </dialog>
 
 <div id="toast"></div>
@@ -743,6 +777,24 @@ async function loadLogs() {
   $("#lg-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>PO</th><th>國條</th><th>欄位</th><th>改前</th><th>改後</th><th>說明</th></tr></thead><tbody>${d.logs.map(l => `<tr><td class="kbd">${esc(l.changed_at)}</td><td>${esc(l.operator)}</td><td><span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span></td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode)}</td><td>${esc(l.field_label)}</td><td>${esc(fmt(l.old_value))}</td><td><b>${esc(fmt(l.new_value))}</b></td><td class="kbd">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted p-6 text-center">沒有紀錄</td></tr>`}</tbody>`;
 }
 $("#btn-logs").addEventListener("click", () => { $("#dlg-logs").showModal(); loadLogs(); });
+
+/* ════════════ 清除資料（只有管理員有按鈕） ════════════ */
+if ($("#btn-reset")) {
+  const resetBtnState = () => { $("#rs-go").disabled = $("#rs-confirm").value.trim() !== "清空資料" || !($("#rs-orders").checked || $("#rs-products").checked); };
+  $("#btn-reset").addEventListener("click", () => { $("#rs-confirm").value = ""; resetBtnState(); $("#dlg-reset").showModal(); $("#rs-confirm").focus(); });
+  ["#rs-confirm", "#rs-orders", "#rs-products"].forEach(sel => $(sel).addEventListener("input", resetBtnState));
+  $("#rs-go").addEventListener("click", async () => {
+    $("#rs-go").disabled = true;
+    try {
+      const d = await api("/api/master/reset", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({
+        confirm: $("#rs-confirm").value, orders: $("#rs-orders").checked,
+        products: $("#rs-products").checked, keep_logs: $("#rs-keeplogs").checked }) });
+      $("#dlg-reset").close(); $("#rs-confirm").value = "";
+      toast(d.message);
+      await loadMeta(); refresh();
+    } catch (e) { toast(e.message, "err"); resetBtnState(); }
+  });
+}
 $("#lg-go").addEventListener("click", loadLogs); $("#lg-q").addEventListener("keydown", e => { if (e.key === "Enter") loadLogs(); });
 
 /* ── 啟動 ── */
