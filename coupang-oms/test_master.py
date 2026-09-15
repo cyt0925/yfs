@@ -238,6 +238,41 @@ def main():
     check("總表只列該線別：紙潔的表裡沒有寶僑 ARIEL", all(x["barcode"] != BC for x in s["rows"]))
     check("沒出現在訂單的商品不進總表（系統不知道它是誰的）", all(x["barcode"] != "4987176340894" for x in s_pg["rows"]))
 
+    print("\n【10b】寶僑總表底稿：匯出跟業務的總表一模一樣，只填箱數")
+    check("還沒底稿時 API 說沒有", client.get("/api/master/template?line=寶僑").get_json()["exists"] is False)
+    res = upload(client, "/api/master/template", JUL_XLSX, line="寶僑")
+    check("拿訂單彙總表當底稿會被擋（沒有 M/D交貨 日期欄）", res.status_code == 400, res.get_data(as_text=True)[:120])
+    res = upload(client, "/api/master/template", PG_SHEET_XLSX, line="寶僑"); tm = res.get_json()
+    check("寶僑總表可以當底稿、認出 Sheet1、7／8／9 月日期欄與 3 個空欄", res.status_code == 200 and tm["sheet"] == "Sheet1" and tm["months"]["9"] == {"dates": 12, "spare": 3}, str(tm.get("months")))
+    check("底稿上傳有寫歷程", any(l["field"] == "template" for l in client.get("/api/master/logs?q=寶僑總表範例").get_json()["logs"]))
+    s_pg = client.get("/api/master/summary?line=寶僑&month=2026-09").get_json()
+    res = client.get("/api/master/export?line=寶僑&month=2026-09")
+    check("匯出檔名沿用底稿檔名", "寶僑總表範例.xlsx" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition"))
+    wbt = openpyxl.load_workbook(io.BytesIO(res.data)); wst = wbt["Sheet1"]
+    tpl_ws = openpyxl.load_workbook(PG_SHEET_XLSX)["Sheet1"]
+    check("原本三個分頁都在、多一個「系統填入說明」", wbt.sheetnames == ["工作表1", "Sheet1", "工作表2", "系統填入說明"], str(wbt.sheetnames))
+    check("列數與商品順序跟底稿完全一樣", [wst.cell(row=r, column=1).value for r in range(1, 300)] == [tpl_ws.cell(row=r, column=1).value for r in range(1, 300)])
+    def same_cell(a, b):   # Excel 存的 183.00000000000003 轉一手會變 183，這不算動到
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            return abs(float(a) - float(b)) < 1e-6
+        return a == b
+    check("A～U 欄（業務的欄位）一格都沒動", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(1, 22)))
+    check("7、8 月的日期欄沒被動到", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(22, 41)))
+    hdr_t = [wst.cell(row=1, column=c).value for c in range(1, wst.max_column + 1)]
+    check("9 月加總公式保留（=SUM(AO:BC)）", str(wst.cell(row=2, column=56).value).startswith("=SUM(AO2"), str(wst.cell(row=2, column=56).value))
+    check("9/12、9/14 沒欄位 → 空欄「9/交貨」補上日期", "9/12交貨" in hdr_t and "9/14交貨" in hdr_t and hdr_t.count("9/交貨") == 1, str([h for h in hdr_t if h and str(h).startswith("9/")]))
+    r0 = next(x for x in s_pg["rows"] if x["barcode"] == "4987176405289")
+    rowi = next(r for r in range(2, wst.max_row + 1) if str(wst.cell(row=r, column=5).value).strip() == "4987176405289")
+    def cell_for(d):
+        col = next(i + 1 for i, h in enumerate(hdr_t) if h and str(h).startswith(f"9/{int(d[8:10])}交貨")); return wst.cell(row=rowi, column=col).value
+    check("箱數填到對的商品列、對的日期欄（含 56.75 不湊整）", all(cell_for(d) == v for d, v in r0["by_date"].items()) and r0["by_date"].get("2026-09-21") == 56.75, str({d: cell_for(d) for d in r0["by_date"]}))
+    info_rows = [[str(x) if x is not None else "" for x in row] for row in wbt["系統填入說明"].iter_rows(values_only=True)]
+    flat = "\n".join("|".join(r) for r in info_rows)
+    check("說明分頁列出總表沒有的商品（DNU 開頭那兩個）與補上的日期", "DNU4987176386724" in flat and "9/12、9/14" in flat, flat[:300])
+    check("總表沒有的商品沒混進 Sheet1", not any(str(wst.cell(row=r, column=5).value).startswith("DNU") for r in range(2, wst.max_row + 1)))
+    res = client.delete("/api/master/template?line=寶僑")
+    check("底稿可以移除，之後匯出回到系統格式", res.status_code == 200 and openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export?line=寶僑&month=2026-09").data)).sheetnames[0] == "總表")
+
     print("\n【11】匯出")
     res = client.get("/api/master/export?line=寶僑&month=2026-09")
     wbx = openpyxl.load_workbook(io.BytesIO(res.data))

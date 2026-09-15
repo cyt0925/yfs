@@ -1144,6 +1144,189 @@ def _xlsx_response(wb, fname):
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+# ---------------------------------------------------------------- 總表底稿（寶僑總表一模一樣）
+
+_DATE_HDR = re.compile(r"^\s*(\d{1,2})/(\d{0,2})交貨")   # 9/2交貨、7/9交貨_1、9/18交貨\n竹運出、9/交貨（空欄）
+
+
+def _template_row(conn, line):
+    return _row(conn.execute("SELECT * FROM mst_templates WHERE line = ?", (line,)))
+
+
+def _template_meta(tpl, conn=None):
+    """給畫面看的：檔名、誰、何時、底稿裡有哪幾個月的日期欄、各月還剩幾個空欄。"""
+    import base64
+    meta = {"exists": True, "line": tpl["line"], "filename": tpl["filename"], "sheet": tpl["sheet"],
+            "uploaded_by": tpl["uploaded_by"], "uploaded_at": tpl["uploaded_at"], "months": {}}
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(tpl["content_b64"])), read_only=True, data_only=True)
+        ws = wb[tpl["sheet"]]
+        for row in ws.iter_rows(min_row=tpl["header_row"], max_row=tpl["header_row"], values_only=True):
+            for h in row:
+                m = _DATE_HDR.match(norm_text(h))
+                if m:
+                    e = meta["months"].setdefault(int(m.group(1)), {"dates": 0, "spare": 0})
+                    e["dates" if m.group(2) else "spare"] += 1
+    except Exception as exc:  # noqa: BLE001
+        meta["error"] = str(exc)
+    return meta
+
+
+@master_bp.route("/api/master/template")
+def api_template_get():
+    line = norm_text(request.args.get("line"))
+    conn = get_conn()
+    try:
+        tpl = _template_row(conn, line)
+    finally:
+        conn.close()
+    return jsonify(_template_meta(tpl) if tpl else {"exists": False, "line": line})
+
+
+@master_bp.route("/api/master/template", methods=["POST"])
+def api_template_upload():
+    """上傳某線別的總表底稿。要能找到「Barcode／國條」標題的工作表才收。"""
+    import base64
+    line = norm_text(request.form.get("line") or request.args.get("line"))
+    upload = request.files.get("file")
+    if not line:
+        return jsonify({"error": "請先選線別。"}), 400
+    if upload is None or not upload.filename:
+        return jsonify({"error": "沒有收到檔案。"}), 400
+    raw = upload.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"無法開啟 Excel：{exc}"}), 400
+    chosen = None
+    for ws in wb.worksheets:
+        hdr_idx, mapping, _ = _find_columns(ws, want=("barcode",))
+        if hdr_idx and any(_DATE_HDR.match(norm_text(h)) for h in next(ws.iter_rows(min_row=hdr_idx, max_row=hdr_idx, values_only=True))):
+            chosen = (ws.title, hdr_idx); break
+    if chosen is None:
+        return jsonify({"error": "找不到同時有「Barcode／國條」標題和「M/D交貨」日期欄的工作表，這不像總表。"}), 400
+    conn = get_conn()
+    try:
+        conn.execute("DELETE FROM mst_templates WHERE line = ?", (line,))
+        conn.execute(
+            """INSERT INTO mst_templates (line, filename, sheet, header_row, content_b64, uploaded_by, uploaded_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (line, upload.filename, chosen[0], chosen[1], base64.b64encode(raw).decode("ascii"), _operator(), now()))
+        _log(conn, line, "", "", "", "template", "總表底稿", "", upload.filename, _operator(), "manual",
+             f"工作表「{chosen[0]}」")
+        conn.commit()
+        tpl = _template_row(conn, line)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, **_template_meta(tpl)})
+
+
+@master_bp.route("/api/master/template", methods=["DELETE"])
+def api_template_delete():
+    line = norm_text(request.args.get("line"))
+    conn = get_conn()
+    try:
+        tpl = _template_row(conn, line)
+        if tpl is None:
+            return jsonify({"error": "這個線別沒有底稿。"}), 404
+        conn.execute("DELETE FROM mst_templates WHERE line = ?", (line,))
+        _log(conn, line, "", "", "", "template", "總表底稿", tpl["filename"], "", _operator(), "manual", "移除底稿")
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
+
+def _fill_template(tpl, summary, month, operator):
+    """把這個月每個交貨日的箱數填進底稿。只動：這個月的日期欄（含把「9/交貨」空欄補上日期）
+    和底稿裡對得到的商品列；其他列、其他月份、業務的公式、順序全部不碰。
+    對不到的商品、沒地方填的日期，寫在最後一個分頁「系統填入說明」。"""
+    import base64
+    wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(tpl["content_b64"])))   # 保留公式
+    ws = wb[tpl["sheet"]]
+    hdr = tpl["header_row"]
+    mm = int(month[5:7])
+    headers = {c: norm_text(ws.cell(row=hdr, column=c).value) for c in range(1, ws.max_column + 1)}
+    lowered = {c: h.lower().replace(" ", "") for c, h in headers.items()}
+    def col_of(field):
+        for a in _HEADER_ALIASES[field]:
+            key = a.lower().replace(" ", "")
+            for c, h in lowered.items():
+                if h == key:
+                    return c
+        return None
+    bc_col, sku_col = col_of("barcode"), col_of("sku_id")
+    date_cols, spare = {}, []
+    for c, h in headers.items():
+        m = _DATE_HDR.match(h)
+        if m and int(m.group(1)) == mm:
+            if m.group(2):
+                date_cols[int(m.group(2))] = c
+            else:
+                spare.append(c)
+    by_bc, by_sku = {}, {}
+    for r in range(hdr + 1, ws.max_row + 1):
+        bc = norm_key(ws.cell(row=r, column=bc_col).value) if bc_col else ""
+        sku = norm_key(ws.cell(row=r, column=sku_col).value) if sku_col else ""
+        if bc and bc not in by_bc:
+            by_bc[bc] = r
+        if sku and sku not in by_sku:
+            by_sku[sku] = r
+    # 每個交貨日找欄：有同日期的欄就用；沒有就拿一個「M/交貨」空欄補上日期；都沒有就記下來
+    missing_dates, renamed = [], []
+    for d in summary["dates"]:
+        day = int(d[8:10])
+        if day in date_cols:
+            continue
+        if spare:
+            c = spare.pop(0); date_cols[day] = c
+            ws.cell(row=hdr, column=c).value = f"{mm}/{day}交貨"; renamed.append(f"{mm}/{day}")
+        else:
+            missing_dates.append(d)
+    block = sorted(date_cols.values()) + spare
+    matched, unmatched, filled = 0, [], 0
+    for r0 in summary["rows"]:
+        r = by_bc.get(r0["barcode"]) or by_sku.get(r0["sku_id"])
+        if r is None:
+            unmatched.append(r0); continue
+        matched += 1
+        for c in block:                      # 這個月的欄先清空再填，沒出貨的日子留白
+            ws.cell(row=r, column=c).value = None
+        for d, v in r0["by_date"].items():
+            c = date_cols.get(int(d[8:10]))
+            if c is not None:
+                ws.cell(row=r, column=c).value = v; filled += 1
+    # 說明分頁
+    from openpyxl.styles import Font
+    info = wb.create_sheet("系統填入說明")
+    bold = Font(bold=True)
+    info.append(["商品主檔自動化 填入紀錄"]); info["A1"].font = bold
+    info.append(["填入時間", now(), "操作者", operator])
+    info.append(["月份", month, "線別", summary["line"]])
+    info.append(["底稿", tpl["filename"], "工作表", tpl["sheet"]])
+    info.append(["對到的商品", matched, "填入格數", filled])
+    if renamed:
+        info.append(["補上日期的空欄", "、".join(renamed)])
+    info.append([])
+    if missing_dates:
+        info.append(["⚠ 這些交貨日在底稿裡沒有欄位可填（連空欄都用完了），請業務在總表加欄後重匯："]); info.cell(row=info.max_row, column=1).font = bold
+        for d in missing_dates:
+            tot = summary["totals_by_date"].get(d)
+            info.append([d, f"{tot} 箱" if tot is not None else ""])
+        info.append([])
+    if unmatched:
+        info.append(["酷澎有下單、但總表裡沒有的商品（沒混進總表，列在這裡給你看）："]); info.cell(row=info.max_row, column=1).font = bold
+        info.append(["國條", "SKU ID", "品名", "品牌", "箱入數"] + [_md(d) for d in summary["dates"]] + ["月加總"])
+        for c in info[info.max_row]:
+            c.font = bold
+        for r0 in unmatched:
+            info.append([r0["barcode"], r0["sku_id"], r0["product_name"], r0["brand"], r0["box_size"]]
+                        + [r0["by_date"].get(d) for d in summary["dates"]] + [r0["month_total"]])
+    info.column_dimensions["A"].width = 22; info.column_dimensions["B"].width = 18; info.column_dimensions["C"].width = 40
+    return wb, {"matched": matched, "filled": filled, "unmatched": len(unmatched),
+                "missing_dates": missing_dates, "renamed": renamed}
+
+
 @master_bp.route("/api/master/export")
 def api_export():
     """總表格式：一列一個國條，往右是各交貨日箱數、月加總。"""
@@ -1155,8 +1338,13 @@ def api_export():
     try:
         s = _build_summary(conn, group, month, cfg)
         orders = [o for o in _month_orders(conn, month, cfg) if o["line_group"] == group]
+        tpl = _template_row(conn, group)
     finally:
         conn.close()
+    if tpl is not None:
+        # 有底稿就照底稿填（寶僑要跟他們的總表一模一樣，含商品順序），檔名沿用底稿的
+        wb, _rep = _fill_template(tpl, s, month, _operator())
+        return _xlsx_response(wb, tpl["filename"] or f"{group}_總表_{month}.xlsx")
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "總表"

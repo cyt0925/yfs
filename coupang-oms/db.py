@@ -822,6 +822,19 @@ CREATE TABLE IF NOT EXISTS mst_import_batches (
     created_at     TEXT DEFAULT '',
     committed_at   TEXT DEFAULT ''
 );
+
+-- 總表底稿：業務維護的那份總表（寶僑）整個存起來，匇出總表時只填日期欄的箱數，
+-- 排版、順序、公式一格都不動。一個線別一份。內容用 base64 存文字欄，兩種資料庫都不用煩惱 blob。
+CREATE TABLE IF NOT EXISTS mst_templates (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    line          TEXT NOT NULL UNIQUE,
+    filename      TEXT DEFAULT '',
+    sheet         TEXT DEFAULT '',
+    header_row    INTEGER DEFAULT 1,
+    content_b64   TEXT DEFAULT '',
+    uploaded_by   TEXT DEFAULT '',
+    uploaded_at   TEXT DEFAULT ''
+);
 """
 
 SCHEMA_MASTER_POSTGRES = (
