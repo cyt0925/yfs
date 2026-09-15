@@ -502,10 +502,10 @@ function renderImportBar() {
   li.innerHTML = `<div class="flex items-center gap-3 flex-wrap">
       <span><i class="bi bi-clock-history"></i> ${cur && cur.id !== last.id ? "這次匯入" : "最近一次匯入"} <b>${esc(target.committed_at.slice(5, 16))}</b> <span class="muted">${esc(target.filename)}</span>：新增 <b>${target.new_now}</b>、有變 <b>${target.changed_now}</b>${n ? "" : `<span class="muted">（跟上一次一樣，沒有變動）</span>`}</span>
       <span class="seg"><button data-mode="all" class="${state.batch ? "" : "on"}">全部訂單</button><button data-mode="batch" class="${state.batch ? "on" : ""}" ${n ? "" : "disabled"}>只看這次的變動${n ? `（新增 ${target.new_now}・有變 ${target.changed_now}）` : ""}</button></span>
-      ${older.length ? `<span style="margin-left:auto" class="flex items-center gap-2"><select id="older-imports" class="sel" style="max-width:360px;padding:4px 8px" title="不是看最近一次，而是看更早某一次匯入的變動"><option value="">看更早某一次匯入的變動 ▾</option>${older.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"} ${cur && cur.id === b.id ? "selected" : ""}>${esc(b.committed_at.slice(5, 16))} ${esc(b.filename)}：新增 ${b.new_now}、有變 ${b.changed_now}</option>`).join("")}</select></span>` : ""}
+      ${older.length ? `<span class="flex items-center gap-2"><select id="older-imports" class="sel" style="max-width:360px;padding:5px 8px" title="不是看最近一次，而是看更早某一次匯入的變動；選回第一條就回到全部訂單"><option value="">看更早某一次匯入的變動 ▾</option>${older.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"} ${cur && cur.id === b.id ? "selected" : ""}>${esc(b.committed_at.slice(5, 16))} ${esc(b.filename)}：新增 ${b.new_now}、有變 ${b.changed_now}</option>`).join("")}</select></span>` : ""}
     </div>`;
   li.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { if (b.dataset.mode === "all") pickBatch(null); else pickBatch(target.id); }));
-  const sel = li.querySelector("#older-imports"); if (sel) sel.addEventListener("change", e => { if (e.target.value) pickBatch(e.target.value); });
+  const sel = li.querySelector("#older-imports"); if (sel) sel.addEventListener("change", e => pickBatch(e.target.value || null));   // 選回第一條＝回到全部訂單
 }
 function pickBatch(id) {
   const b = importBatches.find(x => x.id === Number(id));
