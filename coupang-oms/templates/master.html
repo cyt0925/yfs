@@ -94,7 +94,20 @@
   .tbl-wrap { overflow:auto; max-height:70vh; border:1px solid var(--line2); border-radius:10px; background:#fff; }
   .kbd { font-size:11px; color:var(--muted); }
   .dd { position:relative; }
-  .dd-menu { position:absolute; top:calc(100% + 4px); left:0; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px rgba(15,23,42,.15); padding:8px; z-index:20; min-width:260px; max-height:320px; overflow:auto; }
+  .fbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fff; border:1px solid var(--line2); border-radius:12px; padding:8px 12px; }
+  .fbar .flabel { font-size:12px; color:var(--muted); font-weight:600; margin-right:2px; }
+  .fbtn { display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 12px; border:1px solid var(--line); border-radius:10px; background:#fff; font-size:13px; color:var(--ink); cursor:pointer; min-width:120px; }
+  .fbtn:hover { background:#f8fafc; }
+  .fbtn .fl { color:var(--muted); }
+  .fbtn .fv { font-weight:700; color:var(--b800); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .fbtn.on { border-color:var(--b700); background:var(--b50); }
+  .fbtn .caret { color:var(--muted); font-size:11px; margin-left:auto; }
+  .fbar .chip { height:34px; border-radius:10px; }
+  .fbar .txt { height:34px; }
+  .dd-head { display:flex; align-items:center; gap:8px; padding:2px 6px 8px; border-bottom:1px solid var(--line2); margin-bottom:6px; font-size:12px; color:var(--muted); }
+  .dd-head a { color:var(--b700); cursor:pointer; margin-left:auto; }
+  .dd-head input { flex:1; border:1px solid var(--line); border-radius:6px; padding:3px 8px; font-size:12px; }
+  .dd-menu { position:absolute; top:calc(100% + 6px); left:0; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 30px rgba(15,23,42,.15); padding:8px; z-index:20; min-width:260px; max-height:320px; overflow:auto; }
   .dd-menu label { display:flex; gap:8px; align-items:center; padding:4px 6px; font-size:13px; border-radius:6px; cursor:pointer; }
   .dd-menu label:hover { background:var(--b50); }
   .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
@@ -178,19 +191,24 @@
         <input type="month" id="sel-month" class="sel" style="padding:4px 8px">
         <button id="m-next" class="btn btn-g btn-sm" title="下個月"><i class="bi bi-chevron-right"></i></button>
       </span>
-      <div class="dd"><button id="dd-line-btn" class="btn btn-o"><i class="bi bi-diagram-3"></i> 線別 <span id="dd-line-n" class="badge bd-blue hidden"></span></button><div id="dd-line" class="dd-menu hidden"></div></div>
-      <div class="dd"><button id="dd-po-btn" class="btn btn-o"><i class="bi bi-funnel"></i> PO <span id="dd-po-n" class="badge bd-blue hidden"></span></button><div id="dd-po" class="dd-menu hidden" style="min-width:380px"></div></div>
-      <div class="dd"><button id="dd-brand-btn" class="btn btn-o"><i class="bi bi-tags"></i> 品牌 <span id="dd-brand-n" class="badge bd-blue hidden"></span></button><div id="dd-brand" class="dd-menu hidden"></div></div>
-      <div class="dd"><button id="dd-wh-btn" class="btn btn-o"><i class="bi bi-building"></i> 倉別 <span id="dd-wh-n" class="badge bd-blue hidden"></span></button><div id="dd-wh" class="dd-menu hidden"></div></div>
-      <label class="chip" id="chip-edited">只看人工調整過</label>
-      <label class="chip" id="chip-missing">只看算不出箱數</label>
-      <input id="q" type="text" placeholder="搜尋 PO、國條、品名…" class="txt" style="width:200px">
-      <button id="btn-clear" class="btn btn-g btn-sm"><i class="bi bi-x-circle"></i> 清除篩選</button>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔會照這個範圍">已篩選</span>
       <label class="text-sm muted" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">匯到</label><input type="month" id="exp-to" class="sel" style="padding:4px 8px" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">
       <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁（0904交貨、0903交貨…），PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月；「匯到」往後拉可以跨月。"><i class="bi bi-calendar-week"></i> 匯出專案報價檔</a>
+    </div>
+
+    <div class="fbar mb-3">
+      <span class="flabel"><i class="bi bi-funnel"></i> 篩選</span>
+      <div class="dd"><button id="dd-line-btn" class="fbtn"><i class="bi bi-diagram-3"></i><span class="fl">線別</span><span class="fv" id="dd-line-n">全部</span><i class="bi bi-chevron-down caret"></i></button><div id="dd-line" class="dd-menu hidden"></div></div>
+      <div class="dd"><button id="dd-po-btn" class="fbtn"><i class="bi bi-receipt"></i><span class="fl">PO</span><span class="fv" id="dd-po-n">全部</span><i class="bi bi-chevron-down caret"></i></button><div id="dd-po" class="dd-menu hidden" style="min-width:420px"></div></div>
+      <div class="dd"><button id="dd-brand-btn" class="fbtn"><i class="bi bi-tags"></i><span class="fl">品牌</span><span class="fv" id="dd-brand-n">全部</span><i class="bi bi-chevron-down caret"></i></button><div id="dd-brand" class="dd-menu hidden"></div></div>
+      <div class="dd"><button id="dd-wh-btn" class="fbtn"><i class="bi bi-building"></i><span class="fl">倉別</span><span class="fv" id="dd-wh-n">全部</span><i class="bi bi-chevron-down caret"></i></button><div id="dd-wh" class="dd-menu hidden"></div></div>
+      <span style="width:1px;height:24px;background:var(--line2)"></span>
+      <label class="chip" id="chip-edited" title="只留出貨數量、交貨日或備註被人手改過的品項"><i class="bi bi-pencil"></i> 人工調整過</label>
+      <label class="chip" id="chip-missing" title="只留箱入數不明、算不出箱數的品項"><i class="bi bi-exclamation-triangle"></i> 算不出箱數</label>
+      <input id="q" type="text" placeholder="搜尋 PO、國條、品名…" class="txt" style="width:220px">
+      <button id="btn-clear" class="btn btn-g btn-sm hidden"><i class="bi bi-x-circle"></i> 清除篩選</button>
+      <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔會照這個範圍">匯出會照這個篩選</span>
     </div>
 
     <div id="last-import" class="hidden mb-3 text-sm" style="background:var(--b50);border:1px solid var(--b200);border-radius:10px;padding:8px 12px"></div>
@@ -441,7 +459,7 @@ function anyScope() { return anyFilter() || state.batch; }
 
 async function loadOrders() {
   $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams();
-  $("#filter-hint").classList.toggle("hidden", !anyFilter());
+  $("#filter-hint").classList.toggle("hidden", !anyFilter()); $("#btn-clear").classList.toggle("hidden", !anyFilter());
   let data;
   try { data = await api("/api/master/orders?" + filterParams()); } catch (e) { toast(e.message, "err"); return; }
   state.facets = data.facets; state.rows = data.rows;
@@ -563,18 +581,25 @@ function renderCalendar() {
   else chip.classList.add("hidden");
 }
 
-function ddRender(menuId, nId, items, set, key, labelFn) {
+function ddRender(menuId, nId, items, set, key, labelFn, summaryFn) {
   const menu = $(menuId);
-  menu.innerHTML = items.length ? items.map(it => `<label><input type="checkbox" data-v="${esc(it[key])}" ${set.has(it[key]) ? "checked" : ""}> ${labelFn(it)}</label>`).join("") : `<div class="muted text-sm p-2">沒有資料</div>`;
-  menu.querySelectorAll("input").forEach(cb => cb.addEventListener("change", () => { cb.checked ? set.add(cb.dataset.v) : set.delete(cb.dataset.v); loadOrders(); }));
-  const n = $(nId); n.textContent = set.size; n.classList.toggle("hidden", !set.size);
+  const rows = items.map(it => `<label data-t="${esc(String(it[key] || "").toLowerCase())}"><input type="checkbox" data-v="${esc(it[key])}" ${set.has(it[key]) ? "checked" : ""}> ${labelFn(it)}</label>`).join("");
+  const head = `<div class="dd-head">${items.length > 12 ? `<input type="text" placeholder="輸入關鍵字過濾…" class="dd-q">` : `<span>${items.length} 個選項</span>`}${set.size ? `<a class="dd-clear">取消勾選（${set.size}）</a>` : ""}</div>`;
+  menu.innerHTML = items.length ? head + rows : `<div class="muted text-sm p-2">沒有選項</div>`;
+  menu.querySelectorAll("input[type=checkbox]").forEach(cb => cb.addEventListener("change", () => { cb.checked ? set.add(cb.dataset.v) : set.delete(cb.dataset.v); loadOrders(); }));
+  const q = menu.querySelector(".dd-q"); if (q) q.addEventListener("input", () => { const t = q.value.trim().toLowerCase(); menu.querySelectorAll("label").forEach(l => l.style.display = !t || l.dataset.t.includes(t) || l.innerText.toLowerCase().includes(t) ? "" : "none"); });
+  const clr = menu.querySelector(".dd-clear"); if (clr) clr.addEventListener("click", () => { set.clear(); loadOrders(); });
+  // 按鈕上直接寫目前選了什麼，不用點開才知道
+  const n = $(nId); const vals = [...set];
+  n.textContent = !vals.length ? "全部" : summaryFn ? summaryFn(vals) : (vals.length <= 2 ? vals.map(v => v || "（空白）").join("、") : `${vals.length} 個`);
+  n.closest("button").classList.toggle("on", !!vals.length);
 }
 function renderDropdowns() {
   const f = state.facets || {};
   ddRender("#dd-line", "#dd-line-n", f.lines || [], state.lines, "line", it => `${it.line === "未分類" ? `<span class="badge bd-bad">${esc(it.line)}</span>` : esc(it.line)}<span class="muted" style="margin-left:auto">${it.rows}</span>`);
-  ddRender("#dd-po", "#dd-po-n", f.pos || [], state.pos, "po_number", it => `<span class="mono">${esc(it.po_number)}</span> ${it.lines.map(l => `<span class="line-tag">${esc(l)}</span>`).join("")}<span class="muted" style="margin-left:auto">${esc(it.date || "未排")} · ${fmt(it.cases)} 箱</span>`);
+  ddRender("#dd-po", "#dd-po-n", f.pos || [], state.pos, "po_number", it => `<span class="mono">${esc(it.po_number)}</span> ${it.lines.map(l => `<span class="line-tag">${esc(l)}</span>`).join("")}<span class="muted" style="margin-left:auto">${esc(it.date || "未排")} · ${fmt(it.cases)} 箱</span>`, vals => `${vals.length} 張`);
   ddRender("#dd-brand", "#dd-brand-n", f.brands || [], state.brands, "brand", it => `${esc(it.brand)}<span class="muted" style="margin-left:auto">${it.rows}</span>`);
-  ddRender("#dd-wh", "#dd-wh-n", f.warehouses || [], state.warehouses, "warehouse", it => `${esc(it.warehouse) || "（未填倉別）"}<span class="muted" style="margin-left:auto">${it.rows}</span>`);
+  ddRender("#dd-wh", "#dd-wh-n", f.warehouses || [], state.warehouses, "warehouse", it => `${esc(it.warehouse) || "（未填倉別）"}<span class="muted" style="margin-left:auto">${it.rows}</span>`, vals => vals.length <= 2 ? vals.map(v => v || "（未填）").join("、") : `${vals.length} 個`);
 }
 [["#dd-line-btn","#dd-line"],["#dd-po-btn","#dd-po"],["#dd-brand-btn","#dd-brand"],["#dd-wh-btn","#dd-wh"]].forEach(([b, m]) => {
   $(b).addEventListener("click", e => { e.stopPropagation(); document.querySelectorAll(".dd-menu").forEach(x => { if ("#" + x.id !== m) x.classList.add("hidden"); }); $(m).classList.toggle("hidden"); });
