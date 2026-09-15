@@ -627,6 +627,16 @@ def api_orders():
     for fp in f_pos.values():
         fp["cases"] = round(fp["cases"], 2); fp["lines"] = sorted(fp["lines"])
 
+    # 同一張 PO 被兩次以上匯入動到（第一次進來、後來又加品項或改數字）→ 對帳時 PO 數會重複，點名出來
+    po_batches = collections.OrderedDict()
+    for o in rows:
+        st = po_batches.setdefault(o["po_number"], set())
+        for k in ("first_batch_id", "last_batch_id"):
+            if o.get(k):
+                st.add(o[k])
+    overlap_pos = [{"po_number": po, "batch_ids": sorted(b), "date": f_pos[po]["date"], "rows": f_pos[po]["rows"]}
+                   for po, b in po_batches.items() if len(b) >= 2]
+
     shown = [o for o in rows if _keep(o, filters)]
     return jsonify({
         "month": month, "rows": shown, "count": len(shown),
@@ -636,6 +646,7 @@ def api_orders():
             "dates": list(f_dates.values()), "pos": list(f_pos.values()),
             "brands": [{"brand": b, "rows": n} for b, n in sorted(f_brands.items())],
             "warehouses": [{"warehouse": w, "rows": n} for w, n in sorted(f_wh.items())],
+            "overlap_pos": overlap_pos,
         },
     })
 
