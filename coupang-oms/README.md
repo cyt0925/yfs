@@ -94,7 +94,7 @@ python test_master.py    # 商品主檔自動化（獨立模組）
 
 ## 商品主檔自動化
 
-跟訂單管理**平行的獨立模組**（`master.py`、`templates/master.html`），首頁按鈕
+跟訂單管理**平行的獨立模組**（`master/` 套件、`templates/master.html`），首頁按鈕
 「商品主檔自動化」進去，網址是 `/master`。表全部以 `mst_` 開頭，不碰訂單管理的
 任何一張表；共用登入、資料庫連線與整合表解析。
 
@@ -113,7 +113,7 @@ VLOOKUP 回填總表」那條每次改單就要重做一次的人工流程。三
   `報價備註` 跟總表的 `Note` 是同一個欄位（`note`，進報價檔 O 欄）。酷澎主檔的線別存 `master_line`，
   同時記進 `lines_seen`，所以主檔一匯進來線別就分得出來，不用等訂單。`啟用=N` 的商品畫面上淡化。
 - **線別顯示名**：檔案裡的原始線別照實留在每一列（寶僑／瑪氏／CPG-潔品／CPG-紙品／空白），
-  畫面上「CPG 開頭 → 紙潔」「空白 → 未分類」，其他照原名。規則寫死在 `master.py` 的
+  畫面上「CPG 開頭 → 紙潔」「空白 → 未分類」，其他照原名。規則寫死在 `master/common.py` 的
   `LINE_GROUPS_DEFAULT`（曾做過設定面板，同事看不懂，拿掉了）。
 - **訂單鍵是 (PO, SKU)**，跟訂單管理一樣；同一張 PO 可以跨線別（這份 9 月檔有 27 張）。
 - **匯出專案報價檔**：檔名就叫 `專案報價檔.xlsx`，一個交貨日一個分頁（`0904交貨`、`0903交貨`…新的在前），
@@ -165,7 +165,15 @@ coupang-oms/
 ├── normalize.py            欄位正規化，唯一實作
 ├── pdfsign.py               驗收單批次簽名
 ├── purchase.py              採購表轉換（跟訂單管理完全獨立，見上方段落）
-├── master.py                商品主檔自動化（獨立模組，見上方段落）
+├── master/                  商品主檔自動化（獨立模組，見上方段落；路由都掛在 common.master_bp）
+│   ├── common.py            共用：Blueprint、常數、小工具、訂單查詢與篩選（其他檔 from .common import *）
+│   ├── page.py              頁面、線別／月份下拉
+│   ├── orders_import.py     ② 匯入：多檔合併 → 預覽 → 確認寫入
+│   ├── orders_api.py        ② 查詢、就地編輯、PO 改期、PO 視窗
+│   ├── products.py          ① 主檔清單／匯入（酷澎主檔、寶僑總表 → 匯出樣式）
+│   ├── summary.py           ③ 總表現算、匯出總表（底稿填入、自動插欄）
+│   ├── quotation.py         匯出專案報價檔
+│   └── admin_api.py         清除資料、匯入歷程、修改歷程
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔
 ├── defaults/                設定檔出廠預設值，只在第一次啟動、還沒有這份
 │                             設定時用來種資料（本機模式種進 DATA_DIR 底下
