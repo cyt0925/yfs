@@ -280,6 +280,34 @@ def main():
     check("總表沒有的商品沒混進 Sheet1", not any(str(wst.cell(row=r, column=5).value).startswith("DNU") for r in range(2, wst.max_row + 1)))
     check("沒匯過總表的線別（瑪氏）匯出還是系統格式", openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export?line=瑪氏&month=2026-09").data)).sheetnames[0] == "總表")
 
+    print("\n【10c】總表底稿長得不一樣也要能填：用假的寶僑總表（欄少、公式少、只有 5 個日期）")
+    fake_sheet = os.path.join(SAMPLES, "fake", "假_寶僑總表.xlsx")
+    upload(client, "/api/master/products/import", fake_sheet)     # 換成假總表當底稿（線別多數決會是寶僑）
+    tm = client.get("/api/master/template?line=寶僑").get_json()
+    check("假總表接手成寶僑的底稿", tm["exists"] and tm["filename"] == "假_寶僑總表.xlsx", str(tm.get("filename")))
+    res = client.get("/api/master/export?line=寶僑&month=2026-09"); wbf = openpyxl.load_workbook(io.BytesIO(res.data)); wsf = wbf["Sheet1"]
+    hdr_f = [c.value for c in wsf[1]]; sep_f = [h for h in hdr_f if h and str(h).startswith("9/")]
+    days = [int(h.split("/")[1].replace("交貨", "")) for h in sep_f if h.split("/")[1].replace("交貨", "").isdigit()]
+    check("9 月日期欄照順序（含新插的）", days == sorted(days) and len(days) >= 8, str(sep_f))
+    check("兩個「9/交貨」空欄留著", hdr_f.count("9/交貨") == 2)
+    ttl_f = next(i for i, h in enumerate(hdr_f) if h and "9月TTL" in str(h)) + 1
+    from openpyxl.utils import get_column_letter as _L
+    first_sep = min(i for i, h in enumerate(hdr_f) if h and str(h).startswith("9/")) + 1
+    check("TTL 公式涵蓋整個 9 月區塊", str(wsf.cell(row=2, column=ttl_f).value) == f"=SUM({_L(first_sep)}2:{_L(ttl_f - 1)}2)", str(wsf.cell(row=2, column=ttl_f).value))
+    check("PG剩餘 公式仍指向 Supply(Sep) − TTL", str(wsf.cell(row=2, column=ttl_f + 1).value) == f"=O2-{_L(ttl_f)}2", str(wsf.cell(row=2, column=ttl_f + 1).value))
+    check("樞紐分頁還在", "工作表1" in wbf.sheetnames)
+    # 底稿完全沒有的月份：直接呼叫填入函式，要補一整個區塊（日期欄＋TTL）
+    import master
+    conn = db.get_conn(); tplrow = master._template_row(conn, "寶僑"); conn.close()
+    r0 = next(x for x in s_pg["rows"] if x["by_date"])
+    fake_sum = {"line": "寶僑", "month": "2026-10", "dates": ["2026-10-03", "2026-10-07"], "totals_by_date": {"2026-10-03": 5, "2026-10-07": 7},
+                "rows": [{"barcode": r0["barcode"], "sku_id": r0["sku_id"], "by_date": {"2026-10-03": 5, "2026-10-07": 7}, "month_total": 12, "product_name": "", "brand": "", "box_size": 1}]}
+    wb10, rep = master._fill_template(tplrow, fake_sum, "2026-10", "測試")
+    h10 = [c.value for c in wb10["Sheet1"][1]]
+    check("沒有 10 月區塊時自動補：10/3、10/7、10月TTL 依序接在 9 月後面", [h for h in h10 if h and (str(h).startswith("10/") or "10月TTL" in str(h))] == ["10/3交貨", "10/7交貨", "10月TTL下單總箱數"] and h10.index("10/3交貨") > h10.index("9月TTL下單總箱數"), str([h for h in h10 if h and "10" in str(h)]))
+    check("補出來的 TTL 有 SUM 公式", str(wb10["Sheet1"].cell(row=2, column=h10.index("10月TTL下單總箱數") + 1).value).startswith("=SUM("))
+    upload(client, "/api/master/products/import", PG_SHEET_XLSX)     # 換回真的總表給後面的測試
+
     print("\n【11】匯出")
     res = client.get("/api/master/export?line=紙潔&month=2026-09")   # 紙潔沒匯過總表 → 系統格式
     wbx = openpyxl.load_workbook(io.BytesIO(res.data))

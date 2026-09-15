@@ -56,7 +56,8 @@ python app.py                     # 或 Windows 上雙擊 START.bat
 ```bash
 python test_flow.py      # 訂單管理主流程，184 項檢查
 python test_purchase.py  # 採購表轉換（跟訂單管理完全獨立），60 項檢查
-python test_master.py    # 商品主檔自動化（獨立模組）
+python test_master.py    # 商品主檔自動化（獨立模組；有 PostgreSQL 就設 DATABASE_URL 再跑一次）
+python test_master_ui.py # 商品主檔自動化 前端煙霧測試（Playwright 開真瀏覽器；pip install playwright && playwright install chromium）
 ```
 
 ## 核心防呆（這幾條是系統的命）
@@ -152,8 +153,11 @@ VLOOKUP 回填總表」那條每次改單就要重做一次的人工流程。三
 - 配額（總表 O 欄）與剩餘可供貨量後端有算、API 在，畫面與匯出**先收起**。
 - 舊版（主檔含線別、訂單鍵含線別）資料庫啟動時自動升級成新結構（`_migrate_master_columns`）。
 
-驗證：`python test_master.py`（用 `samples/master/` 的 7 月單線別檔、9 月多線別檔、酷澎主檔（寶僑／CPG）
-與總表範例跑完整流程，含 v1 → v3 升級）。
+驗證：`python test_master.py`（後端端到端，用 `samples/master/` 的真檔與 `samples/master/fake/` 的假資料，
+含 v1 → v4 升級、總表不同長相的底稿填入）＋ `python test_master_ui.py`（Playwright 把人手動點的路走一遍）。
+GitHub Actions（`.github/workflows/tests.yml`）每次推分支自動跑 SQLite／PostgreSQL／前端三組。
+設計上的「為什麼」與做過又拆掉的東西見 [`docs/商品主檔自動化_設計筆記.md`](docs/商品主檔自動化_設計筆記.md)。
+假資料（商品、條碼、PO 全是編的）在 `samples/master/fake/`，照裡面的 `使用順序.txt` 丟一遍能走到每個功能。
 
 ## 檔案
 
@@ -189,6 +193,8 @@ coupang-oms/
 ├── test_flow.py             訂單管理端到端驗證
 ├── test_purchase.py         採購表轉換端到端驗證
 ├── test_master.py           商品主檔自動化端到端驗證
+├── test_master_ui.py        商品主檔自動化前端煙霧測試（Playwright）
+├── docs/                    設計筆記（為什麼長這樣）
 └── samples/                 測試用真實資料（master/ 底下是 7 月、9 月訂單彙總表與總表範例）
 ```
 

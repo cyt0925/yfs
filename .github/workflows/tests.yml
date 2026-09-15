@@ -63,3 +63,21 @@ jobs:
         run: python test_master.py
       - name: test_purchase（採購表轉換）
         run: python test_purchase.py
+
+  ui:
+    name: 前端煙霧測試（Playwright）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: coupang-oms
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: coupang-oms/requirements.txt
+      - run: pip install -r requirements.txt playwright
+      - run: playwright install --with-deps chromium
+      - name: test_master_ui（開真的瀏覽器點一遍）
+        run: python test_master_ui.py
