@@ -769,6 +769,8 @@ CREATE TABLE IF NOT EXISTS mst_orders (
     remarks_overridden      INTEGER NOT NULL DEFAULT 0,
     missing_in_file         INTEGER NOT NULL DEFAULT 0,
     source_file             TEXT DEFAULT '',
+    first_batch_id          INTEGER,               -- 第一次是哪一批匯入帶進來的（匯入歷程「這批新增」）
+    last_batch_id           INTEGER,               -- 最後一次被哪一批匯入改到
     first_seen_at           TEXT DEFAULT '',
     last_seen_at            TEXT DEFAULT '',
     updated_at              TEXT DEFAULT '',
@@ -898,7 +900,7 @@ def init_db():
         conn.close()
 
 
-MST_SCHEMA_VERSION = "3"
+MST_SCHEMA_VERSION = "4"
 MASTER_READY = False
 MASTER_ERROR = "尚未初始化"
 
@@ -983,6 +985,25 @@ def _migrate_master_columns(conn):
                          ("date_format", "TEXT DEFAULT ''")):
             if col not in have:
                 conn.execute(f"ALTER TABLE mst_products ADD COLUMN {col} {ddl}")
+    # v3 → v4：訂單列記住「哪一批匯入帶進來／最後改到」。用批次 id 而不是時間戳，因為同一秒
+    # 內連按兩次確認匯入時間戳會撞在一起。舊資料用時間戳盡量回填。
+    if _table_exists(conn, "mst_orders"):
+        have = _cols(conn, "mst_orders")
+        added = False
+        for col in ("first_batch_id", "last_batch_id"):
+            if col not in have:
+                conn.execute(f"ALTER TABLE mst_orders ADD COLUMN {col} INTEGER"); added = True
+        if added and _table_exists(conn, "mst_import_batches"):
+            conn.execute(
+                """UPDATE mst_orders SET first_batch_id = (
+                       SELECT MAX(b.id) FROM mst_import_batches b
+                       WHERE b.committed = 1 AND b.committed_at = mst_orders.first_seen_at)
+                   WHERE first_batch_id IS NULL""")
+            conn.execute(
+                """UPDATE mst_orders SET last_batch_id = (
+                       SELECT MAX(b.id) FROM mst_import_batches b
+                       WHERE b.committed = 1 AND b.committed_at = mst_orders.updated_at)
+                   WHERE last_batch_id IS NULL""")
 
     # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，一次性搬成旗標並清空。
     if _table_exists(conn, "mst_products"):

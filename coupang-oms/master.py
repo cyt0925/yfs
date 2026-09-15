@@ -382,7 +382,8 @@ def api_import_commit():
                 continue
             conn.execute(
                 """UPDATE mst_orders SET qty_ship = 0, missing_in_file = 1, last_seen_at = ?,
-                   updated_at = ?, version = version + 1 WHERE id = ?""", (stamp, stamp, ex["id"]))
+                   updated_at = ?, last_batch_id = ?, version = version + 1 WHERE id = ?""",
+                (stamp, stamp, batch_id, ex["id"]))
             _log(conn, ex["line"], ex["po_number"], ex["sku_id"], ex["barcode"], "qty_ship", "出貨數量",
                  ex["qty_ship"], 0, operator, "import", "這次的整合表裡這張 PO 已沒有這個品項，出貨數量歸 0")
             removed_n += 1
@@ -404,12 +405,14 @@ def api_import_commit():
                        (po_number, sku_id, line, barcode, yf_sku, brand, product_name, warehouse,
                         order_type, unit, unit_price, qty_coupang, qty_file_ship, qty_ship,
                         box_size_file, delivery_date_file, delivery_date, remarks_file, remarks,
-                        source_file, first_seen_at, last_seen_at, updated_at, version)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)""",
+                        source_file, first_seen_at, last_seen_at, updated_at, version,
+                        first_batch_id, last_batch_id)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
                     (r["po_number"], r["sku_id"], line, r["barcode"], r["yf_sku"], r["brand"],
                      r["product_name"], r["warehouse"], r["order_type"], r["unit"], r["unit_price"],
                      r["qty_coupang"], r["qty_file_ship"], ship, r["box_size"], r["delivery_date"],
-                     r["delivery_date"], r["remarks_file"], "", r["source_file"], stamp, stamp, stamp))
+                     r["delivery_date"], r["remarks_file"], "", r["source_file"], stamp, stamp, stamp,
+                     batch_id, batch_id))
                 inserted += 1
                 continue
             sets, vals, changed = [], [], False
@@ -445,6 +448,7 @@ def api_import_commit():
             sets.append("source_file = ?"); vals.append(r["source_file"])
             if changed:
                 sets.append("updated_at = ?"); vals.append(stamp)
+                sets.append("last_batch_id = ?"); vals.append(batch_id)
                 sets.append("version = version + 1"); updated_n += 1
             else:
                 identical_n += 1
@@ -527,7 +531,8 @@ def _read_filters(args):
     return {"lines": split("lines"), "dates": split("dates"), "pos": split("pos"),
             "brands": split("brands"), "warehouses": split("warehouses"),
             "q": norm_text(args.get("q")), "edited": args.get("edited") == "1",
-            "missing": args.get("missing") == "1"}
+            "missing": args.get("missing") == "1",
+            "batch": norm_int(args.get("batch")), "batch_scope": (args.get("batch_scope") or "new")}
 
 
 def _keep(o, f):
@@ -545,6 +550,14 @@ def _keep(o, f):
         return False
     if f["missing"] and o["cases"] is not None:
         return False
+    if f.get("batch"):
+        # 篩「某一次匯入」：new = 這批帶進來的；all = 這批帶進來或最後被這批改到的
+        b = f["batch"]
+        if f.get("batch_scope") == "all":
+            if o.get("first_batch_id") != b and o.get("last_batch_id") != b:
+                return False
+        elif o.get("first_batch_id") != b:
+            return False
     if f["q"]:
         hay = " ".join(str(o.get(k) or "") for k in
                        ("po_number", "sku_id", "barcode", "yf_sku", "brand", "product_name", "remarks", "line"))
@@ -1498,6 +1511,30 @@ def api_reset():
     tail = "，修改歷程保留" if keep_logs else "，修改歷程一併清除"
     note = f"（清空前已自動備份：{os.path.basename(backup)}）" if backup else ""
     return jsonify({"ok": True, "message": f"已清除 {'、'.join(parts)}{tail}。{note}"})
+
+
+@master_bp.route("/api/master/imports")
+def api_imports():
+    """匯入歷程：每一次「確認匯入」一列，附上「這批目前還算新增的有幾筆、落在哪幾個月」，
+    讓 OP 分得出同一天匯兩次時，第二次多出來的是哪些（拿去只匯那批的專案報價檔）。"""
+    limit = min(norm_int(request.args.get("limit")) or 60, 300)
+    conn = get_conn()
+    try:
+        batches = _rows(conn.execute(
+            """SELECT id, filename, operator, rows_total, rows_new, rows_updated, rows_identical, created_at, committed_at
+               FROM mst_import_batches WHERE committed = 1 ORDER BY committed_at DESC, id DESC LIMIT ?""", (limit,)))
+        for b in batches:
+            months = _rows(conn.execute(
+                """SELECT substr(delivery_date, 1, 7) AS m, COUNT(*) AS n FROM mst_orders
+                   WHERE first_batch_id = ? GROUP BY substr(delivery_date, 1, 7) ORDER BY m""", (b["id"],)))
+            b["new_now"] = sum(x["n"] for x in months)
+            b["months"] = [x["m"] for x in months if x["m"]]
+            b["changed_now"] = _row(conn.execute(
+                "SELECT COUNT(*) AS n FROM mst_orders WHERE last_batch_id = ? AND first_batch_id != ?",
+                (b["id"], b["id"])))["n"]
+    finally:
+        conn.close()
+    return jsonify({"batches": batches})
 
 
 @master_bp.route("/api/master/logs")

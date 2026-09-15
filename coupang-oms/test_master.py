@@ -313,6 +313,21 @@ def main():
     check("PO 的歷程含改期、出貨數量、備註", {l["field"] for l in logs} >= {"delivery_date", "qty_ship", "remarks"})
     check("歷程可用關鍵字查", len(client.get("/api/master/logs?q=打單缺貨").get_json()["logs"]) >= 1)
 
+    print("\n【12c】匯入歷程：分得出「這一次匯入新增了哪些」")
+    imps = client.get("/api/master/imports").get_json()["batches"]
+    check("匯入歷程列出每次確認匯入（含 7 月那批）", len(imps) >= 2 and all(b["committed_at"] for b in imps), str([(b["id"], b["new_now"], b["months"]) for b in imps]))
+    jul = next((b for b in imps if b["months"] == ["2026-07"]), None)
+    check("7 月那批：新增 53、落在 2026-07", jul and jul["new_now"] == 53, str(jul and (jul["new_now"], jul["months"], jul["changed_now"])))
+    od = orders(client, month="2026-07", batch=jul["id"])
+    check("只看這批新增：7 月 53 筆", od["count"] == 53, str(od["count"]))
+    check("換到 9 月看同一批 → 0 筆（那批沒有 9 月的單）", orders(client, month="2026-09", batch=jul["id"])["count"] == 0)
+    check("不存在的批次 → 0 筆，不會整月都出來", orders(client, month="2026-07", batch=999999)["count"] == 0)
+    res = client.get(f"/api/master/export/daily?month=2026-07&month_to=2026-09&batch={jul['id']}&batch_scope=new")
+    names = openpyxl.load_workbook(io.BytesIO(res.data)).sheetnames
+    check("匯出這批的專案報價檔：跨月範圍裡只剩 7 月的分頁", names and all(n.startswith("07") for n in names), str(names))
+    sep = max(imps, key=lambda b: b["new_now"])
+    check("9 月那批 batch_scope=all 含新增＋有變、不少於只看新增", orders(client, month="2026-09", batch=sep["id"], batch_scope="all")["count"] >= orders(client, month="2026-09", batch=sep["id"])["count"] > 0)
+
     print("\n【12b】清除資料（只有管理員）")
     before_orders = orders(client, month="2026-09")["count"]
     before_prods = len(client.get("/api/master/products").get_json()["products"])
@@ -399,7 +414,8 @@ def main():
         ords = [dict(r) for r in c.execute("SELECT * FROM mst_orders ORDER BY po_number")]
         check("訂單搬到新表、線別保留原始值", len(ords) == 2 and ords[1]["line"] == "CPG-紙品")
         check("有 missing_in_file 新欄位", "missing_in_file" in ords[0])
-        check("schema_version 記為 3", c.execute("SELECT value FROM mst_meta WHERE key='schema_version'").fetchone()[0] == "3")
+        check("schema_version 記為 4", c.execute("SELECT value FROM mst_meta WHERE key='schema_version'").fetchone()[0] == "4")
+        check("升級後訂單有 first_batch_id／last_batch_id", {"first_batch_id", "last_batch_id"} <= set(ords[0].keys()))
         check("升級後主檔有 unit／master_line／active 新欄位", {"unit", "master_line", "active", "shelf_days", "date_format"} <= set(prods[0].keys()), str(sorted(prods[0].keys())))
         c.close()
     finally:
