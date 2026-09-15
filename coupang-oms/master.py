@@ -1664,9 +1664,18 @@ def api_imports():
                    WHERE first_batch_id = ? GROUP BY substr(delivery_date, 1, 7) ORDER BY m""", (b["id"],)))
             b["new_now"] = sum(x["n"] for x in months)
             b["months"] = [x["m"] for x in months if x["m"]]
-            b["changed_now"] = _row(conn.execute(
-                "SELECT COUNT(*) AS n FROM mst_orders WHERE last_batch_id = ? AND first_batch_id != ?",
-                (b["id"], b["id"])))["n"]
+            changed = _rows(conn.execute(
+                """SELECT substr(delivery_date, 1, 7) AS m, COUNT(*) AS n FROM mst_orders
+                   WHERE last_batch_id = ? AND first_batch_id != ? GROUP BY substr(delivery_date, 1, 7) ORDER BY m""",
+                (b["id"], b["id"])))
+            b["changed_now"] = sum(x["n"] for x in changed)
+            # 這次匯入的新增／有變各落在哪幾個月（畫面上做成可以點的月份標籤，不再自動跳月份）
+            mc = {}
+            for x in months:
+                mc.setdefault(x["m"] or "", {"m": x["m"] or "", "new": 0, "changed": 0})["new"] += x["n"]
+            for x in changed:
+                mc.setdefault(x["m"] or "", {"m": x["m"] or "", "new": 0, "changed": 0})["changed"] += x["n"]
+            b["month_counts"] = [mc[k] for k in sorted(mc)]
             b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_now']}、有變 {b['changed_now']}"
     finally:
         conn.close()
