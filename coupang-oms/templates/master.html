@@ -506,6 +506,19 @@ function renderImportBar() {
       ${older.length ? `<span class="flex items-center gap-1"><select id="older-imports" class="sel" style="max-width:340px;padding:5px 8px;${olderOn ? "border-color:var(--b700);background:var(--b50);font-weight:600" : ""}" title="看更早某一次匯入的變動；選回第一條就回到全部訂單"><option value="" disabled hidden ${olderOn ? "" : "selected"}>看更早某一次匯入的變動 ▾</option>${older.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"} ${olderOn && cur.id === b.id ? "selected" : ""}>${esc(b.committed_at.slice(5, 16))} ${esc(b.filename)}：新增 ${b.new_now}、有變 ${b.changed_now}</option>`).join("")}</select>${olderOn ? `<button class="btn btn-g btn-sm" id="older-clear" title="回到全部訂單"><i class="bi bi-x-lg"></i></button>` : ""}</span>` : ""}
     </div>
     ${cur ? `<div class="flex items-center gap-2 flex-wrap mt-2 text-sm"><span><i class="bi bi-funnel-fill"></i> 目前只看 <b>${esc(cur.committed_at.slice(5, 16))} ${esc(cur.filename)}</b> 這次匯入的變動。它的資料在：</span>${monthChips || `<span class="muted">沒有任何新增或有變</span>`}<span class="kbd" style="margin-left:auto"><span class="badge" style="background:#dcfce7;color:#166534">新增</span> 這次才出現的品項　<span class="badge bd-warn">有變</span> 舊品項被這次改到，底下寫改了什麼</span></div>` : ""}`;
+  // 對帳：這個月「全部」的品項數 = 各次匯入「新增」加總（每個品項只算在第一次出現的那次）；
+  // PO 數不能相加，因為同一張 PO 可以在兩次匯入裡都動到，這裡把重複的張數點出來。
+  const f = state.facets;
+  if (f) {
+    const totalRows = (f.lines || []).reduce((n, x) => n + x.rows, 0); const totalPos = (f.pos || []).length;
+    const parts = importBatches.map(b => ({ b, mc: b.month_counts.find(x => x.m === state.month) })).filter(x => x.mc && (x.mc.new || x.mc.changed)).reverse();
+    if (totalRows && parts.length) {
+      const sumNew = parts.reduce((n, x) => n + x.mc.new, 0); const sumPos = parts.reduce((n, x) => n + x.mc.pos, 0); const overlap = sumPos - totalPos;
+      const mm = Number(state.month.slice(5));
+      li.insertAdjacentHTML("beforeend", `<div class="mt-2 text-sm" style="border-top:1px dashed var(--b200);padding-top:6px"><i class="bi bi-calculator"></i> <b>${mm} 月對帳</b>：全部 <b>${totalRows}</b> 品項 ＝ ${parts.map(x => `${esc(x.b.committed_at.slice(5, 16))} 新增 <b>${x.mc.new}</b>`).join(" ＋ ")}${sumNew !== totalRows ? ` ＋ <span class="neg">${totalRows - sumNew} 筆對不上（匯入紀錄可能被清掉）</span>` : ` <span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 對得起來</span>`}<span class="muted">（「有變」是舊品項被改到，已經算在更早那次的新增裡，不能再加）</span>
+        <br><span class="kbd">PO：全部 <b>${totalPos}</b> 張${overlap > 0 ? `；各次匯入分開數是 ${parts.map(x => `${x.mc.pos}`).join("＋")}＝${sumPos} 張，多出來的 <b>${overlap}</b> 張是同一張 PO 在兩次匯入裡都動到（第一次進來、第二次又加品項或改數字），所以 PO 數不能直接相加` : `；各次匯入的 PO 沒有重疊，相加剛好 ${sumPos} 張`}</span></div>`);
+    }
+  }
   li.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => pickBatch(b.dataset.mode === "all" ? null : last.id)));
   const sel = li.querySelector("#older-imports"); if (sel) sel.addEventListener("change", e => pickBatch(e.target.value || null));
   const clr = li.querySelector("#older-clear"); if (clr) clr.addEventListener("click", () => pickBatch(null));

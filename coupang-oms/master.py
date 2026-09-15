@@ -1670,11 +1670,19 @@ def api_imports():
                 (b["id"], b["id"])))
             b["changed_now"] = sum(x["n"] for x in changed)
             # 這次匯入的新增／有變各落在哪幾個月（畫面上做成可以點的月份標籤，不再自動跳月份）
+            pos = _rows(conn.execute(
+                """SELECT substr(delivery_date, 1, 7) AS m, COUNT(DISTINCT po_number) AS n FROM mst_orders
+                   WHERE first_batch_id = ? OR last_batch_id = ? GROUP BY substr(delivery_date, 1, 7)""",
+                (b["id"], b["id"])))
             mc = {}
+            def slot(m):
+                return mc.setdefault(m or "", {"m": m or "", "new": 0, "changed": 0, "pos": 0})
             for x in months:
-                mc.setdefault(x["m"] or "", {"m": x["m"] or "", "new": 0, "changed": 0})["new"] += x["n"]
+                slot(x["m"])["new"] += x["n"]
             for x in changed:
-                mc.setdefault(x["m"] or "", {"m": x["m"] or "", "new": 0, "changed": 0})["changed"] += x["n"]
+                slot(x["m"])["changed"] += x["n"]
+            for x in pos:
+                slot(x["m"])["pos"] += x["n"]
             b["month_counts"] = [mc[k] for k in sorted(mc)]
             b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_now']}、有變 {b['changed_now']}"
     finally:
