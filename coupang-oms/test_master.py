@@ -313,7 +313,7 @@ def main():
     check("PO 的歷程含改期、出貨數量、備註", {l["field"] for l in logs} >= {"delivery_date", "qty_ship", "remarks"})
     check("歷程可用關鍵字查", len(client.get("/api/master/logs?q=打單缺貨").get_json()["logs"]) >= 1)
 
-    print("\n【12c】匯入歷程：分得出「這一次匯入新增了哪些」")
+    print("\n【12c】匯出範圍＝某一次匯入：分得出這次新增／有變了哪些")
     imps = client.get("/api/master/imports").get_json()["batches"]
     check("匯入歷程列出每次確認匯入（含 7 月那批）", len(imps) >= 2 and all(b["committed_at"] for b in imps), str([(b["id"], b["new_now"], b["months"]) for b in imps]))
     jul = next((b for b in imps if b["months"] == ["2026-07"]), None)
@@ -326,7 +326,21 @@ def main():
     names = openpyxl.load_workbook(io.BytesIO(res.data)).sheetnames
     check("匯出這批的專案報價檔：跨月範圍裡只剩 7 月的分頁", names and all(n.startswith("07") for n in names), str(names))
     sep = max(imps, key=lambda b: b["new_now"])
-    check("9 月那批 batch_scope=all 含新增＋有變、不少於只看新增", orders(client, month="2026-09", batch=sep["id"], batch_scope="all")["count"] >= orders(client, month="2026-09", batch=sep["id"])["count"] > 0)
+    check("9 月那批：預設範圍（新增＋有變）不少於只看新增", orders(client, month="2026-09", batch=sep["id"])["count"] >= orders(client, month="2026-09", batch=sep["id"], batch_scope="new")["count"] > 0)
+    wbb = openpyxl.load_workbook(io.BytesIO(client.get(f"/api/master/export/daily?month=2026-07&batch={jul['id']}").data))
+    hdr_b = [c.value for c in wbb[wbb.sheetnames[0]][1]]
+    check("匯出某一次匯入時多一欄「本次變動」、新增的寫「新增」", hdr_b[-1] == "本次變動" and wbb[wbb.sheetnames[0]].cell(row=2, column=len(hdr_b)).value == "新增", str(hdr_b[-3:]))
+    check("匯出目前畫面時沒有那一欄", "本次變動" not in [c.value for c in openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export/daily?month=2026-07").data)).worksheets[0][1]])
+    chg = next((b for b in imps if b["changed_now"]), None)
+    check("品項消失那次匯入算「有變」", chg is not None, str([(b["filename"], b["changed_now"]) for b in imps]))
+    if chg:
+        rows_c = [r for r in orders(client, month="2026-09", batch=chg["id"])["rows"] if r["last_batch_id"] == chg["id"] and r["first_batch_id"] != chg["id"]]
+        check("有變的列記得改了什麼（出貨數量 →／品項重新出現／檔案已無此品項）", rows_c and all(any(k in (r["last_batch_changes"] or "") for k in ("→", "品項重新出現", "檔案已無此品項")) for r in rows_c), str([r.get("last_batch_changes") for r in rows_c][:2]))
+        wbc = openpyxl.load_workbook(io.BytesIO(client.get(f"/api/master/export/daily?month=2026-09&batch={chg['id']}").data)); wsc = wbc.worksheets[0]
+        col = [c.value for c in wsc[1]].index("本次變動") + 1
+        vals = [wsc.cell(row=r, column=col).value for r in range(2, wsc.max_row + 1) if wsc.cell(row=r, column=col).value]
+        check("匯出檔「本次變動」欄寫出變動內容", any(any(k in str(v) for k in ("→", "品項重新出現", "檔案已無此品項")) for v in vals), str(vals[:3]))
+    check("匯入歷程獨立視窗已拿掉", 'id="dlg-imports"' not in client.get("/master").get_data(as_text=True))
 
     print("\n【12b】清除資料（只有管理員）")
     before_orders = orders(client, month="2026-09")["count"]

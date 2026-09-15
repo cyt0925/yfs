@@ -126,6 +126,18 @@ def _split_lines(text):
     return [x for x in (text or "").split(",") if x]
 
 
+def _short(v):
+    """變動說明用的短寫：日期 2026-09-04 → 9/4、None → 空、數字去掉多餘的 .0。"""
+    if v is None or v == "":
+        return "空"
+    t = str(v)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
+        return f"{int(t[5:7])}/{int(t[8:10])}"
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return t
+
+
 def _md(date_str):
     try:
         d = _dt.date.fromisoformat(date_str)
@@ -382,8 +394,9 @@ def api_import_commit():
                 continue
             conn.execute(
                 """UPDATE mst_orders SET qty_ship = 0, missing_in_file = 1, last_seen_at = ?,
-                   updated_at = ?, last_batch_id = ?, version = version + 1 WHERE id = ?""",
-                (stamp, stamp, batch_id, ex["id"]))
+                   updated_at = ?, last_batch_id = ?, last_batch_changes = ?, version = version + 1
+                   WHERE id = ?""",
+                (stamp, stamp, batch_id, f"檔案已無此品項，出貨 {_short(ex['qty_ship'])}→0", ex["id"]))
             _log(conn, ex["line"], ex["po_number"], ex["sku_id"], ex["barcode"], "qty_ship", "出貨數量",
                  ex["qty_ship"], 0, operator, "import", "這次的整合表裡這張 PO 已沒有這個品項，出貨數量歸 0")
             removed_n += 1
@@ -406,8 +419,8 @@ def api_import_commit():
                         order_type, unit, unit_price, qty_coupang, qty_file_ship, qty_ship,
                         box_size_file, delivery_date_file, delivery_date, remarks_file, remarks,
                         source_file, first_seen_at, last_seen_at, updated_at, version,
-                        first_batch_id, last_batch_id)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
+                        first_batch_id, last_batch_id, last_batch_changes)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,'新增')""",
                     (r["po_number"], r["sku_id"], line, r["barcode"], r["yf_sku"], r["brand"],
                      r["product_name"], r["warehouse"], r["order_type"], r["unit"], r["unit_price"],
                      r["qty_coupang"], r["qty_file_ship"], ship, r["box_size"], r["delivery_date"],
@@ -415,7 +428,7 @@ def api_import_commit():
                      batch_id, batch_id))
                 inserted += 1
                 continue
-            sets, vals, changed = [], [], False
+            sets, vals, changed, notes = [], [], False, []
             mapping = {
                 "line": line, "barcode": r["barcode"], "yf_sku": r["yf_sku"], "brand": r["brand"],
                 "product_name": r["product_name"], "warehouse": r["warehouse"],
@@ -430,16 +443,25 @@ def api_import_commit():
                     if field in COUPANG_FIELDS:
                         _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], field,
                              COUPANG_FIELDS[field], existing.get(field), value, operator, "import", fname)
+                        if field not in ("qty_file_ship", "delivery_date_file"):   # 這兩個下面用人看得懂的名字記
+                            notes.append(f"{COUPANG_FIELDS[field]} {_short(existing.get(field))}→{_short(value)}")
             if not existing["qty_ship_overridden"] and not _same(existing["qty_ship"], ship):
                 sets.append("qty_ship = ?"); vals.append(ship); changed = True
+                notes.append(f"出貨數量 {_short(existing['qty_ship'])}→{_short(ship)}")
                 _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "qty_ship", "出貨數量",
                      existing["qty_ship"], ship, operator, "import", "隨整合表更新")
+            elif existing["qty_ship_overridden"] and not _same(existing["qty_file_ship"], r["qty_file_ship"]):
+                notes.append(f"整合表出貨 {_short(existing['qty_file_ship'])}→{_short(r['qty_file_ship'])}（人工調整過，畫面不動）")
             if not existing["delivery_date_overridden"] and not _same(existing["delivery_date"], r["delivery_date"]):
                 sets.append("delivery_date = ?"); vals.append(r["delivery_date"]); changed = True
+                notes.append(f"交貨日 {_short(existing['delivery_date'])}→{_short(r['delivery_date'])}")
                 _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "delivery_date", "交貨日",
                      existing["delivery_date"], r["delivery_date"], operator, "import", "隨整合表更新")
+            elif existing["delivery_date_overridden"] and not _same(existing["delivery_date_file"], r["delivery_date"]):
+                notes.append(f"整合表交貨日 {_short(existing['delivery_date_file'])}→{_short(r['delivery_date'])}（人工改期過，畫面不動）")
             if existing["missing_in_file"]:
                 sets.append("missing_in_file = 0"); changed = True
+                notes.append("品項重新出現")
                 if not existing["qty_ship_overridden"] and "qty_ship = ?" not in sets:
                     sets.append("qty_ship = ?"); vals.append(ship)
                 _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "missing_in_file",
@@ -449,6 +471,7 @@ def api_import_commit():
             if changed:
                 sets.append("updated_at = ?"); vals.append(stamp)
                 sets.append("last_batch_id = ?"); vals.append(batch_id)
+                sets.append("last_batch_changes = ?"); vals.append("；".join(notes) or "有變")
                 sets.append("version = version + 1"); updated_n += 1
             else:
                 identical_n += 1
@@ -532,7 +555,7 @@ def _read_filters(args):
             "brands": split("brands"), "warehouses": split("warehouses"),
             "q": norm_text(args.get("q")), "edited": args.get("edited") == "1",
             "missing": args.get("missing") == "1",
-            "batch": norm_int(args.get("batch")), "batch_scope": (args.get("batch_scope") or "new")}
+            "batch": norm_int(args.get("batch")), "batch_scope": (args.get("batch_scope") or "all")}
 
 
 def _keep(o, f):
@@ -1406,7 +1429,11 @@ def api_export_daily():
     head = ["SKU ID", "永豐料號", "國條", "品類", "品牌", "品名", "下單數量(酷澎單位)", "出貨數量", "箱入數",
             "出貨數量(箱)", "單價(含稅)", "酷澎下單價(含稅)", "箱單價(含稅)", "總計(含稅)", "備註",
             "驗收完成請打勾", "簽單完成請打勾", "交貨日"]
+    batch = filters.get("batch")
+    if batch:
+        head.append("本次變動")   # 只匯某一次匯入時多一欄：新增／出貨數量 20→0／交貨日 9/4→9/8
     yellow = PatternFill("solid", fgColor="FFFF00"); head_fill = PatternFill("solid", fgColor="F8CBAD"); bold = Font(bold=True)
+    changed_fill = PatternFill("solid", fgColor="FFF3C4")
     by_date = collections.OrderedDict()
     for o in orders:
         by_date.setdefault(o["delivery_date"] or "", collections.OrderedDict()).setdefault(o["po_number"], []).append(o)
@@ -1432,11 +1459,18 @@ def api_export_daily():
                 box_price = (cp * box) if (cp is not None and box) else None
                 total = (box_price * o["cases"]) if (box_price is not None and o["cases"] is not None) else None
                 po_cell = (f"{po}_{label}({o['warehouse']})" if o["warehouse"] else f"{po}_{label}") if i == 0 else None
-                ws.append([o["sku_id"], o.get("yf_sku_master") or o["yf_sku"], o["barcode"], o.get("category") or "",
-                           o.get("brand_master") or o["brand"], o["product_name"], o["qty_coupang"], o["qty_ship"],
-                           box, o["cases"], o.get("cost_price"), cp, box_price, total, o["export_note"], "", "", po_cell])
+                cells = [o["sku_id"], o.get("yf_sku_master") or o["yf_sku"], o["barcode"], o.get("category") or "",
+                         o.get("brand_master") or o["brand"], o["product_name"], o["qty_coupang"], o["qty_ship"],
+                         box, o["cases"], o.get("cost_price"), cp, box_price, total, o["export_note"], "", "", po_cell]
+                if batch:
+                    is_new = o.get("first_batch_id") == batch
+                    cells.append("新增" if is_new else (o.get("last_batch_changes") or "有變"))
+                ws.append(cells)
+                if batch and not is_new:
+                    for c in ws[ws.max_row]:
+                        c.fill = changed_fill
         ws.freeze_panes = "A2"
-        for i, w in enumerate([16, 15, 15, 8, 14, 44, 10, 9, 8, 11, 10, 12, 11, 12, 18, 8, 8, 30], start=1):
+        for i, w in enumerate([16, 15, 15, 8, 14, 44, 10, 9, 8, 11, 10, 12, 11, 12, 18, 8, 8, 30, 36], start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
         for row in ws.iter_rows(min_row=2, min_col=1, max_col=3):
             for c in row:
@@ -1521,6 +1555,7 @@ def api_imports():
             b["changed_now"] = _row(conn.execute(
                 "SELECT COUNT(*) AS n FROM mst_orders WHERE last_batch_id = ? AND first_batch_id != ?",
                 (b["id"], b["id"])))["n"]
+            b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_now']}、有變 {b['changed_now']}"
     finally:
         conn.close()
     return jsonify({"batches": batches})

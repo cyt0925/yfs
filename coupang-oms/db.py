@@ -769,8 +769,9 @@ CREATE TABLE IF NOT EXISTS mst_orders (
     remarks_overridden      INTEGER NOT NULL DEFAULT 0,
     missing_in_file         INTEGER NOT NULL DEFAULT 0,
     source_file             TEXT DEFAULT '',
-    first_batch_id          INTEGER,               -- 第一次是哪一批匯入帶進來的（匯入歷程「這批新增」）
+    first_batch_id          INTEGER,               -- 第一次是哪一批匯入帶進來的（匯出時分得出「這批新增」）
     last_batch_id           INTEGER,               -- 最後一次被哪一批匯入改到
+    last_batch_changes      TEXT DEFAULT '',       -- 那一批改了什麼（出貨數量 20→0；交貨日 9/4→9/8），匯出「本次變動」欄用
     first_seen_at           TEXT DEFAULT '',
     last_seen_at            TEXT DEFAULT '',
     updated_at              TEXT DEFAULT '',
@@ -990,9 +991,10 @@ def _migrate_master_columns(conn):
     if _table_exists(conn, "mst_orders"):
         have = _cols(conn, "mst_orders")
         added = False
-        for col in ("first_batch_id", "last_batch_id"):
+        for col, ddl in (("first_batch_id", "INTEGER"), ("last_batch_id", "INTEGER"),
+                         ("last_batch_changes", "TEXT DEFAULT ''")):
             if col not in have:
-                conn.execute(f"ALTER TABLE mst_orders ADD COLUMN {col} INTEGER"); added = True
+                conn.execute(f"ALTER TABLE mst_orders ADD COLUMN {col} {ddl}"); added = added or col != "last_batch_changes"
         if added and _table_exists(conn, "mst_import_batches"):
             conn.execute(
                 """UPDATE mst_orders SET first_batch_id = (
