@@ -30,6 +30,11 @@
   .btn-g { background:#fff; color:var(--ink2); border-color:var(--line); } .btn-g:hover { background:#f8fafc; }
   .btn-r { background:#dc2626; color:#fff; border-color:#dc2626; } .btn-r:hover { background:#b91c1c; }
   .btn-r:disabled { background:#fca5a5; border-color:#fca5a5; cursor:not-allowed; }
+  .seg { display:inline-flex; border:1px solid var(--b200); border-radius:10px; overflow:hidden; background:#fff; }
+  .seg button { padding:6px 14px; font-size:13px; font-weight:600; color:var(--b800); background:#fff; border:0; cursor:pointer; }
+  .seg button + button { border-left:1px solid var(--b200); }
+  .seg button.on { background:var(--b700); color:#fff; }
+  .seg button:disabled { color:var(--muted); cursor:not-allowed; }
   .btn-sm { padding:4px 10px; font-size:12.5px; }
   .btn-danger { color:var(--bad); border-color:#fecaca; background:#fff; } .btn-danger:hover { background:var(--badbg); }
   .chip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:12.5px; border:1px solid var(--b200); background:var(--b50); color:var(--b800); cursor:pointer; user-select:none; }
@@ -183,9 +188,7 @@
       <button id="btn-clear" class="btn btn-g btn-sm"><i class="bi bi-x-circle"></i> 清除篩選</button>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <span class="badge bd-blue hidden" id="batch-hint" style="cursor:pointer;font-size:12px;padding:3px 8px" title="目前只看某一次匯入的資料，點一下取消"></span>
       <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔會照這個範圍">已篩選</span>
-      <select id="exp-scope" class="sel" style="max-width:360px" title="要匯什麼：目前畫面篩出來的，或只匯某一次匯入新增／有變的（畫面會同步只顯示那些，變動的標黃）"><option value="">匯出：目前畫面篩出來的</option></select>
       <label class="text-sm muted" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">匯到</label><input type="month" id="exp-to" class="sel" style="padding:4px 8px" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">
       <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁（0904交貨、0903交貨…），PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月；「匯到」往後拉可以跨月。"><i class="bi bi-calendar-week"></i> 匯出專案報價檔</a>
     </div>
@@ -433,7 +436,8 @@ function filterParams() {
     edited: state.edited ? "1" : "", missing: state.missing ? "1" : "", batch: state.batch || "", batch_scope: "all" });
 }
 $("#exp-to").addEventListener("change", () => { $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams(); });
-function anyFilter() { return state.lines.size || state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing || state.batch; }
+function anyFilter() { return state.lines.size || state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing; }
+function anyScope() { return anyFilter() || state.batch; }
 
 async function loadOrders() {
   $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams();
@@ -441,12 +445,11 @@ async function loadOrders() {
   let data;
   try { data = await api("/api/master/orders?" + filterParams()); } catch (e) { toast(e.message, "err"); return; }
   state.facets = data.facets; state.rows = data.rows;
-  const bh = $("#batch-hint"); bh.classList.toggle("hidden", !state.batch);
-  if (state.batch) bh.innerHTML = `<i class="bi bi-list-check"></i> 只看 ${esc(state.batchLabel)} 這次匯入新增／有變的 <i class="bi bi-x-lg"></i>`;
-  if ($("#exp-scope").value !== String(state.batch || "")) $("#exp-scope").value = String(state.batch || "");
+  $("#btn-export-daily").innerHTML = state.batch ? `<i class="bi bi-calendar-week"></i> 匯出這次變動的專案報價檔` : `<i class="bi bi-calendar-week"></i> 匯出專案報價檔`;
+  $("#btn-export-daily").classList.toggle("btn-p", true);
+  renderImportBar();
   renderCalendar(); renderDropdowns(); renderOrders(); renderBatch(); renderWarehouses();
 }
-$("#batch-hint").addEventListener("click", () => { state.batch = null; $("#exp-scope").value = ""; loadOrders(); });
 
 /* 倉別箱數：行事曆下面一塊。沒勾日期＝整個月各倉別合計；勾了幾天＝這幾天的合計，
    勾兩天以上再多一塊「每一天 × 倉別」。跟其他篩選（線別、PO、品牌…）連動。 */
@@ -479,29 +482,37 @@ function renderWarehouses() {
   box.innerHTML = html;
 }
 
-/* 匯出範圍下拉：目前畫面 ／ 某一次匯入新增＋有變的。選了某一次，畫面也只顯示那些、變動的標黃，匯出多一欄「本次變動」 */
+/* 「最近一次匯入」那一行就是開關：全部訂單 ／ 只看這次匯入的變動。切到變動模式時畫面只剩
+   那次新增＋有變的列（新增綠標、有變黃標寫出改了什麼），匯出按鈕也變成「匯出這次變動的專案報價檔」。
+   要看更早的某一次，點「更早的匯入」再選。 */
 let importBatches = [];
 async function loadImportScopes() {
   let d; try { d = await api("/api/master/imports?limit=30"); } catch (e) { return; }
-  importBatches = d.batches;
-  const sel = $("#exp-scope"); const cur = sel.value;
-  sel.innerHTML = `<option value="">匯出：目前畫面篩出來的</option>` + d.batches.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"}>只匯 ${esc(b.label)}${b.new_now + b.changed_now ? "" : "（這次沒有變動）"}</option>`).join("");
-  sel.value = cur; if (sel.value !== cur) sel.value = "";
-  const last = d.batches[0]; const li = $("#last-import");
-  if (last) {
-    li.classList.remove("hidden");
-    li.innerHTML = `<i class="bi bi-clock-history"></i> 最近一次匯入 <b>${esc(last.committed_at)}</b>（${esc(last.filename)}）：新增 <b>${last.new_now}</b>、有變 <b>${last.changed_now}</b>${last.new_now + last.changed_now ? ` <a href="#" id="last-import-view" style="color:var(--b700);font-weight:600;margin-left:8px"><i class="bi bi-funnel"></i> 只看這些</a>` : `<span class="muted" style="margin-left:8px">跟上一次一樣，沒有變動</span>`}`;
-    const a = $("#last-import-view"); if (a) a.addEventListener("click", e => { e.preventDefault(); pickBatch(last.id); });
-  } else li.classList.add("hidden");
+  importBatches = d.batches; renderImportBar();
+}
+function renderImportBar() {
+  const li = $("#last-import"); const last = importBatches[0];
+  if (!last) { li.classList.add("hidden"); return; }
+  li.classList.remove("hidden");
+  const cur = importBatches.find(b => b.id === state.batch);
+  const target = cur || last;                       // 開關對準的那一次：預設最近一次
+  const n = target.new_now + target.changed_now;
+  const older = importBatches.filter(b => b.id !== last.id);
+  li.style.background = state.batch ? "var(--warnbg)" : "var(--b50)"; li.style.borderColor = state.batch ? "#fcd34d" : "var(--b200)";
+  li.innerHTML = `<div class="flex items-center gap-3 flex-wrap">
+      <span><i class="bi bi-clock-history"></i> ${cur && cur.id !== last.id ? "這次匯入" : "最近一次匯入"} <b>${esc(target.committed_at.slice(5, 16))}</b> <span class="muted">${esc(target.filename)}</span>：新增 <b>${target.new_now}</b>、有變 <b>${target.changed_now}</b>${n ? "" : `<span class="muted">（跟上一次一樣，沒有變動）</span>`}</span>
+      <span class="seg"><button data-mode="all" class="${state.batch ? "" : "on"}">全部訂單</button><button data-mode="batch" class="${state.batch ? "on" : ""}" ${n ? "" : "disabled"}>只看這次的變動${n ? `（新增 ${target.new_now}・有變 ${target.changed_now}）` : ""}</button></span>
+      ${older.length ? `<span style="margin-left:auto" class="flex items-center gap-2"><span class="kbd">更早的匯入</span><select id="older-imports" class="sel" style="max-width:320px;padding:4px 8px"><option value="">選一次…</option>${older.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"} ${cur && cur.id === b.id ? "selected" : ""}>${esc(b.committed_at.slice(5, 16))} ${esc(b.filename)}：新增 ${b.new_now}、有變 ${b.changed_now}</option>`).join("")}</select></span>` : ""}
+    </div>`;
+  li.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { if (b.dataset.mode === "all") pickBatch(null); else pickBatch(target.id); }));
+  const sel = li.querySelector("#older-imports"); if (sel) sel.addEventListener("change", e => { if (e.target.value) pickBatch(e.target.value); });
 }
 function pickBatch(id) {
   const b = importBatches.find(x => x.id === Number(id));
   state.batch = b ? b.id : null; state.batchLabel = b ? b.committed_at.slice(5, 16) : ""; state.dates.clear(); state.pos.clear();
   if (b && b.months.length) { state.month = b.months[0]; localStorage.setItem("mst_month", state.month); $("#sel-month").value = state.month; $("#exp-to").value = b.months[b.months.length - 1]; }
-  $("#exp-scope").value = state.batch ? String(state.batch) : "";
   loadOrders();
 }
-$("#exp-scope").addEventListener("change", e => pickBatch(e.target.value));
 
 function renderCalendar() {
   const [y, m] = state.month.split("-").map(Number);
@@ -545,7 +556,7 @@ function lineTag(o) { return `<span class="line-tag" title="原始線別：${esc
 function renderOrders() {
   const rows = state.rows;
   $("#orders-count").textContent = rows.length ? `${rows.length} 筆 · 合計 ${fmt(rows.reduce((s, r) => s + (r.cases || 0), 0))} 箱` : "";
-  if (!rows.length) { $("#orders-list").innerHTML = `<div class="card p-10 text-center muted">${anyFilter() ? "沒有符合篩選的資料" : `${state.month} 這個月還沒有任何訂單，按上面的「上傳訂單彙總表」。`}</div>`; return; }
+  if (!rows.length) { $("#orders-list").innerHTML = `<div class="card p-10 text-center muted">${anyScope() ? "沒有符合篩選的資料" : `${state.month} 這個月還沒有任何訂單，按上面的「上傳訂單彙總表」。`}</div>`; return; }
   const byDate = new Map();
   for (const r of rows) { const d = r.delivery_date || ""; if (!byDate.has(d)) byDate.set(d, new Map()); const pos = byDate.get(d); if (!pos.has(r.po_number)) pos.set(r.po_number, []); pos.get(r.po_number).push(r); }
   const dates = [...byDate.keys()].sort((a, b) => (a || "9999") < (b || "9999") ? -1 : 1);

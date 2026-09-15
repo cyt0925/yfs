@@ -260,8 +260,15 @@ def main():
     check("A～U 欄（業務的欄位）一格都沒動", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(1, 22)))
     check("7、8 月的日期欄沒被動到", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(22, 41)))
     hdr_t = [wst.cell(row=1, column=c).value for c in range(1, wst.max_column + 1)]
-    check("9 月加總公式保留（=SUM(AO:BC)）", str(wst.cell(row=2, column=56).value).startswith("=SUM(AO2"), str(wst.cell(row=2, column=56).value))
-    check("9/12、9/14 沒欄位 → 空欄「9/交貨」補上日期", "9/12交貨" in hdr_t and "9/14交貨" in hdr_t and hdr_t.count("9/交貨") == 1, str([h for h in hdr_t if h and str(h).startswith("9/")]))
+    sep_hdrs = [h for h in hdr_t if h and str(h).startswith("9/")]
+    check("9/12、9/14 底稿沒有 → 自動插欄，插在日期順序的位置（9/11 → 9/12 → 9/14 → 9/17）", sep_hdrs.index("9/12交貨") == sep_hdrs.index("9/11交貨") + 1 and sep_hdrs.index("9/14交貨") == sep_hdrs.index("9/12交貨") + 1 and sep_hdrs.index("9/17交貨") == sep_hdrs.index("9/14交貨") + 1, str(sep_hdrs))
+    check("業務的「9/交貨」空欄照樣留著 3 個", hdr_t.count("9/交貨") == 3)
+    check("欄數多 2 欄（101 → 103）", wst.max_column == tpl_ws.max_column + 2, str(wst.max_column))
+    ttl_i = next(i for i, h in enumerate(hdr_t) if h and "9月TTL" in str(h)) + 1
+    check("9 月加總公式改成涵蓋整個區塊（含新欄）", str(wst.cell(row=2, column=ttl_i).value) == "=SUM(AO2:BE2)", str(wst.cell(row=2, column=ttl_i).value))
+    check("右邊業務的公式跟著位移（PG剩餘 =O2-BD2 → =O2-BF2）", str(wst.cell(row=2, column=ttl_i + 1).value) == "=O2-BF2", str(wst.cell(row=2, column=ttl_i + 1).value))
+    check("外部檔的 VLOOKUP 一字不動", str(wst.cell(row=2, column=ttl_i + 4).value) == str(tpl_ws["BH2"].value), str(wst.cell(row=2, column=ttl_i + 4).value)[:60])
+    check("合併儲存格跟著移（BZ → CB）", sorted(str(m) for m in wst.merged_cells.ranges) == ["CB15:CB16", "CB3:CB6", "CB9:CB12"], str(sorted(str(m) for m in wst.merged_cells.ranges)))
     r0 = next(x for x in s_pg["rows"] if x["barcode"] == "4987176405289")
     rowi = next(r for r in range(2, wst.max_row + 1) if str(wst.cell(row=r, column=5).value).strip() == "4987176405289")
     def cell_for(d):
@@ -269,7 +276,7 @@ def main():
     check("箱數填到對的商品列、對的日期欄（含 56.75 不湊整）", all(cell_for(d) == v for d, v in r0["by_date"].items()) and r0["by_date"].get("2026-09-21") == 56.75, str({d: cell_for(d) for d in r0["by_date"]}))
     info_rows = [[str(x) if x is not None else "" for x in row] for row in wbt["系統填入說明"].iter_rows(values_only=True)]
     flat = "\n".join("|".join(r) for r in info_rows)
-    check("說明分頁列出總表沒有的商品（DNU 開頭那兩個）與補上的日期", "DNU4987176386724" in flat and "9/12、9/14" in flat, flat[:300])
+    check("說明分頁列出總表沒有的商品（DNU 開頭那兩個）與自動新增的日期欄", "DNU4987176386724" in flat and "9/12、9/14" in flat, flat[:300])
     check("總表沒有的商品沒混進 Sheet1", not any(str(wst.cell(row=r, column=5).value).startswith("DNU") for r in range(2, wst.max_row + 1)))
     check("沒匯過總表的線別（瑪氏）匯出還是系統格式", openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export?line=瑪氏&month=2026-09").data)).sheetnames[0] == "總表")
 

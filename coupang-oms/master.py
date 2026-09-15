@@ -1262,6 +1262,82 @@ def _save_template(conn, line, filename, sheet, header_row, raw, operator):
          "import", f"匇出總表照這份的樣子（工作表「{sheet}」）")
 
 
+_REF_PART = re.compile(r"^(\$?)([A-Za-z]{1,3})(\$?)(\d*)$")
+
+
+def _shift_ref_text(ref, at):
+    """一個儲存格參照（A1、$B$2、AO2:BC2、$F:$AL）遇到「在第 at 欄前面插一欄」要怎麼改。
+    有 '!' 的是別的工作表或外部檔，不動。"""
+    if "!" in ref:
+        return ref
+    parts = ref.split(":")
+    out = []
+    for part in parts:
+        m = _REF_PART.match(part)
+        if not m:
+            return ref
+        d1, letters, d2, row = m.groups()
+        from openpyxl.utils import column_index_from_string, get_column_letter
+        idx = column_index_from_string(letters.upper())
+        if idx >= at:
+            letters = get_column_letter(idx + 1)
+        out.append(f"{d1}{letters}{d2}{row}")
+    return ":".join(out)
+
+
+def _shift_formula(formula, at):
+    from openpyxl.formula.tokenizer import Tokenizer, Token
+    try:
+        tok = Tokenizer(formula)
+    except Exception:  # noqa: BLE001
+        return formula
+    pieces = []
+    for t in tok.items:
+        if t.type == Token.OPERAND and t.subtype == Token.RANGE:
+            pieces.append(_shift_ref_text(t.value, at))
+        else:
+            pieces.append(t.value)
+    return "=" + "".join(pieces)
+
+
+def _insert_column(ws, at, hdr, title, style_from):
+    """在第 at 欄前面插一欄，模仿 Excel 插欄：右邊的值搬過去、所有公式的參照跟著位移、
+    跨過插入點的範圍自動變寬、合併儲存格與欄寬跟著移。標題與樣式抄隔壁那個日期欄。"""
+    from copy import copy
+    from openpyxl.utils import get_column_letter
+    max_col = ws.max_column
+    if style_from is not None and style_from >= at:
+        style_from += 1            # 樣板欄在插入點右邊，插完會往右移一格
+    ws.insert_cols(at)
+    for row in ws.iter_rows():
+        for c in row:
+            if isinstance(c.value, str) and c.value.startswith("="):
+                c.value = _shift_formula(c.value, at)
+    merged = [str(r) for r in ws.merged_cells.ranges]
+    for r in merged:
+        ws.unmerge_cells(r)
+    from openpyxl.utils.cell import range_boundaries
+    for r in merged:
+        c1, r1, c2, r2 = range_boundaries(r)
+        if c1 >= at:
+            c1 += 1; c2 += 1
+        elif c2 >= at:
+            c2 += 1
+        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+    dims = ws.column_dimensions
+    for col in range(max_col, at - 1, -1):
+        src = dims.get(get_column_letter(col))
+        if src is not None and src.width:
+            dims[get_column_letter(col + 1)].width = src.width
+    if style_from:
+        src_w = dims.get(get_column_letter(style_from))
+        if src_w is not None and src_w.width:
+            dims[get_column_letter(at)].width = src_w.width
+        for r in range(1, ws.max_row + 1):
+            ws.cell(row=r, column=at)._style = copy(ws.cell(row=r, column=style_from)._style)
+    ws.cell(row=hdr, column=at).value = title
+
+
 def _fill_template(tpl, summary, month, operator):
     """把這個月每個交貨日的箱數填進底稿。只動：這個月的日期欄（含把「9/交貨」空欄補上日期）
     和底稿裡對得到的商品列；其他列、其他月份、業務的公式、順序全部不碰。
@@ -1289,6 +1365,44 @@ def _fill_template(tpl, summary, month, operator):
                 date_cols[int(m.group(2))] = c
             else:
                 spare.append(c)
+    # 每個交貨日找欄：有同日期的欄就用；沒有就照 Chloe 說的自動插一欄（插在日期順序該在的位置，
+    # 右邊公式跟著位移）；「M/交貨」空欄留給業務自己用，不動。
+    ttl_col = next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None)
+    added = []
+    def refresh():
+        nonlocal headers, lowered, bc_col, sku_col, date_cols, spare, ttl_col
+        headers = {c: norm_text(ws.cell(row=hdr, column=c).value) for c in range(1, ws.max_column + 1)}
+        lowered = {c: h.lower().replace(" ", "") for c, h in headers.items()}
+        bc_col, sku_col = col_of("barcode"), col_of("sku_id")
+        date_cols, spare = {}, []
+        for c, h in headers.items():
+            m = _DATE_HDR.match(h)
+            if m and int(m.group(1)) == mm:
+                (date_cols.__setitem__(int(m.group(2)), c) if m.group(2) else spare.append(c))
+        ttl_col = next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None)
+    for d in summary["dates"]:
+        day = int(d[8:10])
+        if day in date_cols:
+            continue
+        later = sorted(c for dd, c in date_cols.items() if dd > day)
+        if later:
+            at = later[0]                                    # 插在下一個日期前面
+        elif spare:
+            at = spare[0]                                    # 這個月最後一個日期之後、空欄之前
+        elif ttl_col:
+            at = ttl_col                                     # 空欄也沒有 → 加總欄前面
+        elif date_cols:
+            at = max(date_cols.values()) + 1
+        else:
+            # 底稿完全沒有這個月的區塊：接在最後一個月份區塊後面，並補一個加總欄
+            month_cols = [c for c, h in headers.items() if _DATE_HDR.match(h) or re.match(r"^\s*\d{1,2}月TTL", h)]
+            at = (max(month_cols) + 1) if month_cols else ws.max_column + 1
+            _insert_column(ws, at, hdr, f"{mm}月TTL下單總箱數", max(month_cols) if month_cols else None)
+            refresh(); ttl_col = at
+        neighbor = min(date_cols.values(), key=lambda c: abs(c - at)) if date_cols else None
+        _insert_column(ws, at, hdr, f"{mm}/{day}交貨", neighbor)
+        added.append(f"{mm}/{day}"); refresh()
+    # 重算主檔／商品列的欄位對照（插欄後 Barcode／skuid 欄可能位移）
     by_bc, by_sku = {}, {}
     for r in range(hdr + 1, ws.max_row + 1):
         bc = norm_key(ws.cell(row=r, column=bc_col).value) if bc_col else ""
@@ -1297,18 +1411,16 @@ def _fill_template(tpl, summary, month, operator):
             by_bc[bc] = r
         if sku and sku not in by_sku:
             by_sku[sku] = r
-    # 每個交貨日找欄：有同日期的欄就用；沒有就拿一個「M/交貨」空欄補上日期；都沒有就記下來
-    missing_dates, renamed = [], []
-    for d in summary["dates"]:
-        day = int(d[8:10])
-        if day in date_cols:
-            continue
-        if spare:
-            c = spare.pop(0); date_cols[day] = c
-            ws.cell(row=hdr, column=c).value = f"{mm}/{day}交貨"; renamed.append(f"{mm}/{day}")
-        else:
-            missing_dates.append(d)
     block = sorted(date_cols.values()) + spare
+    # 這個月的加總欄一律重寫成涵蓋整個區塊（含新插的欄），不然插在區塊尾端時舊公式會漏掉新欄
+    if ttl_col and block:
+        from openpyxl.utils import get_column_letter as _L
+        lo, hi = _L(min(block)), _L(max(block))
+        for r in range(hdr + 1, ws.max_row + 1):
+            v = ws.cell(row=r, column=ttl_col).value
+            if (isinstance(v, str) and v.upper().startswith("=SUM(")) or (v is None and ws.cell(row=r, column=bc_col or 1).value):
+                ws.cell(row=r, column=ttl_col).value = f"=SUM({lo}{r}:{hi}{r})"
+    missing_dates, renamed = [], added
     matched, unmatched, filled = 0, [], 0
     for r0 in summary["rows"]:
         r = by_bc.get(r0["barcode"]) or by_sku.get(r0["sku_id"])
@@ -1331,10 +1443,10 @@ def _fill_template(tpl, summary, month, operator):
     info.append(["底稿", tpl["filename"], "工作表", tpl["sheet"]])
     info.append(["對到的商品", matched, "填入格數", filled])
     if renamed:
-        info.append(["補上日期的空欄", "、".join(renamed)])
+        info.append(["自動新增的日期欄", "、".join(renamed)])
     info.append([])
     if missing_dates:
-        info.append(["⚠ 這些交貨日在底稿裡沒有欄位可填（連空欄都用完了），請業務在總表加欄後重匯："]); info.cell(row=info.max_row, column=1).font = bold
+        info.append(["⚠ 這些交貨日沒有填進總表："]); info.cell(row=info.max_row, column=1).font = bold
         for d in missing_dates:
             tot = summary["totals_by_date"].get(d)
             info.append([d, f"{tot} 箱" if tot is not None else ""])
