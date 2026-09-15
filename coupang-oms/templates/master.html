@@ -469,19 +469,23 @@ function renderWarehouses() {
     if (r.cases == null) a.missing++; else a.cases += r.cases; agg.set(w, a);
     const k = d + "|" + w; const b = byDay.get(k) || { cases: 0, pos: new Set() }; if (r.cases != null) b.cases += r.cases; b.pos.add(r.po_number); byDay.set(k, b);
   }
-  const whs = [...agg.keys()].sort(); const total = [...agg.values()].reduce((s, a) => s + a.cases, 0);
+  const whs = [...agg.keys()].sort((a, b) => agg.get(b).cases - agg.get(a).cases);   // 箱數多的排前面
+  const total = [...agg.values()].reduce((s, a) => s + a.cases, 0);
   const scope = state.dates.size ? `已勾 ${state.dates.size} 天` : `${Number(state.month.slice(5))} 月整月`;
-  let html = `<div class="flex items-center gap-2 mb-1"><b class="text-sm" style="color:var(--b900)"><i class="bi bi-building"></i> 倉別箱數</b><span class="kbd">${esc(scope)}${anyFilter() && !state.dates.size ? "（依目前篩選）" : ""}</span></div>
-    <div class="flex gap-4 flex-wrap items-start">
-    <table class="m" style="width:auto;min-width:360px"><thead><tr><th>倉別</th><th class="num">箱數</th><th class="num">PO 數</th><th class="num">品項數</th></tr></thead><tbody>
-    ${whs.map(w => { const a = agg.get(w); return `<tr><td><b>${esc(w)}</b></td><td class="num"><b>${fmt(a.cases)}</b>${a.missing ? ` <span class="neg" title="有 ${a.missing} 個品項算不出箱數，沒算進去">!</span>` : ""}</td><td class="num">${a.pos.size}</td><td class="num">${a.rows}</td></tr>`; }).join("")}
-    <tr style="background:var(--b50)"><td><b>合計</b></td><td class="num"><b>${fmt(total)}</b></td><td class="num">${new Set(rows.map(r => r.po_number)).size}</td><td class="num">${rows.length}</td></tr></tbody></table>`;
+  // 一個倉別一張卡、橫向排滿整個寬度；最前面一張是合計
+  const card = (title, cases, sub, extra = "", style = "") => `<div class="stat" style="min-width:0;${style}"><span style="font-weight:700;color:var(--ink)">${title}</span><b style="white-space:nowrap">${fmt(cases)}${extra}</b><span>${sub}</span></div>`;
+  let html = `<div class="flex items-center gap-2 mb-2"><b class="text-sm" style="color:var(--b900)"><i class="bi bi-building"></i> 倉別箱數</b><span class="kbd">${esc(scope)}${anyFilter() && !state.dates.size ? "（依目前篩選）" : ""} · 箱數多的排前面</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+    ${card("全部倉別合計", total, `${new Set(rows.map(r => r.po_number)).size} 張 PO · ${rows.length} 品項`, "", "background:var(--b50);border-color:var(--b200)")}
+    ${whs.map(w => { const a = agg.get(w); return card(esc(w), a.cases, `${a.pos.size} 張 PO · ${a.rows} 品項`, a.missing ? ` <span class="neg" style="font-size:13px" title="有 ${a.missing} 個品項算不出箱數，沒算進去">!${a.missing}</span>` : ""); }).join("")}
+    </div>`;
   if (state.dates.size >= 2) {
     const dl = [...days].sort();
-    html += `<div class="tbl-wrap" style="max-height:260px"><table class="m" style="width:auto"><thead><tr><th>日期</th>${whs.map(w => `<th class="num">${esc(w)}</th>`).join("")}<th class="num">合計</th></tr></thead><tbody>
-      ${dl.map(d => { let t = 0; const cells = whs.map(w => { const b = byDay.get(d + "|" + w); if (!b) return `<td class="num muted">—</td>`; t += b.cases; return `<td class="num" title="${b.pos.size} 張 PO">${fmt(b.cases)}</td>`; }).join(""); return `<tr><td class="mono">${esc(d)}</td>${cells}<td class="num"><b>${fmt(t)}</b></td></tr>`; }).join("")}</tbody></table></div>`;
+    html += `<div class="tbl-wrap mt-3"><table class="m"><thead><tr><th>日期</th>${whs.map(w => `<th class="num">${esc(w)}</th>`).join("")}<th class="num">當日合計</th></tr></thead><tbody>
+      ${dl.map(d => { let t = 0; const cells = whs.map(w => { const b = byDay.get(d + "|" + w); if (!b) return `<td class="num muted">—</td>`; t += b.cases; return `<td class="num" title="${b.pos.size} 張 PO">${fmt(b.cases)}</td>`; }).join(""); return `<tr><td class="mono"><b>${esc(d)}</b></td>${cells}<td class="num"><b>${fmt(t)}</b></td></tr>`; }).join("")}
+      <tr style="background:var(--b50)"><td><b>合計</b></td>${whs.map(w => `<td class="num"><b>${fmt(agg.get(w).cases)}</b></td>`).join("")}<td class="num"><b>${fmt(total)}</b></td></tr></tbody></table></div>`;
   }
-  box.innerHTML = html + `</div>`;
+  box.innerHTML = html;
 }
 
 /* 匯入歷程 */
