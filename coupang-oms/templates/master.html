@@ -504,11 +504,11 @@ function renderImportBar() {
   const nth = b => `第 ${importBatches.length - importBatches.findIndex(x => x.id === b.id)} 次`;
   const desc = b => `${nth(b)} ${b.committed_at.slice(5, 16)} ${b.filename}：新增 ${b.new_now}、有變 ${b.changed_now}`;
   li.innerHTML = `<div class="flex items-center gap-3 flex-wrap">
-      <span><i class="bi bi-clock-history"></i> 共匯入 <b>${importBatches.length}</b> 次，最近一次是 <b>${esc(nth(last))}</b>${lastN ? "" : `<span class="muted">（跟上一次一樣，沒有變動）</span>`}</span>
-      <span class="seg"><button data-mode="all" class="${cur ? "" : "on"}">全部訂單</button><button data-mode="last" class="${cur && cur.id === last.id ? "on" : ""}" ${lastN ? "" : "disabled"} title="${esc(last.filename)}">只看 ${esc(desc(last))}</button></span>
-      ${older.length ? `<span class="flex items-center gap-1"><select id="older-imports" class="sel" style="max-width:420px;padding:5px 8px;${olderOn ? "border-color:var(--b700);background:var(--b50);font-weight:600" : ""}" title="看更早某一次匯入的變動"><option value="" disabled hidden ${olderOn ? "" : "selected"}>只看更早某一次的變動 ▾</option>${older.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"} ${olderOn && cur.id === b.id ? "selected" : ""}>只看 ${esc(desc(b))}</option>`).join("")}</select>${olderOn ? `<button class="btn btn-g btn-sm" id="older-clear" title="回到全部訂單"><i class="bi bi-x-lg"></i></button>` : ""}</span>` : ""}
+      <span class="seg"><button data-mode="all" class="${cur ? "" : "on"}">全部訂單</button></span>
+      <select id="older-imports" class="sel" style="max-width:520px;padding:6px 10px;${cur ? "border-color:var(--b700);background:var(--b50);font-weight:600" : ""}" title="選一次匯入，畫面只剩那次新增／有變的品項"><option value="" disabled hidden ${cur ? "" : "selected"}>各次匯入的變動 ▾</option>${importBatches.map(b => `<option value="${b.id}" ${b.new_now + b.changed_now ? "" : "disabled"} ${cur && cur.id === b.id ? "selected" : ""}>${esc(desc(b))}${b.new_now + b.changed_now ? "" : "（沒有變動）"}</option>`).join("")}</select>
+      ${cur ? `<button class="btn btn-g btn-sm" id="older-clear" title="回到全部訂單"><i class="bi bi-x-lg"></i> 回全部</button>` : ""}
     </div>
-    ${cur ? `<div class="flex items-center gap-2 flex-wrap mt-2 text-sm"><span><i class="bi bi-funnel-fill"></i> 目前只看 <b>${esc(nth(cur))}（${esc(cur.committed_at.slice(5, 16))} ${esc(cur.filename)}）</b>的變動。它的資料在：</span>${monthChips || `<span class="muted">沒有任何新增或有變</span>`}<span class="kbd" style="margin-left:auto"><span class="badge" style="background:#dcfce7;color:#166534">新增</span> 這次才出現的品項　<span class="badge bd-warn">有變</span> 舊品項被這次改到，底下寫改了什麼</span></div>` : ""}`;
+    ${cur ? `<div class="flex items-center gap-2 flex-wrap mt-2 text-sm"><span><i class="bi bi-funnel-fill"></i> 目前顯示 <b>${esc(nth(cur))}（${esc(cur.committed_at.slice(5, 16))} ${esc(cur.filename)}）</b>的變動。它的資料在：</span>${monthChips || `<span class="muted">沒有任何新增或有變</span>`}<span class="kbd" style="margin-left:auto"><span class="badge" style="background:#dcfce7;color:#166534">新增</span> 這次才出現的品項　<span class="badge bd-warn">有變</span> 舊品項被這次改到，底下寫改了什麼</span></div>` : ""}`;
   // 對帳：這個月「全部」的品項數 = 各次匯入「新增」加總（每個品項只算在第一次出現的那次）；
   // PO 數不能相加，因為同一張 PO 可以在兩次匯入裡都動到，這裡把重複的張數點出來。
   const f = state.facets;
@@ -527,12 +527,12 @@ function renderImportBar() {
           <span class="muted" style="font-size:12px">「有變」不能加：那是舊品項被改到，已經算在更早那次的新增裡</span></div>
         <div class="flex items-center gap-2 flex-wrap mt-2" style="font-size:14px"><span>PO：全部 <b style="font-size:16px">${totalPos}</b> 張</span>
           ${overlap > 0 ? `<span>，各次分開數 ${parts.map(x => `<b>${x.mc.pos}</b>`).join("＋")}＝${sumPos} 張，多出的 <b class="neg" style="font-size:16px">${overlap}</b> 張是下面這些 PO 在兩次匯入裡都動到：</span>` : `<span class="badge" style="background:#dcfce7;color:#166534;font-size:12px"><i class="bi bi-check-circle"></i> 各次匯入的 PO 沒重疊，相加剛好</span>`}</div>
-        ${ov.length ? `<div class="flex gap-2 flex-wrap mt-2">${ov.map(o => `<button class="chip ov-po" data-po="${esc(o.po_number)}" title="點一下只看這張 PO"><span class="mono"><b>PO ${esc(o.po_number)}</b></span>　${o.date ? esc(o.date.slice(5)) + " 交貨" : "未排日期"}・${o.rows} 品項　<span class="muted">${o.batch_ids.map(label).join(" → ")}</span></button>`).join("")}</div>` : ""}
+        ${ov.length ? `<div class="flex gap-2 flex-wrap mt-2">${ov.map(o => `<button class="chip ov-po" data-po="${esc(o.po_number)}" title="點一下畫面就剩這張 PO"><span class="mono"><b>PO ${esc(o.po_number)}</b></span>　${o.date ? esc(o.date.slice(5)) + " 交貨" : "未排日期"}・${o.rows} 品項　<span class="muted">${o.batch_ids.map(label).join(" → ")}</span></button>`).join("")}</div>` : ""}
       </div>`);
-      li.querySelectorAll(".ov-po").forEach(b => b.addEventListener("click", () => { state.batch = null; state.pos.clear(); state.pos.add(b.dataset.po); state.dates.clear(); loadOrders(); toast(`只看 PO ${b.dataset.po}，右上「清除篩選」可以回來`); }));
+      li.querySelectorAll(".ov-po").forEach(b => b.addEventListener("click", () => { state.batch = null; state.pos.clear(); state.pos.add(b.dataset.po); state.dates.clear(); loadOrders(); toast(`畫面只剩 PO ${b.dataset.po}，右上「清除篩選」可以回來`); }));
     }
   }
-  li.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => pickBatch(b.dataset.mode === "all" ? null : last.id)));
+  li.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => pickBatch(null)));
   const sel = li.querySelector("#older-imports"); if (sel) sel.addEventListener("change", e => pickBatch(e.target.value || null));
   const clr = li.querySelector("#older-clear"); if (clr) clr.addEventListener("click", () => pickBatch(null));
   li.querySelectorAll(".month-chip").forEach(b => b.addEventListener("click", () => { if (b.dataset.m && b.dataset.m !== state.month) { state.month = b.dataset.m; localStorage.setItem("mst_month", state.month); $("#sel-month").value = state.month; $("#exp-to").value = state.month; loadOrders(); } }));
@@ -589,7 +589,7 @@ function renderOrders() {
   const curB = state.batch ? importBatches.find(b => b.id === state.batch) : null;
   if (!rows.length && curB) {
     const others = curB.month_counts.filter(x => x.m && x.m !== state.month);
-    $("#orders-list").innerHTML = `<div class="card p-10 text-center"><div class="muted">這次匯入（${esc(curB.committed_at.slice(5, 16))} ${esc(curB.filename)}）在 <b>${Number(state.month.slice(5))} 月</b> 沒有新增或有變的品項${anyFilter() ? "（或被其他篩選條件濾掉了）" : ""}。</div>
+    $("#orders-list").innerHTML = `<div class="card p-10 text-center"><div class="muted">第 ${importBatches.length - importBatches.indexOf(curB)} 次匯入（${esc(curB.committed_at.slice(5, 16))} ${esc(curB.filename)}）在 <b>${Number(state.month.slice(5))} 月</b> 沒有新增或有變的品項${anyFilter() ? "（或被其他篩選條件濾掉了）" : ""}。</div>
       ${others.length ? `<div class="mt-3">它的資料在：${others.map(x => `<button class="chip month-chip" data-m="${esc(x.m)}">${Number(x.m.slice(5))} 月：${x.new ? `新增 ${x.new}` : ""}${x.new && x.changed ? "・" : ""}${x.changed ? `有變 ${x.changed}` : ""}　→ 切過去</button>`).join(" ")}</div>` : ""}</div>`;
     $("#orders-list").querySelectorAll(".month-chip").forEach(b => b.addEventListener("click", () => { state.month = b.dataset.m; localStorage.setItem("mst_month", state.month); $("#sel-month").value = state.month; $("#exp-to").value = state.month; loadOrders(); }));
     return;
