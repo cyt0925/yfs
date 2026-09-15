@@ -216,9 +216,6 @@
       <span class="kbd ml-2">一列一個國條，往右是各交貨日出貨箱數，最右邊是這個月的加總。改了訂單明細這裡自己跟著變。</span>
       <div class="flex-1"></div>
       <span id="tpl-info" class="text-sm"></span>
-      <button id="btn-tpl-upload" class="btn btn-g btn-sm" title="把業務維護的總表 Excel 上傳當底稿：匯出總表時只填這個月各交貨日的箱數，排版、順序、公式一格都不動"><i class="bi bi-file-earmark-arrow-up"></i> 上傳總表底稿</button>
-      <button id="btn-tpl-remove" class="btn btn-g btn-sm hidden" title="移除底稿，匯出回到系統自己排的總表格式"><i class="bi bi-x-circle"></i></button>
-      <input type="file" id="file-tpl" accept=".xlsx" class="hidden">
       <label class="text-sm muted" title="專案報價檔要一次匯好幾個月，把這裡往後拉">匯到</label><input type="month" id="sum-exp-to" class="sel" style="padding:4px 8px">
       <a id="btn-export-daily-2" class="btn btn-o" title="這個線別的專案報價檔：一個交貨日一個分頁，「匯到」往後拉可以跨月"><i class="bi bi-calendar-week"></i> 匯出這線別的專案報價檔</a>
       <a id="btn-export-2" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
@@ -782,34 +779,20 @@ $("#btn-commit").addEventListener("click", async () => {
 });
 
 /* ════════════ ③ 總表 ════════════ */
-/* 總表底稿：有底稿時「匯出總表」就是照底稿填箱數，沒有就用系統自己排的格式 */
+/* 匯出總表的樣子：① 匯進主檔的那份業務總表（有 M/D交貨 日期欄的）就是底稿，匯出只填箱數、含順序。
+   沒匯過總表的線別，匯出用系統自己排的格式。 */
 async function loadTemplateInfo() {
   let t; try { t = await api(`/api/master/template?line=${encodeURIComponent(state.sumLine)}`); } catch (e) { return; }
   const info = $("#tpl-info");
   if (t.exists) {
     const months = Object.entries(t.months || {}).sort((a, b) => Number(a[0]) - Number(b[0])).map(([m, e]) => `${m}月 ${e.dates} 天${e.spare ? `＋${e.spare} 空欄` : ""}`).join("、");
-    info.innerHTML = `<span class="badge bd-blue" title="上傳者 ${esc(t.uploaded_by)} ・ ${esc(t.uploaded_at)}${t.error ? " ・ " + esc(t.error) : ""}"><i class="bi bi-file-earmark-check"></i> 底稿：${esc(t.filename)}</span> <span class="kbd">${esc(months)}</span>`;
-    $("#btn-tpl-upload").innerHTML = `<i class="bi bi-arrow-repeat"></i> 更換底稿`; $("#btn-tpl-remove").classList.remove("hidden");
-    $("#btn-export-2").title = `照底稿「${t.filename}」填 ${state.sumMonth} 各交貨日箱數，其他一格不動；對不到的商品與沒欄位的日期寫在最後一個分頁「系統填入說明」`;
+    info.innerHTML = `<span class="badge bd-blue" title="${esc(t.uploaded_at)} 由 ${esc(t.uploaded_by)} 匯進主檔的那份。要換樣子就再匯一次新的總表。"><i class="bi bi-file-earmark-check"></i> 匯出照「${esc(t.filename)}」的樣子，含順序</span> <span class="kbd">${esc(months)}</span>`;
+    $("#btn-export-2").title = `打開「${t.filename}」只填 ${state.sumMonth} 各交貨日箱數，其他一格不動；對不到的商品與沒欄位的日期寫在最後一個分頁「系統填入說明」`;
   } else {
-    info.innerHTML = `<span class="kbd">${esc(state.sumLine)} 沒有底稿，匯出用系統格式</span>`;
-    $("#btn-tpl-upload").innerHTML = `<i class="bi bi-file-earmark-arrow-up"></i> 上傳總表底稿`; $("#btn-tpl-remove").classList.add("hidden");
+    info.innerHTML = `<span class="kbd">${esc(state.sumLine)} 還沒匯過總表，匯出用系統格式；到 ① 把總表匯進主檔就會照它的樣子</span>`;
     $("#btn-export-2").title = "系統自己排的總表格式：一列一國條、往右各交貨日箱數";
   }
 }
-$("#btn-tpl-upload").addEventListener("click", () => { if (!state.sumLine) { toast("先選線別", "err"); return; } $("#file-tpl").click(); });
-$("#file-tpl").addEventListener("change", async e => {
-  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  const fd = new FormData(); fd.append("file", f); fd.append("line", state.sumLine);
-  try { const t = await api("/api/master/template", { method: "POST", body: fd });
-    toast(`底稿已存：${t.filename}（工作表「${t.sheet}」）`); loadTemplateInfo(); }
-  catch (err) { toast(err.message, "err"); }
-});
-$("#btn-tpl-remove").addEventListener("click", async () => {
-  if (!confirm(`移除 ${state.sumLine} 的總表底稿？匯出會回到系統格式。`)) return;
-  try { await api(`/api/master/template?line=${encodeURIComponent(state.sumLine)}`, { method: "DELETE" }); toast("底稿已移除"); loadTemplateInfo(); }
-  catch (err) { toast(err.message, "err"); }
-});
 $("#sum-line").addEventListener("change", e => { state.sumLine = e.target.value; localStorage.setItem("mst_sum_line", state.sumLine); loadSummary(); });
 $("#sum-month").addEventListener("change", e => { if (e.target.value) { state.sumMonth = e.target.value; $("#sum-exp-to").value = e.target.value; loadSummary(); } });
 $("#sum-exp-to").addEventListener("change", loadSummary);
@@ -859,7 +842,7 @@ $("#prod-files-go").addEventListener("click", async () => {
   for (const file of files) {
     const fd = new FormData(); fd.append("file", file);
     try { const d = await api("/api/master/products/import", { method: "POST", body: fd });
-      out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${files.length > 1 ? esc(file.name) + " " : ""}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}</span>`);
+      out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${files.length > 1 ? esc(file.name) + " " : ""}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}${d.template_line ? `<br><i class="bi bi-file-earmark-check"></i> 這是${esc(d.template_line)}的總表，已記住它的樣子：之後「匯出總表」會長得跟這份一模一樣（含順序），只填箱數。` : ""}</span>`);
       toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`); }
     catch (e) { out.push(`<span class="neg">${files.length > 1 ? esc(file.name) + "：" : ""}${esc(e.message)}</span>`); }
   }

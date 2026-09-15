@@ -1010,7 +1010,8 @@ def api_import_products():
     if upload is None or not upload.filename:
         return jsonify({"error": "沒有收到檔案。"}), 400
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(upload.read()), data_only=True, read_only=True)
+        raw = upload.read()
+        wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"無法開啟 Excel：{exc}"}), 400
     chosen = None
@@ -1027,6 +1028,9 @@ def api_import_products():
         return row[i] if i is not None and i < len(row) else None
 
     operator = _operator()
+    header_cells = next(ws.iter_rows(min_row=hdr_idx, max_row=hdr_idx, values_only=True))
+    is_sheet = any(_DATE_HDR.match(norm_text(h)) for h in header_cells)   # 有「M/D交貨」日期欄 → 這是業務的總表
+    seen_barcodes = []
     conn = get_conn()
     try:
         counts = collections.Counter()
@@ -1034,6 +1038,7 @@ def api_import_products():
             barcode = norm_key(get(row, "barcode"))
             if not barcode:
                 continue
+            seen_barcodes.append(barcode)
             fields = {k: (norm_key(get(row, k)) if k in ("sku_id", "yf_sku") else norm_text(get(row, k)))
                       for k in _PRODUCT_TEXT_FIELDS}
             fields["active"] = fields["active"].upper()[:1] if fields["active"] else ""
@@ -1041,11 +1046,18 @@ def api_import_products():
             counts[_upsert_product(conn, barcode, fields, norm_int(get(row, "box_size")),
                                    norm_decimal(get(row, "cost_price")), operator, "import",
                                    upload.filename, only_filled=True)] += 1
+        template_line = ""
+        if is_sheet and seen_barcodes:
+            # 業務的總表就是「匇出總表要長的樣子」，整份記起來當底稿，之後匇出只填箱數。
+            # 總表沒有線別欄，線別看這些商品在主檔屬於誰（多數決）；都不知道就當寶僑——
+            # 目前只有寶僑有這種總表。
+            template_line = _guess_line(conn, seen_barcodes) or "寶僑"
+            _save_template(conn, template_line, upload.filename, ws.title, hdr_idx, raw, operator)
         conn.commit()
     finally:
         conn.close()
     return jsonify({"ok": True, "sheet": ws.title, "added": counts["added"], "updated": counts["updated"],
-                    "unchanged": counts["unchanged"],
+                    "unchanged": counts["unchanged"], "template_line": template_line,
                     "columns_found": sorted(mapping.keys())})
 
 
@@ -1157,7 +1169,8 @@ def _xlsx_response(wb, fname):
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-# ---------------------------------------------------------------- 總表底稿（寶僑總表一模一樣）
+# ---------------------------------------------------------------- 總表樣式（寶僑總表一模一樣）
+# 業務的總表匇進主檔時整份記起來（mst_templates），匇出總表就照它填箱數。沒有另外的上傳步驟。
 
 _DATE_HDR = re.compile(r"^\s*(\d{1,2})/(\d{0,2})交貨")   # 9/2交貨、7/9交貨_1、9/18交貨\n竹運出、9/交貨（空欄）
 
@@ -1196,58 +1209,34 @@ def api_template_get():
     return jsonify(_template_meta(tpl) if tpl else {"exists": False, "line": line})
 
 
-@master_bp.route("/api/master/template", methods=["POST"])
-def api_template_upload():
-    """上傳某線別的總表底稿。要能找到「Barcode／國條」標題的工作表才收。"""
+def _guess_line(conn, barcodes):
+    """一批國條多數屬於哪個線別：先看主檔給的線別，再看訂單學到的。"""
+    votes = collections.Counter()
+    for i in range(0, len(barcodes), 400):
+        chunk = barcodes[i:i + 400]
+        rows = _rows(conn.execute(
+            f"SELECT master_line, lines_seen FROM mst_products WHERE barcode IN ({','.join('?' * len(chunk))})", chunk))
+        for r in rows:
+            if r["master_line"]:
+                votes[r["master_line"]] += 1
+            else:
+                for l in _split_lines(r["lines_seen"]):
+                    votes[l] += 1
+    if not votes:
+        return ""
+    return _group_of(votes.most_common(1)[0][0])
+
+
+def _save_template(conn, line, filename, sheet, header_row, raw, operator):
     import base64
-    line = norm_text(request.form.get("line") or request.args.get("line"))
-    upload = request.files.get("file")
-    if not line:
-        return jsonify({"error": "請先選線別。"}), 400
-    if upload is None or not upload.filename:
-        return jsonify({"error": "沒有收到檔案。"}), 400
-    raw = upload.read()
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": f"無法開啟 Excel：{exc}"}), 400
-    chosen = None
-    for ws in wb.worksheets:
-        hdr_idx, mapping, _ = _find_columns(ws, want=("barcode",))
-        if hdr_idx and any(_DATE_HDR.match(norm_text(h)) for h in next(ws.iter_rows(min_row=hdr_idx, max_row=hdr_idx, values_only=True))):
-            chosen = (ws.title, hdr_idx); break
-    if chosen is None:
-        return jsonify({"error": "找不到同時有「Barcode／國條」標題和「M/D交貨」日期欄的工作表，這不像總表。"}), 400
-    conn = get_conn()
-    try:
-        conn.execute("DELETE FROM mst_templates WHERE line = ?", (line,))
-        conn.execute(
-            """INSERT INTO mst_templates (line, filename, sheet, header_row, content_b64, uploaded_by, uploaded_at)
-               VALUES (?,?,?,?,?,?,?)""",
-            (line, upload.filename, chosen[0], chosen[1], base64.b64encode(raw).decode("ascii"), _operator(), now()))
-        _log(conn, line, "", "", "", "template", "總表底稿", "", upload.filename, _operator(), "manual",
-             f"工作表「{chosen[0]}」")
-        conn.commit()
-        tpl = _template_row(conn, line)
-    finally:
-        conn.close()
-    return jsonify({"ok": True, **_template_meta(tpl)})
-
-
-@master_bp.route("/api/master/template", methods=["DELETE"])
-def api_template_delete():
-    line = norm_text(request.args.get("line"))
-    conn = get_conn()
-    try:
-        tpl = _template_row(conn, line)
-        if tpl is None:
-            return jsonify({"error": "這個線別沒有底稿。"}), 404
-        conn.execute("DELETE FROM mst_templates WHERE line = ?", (line,))
-        _log(conn, line, "", "", "", "template", "總表底稿", tpl["filename"], "", _operator(), "manual", "移除底稿")
-        conn.commit()
-    finally:
-        conn.close()
-    return jsonify({"ok": True})
+    old = _template_row(conn, line)
+    conn.execute("DELETE FROM mst_templates WHERE line = ?", (line,))
+    conn.execute(
+        """INSERT INTO mst_templates (line, filename, sheet, header_row, content_b64, uploaded_by, uploaded_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (line, filename, sheet, header_row, base64.b64encode(raw).decode("ascii"), operator, now()))
+    _log(conn, line, "", "", "", "template", "總表樣式", old["filename"] if old else "", filename, operator,
+         "import", f"匇出總表照這份的樣子（工作表「{sheet}」）")
 
 
 def _fill_template(tpl, summary, month, operator):
