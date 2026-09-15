@@ -731,6 +731,11 @@ CREATE TABLE IF NOT EXISTS mst_products (
     note          TEXT DEFAULT '',        -- 總表 Note（報價檔 O 欄備註）
     auto_created  INTEGER NOT NULL DEFAULT 0,  -- 由匯入訂單自動建立、箱入數還沒人核對
     lines_seen    TEXT DEFAULT '',        -- 出現過的原始線別，逗號分隔
+    master_line   TEXT DEFAULT '',        -- 酷澎主檔給的線別（一個線別一份主檔）
+    unit          TEXT DEFAULT '',        -- 酷澎主檔 單位（箱／瓶／袋…）
+    shelf_days    INTEGER,                -- 酷澎主檔 總效期天數
+    active        TEXT DEFAULT 'Y',       -- 酷澎主檔 啟用(Y/N)
+    date_format   TEXT DEFAULT '',        -- 酷澎主檔 日期格式
     updated_by    TEXT DEFAULT '',
     updated_at    TEXT DEFAULT ''
 );
@@ -880,7 +885,7 @@ def init_db():
         conn.close()
 
 
-MST_SCHEMA_VERSION = "2"
+MST_SCHEMA_VERSION = "3"
 MASTER_READY = False
 MASTER_ERROR = "尚未初始化"
 
@@ -955,6 +960,16 @@ def _migrate_master_columns(conn):
         for stmt in _index_sql():
             conn.execute(stmt)
         ver = None  # 往下寫版本
+
+    # v2 → v3：酷澎主檔格式多了線別／單位／效期／啟用／日期格式，補欄位即可（兩種資料庫
+    # 都支援 ADD COLUMN；欄位已存在就跳過）。
+    if _table_exists(conn, "mst_products"):
+        have = _cols(conn, "mst_products")
+        for col, ddl in (("master_line", "TEXT DEFAULT ''"), ("unit", "TEXT DEFAULT ''"),
+                         ("shelf_days", "INTEGER"), ("active", "TEXT DEFAULT 'Y'"),
+                         ("date_format", "TEXT DEFAULT ''")):
+            if col not in have:
+                conn.execute(f"ALTER TABLE mst_products ADD COLUMN {col} {ddl}")
 
     # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，一次性搬成旗標並清空。
     if _table_exists(conn, "mst_products"):

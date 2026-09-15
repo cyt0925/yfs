@@ -848,7 +848,7 @@ def api_products():
         orphans = [o for o in orphans if o["line_group"] == line]
     if q:
         rows = [p for p in rows if q in " ".join(str(p.get(k) or "") for k in
-                ("barcode", "sku_id", "yf_sku", "brand", "product_name", "note", "category", "lines_seen")).lower()]
+                ("barcode", "sku_id", "yf_sku", "brand", "product_name", "note", "category", "lines_seen", "unit", "master_line")).lower()]
     return jsonify({"products": rows, "orphans": orphans, "total": len(rows)})
 
 
@@ -856,19 +856,32 @@ def _upsert_product(conn, barcode, fields, box, cost, operator, source, fname=""
     """新增或更新主檔一筆。only_filled=True 時（總表匯入）只更新有值的欄位。"""
     existing = _row(conn.execute("SELECT * FROM mst_products WHERE barcode = ?", (barcode,)))
     stamp = now()
+    if cost is not None:
+        cost = round(float(cost), 4)   # Excel 存的 137.0000000000 讀出來會是 137.00000000000003
+    fields = dict(fields)
+    for k in _PRODUCT_TEXT_FIELDS:
+        fields.setdefault(k, "")
+    fields.setdefault("shelf_days", None)
+    master_line = fields.get("master_line") or ""
     if existing is None:
         conn.execute(
             """INSERT INTO mst_products
                (barcode, sku_id, yf_sku, brand, product_name, category, pgcode, cost_price,
-                box_size, note, auto_created, lines_seen, updated_by, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,0,'',?,?)""",
+                box_size, note, auto_created, lines_seen, master_line, unit, shelf_days, active,
+                date_format, updated_by, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?)""",
             (barcode, fields["sku_id"], fields["yf_sku"], fields["brand"], fields["product_name"],
-             fields["category"], fields["pgcode"], cost, box, fields["note"], operator, stamp))
-        _log(conn, "", "", fields["sku_id"], barcode, "product_new", "新增主檔", "", box, operator, source, fname)
+             fields["category"], fields["pgcode"], cost, box, fields["note"], master_line, master_line,
+             fields["unit"], fields["shelf_days"], fields["active"] or "Y", fields["date_format"],
+             operator, stamp))
+        _log(conn, master_line, "", fields["sku_id"], barcode, "product_new", "新增主檔", "", box, operator, source, fname)
         return "added"
     sets, params, changed = [], [], False
+    if master_line and master_line not in _split_lines(existing.get("lines_seen")):
+        merged = sorted(set(_split_lines(existing.get("lines_seen"))) | {master_line})
+        sets.append("lines_seen = ?"); params.append(",".join(merged)); changed = True
     for k, v in fields.items():
-        if only_filled and not v:
+        if only_filled and (v is None or v == ""):
             continue
         if not _same(existing[k], v):
             sets.append(f"{k} = ?"); params.append(v); changed = True
@@ -903,7 +916,9 @@ def api_save_product():
     if payload.get("cost_price") not in (None, "") and cost is None:
         return jsonify({"error": "單價(含稅)要是數字。"}), 400
     fields = {k: (norm_key(payload.get(k)) if k in ("sku_id", "yf_sku") else norm_text(payload.get(k)))
-              for k in ("sku_id", "yf_sku", "brand", "product_name", "category", "pgcode", "note")}
+              for k in _PRODUCT_TEXT_FIELDS}
+    fields["active"] = (fields["active"] or "Y").upper()[:1]
+    fields["shelf_days"] = norm_int(payload.get("shelf_days"))
     conn = get_conn()
     try:
         _upsert_product(conn, barcode, fields, box, cost, _operator(), "manual")
@@ -930,18 +945,31 @@ def api_delete_product(product_id):
         conn.close()
 
 
+# 主檔匯入認兩種檔：
+#   ・酷澎主檔（一個線別一份）：SKU ID／條碼(國條)／永豐料號／線別／品牌／品名／單位／箱入數／
+#     業務報價單價(含稅)／總效期天數／啟用(Y/N)／日期格式／報價備註
+#   ・寶僑總表 Sheet1：skuid／Category／Brand／Pgcode／Barcode／永豐料號／SKU Name／COGS／Note／箱入數
+# 都是認標題不認欄位位置。業務報價單價(含稅) = COGS，同一個欄位；報價備註 = Note，同一個欄位。
 _HEADER_ALIASES = {
     "barcode": ["barcode", "國條", "條碼", "條碼(國條)", "國際條碼", "ean"],
     "category": ["category", "品類", "類別"],
     "pgcode": ["pgcode", "pg code", "pg_code"],
-    "cost_price": ["cogs (pcs/ w. tax)", "cogs", "cogs(pcs)", "單價(含稅)", "成本(含稅)", "cost"],
+    "cost_price": ["cogs (pcs/ w. tax)", "cogs", "cogs(pcs)", "業務報價單價(含稅)", "業務報價單價", "報價單價",
+                   "單價(含稅)", "成本(含稅)", "cost"],
     "sku_id": ["skuid", "sku id", "sku_id", "skuno.", "sku編號"],
     "yf_sku": ["永豐料號", "料號"],
     "brand": ["brand", "品牌"],
     "product_name": ["sku name", "品名", "product name", "名稱"],
     "box_size": ["箱入數", "箱入", "case pack", "pcs/cs", "轉換率"],
-    "note": ["note", "備註", "說明"],
+    "note": ["note", "報價備註", "備註", "說明"],
+    "master_line": ["線別"],
+    "unit": ["單位"],
+    "shelf_days": ["總效期天數", "效期天數", "效期"],
+    "active": ["啟用(y/n)", "啟用"],
+    "date_format": ["日期格式"],
 }
+_PRODUCT_TEXT_FIELDS = ("sku_id", "yf_sku", "brand", "product_name", "category", "pgcode", "note",
+                        "master_line", "unit", "active", "date_format")
 
 
 def _find_columns(ws, want):
@@ -962,8 +990,9 @@ def _find_columns(ws, want):
 
 @master_bp.route("/api/master/products/import", methods=["POST"])
 def api_import_products():
-    """從總表（任何有「國條 + 箱入數」標題的 Excel）匯入主檔。不問線別——總表裡
-    沒有線別欄，線別由訂單學。只更新有值的欄位，不會把既有資料洗成空白。"""
+    """匯入主檔：認「酷澎主檔」（一個線別一份，有線別欄）和「寶僑總表 Sheet1」兩種格式，
+    看標題自動分辨（見 _HEADER_ALIASES）。只更新有值的欄位，不會把既有資料洗成空白。
+    酷澎主檔的線別會同時記進 lines_seen，篩選、總表立刻分得出線別，不用等訂單來學。"""
     upload = request.files.get("file")
     if upload is None or not upload.filename:
         return jsonify({"error": "沒有收到檔案。"}), 400
@@ -992,12 +1021,10 @@ def api_import_products():
             barcode = norm_key(get(row, "barcode"))
             if not barcode:
                 continue
-            fields = {
-                "sku_id": norm_key(get(row, "sku_id")), "yf_sku": norm_key(get(row, "yf_sku")),
-                "brand": norm_text(get(row, "brand")), "product_name": norm_text(get(row, "product_name")),
-                "category": norm_text(get(row, "category")), "pgcode": norm_text(get(row, "pgcode")),
-                "note": norm_text(get(row, "note")),
-            }
+            fields = {k: (norm_key(get(row, k)) if k in ("sku_id", "yf_sku") else norm_text(get(row, k)))
+                      for k in _PRODUCT_TEXT_FIELDS}
+            fields["active"] = fields["active"].upper()[:1] if fields["active"] else ""
+            fields["shelf_days"] = norm_int(get(row, "shelf_days"))
             counts[_upsert_product(conn, barcode, fields, norm_int(get(row, "box_size")),
                                    norm_decimal(get(row, "cost_price")), operator, "import",
                                    upload.filename, only_filled=True)] += 1
@@ -1065,10 +1092,9 @@ def _build_summary(conn, group, month, cfg):
             e["by_date"][o["delivery_date"]] += o["cases"]; e["month_total"] += o["cases"]
     dates = sorted(dates)
 
-    # 這個群組的商品：訂單裡學到屬於這群組的 ∪ 這個月有出貨的
-    group_products = [bc for bc, p in products.items()
-                      if group in {_group_of(r, cfg) for r in _split_lines(p["lines_seen"])}]
-    barcodes = group_products + [b for b in by_bc if b not in set(group_products)]
+    # 畫面上的總表只列「這個月有交貨」的商品；主檔裡有但沒出貨的不列（照 Chloe 的說法，
+    # 總表只吃箱數）。寶僑要一模一樣的匇出走底稿那條路（見 api_export_template）。
+    barcodes = list(by_bc)
     rows = []
     for bc in barcodes:
         p = products.get(bc); e = by_bc.get(bc); quota = quotas.get(bc)

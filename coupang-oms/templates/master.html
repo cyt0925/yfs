@@ -135,8 +135,8 @@
     <div class="card p-4 mb-4">
       <div id="dz-prod" class="dropzone compact">
         <i class="bi bi-file-earmark-arrow-up text-2xl"></i>
-        <div class="flex-1"><b>從總表匯入主檔</b> — 把總表 Excel 拖到這裡，或點一下選檔，可以分幾次加，加完按「匯入主檔」。
-          <div class="kbd">用標題找欄位：國條／Barcode、箱入數必須有；品類 Category、品牌、永豐料號、品名、COGS 單價、Note、PG code 有就帶。只更新有值的欄位。<b>不用選線別</b>——線別由訂單學。</div></div>
+        <div class="flex-1"><b>匯入主檔</b> — 把「酷澎主檔」（一個線別一份）拖到這裡，寶僑總表也可以（補品類／PG code）。可以分幾次加，加完按「匯入主檔」。
+          <div class="kbd">用標題找欄位：條碼(國條)、箱入數必須有；線別、品牌、永豐料號、品名、單位、業務報價單價(含稅)、效期、啟用、報價備註有就帶。只更新有值的欄位。</div></div>
       </div>
       <input type="file" id="file-prod" accept=".xlsx" multiple class="hidden">
       <div id="prod-files" class="mt-2 hidden">
@@ -285,13 +285,17 @@
     <label>國條 <input id="p-barcode" class="txt"></label>
     <label>箱入數 <input id="p-box" type="number" min="1" class="txt"></label>
     <label>品類（總表 Category） <input id="p-cat" class="txt" placeholder="例如 Fabric、Baby、Fem"></label>
-    <label>單價(含稅)（總表 COGS） <input id="p-cost" type="number" step="0.01" class="txt"></label>
+    <label>單價(含稅)（業務報價單價＝COGS） <input id="p-cost" type="number" step="0.01" class="txt"></label>
     <label>SKU ID <input id="p-sku" class="txt"></label>
     <label>永豐料號 <input id="p-yf" class="txt"></label>
     <label>品牌 <input id="p-brand" class="txt"></label>
     <label>PG code <input id="p-pg" class="txt"></label>
     <label class="col-span-2">品名 <input id="p-name" class="txt"></label>
-    <label class="col-span-2">Note（總表 Note，會放進報價檔備註） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
+    <label>線別（酷澎主檔） <input id="p-line" class="txt" placeholder="例如 寶僑、瑪氏、CPG-紙品"></label>
+    <label>單位 <input id="p-unit" class="txt" placeholder="箱／瓶／袋…"></label>
+    <label>總效期天數 <input id="p-shelf" type="number" min="0" class="txt"></label>
+    <label>啟用 <select id="p-active" class="sel" style="width:100%"><option value="Y">Y（啟用）</option><option value="N">N（停用）</option></select></label>
+    <label class="col-span-2">Note／報價備註（會放進專案報價檔的備註） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
   </div>
   <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="btn-prod-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div>
 </dialog>
@@ -779,17 +783,18 @@ async function loadProducts() {
     orph.querySelectorAll(".add-orphan").forEach(b => b.addEventListener("click", () => { const o = JSON.parse(b.dataset.o); openProductDialog({ barcode: o.barcode, sku_id: o.sku_id, yf_sku: o.yf_sku, brand: o.brand, product_name: o.product_name, box_size: o.box_size_file }); }));
   } else orph.classList.add("hidden");
   $("#prod-count").textContent = `${d.total} 筆`;
-  $("#prod-table").innerHTML = `<thead><tr><th>國條</th><th>線別</th><th>SKU ID</th><th>永豐料號</th><th>品類</th><th>品牌</th><th>品名</th><th class="num">箱入數</th><th class="num">單價(含稅)</th><th>Note</th><th class="num">訂單筆數</th><th>最後更新</th><th></th></tr></thead><tbody>
-    ${d.products.length ? d.products.map(p => `<tr data-id="${p.id}">
+  $("#prod-table").innerHTML = `<thead><tr><th>國條</th><th>線別</th><th>SKU ID</th><th>永豐料號</th><th>品類</th><th>品牌</th><th>品名</th><th>單位</th><th class="num">箱入數</th><th class="num">單價(含稅)</th><th>Note／報價備註</th><th class="num">訂單筆數</th><th>最後更新</th><th></th></tr></thead><tbody>
+    ${d.products.length ? d.products.map(p => `<tr data-id="${p.id}" ${p.active === "N" ? 'style="opacity:.55"' : ""}>
       <td class="mono">${esc(p.barcode)}</td>
       <td>${p.line_groups.length ? p.line_groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join(" ") : (p.order_rows ? `<span class="line-tag" style="color:var(--bad)">未分類</span>` : `<span class="kbd">尚未出現在訂單</span>`)}</td>
       <td class="mono">${esc(p.sku_id)}</td><td class="mono">${esc(p.yf_sku)}</td><td>${esc(p.category || "")}</td><td>${esc(p.brand)}</td>
       <td style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.product_name)}">${esc(p.product_name)}</td>
+      <td>${esc(p.unit || "")}${p.active === "N" ? ` <span class="badge bd-gray" title="酷澎主檔標記為停用">停用</span>` : ""}</td>
       <td class="num">${p.box_size ? fmt(p.box_size) : `<span class="neg">缺</span>`}${p.auto_created ? ` <span class="badge bd-warn" title="匯入訂單時用整合表的箱入數自動建的，還沒人核對；存一次或重匯總表就解除">請核對</span>` : ""}</td>
       <td class="num">${p.cost_price != null ? fmt(p.cost_price) : `<span class="muted">—</span>`}</td>
       <td class="muted">${esc(p.note)}</td><td class="num">${p.order_rows}</td><td class="kbd">${esc(p.updated_at)}<br>${esc(p.updated_by)}</td>
       <td class="whitespace-nowrap"><button class="btn btn-g btn-sm edit" data-p='${esc(JSON.stringify(p))}'><i class="bi bi-pencil"></i></button> <button class="btn btn-danger btn-sm del"><i class="bi bi-trash"></i></button></td></tr>`).join("")
-    : `<tr><td colspan="13" class="text-center muted p-8">還沒有主檔。把總表拖到上面的框裡，或匯入訂單時勾「自動建主檔」。</td></tr>`}</tbody>`;
+    : `<tr><td colspan="14" class="text-center muted p-8">還沒有主檔。把酷澎主檔（或寶僑總表）拖到上面的框裡，或匯入訂單時勾「自動建主檔」。</td></tr>`}</tbody>`;
   $("#prod-table").querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openProductDialog(JSON.parse(b.dataset.p))));
   $("#prod-table").querySelectorAll(".del").forEach(b => b.addEventListener("click", async () => { const id = b.closest("tr").dataset.id; if (!confirm("確定刪除這筆主檔？")) return;
     try { await api(`/api/master/products/${id}`, { method: "DELETE" }); toast("已刪除"); loadProducts(); } catch (e) { toast(e.message, "err"); } }));
@@ -800,11 +805,12 @@ function openProductDialog(p) {
   $("#p-box").value = p?.box_size ?? ""; $("#p-sku").value = p?.sku_id || ""; $("#p-yf").value = p?.yf_sku || "";
   $("#p-cat").value = p?.category || ""; $("#p-cost").value = p?.cost_price ?? ""; $("#p-pg").value = p?.pgcode || "";
   $("#p-brand").value = p?.brand || ""; $("#p-name").value = p?.product_name || ""; $("#p-note").value = p?.note || "";
+  $("#p-line").value = p?.master_line || ""; $("#p-unit").value = p?.unit || ""; $("#p-shelf").value = p?.shelf_days ?? ""; $("#p-active").value = p?.active === "N" ? "N" : "Y";
   $("#dlg-prod").showModal();
 }
 $("#btn-prod-add").addEventListener("click", () => openProductDialog(null));
 $("#btn-prod-save").addEventListener("click", async () => {
-  try { await api("/api/master/products", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ barcode: $("#p-barcode").value, box_size: $("#p-box").value, sku_id: $("#p-sku").value, yf_sku: $("#p-yf").value, brand: $("#p-brand").value, product_name: $("#p-name").value, note: $("#p-note").value, category: $("#p-cat").value, cost_price: $("#p-cost").value, pgcode: $("#p-pg").value }) });
+  try { await api("/api/master/products", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ barcode: $("#p-barcode").value, box_size: $("#p-box").value, sku_id: $("#p-sku").value, yf_sku: $("#p-yf").value, brand: $("#p-brand").value, product_name: $("#p-name").value, note: $("#p-note").value, category: $("#p-cat").value, cost_price: $("#p-cost").value, pgcode: $("#p-pg").value, master_line: $("#p-line").value, unit: $("#p-unit").value, shelf_days: $("#p-shelf").value, active: $("#p-active").value }) });
     toast("主檔已儲存"); $("#dlg-prod").close(); loadProducts(); } catch (e) { toast(e.message, "err"); }
 });
 

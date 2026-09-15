@@ -17,6 +17,9 @@ SAMPLES = os.path.join(BASE_DIR, "samples", "master")
 JUL_XLSX = os.path.join(SAMPLES, "訂單彙總表範例.xlsx")
 SEP_XLSX = os.path.join(SAMPLES, "訂單彙總表_9月多線別範例.xlsx")
 MASTER_XLSX = os.path.join(SAMPLES, "總表範例.xlsx")
+PG_MASTER_XLSX = os.path.join(SAMPLES, "酷澎主檔範例_寶僑.xlsx")
+CPG_MASTER_XLSX = os.path.join(SAMPLES, "酷澎主檔範例_CPG.xlsx")
+PG_SHEET_XLSX = os.path.join(SAMPLES, "寶僑總表範例.xlsx")
 
 _tmp = tempfile.mkdtemp(prefix="oms_master_test_")
 sys.path.insert(0, BASE_DIR)
@@ -81,6 +84,26 @@ def main():
     check("ARIEL 4987176340894：箱入數 6、品類 Fabric、COGS 202、PG code", p and p["box_size"] == 6 and p["category"] == "Fabric" and p["cost_price"] == 202 and p["pgcode"] == "80864486", str(p and (p["box_size"], p["category"], p["cost_price"])))
     check("主檔的線別欄空的（還沒出現在任何訂單）", all(x["line_groups"] == [] for x in prods))
 
+    print("\n【2b】① 酷澎主檔格式（一個線別一份，有線別欄）")
+    res = upload(client, "/api/master/products/import", PG_MASTER_XLSX); pm = res.get_json()
+    check("寶僑主檔匯入成功、抓到線別／單位／業務報價單價／效期／啟用／報價備註", res.status_code == 200 and {"master_line", "unit", "cost_price", "shelf_days", "active", "note"} <= set(pm["columns_found"]), str(pm))
+    check("寶僑主檔 599 筆全進來", pm["added"] + pm["updated"] + pm["unchanged"] == 599, str(pm))
+    prods = client.get("/api/master/products").get_json()["products"]
+    p = next((x for x in prods if x["barcode"] == "4902430732949"), None)
+    check("潘婷 4902430732949：線別寶僑、單位瓶、箱入數 12、單價 137、效期 1095、啟用 Y", p and p["master_line"] == "寶僑" and p["unit"] == "瓶" and p["box_size"] == 12 and p["cost_price"] == 137 and p["shelf_days"] == 1095 and p["active"] == "Y", str(p and {k: p[k] for k in ("master_line", "unit", "box_size", "cost_price", "shelf_days", "active")}))
+    check("主檔的線別立刻分得出來（不用等訂單）", p and p["line_groups"] == ["寶僑"], str(p and p["line_groups"]))
+    check("線別下拉已經有寶僑", "寶僑" in client.get("/api/master/lines").get_json()["groups"])
+    p2 = next((x for x in prods if x["barcode"] == "4987176340894"), None)
+    check("總表先鋪的品類／PG code 沒被酷澎主檔洗掉（只更新有值的欄位）", p2 and p2["category"] == "Fabric" and p2["pgcode"] == "80864486", str(p2 and (p2["category"], p2["pgcode"])))
+    res = upload(client, "/api/master/products/import", CPG_MASTER_XLSX); pc = res.get_json()
+    check("CPG 主檔匯入（120 列、119 個國條，重複的那筆算更新）", res.status_code == 200 and pc["added"] == 119 and pc["updated"] == 1, str(pc))
+    prods = client.get("/api/master/products").get_json()["products"]
+    p3 = next((x for x in prods if x["barcode"] == "4710104000917"), None)
+    check("得意 4710104000917：線別原始值 CPG-紙品、畫面歸紙潔、報價備註進 Note", p3 and p3["master_line"] == "CPG-紙品" and p3["line_groups"] == ["紙潔"] and p3["note"].startswith("包裝升級"), str(p3 and (p3["master_line"], p3["line_groups"], p3["note"][:10])))
+    check("主檔可用線別篩到紙潔的 119 筆", len(client.get("/api/master/products?line=紙潔").get_json()["products"]) == 119)
+    res = client.post("/api/master/products", json={"barcode": "4710104000917", "unit": "袋", "active": "n", "shelf_days": "1825", "box_size": 8, "master_line": "CPG-紙品"})
+    check("手動存主檔可以改單位／啟用／效期", res.status_code == 200 and res.get_json()["product"]["active"] == "N" and res.get_json()["product"]["shelf_days"] == 1825, res.get_data(as_text=True)[:200])
+
     print("\n【3】② 匯 9 月多線別訂單彙總表：預覽")
     res = upload(client, "/api/master/import/preview", SEP_XLSX)
     pv = res.get_json()
@@ -123,7 +146,7 @@ def main():
     p = next(x for x in prods if x["barcode"] == BC)
     check("主檔從訂單學到線別：ARIEL 4987176340863 屬於寶僑", p["line_groups"] == ["寶僑"], str(p["line_groups"]))
     p_never = next(x for x in prods if x["barcode"] == "4987176340894")
-    check("沒出現在任何訂單的商品，線別空著（尚未出現在訂單）", p_never["line_groups"] == [])
+    check("沒出現在任何訂單的商品，線別由酷澎主檔給（寶僑）", p_never["line_groups"] == ["寶僑"], str(p_never["line_groups"]))
     check("主檔可用線別篩", all("紙潔" in x["line_groups"] for x in client.get("/api/master/products?line=紙潔").get_json()["products"]))
 
     print("\n【5】就地編輯與防互蓋")
@@ -341,7 +364,8 @@ def main():
         ords = [dict(r) for r in c.execute("SELECT * FROM mst_orders ORDER BY po_number")]
         check("訂單搬到新表、線別保留原始值", len(ords) == 2 and ords[1]["line"] == "CPG-紙品")
         check("有 missing_in_file 新欄位", "missing_in_file" in ords[0])
-        check("schema_version 記為 2", c.execute("SELECT value FROM mst_meta WHERE key='schema_version'").fetchone()[0] == "2")
+        check("schema_version 記為 3", c.execute("SELECT value FROM mst_meta WHERE key='schema_version'").fetchone()[0] == "3")
+        check("升級後主檔有 unit／master_line／active 新欄位", {"unit", "master_line", "active", "shelf_days", "date_format"} <= set(prods[0].keys()), str(sorted(prods[0].keys())))
         c.close()
     finally:
         db.DB_PATH = saved
