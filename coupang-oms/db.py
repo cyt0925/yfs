@@ -826,7 +826,7 @@ CREATE TABLE IF NOT EXISTS mst_import_batches (
     committed_at   TEXT DEFAULT ''
 );
 
--- 總表底稿：業務維護的那份總表（寶僑）整個存起來，匇出總表時只填日期欄的箱數，
+-- 總表底稿：業務維護的那份總表（寶僑）整個存起來，匯出總表時只填日期欄的箱數，
 -- 排版、順序、公式一格都不動。一個線別一份。內容用 base64 存文字欄，兩種資料庫都不用煩惱 blob。
 CREATE TABLE IF NOT EXISTS mst_templates (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

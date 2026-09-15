@@ -1071,7 +1071,7 @@ def api_import_products():
                                    upload.filename, only_filled=True)] += 1
         template_line = ""
         if is_sheet and seen_barcodes:
-            # 業務的總表就是「匇出總表要長的樣子」，整份記起來當底稿，之後匇出只填箱數。
+            # 業務的總表就是「匯出總表要長的樣子」，整份記起來當底稿，之後匯出只填箱數。
             # 總表沒有線別欄，線別看這些商品在主檔屬於誰（多數決）；都不知道就當寶僑——
             # 目前只有寶僑有這種總表。
             template_line = _guess_line(conn, seen_barcodes) or "寶僑"
@@ -1141,7 +1141,7 @@ def _build_summary(conn, group, month, cfg):
     dates = sorted(dates)
 
     # 畫面上的總表只列「這個月有交貨」的商品；主檔裡有但沒出貨的不列（照 Chloe 的說法，
-    # 總表只吃箱數）。寶僑要一模一樣的匇出走底稿那條路（見 api_export_template）。
+    # 總表只吃箱數）。寶僑要一模一樣的匯出走底稿那條路（見 api_export_template）。
     barcodes = list(by_bc)
     rows = []
     for bc in barcodes:
@@ -1193,7 +1193,7 @@ def _xlsx_response(wb, fname):
 
 
 # ---------------------------------------------------------------- 總表樣式（寶僑總表一模一樣）
-# 業務的總表匇進主檔時整份記起來（mst_templates），匇出總表就照它填箱數。沒有另外的上傳步驟。
+# 業務的總表匯進主檔時整份記起來（mst_templates），匯出總表就照它填箱數。沒有另外的上傳步驟。
 
 _DATE_HDR = re.compile(r"^\s*(\d{1,2})/(\d{0,2})交貨")   # 9/2交貨、7/9交貨_1、9/18交貨\n竹運出、9/交貨（空欄）
 
@@ -1259,7 +1259,7 @@ def _save_template(conn, line, filename, sheet, header_row, raw, operator):
            VALUES (?,?,?,?,?,?,?)""",
         (line, filename, sheet, header_row, base64.b64encode(raw).decode("ascii"), operator, now()))
     _log(conn, line, "", "", "", "template", "總表樣式", old["filename"] if old else "", filename, operator,
-         "import", f"匇出總表照這份的樣子（工作表「{sheet}」）")
+         "import", f"匯出總表照這份的樣子（工作表「{sheet}」）")
 
 
 _REF_PART = re.compile(r"^(\$?)([A-Za-z]{1,3})(\$?)(\d*)$")
