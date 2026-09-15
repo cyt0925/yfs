@@ -205,15 +205,9 @@ def _insert_column(ws, at, hdr, title, style_from):
     ws.cell(row=hdr, column=at).value = title
 
 
-def _fill_template(tpl, summary, month, operator):
-    """把這個月每個交貨日的箱數填進底稿。只動：這個月的日期欄（含把「9/交貨」空欄補上日期）
-    和底稿裡對得到的商品列；其他列、其他月份、業務的公式、順序全部不碰。
-    對不到的商品、沒地方填的日期，寫在最後一個分頁「系統填入說明」。"""
-    import base64
-    wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(tpl["content_b64"])))   # 保留公式
-    ws = wb[tpl["sheet"]]
-    hdr = tpl["header_row"]
-    mm = int(month[5:7])
+def _sheet_layout(ws, hdr, mm):
+    """讀底稿標題列，找出這個月用得到的欄：Barcode／skuid 欄、每個日期欄（day → col）、
+    「M/交貨」空欄、這個月的 TTL 加總欄。插欄之後要重新呼叫一次，因為欄位都位移了。"""
     headers = {c: norm_text(ws.cell(row=hdr, column=c).value) for c in range(1, ws.max_column + 1)}
     lowered = {c: h.lower().replace(" ", "") for c, h in headers.items()}
     def col_of(field):
@@ -223,7 +217,6 @@ def _fill_template(tpl, summary, month, operator):
                 if h == key:
                     return c
         return None
-    bc_col, sku_col = col_of("barcode"), col_of("sku_id")
     date_cols, spare = {}, []
     for c, h in headers.items():
         m = _DATE_HDR.match(h)
@@ -232,44 +225,43 @@ def _fill_template(tpl, summary, month, operator):
                 date_cols[int(m.group(2))] = c
             else:
                 spare.append(c)
-    # 每個交貨日找欄：有同日期的欄就用；沒有就照 Chloe 說的自動插一欄（插在日期順序該在的位置，
-    # 右邊公式跟著位移）；「M/交貨」空欄留給業務自己用，不動。
-    ttl_col = next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None)
-    added = []
-    def refresh():
-        nonlocal headers, lowered, bc_col, sku_col, date_cols, spare, ttl_col
-        headers = {c: norm_text(ws.cell(row=hdr, column=c).value) for c in range(1, ws.max_column + 1)}
-        lowered = {c: h.lower().replace(" ", "") for c, h in headers.items()}
-        bc_col, sku_col = col_of("barcode"), col_of("sku_id")
-        date_cols, spare = {}, []
-        for c, h in headers.items():
-            m = _DATE_HDR.match(h)
-            if m and int(m.group(1)) == mm:
-                (date_cols.__setitem__(int(m.group(2)), c) if m.group(2) else spare.append(c))
-        ttl_col = next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None)
-    for d in summary["dates"]:
+    return {"headers": headers, "bc_col": col_of("barcode"), "sku_col": col_of("sku_id"),
+            "date_cols": date_cols, "spare": spare,
+            "ttl_col": next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None),
+            "month_cols": [c for c, h in headers.items() if _DATE_HDR.match(h) or re.match(r"^\s*\d{1,2}月TTL", h)]}
+
+
+def _ensure_date_columns(ws, hdr, mm, dates):
+    """每個交貨日都要有欄：有同日期的欄就用；沒有就照 Chloe 說的自動插一欄，插在日期順序該在的
+    位置（右邊公式跟著位移，見 _insert_column）；「M/交貨」空欄是業務的，不動。
+    底稿完全沒有這個月的區塊時，接在最後一個月份區塊後面補「日期欄＋TTL 加總欄」。回傳 (layout, 新增的日期)。"""
+    lay = _sheet_layout(ws, hdr, mm); added = []
+    for d in dates:
         day = int(d[8:10])
-        if day in date_cols:
+        if day in lay["date_cols"]:
             continue
-        later = sorted(c for dd, c in date_cols.items() if dd > day)
+        later = sorted(c for dd, c in lay["date_cols"].items() if dd > day)
         if later:
             at = later[0]                                    # 插在下一個日期前面
-        elif spare:
-            at = spare[0]                                    # 這個月最後一個日期之後、空欄之前
-        elif ttl_col:
-            at = ttl_col                                     # 空欄也沒有 → 加總欄前面
-        elif date_cols:
-            at = max(date_cols.values()) + 1
+        elif lay["spare"]:
+            at = lay["spare"][0]                             # 最後一個日期之後、空欄之前
+        elif lay["ttl_col"]:
+            at = lay["ttl_col"]                              # 空欄也沒有 → 加總欄前面
+        elif lay["date_cols"]:
+            at = max(lay["date_cols"].values()) + 1
         else:
-            # 底稿完全沒有這個月的區塊：接在最後一個月份區塊後面，並補一個加總欄
-            month_cols = [c for c, h in headers.items() if _DATE_HDR.match(h) or re.match(r"^\s*\d{1,2}月TTL", h)]
-            at = (max(month_cols) + 1) if month_cols else ws.max_column + 1
-            _insert_column(ws, at, hdr, f"{mm}月TTL下單總箱數", max(month_cols) if month_cols else None)
-            refresh(); ttl_col = at
-        neighbor = min(date_cols.values(), key=lambda c: abs(c - at)) if date_cols else None
+            at = (max(lay["month_cols"]) + 1) if lay["month_cols"] else ws.max_column + 1
+            _insert_column(ws, at, hdr, f"{mm}月TTL下單總箱數", max(lay["month_cols"]) if lay["month_cols"] else None)
+            lay = _sheet_layout(ws, hdr, mm)
+        neighbor = min(lay["date_cols"].values(), key=lambda c: abs(c - at)) if lay["date_cols"] else None
         _insert_column(ws, at, hdr, f"{mm}/{day}交貨", neighbor)
-        added.append(f"{mm}/{day}"); refresh()
-    # 重算主檔／商品列的欄位對照（插欄後 Barcode／skuid 欄可能位移）
+        added.append(f"{mm}/{day}")
+        lay = _sheet_layout(ws, hdr, mm)
+    return lay, added
+
+
+def _row_index(ws, hdr, bc_col, sku_col):
+    """底稿每一列的 Barcode／skuid → 列號（第一次出現的為準）。"""
     by_bc, by_sku = {}, {}
     for r in range(hdr + 1, ws.max_row + 1):
         bc = norm_key(ws.cell(row=r, column=bc_col).value) if bc_col else ""
@@ -278,29 +270,41 @@ def _fill_template(tpl, summary, month, operator):
             by_bc[bc] = r
         if sku and sku not in by_sku:
             by_sku[sku] = r
-    block = sorted(date_cols.values()) + spare
-    # 這個月的加總欄一律重寫成涵蓋整個區塊（含新插的欄），不然插在區塊尾端時舊公式會漏掉新欄
-    if ttl_col and block:
-        from openpyxl.utils import get_column_letter as _L
-        lo, hi = _L(min(block)), _L(max(block))
-        for r in range(hdr + 1, ws.max_row + 1):
-            v = ws.cell(row=r, column=ttl_col).value
-            if (isinstance(v, str) and v.upper().startswith("=SUM(")) or (v is None and ws.cell(row=r, column=bc_col or 1).value):
-                ws.cell(row=r, column=ttl_col).value = f"=SUM({lo}{r}:{hi}{r})"
-    missing_dates, renamed = [], added
+    return by_bc, by_sku
+
+
+def _rewrite_month_total(ws, hdr, lay, block):
+    """這個月的 TTL 加總欄一律重寫成涵蓋整個區塊（含新插的欄）；插在區塊尾端時舊公式會漏掉新欄。"""
+    if not (lay["ttl_col"] and block):
+        return
+    from openpyxl.utils import get_column_letter as _L
+    lo, hi = _L(min(block)), _L(max(block))
+    for r in range(hdr + 1, ws.max_row + 1):
+        v = ws.cell(row=r, column=lay["ttl_col"]).value
+        if (isinstance(v, str) and v.upper().startswith("=SUM(")) or (v is None and ws.cell(row=r, column=lay["bc_col"] or 1).value):
+            ws.cell(row=r, column=lay["ttl_col"]).value = f"=SUM({lo}{r}:{hi}{r})"
+
+
+def _write_cases(ws, lay, block, by_bc, by_sku, summary):
+    """把每個商品各交貨日的箱數填進對應格；對得到的列先把這個月的欄清空再填（沒出貨的日子留白）。
+    對不到的商品回傳出來，不混進總表。"""
     matched, unmatched, filled = 0, [], 0
     for r0 in summary["rows"]:
         r = by_bc.get(r0["barcode"]) or by_sku.get(r0["sku_id"])
         if r is None:
             unmatched.append(r0); continue
         matched += 1
-        for c in block:                      # 這個月的欄先清空再填，沒出貨的日子留白
+        for c in block:
             ws.cell(row=r, column=c).value = None
         for d, v in r0["by_date"].items():
-            c = date_cols.get(int(d[8:10]))
+            c = lay["date_cols"].get(int(d[8:10]))
             if c is not None:
                 ws.cell(row=r, column=c).value = v; filled += 1
-    # 說明分頁
+    return matched, unmatched, filled
+
+
+def _write_report_sheet(wb, tpl, summary, month, operator, matched, filled, added, unmatched):
+    """最後一個分頁「系統填入說明」：這次填了什麼、自動新增了哪些日期欄、哪些商品總表沒有。"""
     from openpyxl.styles import Font
     info = wb.create_sheet("系統填入說明")
     bold = Font(bold=True)
@@ -309,15 +313,9 @@ def _fill_template(tpl, summary, month, operator):
     info.append(["月份", month, "線別", summary["line"]])
     info.append(["底稿", tpl["filename"], "工作表", tpl["sheet"]])
     info.append(["對到的商品", matched, "填入格數", filled])
-    if renamed:
-        info.append(["自動新增的日期欄", "、".join(renamed)])
+    if added:
+        info.append(["自動新增的日期欄", "、".join(added)])
     info.append([])
-    if missing_dates:
-        info.append(["⚠ 這些交貨日沒有填進總表："]); info.cell(row=info.max_row, column=1).font = bold
-        for d in missing_dates:
-            tot = summary["totals_by_date"].get(d)
-            info.append([d, f"{tot} 箱" if tot is not None else ""])
-        info.append([])
     if unmatched:
         info.append(["酷澎有下單、但總表裡沒有的商品（沒混進總表，列在這裡給你看）："]); info.cell(row=info.max_row, column=1).font = bold
         info.append(["國條", "SKU ID", "品名", "品牌", "箱入數"] + [_md(d) for d in summary["dates"]] + ["月加總"])
@@ -327,8 +325,23 @@ def _fill_template(tpl, summary, month, operator):
             info.append([r0["barcode"], r0["sku_id"], r0["product_name"], r0["brand"], r0["box_size"]]
                         + [r0["by_date"].get(d) for d in summary["dates"]] + [r0["month_total"]])
     info.column_dimensions["A"].width = 22; info.column_dimensions["B"].width = 18; info.column_dimensions["C"].width = 40
+
+
+def _fill_template(tpl, summary, month, operator):
+    """把這個月每個交貨日的箱數填進底稿：只動這個月的日期欄和對得到的商品列，其他列、其他月份、
+    業務的公式、順序全部不碰。步驟：確保日期欄都在（缺的插欄）→ 對商品列 → 重寫 TTL → 填箱數 → 說明分頁。"""
+    import base64
+    wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(tpl["content_b64"])))   # 保留公式
+    ws = wb[tpl["sheet"]]
+    hdr = tpl["header_row"]; mm = int(month[5:7])
+    lay, added = _ensure_date_columns(ws, hdr, mm, summary["dates"])
+    by_bc, by_sku = _row_index(ws, hdr, lay["bc_col"], lay["sku_col"])
+    block = sorted(lay["date_cols"].values()) + lay["spare"]
+    _rewrite_month_total(ws, hdr, lay, block)
+    matched, unmatched, filled = _write_cases(ws, lay, block, by_bc, by_sku, summary)
+    _write_report_sheet(wb, tpl, summary, month, operator, matched, filled, added, unmatched)
     return wb, {"matched": matched, "filled": filled, "unmatched": len(unmatched),
-                "missing_dates": missing_dates, "renamed": renamed}
+                "missing_dates": [], "renamed": added}
 
 
 @master_bp.route("/api/master/export")
