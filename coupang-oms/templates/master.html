@@ -47,6 +47,14 @@
   table.m th { background:var(--b800); color:#fff; font-weight:600; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:2px solid var(--b200); }
   table.m td { padding:6px 10px; border-bottom:1px solid var(--line2); vertical-align:middle; }
   table.m tr:hover td { background:var(--b50); }
+  /* 最近一次匯入動到的列：左邊一條細色條＋一個小標籤，掃一眼就知道這次動了哪些 */
+  table.m tr.chg-new td:first-child { box-shadow:inset 4px 0 0 var(--ok); }
+  table.m tr.chg-upd td:first-child { box-shadow:inset 4px 0 0 var(--warn); }
+  table.m tr.chg-gone td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
+  table.m tr.chg-upd td, table.m tr.chg-gone td { background:#fffdf5; }
+  .imp-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13.5px; }
+  .imp-line .n { font-weight:700; font-size:14px; }
+  #imp-hist tr { cursor:pointer; } #imp-hist tr:hover td { background:var(--b50); } #imp-hist tr.on td { background:var(--b100); }
   .num { text-align:right; font-variant-numeric:tabular-nums; } th.num { text-align:right; }
   /* 就地編輯：格子本身可點，點了才變輸入框；存好閃一下綠色 */
   .inline-cell { cursor:pointer; outline:1px dashed transparent; outline-offset:-1px; transition:background-color .15s, outline-color .15s; border-radius:6px; }
@@ -327,6 +335,13 @@
 </dialog>
 
 <!-- 修改歷程 -->
+<dialog id="dlg-imports" style="max-width:720px">
+  <div class="dlg-h"><b><i class="bi bi-clock-history"></i> 匯入紀錄</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b">
+    <div class="kbd mb-2">最新在上面。點一列，畫面就只剩那次動到的品項；再點「全部訂單」回來。</div>
+    <div class="tbl-wrap" style="max-height:60vh"><table class="m" id="imp-hist"></table></div>
+  </div>
+</dialog>
 <dialog id="dlg-logs">
   <div class="dlg-h"><b><i class="bi bi-clock-history"></i> 修改歷程</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">

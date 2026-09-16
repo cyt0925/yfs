@@ -363,6 +363,15 @@ def main():
     print("\n【12c】匯出範圍＝某一次匯入：分得出這次新增／有變了哪些")
     imps = client.get("/api/master/imports").get_json()["batches"]
     check("匯入歷程列出每次確認匯入（含 7 月那批）", len(imps) >= 2 and all(b["committed_at"] for b in imps), str([(b["id"], b["new_now"], b["months"]) for b in imps]))
+    check("每次匯入都有 新增／有變／消失 三個數字，而且互斥（有變不含消失）",
+          all({"new_now", "changed_now", "removed_now"} <= set(b) for b in imps)
+          and all(sum(x["new"] + x["changed"] + x["removed"] for x in b["month_counts"]) == b["new_now"] + b["changed_now"] + b["removed_now"] for b in imps),
+          str([(b["new_now"], b["changed_now"], b["removed_now"]) for b in imps]))
+    gone = client.get("/api/master/orders?month=2026-09").get_json()["rows"]
+    gone_ids = {r["last_batch_id"] for r in gone if r["missing_in_file"]}
+    check("有品項消失的那批，removed_now 跟訂單裡 missing_in_file 的筆數對得上",
+          all(b["removed_now"] == sum(1 for r in gone if r["missing_in_file"] and r["last_batch_id"] == b["id"]) for b in imps if b["id"] in gone_ids),
+          str([(b["id"], b["removed_now"]) for b in imps if b["id"] in gone_ids]))
     jul = next((b for b in imps if b["months"] == ["2026-07"]), None)
     check("7 月那批：新增 53、落在 2026-07", jul and jul["new_now"] == 53, str(jul and (jul["new_now"], jul["months"], jul["changed_now"])))
     od = orders(client, month="2026-07", batch=jul["id"])
@@ -387,7 +396,9 @@ def main():
         col = [c.value for c in wsc[1]].index("本次變動") + 1
         vals = [wsc.cell(row=r, column=col).value for r in range(2, wsc.max_row + 1) if wsc.cell(row=r, column=col).value]
         check("匯出檔「本次變動」欄寫出變動內容", any(any(k in str(v) for k in ("→", "品項重新出現", "檔案已無此品項")) for v in vals), str(vals[:3]))
-    check("匯入歷程獨立視窗已拿掉", 'id="dlg-imports"' not in client.get("/master").get_data(as_text=True))
+    html_m = client.get("/master").get_data(as_text=True)
+    check("首頁不再有對帳算式；匯入紀錄收成一個小視窗（2026-09-16 Chloe 要一行講完）",
+          'id="dlg-imports"' in html_m and "對帳" not in html_m)
 
     print("\n【12b】清除資料（只有管理員）")
     before_orders = orders(client, month="2026-09")["count"]

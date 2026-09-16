@@ -54,41 +54,46 @@ def api_reset():
 
 @master_bp.route("/api/master/imports")
 def api_imports():
-    """匯入歷程：每一次「確認匯入」一列，附上「這批目前還算新增的有幾筆、落在哪幾個月」，
-    讓 OP 分得出同一天匯兩次時，第二次多出來的是哪些（拿去只匯那批的專案報價檔）。"""
+    """匯入歷程：每一次「確認匯入」一列，附上「這批目前算新增／有變／消失的有幾筆、落在哪幾個月」。
+
+    新增＝品項第一次出現就是這批；有變＝舊品項最後一次被這批改到（數量、日期…）；
+    消失＝這批的檔案裡已經沒有這個品項（列保留、出貨歸 0）。三個數字互斥，
+    畫面上排在一起看就對得起來。整批用兩句 GROUP BY 算完，不是一批一批查——
+    匯個一百次歷程視窗也不會拖慢。"""
     limit = min(norm_int(request.args.get("limit")) or 60, 300)
     conn = get_conn()
     try:
         batches = _rows(conn.execute(
             """SELECT id, filename, operator, rows_total, rows_new, rows_updated, rows_identical, created_at, committed_at
                FROM mst_import_batches WHERE committed = 1 ORDER BY committed_at DESC, id DESC LIMIT ?""", (limit,)))
+        if not batches:
+            return jsonify({"batches": []})
+        ids = [b["id"] for b in batches]
+        marks = ",".join("?" * len(ids))
+        new_rows = _rows(conn.execute(
+            f"""SELECT first_batch_id AS b, substr(delivery_date, 1, 7) AS m, COUNT(*) AS n, COUNT(DISTINCT po_number) AS pos
+                FROM mst_orders WHERE first_batch_id IN ({marks}) GROUP BY first_batch_id, substr(delivery_date, 1, 7)""", ids))
+        upd_rows = _rows(conn.execute(
+            f"""SELECT last_batch_id AS b, substr(delivery_date, 1, 7) AS m, missing_in_file AS gone,
+                       COUNT(*) AS n, COUNT(DISTINCT po_number) AS pos
+                FROM mst_orders WHERE last_batch_id IN ({marks}) AND first_batch_id != last_batch_id
+                GROUP BY last_batch_id, substr(delivery_date, 1, 7), missing_in_file""", ids))
+        per = {b["id"]: {} for b in batches}
+
+        def slot(bid, m):
+            return per[bid].setdefault(m or "", {"m": m or "", "new": 0, "changed": 0, "removed": 0, "pos": 0})
+        for x in new_rows:
+            sl = slot(x["b"], x["m"]); sl["new"] += x["n"]; sl["pos"] += x["pos"]
+        for x in upd_rows:
+            sl = slot(x["b"], x["m"]); sl["removed" if x["gone"] else "changed"] += x["n"]; sl["pos"] += x["pos"]
         for b in batches:
-            months = _rows(conn.execute(
-                """SELECT substr(delivery_date, 1, 7) AS m, COUNT(*) AS n FROM mst_orders
-                   WHERE first_batch_id = ? GROUP BY substr(delivery_date, 1, 7) ORDER BY m""", (b["id"],)))
-            b["new_now"] = sum(x["n"] for x in months)
-            b["months"] = [x["m"] for x in months if x["m"]]
-            changed = _rows(conn.execute(
-                """SELECT substr(delivery_date, 1, 7) AS m, COUNT(*) AS n FROM mst_orders
-                   WHERE last_batch_id = ? AND first_batch_id != ? GROUP BY substr(delivery_date, 1, 7) ORDER BY m""",
-                (b["id"], b["id"])))
-            b["changed_now"] = sum(x["n"] for x in changed)
-            # 這次匯入的新增／有變各落在哪幾個月（畫面上做成可以點的月份標籤，不再自動跳月份）
-            pos = _rows(conn.execute(
-                """SELECT substr(delivery_date, 1, 7) AS m, COUNT(DISTINCT po_number) AS n FROM mst_orders
-                   WHERE first_batch_id = ? OR last_batch_id = ? GROUP BY substr(delivery_date, 1, 7)""",
-                (b["id"], b["id"])))
-            mc = {}
-            def slot(m):
-                return mc.setdefault(m or "", {"m": m or "", "new": 0, "changed": 0, "pos": 0})
-            for x in months:
-                slot(x["m"])["new"] += x["n"]
-            for x in changed:
-                slot(x["m"])["changed"] += x["n"]
-            for x in pos:
-                slot(x["m"])["pos"] += x["n"]
+            mc = per[b["id"]]
             b["month_counts"] = [mc[k] for k in sorted(mc)]
-            b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_now']}、有變 {b['changed_now']}"
+            b["new_now"] = sum(x["new"] for x in b["month_counts"])
+            b["changed_now"] = sum(x["changed"] for x in b["month_counts"])
+            b["removed_now"] = sum(x["removed"] for x in b["month_counts"])
+            b["months"] = [x["m"] for x in b["month_counts"] if x["m"]]
+            b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_now']}、有變 {b['changed_now']}、消失 {b['removed_now']}"
     finally:
         conn.close()
     return jsonify({"batches": batches})
