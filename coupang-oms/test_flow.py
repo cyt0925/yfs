@@ -295,22 +295,33 @@ def main():
     print("\n【12】資料與設定和程式碼分家（整包覆蓋更新不會洗掉資料）")
     check("資料庫建在資料資料夾，不在程式資料夾",
           os.path.dirname(db.DB_PATH) == db.DATA_DIR)
-    check("設定檔自動從 defaults 補到資料資料夾",
-          os.path.exists(os.path.join(db.DATA_DIR, "config.json"))
-          and os.path.exists(os.path.join(db.DATA_DIR, "export_profiles.json")))
-
-    # 模擬使用者改過設定後又更新版本：ensure_data_dir 會再跑一次
-    # 拿驗收狀態當樣本：操作人員名單已經廢掉了（改成登入者），這裡要測的
-    # 是「使用者改過的 config.json 不會在下次啟動時被預設值蓋回去」。
     custom = ["未驗收", "完成", "異常", "重啟", "待補件"]
-    cfg_path = os.path.join(db.DATA_DIR, "config.json")
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump({"receiving_statuses": custom}, fh, ensure_ascii=False)
-    db.ensure_data_dir()
-    with open(cfg_path, encoding="utf-8") as fh:
-        after = json.load(fh)
-    check("重新啟動不會把使用者改過的設定蓋回預設值",
-          after["receiving_statuses"] == custom, after["receiving_statuses"])
+    if db.IS_POSTGRES:
+        # 正式站模式：設定不是檔案，存在 app_settings 表。要驗的還是同兩件事——
+        # 預設值第一次會自動種進去；使用者改過的不會在下次啟動被預設值蓋回去。
+        cfg0 = db.load_setting("config", {}); prof0 = db.load_setting("export_profiles", {})
+        check("設定檔自動從 defaults 種進資料庫（config、export_profiles）",
+              "receiving_statuses" in cfg0 and "profiles" in prof0, str((list(cfg0)[:3], list(prof0)[:3])))
+        db.save_setting("config", {"receiving_statuses": custom})
+        db.ensure_data_dir(); db.init_db()
+        check("重新啟動不會把使用者改過的設定蓋回預設值",
+              db.load_setting("config", {}).get("receiving_statuses") == custom)
+    else:
+        check("設定檔自動從 defaults 補到資料資料夾",
+              os.path.exists(os.path.join(db.DATA_DIR, "config.json"))
+              and os.path.exists(os.path.join(db.DATA_DIR, "export_profiles.json")))
+
+        # 模擬使用者改過設定後又更新版本：ensure_data_dir 會再跑一次
+        # 拿驗收狀態當樣本：操作人員名單已經廢掉了（改成登入者），這裡要測的
+        # 是「使用者改過的 config.json 不會在下次啟動時被預設值蓋回去」。
+        cfg_path = os.path.join(db.DATA_DIR, "config.json")
+        with open(cfg_path, "w", encoding="utf-8") as fh:
+            json.dump({"receiving_statuses": custom}, fh, ensure_ascii=False)
+        db.ensure_data_dir()
+        with open(cfg_path, encoding="utf-8") as fh:
+            after = json.load(fh)
+        check("重新啟動不會把使用者改過的設定蓋回預設值",
+              after["receiving_statuses"] == custom, after["receiving_statuses"])
     check("API 讀得到使用者改過的下拉選項",
           client.get("/api/config").get_json()["receiving_statuses"] == custom)
 

@@ -57,12 +57,12 @@ jobs:
           cache: pip
           cache-dependency-path: coupang-oms/requirements.txt
       - run: pip install -r requirements.txt
-      # test_flow 在 PostgreSQL 下有 2 個歷史遺留的失敗（設定檔相關，跟資料無關，見交接筆記），
-      # 先不在這裡跑；商品主檔與採購表兩套在 PostgreSQL 必須全過。
-      - name: test_master（商品主檔自動化）
-        run: python test_master.py
+      - name: test_flow（訂單管理）
+        run: python test_flow.py
       - name: test_purchase（採購表轉換）
         run: python test_purchase.py
+      - name: test_master（商品主檔自動化）
+        run: python test_master.py
 
   ui:
     name: 前端煙霧測試（Playwright）
