@@ -493,11 +493,12 @@ def build_filename(line_key, po_numbers, date_mmdd, warehouse, category=""):
     過來；抓不到就退回固定的 GUM糖，不要讓檔名整個開天窗。"""
     po = po_numbers[0] if po_numbers else ""
     if line_key == "pg":
-        # 檔名不放單號——使用者明確要求的（一開始留後 6 碼，後來要整個
-        # 拿掉）。同一批好幾張 PO 會同名，瀏覽器／zip 去重會自動加 (2)、
-        # (3)，不會互相覆蓋。曾經一度改成放完整單號，使用者說不是要這個，
-        # 改回來了；別再動這裡。
-        return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨.xls"
+        # 這段檔名改過三次，記清楚：一開始留單號後 6 碼 → 使用者要求整個拿掉 →
+        # 2026-09-16 Chloe（實際用檔的人）要求加回完整單號在最後面：「大量下載時
+        # 要一個一個點開才能分類」。所以：一張 PO 一個檔時尾巴帶 _單號；
+        # 合併匯出（po_numbers 空）不帶，因為放第一張會誤導成只有那一張。
+        suffix = f"_{po}" if po else ""
+        return f"酷澎XP&G_產品採購表上傳_{date_mmdd}到貨{suffix}.xls"
     if line_key == "paper":
         return f"酷澎_產品採購表上傳_{date_mmdd}到貨.xls"
     if line_key == "mars":

@@ -342,7 +342,7 @@ def main():
           "13000000493049" not in "酷澎XP&G_產品採購表上傳_0905到貨.xls")
 
     print("\n【5.6】build_filename：各線別的檔名長相")
-    check("P&G 檔名不帶單號（合併時本來就這樣，使用者後來要求單張匯出也一併拿掉）",
+    check("P&G 合併匯出（沒有單一 PO）檔名不帶單號",
           purchase.build_filename("pg", [], "0905", "TXRC8")
           == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
           purchase.build_filename("pg", [], "0905", "TXRC8"))
@@ -350,12 +350,10 @@ def main():
           purchase.build_filename("mars", [], "0904", "TAO4")
           == "永豐Mars採購單(箱單位)-GUM糖_TAO4.xls",
           purchase.build_filename("mars", [], "0904", "TAO4"))
-    # 這條曾經被誤改成「放完整單號」，使用者說不是要這個（要的是「各自
-    # 一個檔」不包 zip、直接一張張下載，見 purchase.html exportGroups）。
-    # 檔名不帶單號是明確要求，別再動。
-    check("P&G 單張匯出時檔名也不帶單號了（原本只留後 6 碼，使用者要求直接拿掉數字）",
+    # 改過三次：後 6 碼 → 拿掉 → 2026-09-16 Chloe 要求完整單號放最後（大量下載時才分得出來）。
+    check("P&G 一張 PO 一個檔時，檔名最後帶 _完整單號（Chloe 2026-09-16 要求）",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8")
-          == "酷澎XP&G_產品採購表上傳_0905到貨.xls",
+          == "酷澎XP&G_產品採購表上傳_0905到貨_13000000492925.xls",
           purchase.build_filename("pg", ["13000000492925"], "0905", "TXRC8"))
     check("紙潔單張匯出同樣不帶單號",
           purchase.build_filename("paper", ["13000000504334"], "0902", "")
