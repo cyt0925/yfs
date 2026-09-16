@@ -24,6 +24,8 @@ jobs:
           cache: pip
           cache-dependency-path: coupang-oms/requirements.txt
       - run: pip install -r requirements.txt
+      - name: 中文怪字檢查（Big5 以外的罕見字）
+        run: python check_chinese.py
       - name: test_flow（訂單管理）
         run: python test_flow.py
       - name: test_purchase（採購表轉換）

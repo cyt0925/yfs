@@ -2028,7 +2028,7 @@ def api_update_po(po_number):
         # 鎖定檢查放在算完「真的有沒有異動」之後——這些欄位在畫面上鎖單
         # 時本來就是 disabled，正常不會送出真的改變；只有真的想繞過鎖定
         # 硬改時才擋下來。放在最前面會連「這張單其實什麼都沒改、只是
-        # 品項明細裡動了驗收註記」這種情況也一起誤擋，导致存檔整包失敗。
+        # 品項明細裡動了驗收註記」這種情況也一起誤擋，導致存檔整包失敗。
         locked_fields = ({f for f, _, _, _ in head_changes} |
                          {f for f, _, _, _ in row_changes}) - PO_ALWAYS_EDITABLE_FIELDS
         if header["is_pulled"] and locked_fields and not payload.get("force_edit"):
