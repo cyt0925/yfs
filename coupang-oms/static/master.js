@@ -149,9 +149,10 @@ function whenText(ts) {
   const today = new Date(), y = new Date(Date.now() - 86400000), iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
   return d === iso(today) ? `今天 ${hm}` : d === iso(y) ? `昨天 ${hm}` : `${d.slice(5)} ${hm}`;
 }
-const countBadges = b => `<span class="badge bd-ok">新增 ${b.new_now}</span><span class="badge bd-warn">有變 ${b.changed_now}</span><span class="badge ${b.removed_now ? "bd-bad" : "bd-gray"}">消失 ${b.removed_now}</span>`;
+const countBadges = b => `<span class="badge ${b.new_now ? "bd-ok" : "z"}">新增 ${b.new_now}</span><span class="badge ${b.changed_now ? "bd-warn" : "z"}">有變 ${b.changed_now}</span><span class="badge ${b.removed_now ? "bd-bad" : "z"}">消失 ${b.removed_now}</span>`;
 /* 上面那一行只講兩件事：最近一次匯入動了多少、現在看的是不是某一次的變動。
-   細節（每一次的數字）收進「匯入紀錄」視窗，匯一百次首頁也還是一行。 */
+   右邊一顆合體按鈕：左半「只看這次變動」（看某次時變「全部訂單」），右半小箭頭拉出
+   每一次匯入的清單，點一列就只看那次。匯一百次也只是清單變長會捲。 */
 function renderImportBar() {
   const li = $("#last-import"); const last = importBatches[0];
   if (!last) { li.classList.add("hidden"); return; }
@@ -159,33 +160,25 @@ function renderImportBar() {
   const cur = importBatches.find(b => b.id === state.batch) || null;
   const onLast = cur && cur.id === last.id;
   li.style.background = cur ? "var(--warnbg)" : "var(--b50)"; li.style.borderColor = cur ? "#fcd34d" : "var(--b200)";
-  if (!cur) {
-    li.innerHTML = `<div class="imp-line"><b style="color:var(--b900)">最近匯入</b><span>${esc(whenText(last.committed_at))}</span>${countBadges(last)}
-      <button class="btn btn-o btn-sm" id="btn-last-changes" ${last.new_now + last.changed_now + last.removed_now ? "" : "disabled"} title="畫面只剩這次新增、有變、消失的品項"><i class="bi bi-funnel"></i> 只看這次變動</button>
-      <span style="margin-left:auto"></span><button class="btn btn-g btn-sm" id="btn-imports-history" title="每一次匯入的紀錄"><i class="bi bi-clock-history"></i> 匯入紀錄</button></div>`;
-  } else {
-    li.innerHTML = `<div class="imp-line"><b style="color:var(--warn)"><i class="bi bi-funnel-fill"></i> 只看${onLast ? "這次" : ""}變動</b><span>${esc(whenText(cur.committed_at))}</span>${countBadges(cur)}
-      <button class="btn btn-o btn-sm" id="btn-batch-all"><i class="bi bi-arrow-left"></i> 全部訂單</button>
-      <span style="margin-left:auto"></span><button class="btn btn-g btn-sm" id="btn-imports-history"><i class="bi bi-clock-history"></i> 匯入紀錄</button></div>`;
-  }
+  const menu = `<div id="imp-menu" class="dd-menu hidden"><div class="dd-head">每一次匯入，最新在上面；點一列只看那次的變動</div>${importBatches.map((b, i) => `<div class="imp-row ${b.id === state.batch ? "on" : ""}" data-id="${b.id}" title="${esc(b.filename)}">
+      <span class="t">${b.id === state.batch ? `<i class="bi bi-check-lg"></i> ` : ""}${esc(whenText(b.committed_at))}</span><span class="b">${countBadges(b)}</span><span class="f">${i === 0 ? "最近一次 · " : ""}${esc(b.filename)}</span></div>`).join("")}</div>`;
+  const main = cur
+    ? `<button class="btn btn-o btn-sm" id="btn-batch-all"><i class="bi bi-arrow-left"></i> 全部訂單</button>`
+    : `<button class="btn btn-o btn-sm" id="btn-last-changes" ${last.new_now + last.changed_now + last.removed_now ? "" : "disabled"} title="畫面只剩這次新增、有變、消失的品項"><i class="bi bi-funnel"></i> 只看這次變動</button>`;
+  const head = cur
+    ? `<b style="color:var(--warn)"><i class="bi bi-funnel-fill"></i> 只看${onLast ? "這次" : ""}變動</b><span>${esc(whenText(cur.committed_at))}</span>${countBadges(cur)}`
+    : `<b style="color:var(--b900)">最近匯入</b><span>${esc(whenText(last.committed_at))}</span>${countBadges(last)}`;
+  li.innerHTML = `<div class="imp-line">${head}<div class="dd"><span class="split">${main}<button class="btn btn-o btn-sm" id="btn-imports-history" title="更早的匯入"><i class="bi bi-chevron-down"></i></button></span>${menu}</div></div>`;
   const a = li.querySelector("#btn-last-changes"); if (a) a.addEventListener("click", () => pickBatch(last.id));
   const c = li.querySelector("#btn-batch-all"); if (c) c.addEventListener("click", () => pickBatch(null));
-  li.querySelector("#btn-imports-history").addEventListener("click", openImportsHistory);
+  li.querySelector("#btn-imports-history").addEventListener("click", e => { e.stopPropagation(); document.querySelectorAll(".dd-menu").forEach(x => { if (x.id !== "imp-menu") x.classList.add("hidden"); }); li.querySelector("#imp-menu").classList.toggle("hidden"); });
+  li.querySelectorAll(".imp-row").forEach(r => r.addEventListener("click", () => pickBatch(r.dataset.id)));
 }
 function pickBatch(id) {
   // 只切「看哪一次匯入」，不動月份：你停在哪個月就是哪個月
   const b = importBatches.find(x => x.id === Number(id));
   state.batch = b ? b.id : null; state.dates.clear(); state.pos.clear();
   loadOrders();
-}
-function openImportsHistory() {
-  const t = $("#imp-hist");
-  t.innerHTML = `<thead><tr><th>時間</th><th>檔案</th><th class="num">新增</th><th class="num">有變</th><th class="num">消失</th><th>月份</th></tr></thead><tbody>${importBatches.map(b => `<tr data-id="${b.id}" class="${b.id === state.batch ? "on" : ""}" title="點一下只看這次的變動">
-      <td style="white-space:nowrap">${esc(whenText(b.committed_at))}</td><td class="muted" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(b.filename)}">${esc(b.filename)}</td>
-      <td class="num">${b.new_now ? `<b style="color:var(--ok)">${b.new_now}</b>` : `<span class="muted">0</span>`}</td><td class="num">${b.changed_now ? `<b style="color:var(--warn)">${b.changed_now}</b>` : `<span class="muted">0</span>`}</td><td class="num">${b.removed_now ? `<b style="color:var(--bad)">${b.removed_now}</b>` : `<span class="muted">0</span>`}</td>
-      <td class="muted" style="white-space:nowrap">${b.months.map(m => `${Number(m.slice(5))} 月`).join("、") || "—"}</td></tr>`).join("")}</tbody>`;
-  t.querySelectorAll("tbody tr").forEach(tr => tr.addEventListener("click", () => { $("#dlg-imports").close(); pickBatch(tr.dataset.id); }));
-  $("#dlg-imports").showModal();
 }
 
 function renderCalendar() {

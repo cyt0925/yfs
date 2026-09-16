@@ -54,7 +54,13 @@
   table.m tr.chg-upd td, table.m tr.chg-gone td { background:#fffdf5; }
   .imp-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13.5px; }
   .imp-line .n { font-weight:700; font-size:14px; }
-  #imp-hist tr { cursor:pointer; } #imp-hist tr:hover td { background:var(--b50); } #imp-hist tr.on td { background:var(--b100); }
+  /* 「只看這次變動 ▾」合體按鈕：左半邊切換、右半邊小箭頭拉出每一次匯入的清單 */
+  .split { display:inline-flex; } .split .btn { border-radius:0; } .split .btn:first-child { border-radius:8px 0 0 8px; } .split .btn:last-child { border-radius:0 8px 8px 0; border-left:0; padding-left:8px; padding-right:8px; }
+  #imp-menu { min-width:520px; max-height:380px; padding:6px; }
+  .imp-row { display:grid; grid-template-columns:96px auto 1fr; gap:10px; align-items:center; padding:7px 10px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .imp-row:hover { background:var(--b50); } .imp-row.on { background:var(--b100); }
+  .imp-row .t { font-weight:700; color:var(--ink); white-space:nowrap; } .imp-row .f { color:var(--muted); font-size:12px; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .imp-row .b { display:flex; gap:4px; } .imp-row .badge.z { background:#f1f5f9; color:#94a3b8; font-weight:500; }
   .num { text-align:right; font-variant-numeric:tabular-nums; } th.num { text-align:right; }
   /* 就地編輯：格子本身可點，點了才變輸入框；存好閃一下綠色 */
   .inline-cell { cursor:pointer; outline:1px dashed transparent; outline-offset:-1px; transition:background-color .15s, outline-color .15s; border-radius:6px; }
@@ -341,13 +347,6 @@
 </dialog>
 
 <!-- 修改歷程 -->
-<dialog id="dlg-imports" style="max-width:720px">
-  <div class="dlg-h"><b><i class="bi bi-clock-history"></i> 匯入紀錄</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
-  <div class="dlg-b">
-    <div class="kbd mb-2">最新在上面。點一列，畫面就只剩那次動到的品項；再點「全部訂單」回來。</div>
-    <div class="tbl-wrap" style="max-height:60vh"><table class="m" id="imp-hist"></table></div>
-  </div>
-</dialog>
 <dialog id="dlg-logs">
   <div class="dlg-h"><b><i class="bi bi-clock-history"></i> 修改歷程</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">

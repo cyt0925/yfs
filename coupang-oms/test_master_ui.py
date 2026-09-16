@@ -101,9 +101,9 @@ def main():
         check("月份沒被跳走", pg.input_value("#sel-month") == "2026-09")
         pg.click("#btn-batch-all"); pg.wait_for_timeout(700)
         check("回全部訂單", "最近匯入" in pg.inner_text("#last-import") and "這次變動" not in pg.inner_text("#btn-export-daily"))
-        pg.click("#btn-imports-history"); pg.wait_for_timeout(400)
-        check("匯入紀錄視窗打開、一次一列", pg.evaluate("document.getElementById('dlg-imports').open") and pg.eval_on_selector_all("#imp-hist tbody tr", "els => els.length") >= 2)
-        pg.click("#imp-hist tbody tr >> nth=1"); pg.wait_for_timeout(900)
+        pg.click("#btn-imports-history"); pg.wait_for_timeout(300)
+        check("小箭頭拉出匯入清單、一次一列", not pg.evaluate("document.getElementById('imp-menu').classList.contains('hidden')") and pg.eval_on_selector_all("#imp-menu .imp-row", "els => els.length") >= 2)
+        pg.click("#imp-menu .imp-row >> nth=1"); pg.wait_for_timeout(900)
         check("點更早那次 → 只看那次的變動", "只看變動" in pg.inner_text("#last-import") and "全部訂單" in pg.inner_text("#last-import"))
         pg.click("#btn-batch-all"); pg.wait_for_timeout(700)
 
