@@ -722,6 +722,12 @@ def api_purchase_parse():
         stem = g.pop("filename_stem", "")
         g.setdefault("source_files", [])
         if line_key == "mars" and stem:
+            # 原檔名裡沒有單號、但表頭「永豐PO單號」那格有抓到，就把單號補在
+            # 尾巴——Chloe 的規則是「一張 PO 一個檔、照 PO 認」，大量下載時
+            # 檔名沒單號就得一個個點開。原檔名已經有就不重複加。
+            po = g["po_numbers"][0] if g["po_numbers"] else ""
+            if po and po not in stem:
+                stem = f"{stem}_{po}"
             g["filename"] = stem + ".xls"
         else:
             g["filename"] = build_filename(

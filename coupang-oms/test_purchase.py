@@ -326,6 +326,14 @@ def main():
     check("抓不到 PO 的檔不會被亂併在一起",
           len(res_same_no_po.get_json()["groups"]) == 2, res_same_no_po.get_json()["groups"])
 
+    print("\n【5.2c】瑪氏：檔名沒單號、表頭「永豐PO單號」有填 → 檔名尾巴補單號")
+    res_cell_po = parse(client, "mars", "fake/假_永豐Mars採購單(箱單位)-Cho巧_TAO4.xlsx",
+                        upload_name="假_永豐Mars採購單(箱單位)-Cho巧_TAO4.xlsx")
+    g_cell = res_cell_po.get_json()["groups"][0]
+    check("單號從表頭那格抓到", g_cell["po_numbers"] == ["13000000900003"], g_cell["po_numbers"])
+    check("匯出檔名沿用原檔名、尾巴補上單號",
+          g_cell["filename"] == "假_永豐Mars採購單(箱單位)-Cho巧_TAO4_13000000900003.xls", g_cell["filename"])
+
     print("\n【5.3】瑪氏以外的線別一次只能上傳一個檔案，不能誤用多選")
     res_pg_multi = parse_multi(client, "pg", [
         ("PG_訂單匯入範例.xlsx", None), ("PG_訂單匯入範例.xlsx", None)])
