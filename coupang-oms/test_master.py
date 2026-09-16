@@ -69,6 +69,7 @@ def main():
     print("\n【1】頁面與入口")
     res = client.get("/master"); html = res.get_data(as_text=True)
     check("頁面打得開", res.status_code == 200)
+    check("用的是商品主檔自己的藍色 logo，不是訂單管理的紅色 logo", "logo_master.png" in html, "拆成套件後曾因路徑算錯退回 logo.png")
     check("分頁順序照流程：① 商品主檔 → ② 訂單明細 → ③ 總表", html.index("① 商品主檔") < html.index("② 訂單明細") < html.index("③ 總表"))
     check("頂端沒有全域的線別選單（線別是篩選，不是模式）", 'id="sel-line"' not in html)
     check("OMS 首頁有「商品主檔自動化」按鈕", "商品主檔自動化" in client.get("/").get_data(as_text=True))

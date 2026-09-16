@@ -4,8 +4,10 @@ from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyx
 
 @master_bp.route("/master")
 def master_page():
+    # 用 Flask 的 static 資料夾找，不要用「這個檔所在的資料夾」——master.py 搬進 master/ 套件後
+    # 那樣會找不到，退回訂單管理那顆紅色 logo（真的發生過）。
     logo = ("logo_master.png"
-            if os.path.exists(os.path.join(os.path.dirname(__file__), "static", "logo_master.png"))
+            if os.path.exists(os.path.join(current_app.static_folder, "logo_master.png"))
             else "logo.png")
     return render_template("master.html", logo_file=logo, logged_in_user=_operator(),
                            is_admin=_is_admin(),
