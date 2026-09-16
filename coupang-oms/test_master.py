@@ -397,8 +397,8 @@ def main():
         vals = [wsc.cell(row=r, column=col).value for r in range(2, wsc.max_row + 1) if wsc.cell(row=r, column=col).value]
         check("匯出檔「本次變動」欄寫出變動內容", any(any(k in str(v) for k in ("→", "品項重新出現", "檔案已無此品項")) for v in vals), str(vals[:3]))
     html_m = client.get("/master").get_data(as_text=True)
-    check("首頁不再有對帳算式、也沒有匯入紀錄獨立視窗（清單掛在「只看這次變動 ▾」下面）",
-          "對帳" not in html_m and 'id="dlg-imports"' not in html_m)
+    check("首頁不再有對帳算式；匯入紀錄是右邊抽屜，不是擋住畫面的視窗",
+          "對帳" not in html_m and 'id="dlg-imports"' not in html_m and 'id="imp-drawer"' in html_m)
 
     print("\n【12b】清除資料（只有管理員）")
     before_orders = orders(client, month="2026-09")["count"]
