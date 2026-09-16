@@ -76,6 +76,17 @@ def main():
     meta = client.get("/api/master/lines").get_json()
     check("還沒有資料時線別清單是空的（線別是從資料長出來的）", meta["groups"] == [], str(meta["groups"]))
 
+    print("\n【1b】模組建表失敗時整個停用（503），訂單管理不受影響")
+    saved_ready, saved_err = db.MASTER_READY, db.MASTER_ERROR
+    db.MASTER_READY, db.MASTER_ERROR = False, "測試用：假裝建表失敗"
+    try:
+        check("API 回 503 並講清楚原因", client.get("/api/master/lines").status_code == 503 and "假裝建表失敗" in client.get("/api/master/lines").get_json()["error"])
+        check("頁面也回 503", client.get("/master").status_code == 503)
+        check("訂單管理首頁照常開", client.get("/").status_code == 200)
+    finally:
+        db.MASTER_READY, db.MASTER_ERROR = saved_ready, saved_err
+    check("恢復後 API 正常", client.get("/api/master/lines").status_code == 200)
+
     print("\n【2】① 先匯總表鋪主檔（不問線別）")
     res = upload(client, "/api/master/products/import", MASTER_XLSX)
     pi = res.get_json()

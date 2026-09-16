@@ -56,7 +56,7 @@ def _build_summary(conn, group, month, cfg):
     dates = sorted(dates)
 
     # 畫面上的總表只列「這個月有交貨」的商品；主檔裡有但沒出貨的不列（照 Chloe 的說法，
-    # 總表只吃箱數）。寶僑要一模一樣的匯出走底稿那條路（見 api_export_template）。
+    # 總表只吃箱數）。寶僑要一模一樣的匯出走底稿那條路（見 _fill_template）。
     barcodes = list(by_bc)
     rows = []
     for bc in barcodes:
