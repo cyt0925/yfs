@@ -50,7 +50,7 @@ Flask 應用。把酷澎整合表整份上傳，自動去重、抓出酷澎偷�
 - 改了 `templates/master.html` 或 `static/master.js` 一樣要升 `BUILD_VERSION`（JS 網址帶 ?v= 才會換新）。
 - 推之前跑：`python test_master.py`（SQLite）＋ 有 PostgreSQL 就再跑一次 ＋ `python test_master_ui.py`（Playwright）。
   CI（`.github/workflows/tests.yml`）會自動跑這三組；紅燈不要推正式站。
-- 跟使用者講話用口語，不要術語；每則訊息送出前檢查中文有沒有打成罕見字（曾把「匯」打成「匯」、「驟」打成「驟」）。
+- 跟使用者講話用口語，不要術語；每則訊息送出前檢查中文有沒有打成長得像的罕見字（「匯」「驟」都曾被打錯成沒人用的字，同事看不懂）。
 
 ## 開發與測試
 
