@@ -3,11 +3,11 @@
 # 建議到 Render 服務設定把「Auto-Deploy」改成「等 CI 通過才部署」，紅燈就不會上線。
 name: tests
 
+# 每次推都跑（不限路徑）：Render 設成「After CI Checks Pass」後，每個 commit 都要有 CI 結果
+# 它才知道能不能部署；只改文件的推送也一樣要跑完才上線。
 on:
   push:
-    paths: ["coupang-oms/**", ".github/workflows/tests.yml"]
   pull_request:
-    paths: ["coupang-oms/**", ".github/workflows/tests.yml"]
 
 jobs:
   sqlite:
