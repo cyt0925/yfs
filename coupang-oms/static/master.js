@@ -276,7 +276,7 @@ function renderOrders() {
         </span></div>
       <div style="overflow:auto"><table class="m"><thead><tr><th>線別</th><th>SKU ID</th><th>國條</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">下單</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">出貨(箱)</th><th>備註 <span class="kbd" style="color:var(--b100)">Note＋OP</span></th><th></th></tr></thead><tbody>`;
       for (const r of list) {
-        const boxBadge = r.box_source === "master" ? "" : r.box_source === "file" ? `<span class="badge bd-warn" title="主檔沒有這個國條，用整合表自帶的箱入數">檔</span>` : `<span class="badge bd-bad">缺</span>`;
+        const boxBadge = r.box_source === "master" ? "" : r.box_source === "file" ? `<span class="badge bd-warn" title="主檔裡沒有這個商品，箱入數先用訂單彙總表自帶的；把它補進主檔（或重匯酷澎主檔）就會以主檔為準">用整合表的</span>` : `<span class="badge bd-bad">缺</span>`;
         const chg = state.batch ? (r.first_batch_id === state.batch ? `<span class="badge" style="background:#dcfce7;color:#166534" title="這次匯入新增的">新增</span>` : r.last_batch_id === state.batch ? `<span class="badge bd-warn" title="${esc(r.last_batch_changes || "")}">有變</span>` : "") : "";
         html += `<tr data-id="${r.id}" data-ver="${r.version}" ${chg && r.first_batch_id !== state.batch ? 'style="background:#fffbeb"' : ""}>
           <td>${lineTag(r)}${r.line ? "" : ` <span class="badge bd-bad">沒線別</span>`}${chg ? " " + chg : ""}${chg && r.last_batch_changes && r.first_batch_id !== state.batch ? `<div class="kbd" style="max-width:220px;white-space:normal">${esc(r.last_batch_changes)}</div>` : ""}</td>
