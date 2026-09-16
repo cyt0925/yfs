@@ -192,12 +192,21 @@ function renderCalendar() {
   const [y, m] = state.month.split("-").map(Number);
   $("#cal-title").textContent = `${y} 年 ${m} 月 出貨日曆`;
   const byDate = Object.fromEntries((state.facets?.dates || []).map(d => [d.date, d]));
+  // 每一天被「最近一次匯入」（或選中的那一次）動到幾筆：新增／有變／消失，畫在格子右上角
+  const mark = state.batch || (importBatches[0] && importBatches[0].id);
+  const chg = {};
+  for (const r of state.rows || []) {
+    const k = !mark ? "" : r.first_batch_id === mark ? "n" : r.last_batch_id === mark ? (r.missing_in_file ? "g" : "u") : "";
+    if (!k) continue;
+    const d = r.delivery_date || ""; chg[d] = chg[d] || { n: 0, u: 0, g: 0 }; chg[d][k]++;
+  }
+  const corner = c => c ? `<div class="dc" title="這次匯入：${c.n ? `新增 ${c.n}` : ""}${c.u ? ` 有變 ${c.u}` : ""}${c.g ? ` 消失 ${c.g}` : ""}">${c.n ? `<span class="dn">新${c.n}</span>` : ""}${c.u ? `<span class="du">變${c.u}</span>` : ""}${c.g ? `<span class="dg">消${c.g}</span>` : ""}</div>` : "";
   const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
   let html = ["日","一","二","三","四","五","六"].map(w => `<div class="wd">${w}</div>`).join("");
   for (let i = 0; i < first.getDay(); i++) html += `<div class="day blank"></div>`;
   for (let d = 1; d <= days; d++) {
     const key = `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const f = byDate[key];
-    html += `<div class="day ${f ? "has" : ""} ${state.dates.has(key) ? "on" : ""}" data-date="${key}"><div class="n">${d}</div>
+    html += `<div class="day ${f ? "has" : ""} ${state.dates.has(key) ? "on" : ""} ${state.batch && f && !chg[key] ? "dim" : ""}" data-date="${key}"><div class="n">${d}</div>${f ? corner(chg[key]) : ""}
       ${f ? `<div class="c">${fmt(f.cases)} <span style="font-size:11px;font-weight:500">箱</span></div><div class="p">${f.po_count} 張 PO · ${f.rows} 品項</div>${f.missing_box ? `<span class="warn" title="${f.missing_box} 筆算不出箱數"><i class="bi bi-exclamation-triangle-fill"></i></span>` : ""}` : ""}</div>`;
   }
   $("#cal").innerHTML = html;

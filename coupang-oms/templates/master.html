@@ -74,6 +74,12 @@
   .cal .day { min-height:64px; border:1px solid var(--line2); border-radius:8px; padding:5px 7px; background:#fff; position:relative; font-size:12px; }
   .cal .day .n { font-weight:700; color:var(--muted); }
   .cal .day.has { border-color:var(--b200); cursor:pointer; background:var(--b50); }
+  /* 角標：這次匯入動到這一天幾筆（新增／有變／消失），顏色跟表格色條一樣；沒動到的天沒有角標 */
+  .cal .day .dc { position:absolute; top:4px; right:6px; display:flex; gap:5px; font-size:10.5px; font-weight:700; line-height:1; }
+  .cal .day .dc .dn { color:var(--ok); } .cal .day .dc .du { color:var(--warn); } .cal .day .dc .dg { color:var(--bad); }
+  .cal .day.on .dc span { color:#fff; opacity:.9; }
+  /* 只看某一次變動時，那次沒動到的天壓淡 */
+  .cal .day.dim { opacity:.35; }
   .cal .day.has:hover { background:var(--b100); }
   .cal .day.has .n { color:var(--b800); }
   .cal .day.on { background:var(--b700); border-color:var(--b700); color:#fff; }
