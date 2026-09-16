@@ -270,7 +270,7 @@
             <th class="px-2 py-2 text-right whitespace-nowrap">實際驗入數量
               <span class="block font-normal text-[10px] text-ink-400">酷澎後台同步</span></th>
             <th class="px-2 py-2 text-right whitespace-nowrap">驗收金額
-              <span class="block font-normal text-[10px] text-ink-400">訂單金額(稅後)</span></th>
+              <span class="block font-normal text-[10px] text-ink-400">實收金額(稅後)</span></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -732,7 +732,7 @@
   <div data-pane="sync" class="st-pane p-5 space-y-4 text-sm hidden">
     <p class="text-xs text-ink-500">
       酷澎後台的「批次驗收工具」用這組網址跟通行碼，把「實際驗入數量」跟「驗收金額」
-      （後台的訂單金額稅後）自動送進系統，不用再手動匯出 Excel、上傳。
+      （後台照實際收貨數量算的稅後金額）自動送進系統，不用再手動匯出 Excel、上傳。
       設定一次就好，之後每次跑工具都會自動同步。
     </p>
     <p class="text-xs text-ink-500 bg-ink-50 border border-ink-200 rounded-lg p-2">
@@ -994,7 +994,7 @@ function renderRows() {
           title="${r.actual_verified_qty == null ? "這張單還沒有品項同步過" : r.actual_verified_qty !== r.qty_ship ? "跟出貨數量不一致，可能有短驗" : ""}">
         ${r.actual_verified_qty == null ? "—" : r.actual_verified_qty.toLocaleString()}</td>
       <td class="px-2 py-2 text-right num text-ink-500"
-          title="${r.verified_amount == null ? "這張單還沒有品項同步過金額（驗收工具要升到會送金額的版本）" : "整張單各品項訂單金額(稅後)加總"}">
+          title="${r.verified_amount == null ? "這張單還沒有品項同步過金額（驗收工具要升到會送金額的版本）" : "整張單各品項實收金額(稅後)加總，照酷澎後台實際收貨數量算"}">
         ${r.verified_amount == null ? "—" : r.verified_amount.toLocaleString(undefined,
             { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
     </tr>`;

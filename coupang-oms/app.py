@@ -37,7 +37,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-09-16.5"
+BUILD_VERSION = "2026-09-16.6"
 
 app = Flask(__name__)
 
@@ -1287,7 +1287,11 @@ def api_sync_verified_qty():
             if raw_qty is None:
                 raw_qty = item.get("confirmed_qty")
             qty = norm_int(raw_qty)
-            # 驗收金額＝酷澎後台的「訂單金額(稅後)」。腳本沒送這個欄位
+            # 驗收金額＝酷澎後台每支 SKU「第二列」的稅後金額（照實際收貨數量算，
+            # API 欄位 receivingPriceAfterTax）。腳本 7.4 以前送的是第一列的
+            # 「訂單金額(稅後)」，一支下修過的品項會讓整張單金額對不上後台
+            # Total 第二列，2026-09-16 被 Chloe 抓到，腳本 7.5 起改送實收金額。
+            # 腳本沒送這個欄位
             # （舊版腳本、或那一列本來就沒有金額）就是 None，代表「這次
             # 沒抓到」，原本存的金額保持不動，不會被清成空白。
             amount = norm_money(item.get("verified_amount")
@@ -1325,7 +1329,7 @@ def api_sync_verified_qty():
                     (amount, stamp, order["id"]))
                 log_change(conn, order, "verified_amount", "驗收金額",
                            order["verified_amount"], amount, operator, "system",
-                           "酷澎後台驗收工具同步（訂單金額稅後）")
+                           "酷澎後台驗收工具同步（實收金額稅後）")
                 amount_matched += 1
 
             # 出貨數量 − 實際驗入數量 > 0，代表少到貨，自動把「短驗 差額」

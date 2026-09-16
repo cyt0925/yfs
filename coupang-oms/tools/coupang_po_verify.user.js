@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         酷澎 PO 批次驗收比對器
 // @namespace    yfycpg.kate
-// @version      7.4
-// @description  兩層驗收：第一層 清單頁收貨數量 vs detail可交貨總數(confirmedQty加總)；不符才下鑽逐SKU比 receivedQty vs confirmedQty。可貼上訂單系統複製的 PO 單號指定要驗哪幾張，或掃描目前清單頁。多狀態勾選(預設已確認+已關閉)、匯出Excel、同步「實際驗入數量」與「驗收金額(訂單金額稅後)」到訂單系統。
+// @version      7.5
+// @description  兩層驗收：第一層 清單頁收貨數量 vs detail可交貨總數(confirmedQty加總)；不符才下鑽逐SKU比 receivedQty vs confirmedQty。可貼上訂單系統複製的 PO 單號指定要驗哪幾張，或掃描目前清單頁。多狀態勾選(預設已確認+已關閉)、匯出Excel、同步「實際驗入數量」與「驗收金額(實收金額稅後)」到訂單系統。
 // @match        https://supplier.tw.coupang.com/pom/purchase-order/*
 // @run-at       document-idle
 // @grant        none
@@ -21,21 +21,26 @@
   const PO_STATUS_TXT = { CREATED: '已建立PO', CONFIRMED: '已確認PO', CANCELED: '已取消PO', CLOSED: '已關閉' };
   const toNum = (t) => { const m = String(t ?? '').replace(/,/g, '').match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
 
-  // ── 驗收金額：酷澎後台「訂單金額(稅後)」──
+  // ── 驗收金額：酷澎後台每個 SKU「第二列」的稅後金額（照實際收貨數量算）──
   // 2026-09-04 從真實 API 回應對出來的欄位名（poSkuList 每個 SKU 物件）：
   //   purchasePriceAfterTax   訂單金額(稅後) ＝ unitPriceAfterTax × orderedQty
-  //                           （畫面上 88,176 = 167.00 × 528）← 用這個
+  //                           （後台每個 SKU 的第一列、Total 的第一列）
   //   purchasePriceBeforeTax / purchasePriceTax   訂單金額 稅前／稅金
-  //   receivingPriceAfterTax  實際收貨的稅後金額（依 receivedQty 算），
-  //                           要改成「以收到的算錢」就換成這個
+  //   receivingPriceAfterTax  實收金額(稅後) ＝ unitPriceAfterTax × receivedQty
+  //                           （後台每個 SKU 的第二列、Total 的第二列）← 用這個
   //   unitPriceAfterTax / unitPriceBeforeTax      單價 稅後／稅前
+  // 7.4 以前抓的是 purchasePriceAfterTax（訂下單那一刻的金額）。2026-09-16
+  // Chloe 抓到 PO 13000000472576：一支從 792 下修到 39，訂單系統的驗收金額
+  // 還是 5,142,302（後台 Total 第一列），她要的是下修後實收的 4,215,359
+  // （Total 第二列）。驗收金額本來就該是「實際收了多少的錢」，改抓
+  // receivingPriceAfterTax；抓不到就退回「稅後單價 × 收貨數量」自己算。
   // ⚠ 這些金額欄位 API 回的是「分」（×100 的整數）：後台畫面顯示
   //   178,854.00 的那張，API 給的是 17885400。一律除以 100 才是畫面上的
   //   元。第一版沒除，同步進訂單系統的金額全部大了 100 倍，被使用者抓到。
-  // 主欄位抓不到就退回「稅後單價 × PO 數量」自己算；還是算不出來就回
-  // null——訂單系統那邊 null 代表「這次沒抓到」，不會把原本的金額清掉，
-  // 也不會被當成 0 元，並在面板上把該 SKU 的原始資料攤出來給人看。
-  const AMOUNT_FIELDS = ['purchasePriceAfterTax'];
+  // 還是算不出來就回 null——訂單系統那邊 null 代表「這次沒抓到」，不會把
+  // 原本的金額清掉，也不會被當成 0 元，並在面板上把該 SKU 的原始資料攤
+  // 出來給人看。
+  const AMOUNT_FIELDS = ['receivingPriceAfterTax'];
   const UNIT_PRICE_FIELDS = ['unitPriceAfterTax'];
   const MINOR_UNITS = 100;   // API 金額單位：分 → 元
   // 找不到金額欄位時留一份樣本，直接顯示在面板上讓使用者複製給維護的
@@ -46,14 +51,14 @@
       const v = toNum(s[k]);
       if (v != null) return Math.round(v) / MINOR_UNITS;
     }
-    const qty = toNum(s.orderedQty);
+    const qty = toNum(s.receivedQty);
     for (const k of UNIT_PRICE_FIELDS) {
       const p = toNum(s[k]);
       if (p != null && qty != null) return Math.round(p * qty) / MINOR_UNITS;
     }
     if (!amountSample) {
       amountSample = s;
-      console.warn('[PO 批次驗收] 找不到「訂單金額(稅後)」欄位，這個 SKU 的欄位有：',
+      console.warn('[PO 批次驗收] 找不到「實收金額(稅後)」欄位，這個 SKU 的欄位有：',
         Object.keys(s).join(', '), s);
     }
     return null;
@@ -192,7 +197,7 @@
         <input id="kpv-cfg-token" placeholder="通行碼" type="password">
         <button class="save" id="kpv-cfg-save">儲存設定</button>
       </div>
-      <div class="note">第一層：清單「收貨數量」 vs detail 可交貨總數。不符才下鑽逐 SKU 比對。<br>※有貼 PO 單號就只驗貼的那幾張（不受下面狀態勾選限制）；沒貼才會掃描目前清單頁、且只驗有勾選狀態的。<br>※同步時會一併送每個品項的「訂單金額(稅後)」，訂單系統那邊加總成整張單的驗收金額。</div>
+      <div class="note">第一層：清單「收貨數量」 vs detail 可交貨總數。不符才下鑽逐 SKU 比對。<br>※有貼 PO 單號就只驗貼的那幾張（不受下面狀態勾選限制）；沒貼才會掃描目前清單頁、且只驗有勾選狀態的。<br>※同步時會一併送每個品項的「實收金額(稅後)」（後台每支 SKU 第二列那格，照實際收貨數量算），訂單系統那邊加總成整張單的驗收金額。</div>
       <div class="prog" id="kpv-prog"></div>
       <div id="kpv-amount-warn"></div>
       <div id="kpv-out"></div>
@@ -259,7 +264,7 @@
         if (!layer1Match) fails = drill(active);
         // skuData 保留「每一個品項」的實際驗入數量（收貨數量 receivedQty，
         // 不是供應商可交貨數量 confirmedQty——後者幾乎都等於出貨數量，
-        // 存過去會看起來永遠一樣）跟訂單金額(稅後)。不是只有不符的都要送，
+        // 存過去會看起來永遠一樣）跟實收金額(稅後)。不是只有不符的都要送，
         // 同步到訂單系統時要逐項送過去，不能只送有問題的那幾個。
         const skuData = active.map(s => {
           const amount = pickAmount(s);
@@ -284,7 +289,7 @@
       // 能對出正確的欄位名，不用教人開 Console。
       const sample = amountSample ? JSON.stringify(amountSample, null, 1) : '';
       box.querySelector('#kpv-amount-warn').innerHTML =
-        `<div class="warn">⚠ ${amountMissing}/${skuTotal} 個品項抓不到「訂單金額(稅後)」，同步時這些品項不會帶金額。<br>`
+        `<div class="warn">⚠ ${amountMissing}/${skuTotal} 個品項抓不到「實收金額(稅後)」，同步時這些品項不會帶金額。<br>`
         + `下面是其中一個品項的原始資料，請整段複製貼給維護的人：`
         + `<textarea id="kpv-sample" readonly>${sample.replace(/</g, '&lt;')}</textarea>`
         + `<button id="kpv-sample-copy">複製這段</button></div>`;
@@ -343,7 +348,7 @@
     XLSX.writeFile(wb, `PO驗收_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
-  // 把這次跑出來的「每個品項收貨數量＋訂單金額(稅後)」送進訂單系統，
+  // 把這次跑出來的「每個品項收貨數量＋實收金額(稅後)」送進訂單系統，
   // 系統那邊會存成「實際驗入數量」「驗收金額」，並且自動判斷短驗、補進
   // 驗收註記——這一步取代了「匯出 Excel 再手動上傳」，按一次全部同步完。
   box.querySelector('#kpv-sync').onclick = async () => {

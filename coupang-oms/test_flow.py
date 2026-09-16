@@ -1159,7 +1159,7 @@ def main():
         check("驗收金額同理：還沒抓到就是空白，不是 0 元",
               us_dict["驗收金額"] is None, us_dict["驗收金額"])
 
-    print("\n【35-2】驗收金額：驗收工具一起把酷澎後台的「訂單金額(稅後)」抓回來")
+    print("\n【35-2】驗收金額：驗收工具一起把酷澎後台的「實收金額(稅後)」抓回來")
     amt_po, amt_skus = None, None
     for row in client.get("/api/pos?page_size=200").get_json()["rows"]:
         skus = client.get(f"/api/pos/{row['po_number']}").get_json()["skus"]
