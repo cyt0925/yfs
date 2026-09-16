@@ -170,8 +170,8 @@ def main():
     with zipfile.ZipFile(io.BytesIO(res.data)) as zf:
         names = zf.namelist()
         check("五組各自一個檔案，檔名沒有重複", len(names) == 5 and len(set(names)) == 5, names)
-        check("每個檔都放在自己 PO 的資料夾裡（資料夾名＝單號，檔名尾巴也是同一個單號）",
-              all(re.fullmatch(r"(13\d{12})/.*_\1\.xls", n) for n in names), names)
+        check("P&G 不分資料夾：zip 打開就是檔案，檔名尾巴帶單號（Chloe 試過資料夾版說多一層礙事）",
+              all(re.fullmatch(r"[^/]*_13\d{12}\.xls", n) for n in names), names)
 
     print("\n【4】紙潔：多張 PO 合併成一張採購表，備註固定空白")
     res = parse(client, "paper", "紙潔_訂單匯入範例.xlsx")
@@ -407,8 +407,7 @@ def main():
     res = export(client, "pg", dup_groups)
     with zipfile.ZipFile(io.BytesIO(res.data)) as zf:
         names = sorted(zf.namelist())
-        check("兩個同名檔案自動改名不衝突（沒單號的進「沒有單號」資料夾）",
-              names == ["沒有單號/同名(2).xls", "沒有單號/同名.xls"], names)
+        check("兩個同名檔案自動改名不衝突", names == ["同名(2).xls", "同名.xls"], names)
 
     print("\n【6.1】批次匯出：勾選的都是同一張 PO 時，zip 檔名直接用那個單號，不要叫「採購表」")
     same_po_groups = [

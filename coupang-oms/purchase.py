@@ -67,6 +67,10 @@ LINES = {
         "wipe_rows": 60,
         "default_remark_style": "mars",
         "multi_file": True,   # 一份訂貨通知單就是一張 PO，允許一次選多個檔案
+        # 批次匯出的 zip 裡一張 PO 一個資料夾：瑪氏同一張 PO 常開好幾份通知單
+        # （貼中標／不貼中標），要靠資料夾分。P&G／紙潔一張 PO 就一個檔、檔名
+        # 又帶單號，Chloe 說不要資料夾，zip 打開直接就是檔案。
+        "zip_po_folders": True,
     },
 }
 
@@ -727,21 +731,23 @@ def api_purchase_export():
         return send_file(io.BytesIO(data), as_attachment=True, download_name=name,
                           mimetype="application/vnd.ms-excel")
 
-    # zip 裡「一張 PO 一個資料夾」，檔案放進自己 PO 的資料夾（Chloe
-    # 2026-09-16：大量下載後要能直接照 PO 分，不要全部攤在同一層，也不要
-    # 一張張散在下載資料夾裡）。瑪氏同一張 PO 開好幾份通知單就會同一個
-    # 資料夾裡好幾個檔，這正是要的樣子，不要把它們合成一個檔。抓不到
+    # 瑪氏的 zip 裡「一張 PO 一個資料夾」，檔案放進自己 PO 的資料夾（Chloe
+    # 2026-09-16：同一張 PO 好幾份通知單，大量下載後要能直接照 PO 分）。
+    # 同一個資料夾裡好幾個檔正是要的樣子，不要把它們合成一個檔。抓不到
     # PO 的放「沒有單號」資料夾，讓人一眼看到要自己處理。
+    # P&G／紙潔不分資料夾（LINES 的 zip_po_folders 沒開）：一張 PO 一個檔、
+    # 檔名帶單號，Chloe 試過資料夾版說多一層反而礙事，zip 打開就是檔案。
+    use_folders = LINES[line_key].get("zip_po_folders", False)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         used_names = set()
         for name, data, po in files:
-            folder = po or "沒有單號"
-            final = f"{folder}/{name}"
+            prefix = f"{po or '沒有單號'}/" if use_folders else ""
+            final = f"{prefix}{name}"
             n = 2
             while final in used_names:
                 base, ext = os.path.splitext(name)
-                final = f"{folder}/{base}({n}){ext}"
+                final = f"{prefix}{base}({n}){ext}"
                 n += 1
             used_names.add(final)
             zf.writestr(final, data)

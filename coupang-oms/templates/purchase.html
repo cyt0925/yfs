@@ -453,16 +453,18 @@ async function exportGroups(groups, merge) {
   }
 
   if (!merge) {
-    // 各自一個檔：一次送全部，後端包成一個 zip，裡面「一張 PO 一個資料夾」，
-    // 檔案放進自己 PO 的資料夾（Chloe 2026-09-16：大量下載後要能直接照 PO
-    // 分）。以前是一張張分開下載、不包 zip，結果全部攤在下載資料夾裡分不
-    // 出誰是誰；只勾一組時後端直接給 .xls，不多包一層。
+    // 各自一個檔：一次送全部，後端包成一個 zip（Chloe 2026-09-16：以前一張張
+    // 分開下載、不包 zip，全部攤在下載資料夾裡分不出誰是誰）。瑪氏的 zip 裡
+    // 一張 PO 一個資料夾（同一張 PO 常有好幾份通知單）；P&G／紙潔一張 PO 一個
+    // 檔、檔名帶單號，不分資料夾，zip 打開就是檔案。只勾一組直接給 .xls。
     $("#p-export-status").textContent = "產生中…";
     if (!await downloadExport(groups, "採購表.zip")) return;
     const pos = new Set(groups.map(g => g.po_numbers[0] || "沒有單號"));
     $("#p-export-status").textContent = groups.length === 1
       ? "已下載。"
-      : `已下載 1 個 zip，解壓縮後 ${pos.size} 個資料夾（一張 PO 一個），共 ${groups.length} 個檔。`;
+      : PARSED.line === "mars"
+        ? `已下載 1 個 zip，解壓縮後 ${pos.size} 個資料夾（一張 PO 一個），共 ${groups.length} 個檔。`
+        : `已下載 1 個 zip，解壓縮後就是 ${groups.length} 個檔。`;
     return;
   }
 
