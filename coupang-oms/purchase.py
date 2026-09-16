@@ -638,6 +638,47 @@ def api_purchase_warehouses():
     return jsonify(_load_warehouses())
 
 
+def _merge_mars_by_po(groups):
+    """瑪氏一次上傳好幾份訂貨通知單時，同一張 PO 的合成一組（＝匯出一個檔）。
+
+    2026-09-16 Chloe 的實例：同一張 PO 13000000461752 瑪氏開了兩份通知單
+    （PET 貼中標、PET 不貼中標各一份），照「一份檔＝一組」匯出就變成同一
+    張 PO 兩個檔，她要的是「一張 PO 一個檔」——P&G 那邊是一個檔拆成多張
+    PO，這邊是多個檔合成一張 PO，方向相反、目的一樣。
+
+    抓不到 PO 的檔（沒有單號可以認）維持各自一組，不亂併。合併後品項
+    直接接在一起、不去重：同一張 PO 兩份通知單照理不會重複料號，真的
+    重複也要讓人看得到，不要偷偷加總。檔名不能再沿用單一份的匯入檔名
+    （會誤導成只有那一份的內容），改由 build_filename 用 PO 組出來；
+    source_files 留著給畫面標示這組是哪幾份合起來的。"""
+    merged = {}
+    order = []
+    for g in groups:
+        po = g["po_numbers"][0] if g["po_numbers"] else ""
+        stem = g.get("filename_stem", "")
+        g["source_files"] = [stem] if stem else []
+        key = ("po", po) if po else ("file", g["key"])
+        if key not in merged:
+            merged[key] = g
+            order.append(key)
+            continue
+        m = merged[key]
+        m["rows"].extend(g["rows"])
+        m["item_count"] += g["item_count"]
+        m["qty_total"] += g["qty_total"]
+        for field in ("address", "warehouse_guess", "date_guess", "category"):
+            if not m.get(field):
+                m[field] = g.get(field, "")
+        if m["category"] and g["category"] and g["category"] not in m["category"].split("+"):
+            m["category"] = m["category"] + "+" + g["category"]
+        if m["address"] and g["address"] and m["address"] != g["address"]:
+            m["address_mismatch"] = True
+        m["source_files"].extend(g["source_files"])
+        # 合併過就不能再沿用某一份的檔名，交給 build_filename 用 PO 命名
+        m["filename_stem"] = ""
+    return [merged[k] for k in order]
+
+
 @purchase_bp.route("/api/purchase/parse", methods=["POST"])
 def api_purchase_parse():
     line_key = request.form.get("line", "")
@@ -661,6 +702,7 @@ def api_purchase_parse():
                 errors.append(f"「{upload.filename}」：{exc}")
         if errors:
             return jsonify({"error": "有檔案解析失敗，本次都不會匯入：\n" + "\n".join(errors)}), 400
+        groups = _merge_mars_by_po(groups)
     else:
         if len(uploads) > 1:
             return jsonify({
@@ -678,6 +720,7 @@ def api_purchase_parse():
         # 品類拼；猜錯或漏猜的欄位不會連累到檔名。P&G／紙潔本來就可能
         # 多張 PO 合併成一份，沒有單一原檔名可以沿用，維持原本的規則。
         stem = g.pop("filename_stem", "")
+        g.setdefault("source_files", [])
         if line_key == "mars" and stem:
             g["filename"] = stem + ".xls"
         else:

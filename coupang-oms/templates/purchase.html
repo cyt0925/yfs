@@ -351,6 +351,7 @@ function renderGroups() {
       <td class="px-2 py-2 align-top">
         <div class="font-mono text-xs">${g.key}</div>
         <div class="text-[11px] text-[#8a6d3f]">訂單編號：${poLabel} ${mismatchBadge}</div>
+        ${(g.source_files || []).length > 1 ? `<div class="text-[11px] text-[#8a6d3f]" title="${g.source_files.join("\n")}">同一張 PO 的 ${g.source_files.length} 份通知單合成一個檔</div>` : ""}
         <button type="button" class="p-toggle-detail g-link text-[11px] hover:underline mt-0.5" data-idx="${idx}">
           展開料號明細</button>
       </td>

@@ -292,6 +292,40 @@ def main():
           filenames == ["永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952.xls", "第二張訂單.xls"],
           filenames)
 
+    print("\n【5.2b】瑪氏：同一張 PO 開了好幾份通知單，要合成一組＝一個檔（Chloe 2026-09-16）")
+    res_same = parse_multi(client, "mars", [
+        ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-PET貼中標_TAO1_13000000461752.xlsx"),
+        ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-PET不貼中標_TAO1_13000000461752.xlsx"),
+        ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250.xlsx"),
+    ])
+    same_groups = res_same.get_json()["groups"]
+    check("三份通知單、兩張 PO → 兩組", res_same.status_code == 200 and len(same_groups) == 2,
+          [(gr["key"], gr["item_count"]) for gr in same_groups])
+    single = res_multi.get_json()["groups"][0]
+    check("同一張 PO 的兩份合起來，品項數與數量是兩份相加、不去重",
+          same_groups[0]["item_count"] == single["item_count"] * 2
+          and same_groups[0]["qty_total"] == single["qty_total"] * 2
+          and len(same_groups[0]["rows"]) == len(single["rows"]) * 2,
+          (same_groups[0]["item_count"], same_groups[0]["qty_total"]))
+    check("合併那組標示是哪兩份合的，另一組只有自己一份",
+          same_groups[0]["source_files"] == [
+              "永豐Mars採購單(箱單位)-PET貼中標_TAO1_13000000461752",
+              "永豐Mars採購單(箱單位)-PET不貼中標_TAO1_13000000461752"]
+          and same_groups[1]["source_files"] == ["永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250"],
+          [gr["source_files"] for gr in same_groups])
+    check("合併那組檔名不能沿用其中一份的名字，改用 PO 組出來、尾巴帶單號",
+          same_groups[0]["filename"] == "永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000461752.xls",
+          same_groups[0]["filename"])
+    check("沒合併的那組照舊沿用自己的匯入檔名",
+          same_groups[1]["filename"] == "永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250.xls",
+          same_groups[1]["filename"])
+    res_same_no_po = parse_multi(client, "mars", [
+        ("瑪氏_訂貨通知單範例.xlsx", "第一張.xlsx"),
+        ("瑪氏_訂貨通知單範例.xlsx", "第二張.xlsx"),
+    ])
+    check("抓不到 PO 的檔不會被亂併在一起",
+          len(res_same_no_po.get_json()["groups"]) == 2, res_same_no_po.get_json()["groups"])
+
     print("\n【5.3】瑪氏以外的線別一次只能上傳一個檔案，不能誤用多選")
     res_pg_multi = parse_multi(client, "pg", [
         ("PG_訂單匯入範例.xlsx", None), ("PG_訂單匯入範例.xlsx", None)])
