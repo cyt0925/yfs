@@ -351,7 +351,6 @@ function renderGroups() {
       <td class="px-2 py-2 align-top">
         <div class="font-mono text-xs">${g.key}</div>
         <div class="text-[11px] text-[#8a6d3f]">訂單編號：${poLabel} ${mismatchBadge}</div>
-        ${(g.source_files || []).length > 1 ? `<div class="text-[11px] text-[#8a6d3f]" title="${g.source_files.join("\n")}">同一張 PO 的 ${g.source_files.length} 份通知單合成一個檔</div>` : ""}
         <button type="button" class="p-toggle-detail g-link text-[11px] hover:underline mt-0.5" data-idx="${idx}">
           展開料號明細</button>
       </td>
@@ -454,16 +453,16 @@ async function exportGroups(groups, merge) {
   }
 
   if (!merge) {
-    // 各自一個檔：一張 PO 一個檔、一個一個下載，不包 zip——使用者要的是
-    // 下載資料夾裡直接就是一張張 .xls，不用再解壓縮一層「採購表.zip」。
-    // 逐張送、等上一張下載觸發了再送下一張，瀏覽器才不會把連續下載
-    // 當成惡意行為擋掉（Chrome 第一次還是會問一次「允許多個下載」）。
-    for (let i = 0; i < groups.length; i++) {
-      $("#p-export-status").textContent = `產生中… ${i + 1}/${groups.length}`;
-      if (!await downloadExport([groups[i]], "採購表.xls")) return;
-    }
-    $("#p-export-status").textContent =
-      groups.length === 1 ? "已下載。" : `已下載 ${groups.length} 個檔案。`;
+    // 各自一個檔：一次送全部，後端包成一個 zip，裡面「一張 PO 一個資料夾」，
+    // 檔案放進自己 PO 的資料夾（Chloe 2026-09-16：大量下載後要能直接照 PO
+    // 分）。以前是一張張分開下載、不包 zip，結果全部攤在下載資料夾裡分不
+    // 出誰是誰；只勾一組時後端直接給 .xls，不多包一層。
+    $("#p-export-status").textContent = "產生中…";
+    if (!await downloadExport(groups, "採購表.zip")) return;
+    const pos = new Set(groups.map(g => g.po_numbers[0] || "沒有單號"));
+    $("#p-export-status").textContent = groups.length === 1
+      ? "已下載。"
+      : `已下載 1 個 zip，解壓縮後 ${pos.size} 個資料夾（一張 PO 一個），共 ${groups.length} 個檔。`;
     return;
   }
 

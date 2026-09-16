@@ -12,6 +12,7 @@ import shutil
 import struct
 import sys
 import tempfile
+import re
 import zipfile
 
 import xlrd
@@ -169,6 +170,8 @@ def main():
     with zipfile.ZipFile(io.BytesIO(res.data)) as zf:
         names = zf.namelist()
         check("五組各自一個檔案，檔名沒有重複", len(names) == 5 and len(set(names)) == 5, names)
+        check("每個檔都放在自己 PO 的資料夾裡（資料夾名＝單號，檔名尾巴也是同一個單號）",
+              all(re.fullmatch(r"(13\d{12})/.*_\1\.xls", n) for n in names), names)
 
     print("\n【4】紙潔：多張 PO 合併成一張採購表，備註固定空白")
     res = parse(client, "paper", "紙潔_訂單匯入範例.xlsx")
@@ -292,39 +295,33 @@ def main():
           filenames == ["永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952.xls", "第二張訂單.xls"],
           filenames)
 
-    print("\n【5.2b】瑪氏：同一張 PO 開了好幾份通知單，要合成一組＝一個檔（Chloe 2026-09-16）")
+    print("\n【5.2b】瑪氏：同一張 PO 開了好幾份通知單，各自一個檔、但進同一個 PO 資料夾（Chloe 2026-09-16）")
     res_same = parse_multi(client, "mars", [
         ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-PET貼中標_TAO1_13000000461752.xlsx"),
         ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-PET不貼中標_TAO1_13000000461752.xlsx"),
         ("瑪氏_訂貨通知單範例.xlsx", "永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250.xlsx"),
     ])
     same_groups = res_same.get_json()["groups"]
-    check("三份通知單、兩張 PO → 兩組", res_same.status_code == 200 and len(same_groups) == 2,
-          [(gr["key"], gr["item_count"]) for gr in same_groups])
-    single = res_multi.get_json()["groups"][0]
-    check("同一張 PO 的兩份合起來，品項數與數量是兩份相加、不去重",
-          same_groups[0]["item_count"] == single["item_count"] * 2
-          and same_groups[0]["qty_total"] == single["qty_total"] * 2
-          and len(same_groups[0]["rows"]) == len(single["rows"]) * 2,
-          (same_groups[0]["item_count"], same_groups[0]["qty_total"]))
-    check("合併那組標示是哪兩份合的，另一組只有自己一份",
-          same_groups[0]["source_files"] == [
-              "永豐Mars採購單(箱單位)-PET貼中標_TAO1_13000000461752",
-              "永豐Mars採購單(箱單位)-PET不貼中標_TAO1_13000000461752"]
-          and same_groups[1]["source_files"] == ["永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250"],
-          [gr["source_files"] for gr in same_groups])
-    check("合併那組檔名不能沿用其中一份的名字，改用 PO 組出來、尾巴帶單號",
-          same_groups[0]["filename"] == "永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000461752.xls",
-          same_groups[0]["filename"])
-    check("沒合併的那組照舊沿用自己的匯入檔名",
-          same_groups[1]["filename"] == "永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250.xls",
-          same_groups[1]["filename"])
-    res_same_no_po = parse_multi(client, "mars", [
-        ("瑪氏_訂貨通知單範例.xlsx", "第一張.xlsx"),
-        ("瑪氏_訂貨通知單範例.xlsx", "第二張.xlsx"),
+    check("三份通知單還是三組，不合併（貼中標／不貼中標是兩份不同的採購表）",
+          res_same.status_code == 200 and len(same_groups) == 3, len(same_groups))
+    res = export(client, "mars", same_groups)
+    check("多組匯出包成 zip", res.mimetype == "application/zip", res.mimetype)
+    with zipfile.ZipFile(io.BytesIO(res.data)) as zf:
+        names = sorted(zf.namelist())
+    check("zip 裡一張 PO 一個資料夾，同一張 PO 的兩份在同一個資料夾裡",
+          names == [
+              "13000000461250/永豐Mars採購單(箱單位)-GUM_TAO3_13000000461250.xls",
+              "13000000461752/永豐Mars採購單(箱單位)-PET不貼中標_TAO1_13000000461752.xls",
+              "13000000461752/永豐Mars採購單(箱單位)-PET貼中標_TAO1_13000000461752.xls"],
+          names)
+    res_no_po = export(client, "mars", [
+        {"rows": [{"material_no": "A1", "qty": 1}], "remark": "", "filename": "第一張.xls", "po_numbers": []},
+        {"rows": [{"material_no": "A2", "qty": 2}], "remark": "", "filename": "第二張.xls", "po_numbers": []},
     ])
-    check("抓不到 PO 的檔不會被亂併在一起",
-          len(res_same_no_po.get_json()["groups"]) == 2, res_same_no_po.get_json()["groups"])
+    with zipfile.ZipFile(io.BytesIO(res_no_po.data)) as zf:
+        names = sorted(zf.namelist())
+    check("抓不到 PO 的檔放進「沒有單號」資料夾，讓人一眼看到要自己處理",
+          names == ["沒有單號/第一張.xls", "沒有單號/第二張.xls"], names)
 
     print("\n【5.2c】瑪氏：檔名沒單號、表頭「永豐PO單號」有填 → 檔名尾巴補單號")
     res_cell_po = parse(client, "mars", "fake/假_永豐Mars採購單(箱單位)-Cho巧_TAO4.xlsx",
@@ -410,7 +407,8 @@ def main():
     res = export(client, "pg", dup_groups)
     with zipfile.ZipFile(io.BytesIO(res.data)) as zf:
         names = sorted(zf.namelist())
-        check("兩個同名檔案自動改名不衝突", names == ["同名(2).xls", "同名.xls"], names)
+        check("兩個同名檔案自動改名不衝突（沒單號的進「沒有單號」資料夾）",
+              names == ["沒有單號/同名(2).xls", "沒有單號/同名.xls"], names)
 
     print("\n【6.1】批次匯出：勾選的都是同一張 PO 時，zip 檔名直接用那個單號，不要叫「採購表」")
     same_po_groups = [
