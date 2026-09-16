@@ -18,6 +18,10 @@
   'use strict';
 
   const API = (poId) => `https://supplier.tw.coupang.com/pom/po/detail/${poId}`;
+  // 面板上顯示的版本號直接讀開頭 @version，不要再手打第二份——7.5 那次
+  // 頭寫 7.5、面板還是 7.4，使用者以為沒貼成功。GM_info 在 @grant none
+  // 下也拿得到，真的拿不到才退回這個字串。
+  const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '7.5';
   const PO_STATUS_TXT = { CREATED: '已建立PO', CONFIRMED: '已確認PO', CANCELED: '已取消PO', CLOSED: '已關閉' };
   const toNum = (t) => { const m = String(t ?? '').replace(/,/g, '').match(/-?\d+(\.\d+)?/); return m ? parseFloat(m[0]) : null; };
 
@@ -175,7 +179,7 @@
   const box = document.createElement('div');
   box.id = 'kpv';
   box.innerHTML = `
-    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v7.4</span></b><span class="x">×</span></div>
+    <div class="hd"><b>PO 批次驗收 <span class="note" style="color:#9ca3af">v${VERSION}</span></b><span class="x">×</span></div>
     <div class="bd">
       <textarea class="polist" id="kpv-po-list" placeholder="從訂單系統勾選 PO → 按「複製 PO 單號給驗收工具」→ 貼在這裡（一行一個）。留空則改成掃描目前這頁清單。"></textarea>
       <div class="pocount" id="kpv-pocount"></div>
