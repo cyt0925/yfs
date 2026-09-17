@@ -88,14 +88,21 @@
   /* 從日期清單／迷你月曆跳過來：那個日期區塊亮一下 */
   @keyframes hl-flash { 0%, 70% { box-shadow:0 0 0 3px #f59e0b, 0 0 0 8px #fde68a; background:#fffbeb; } 100% { box-shadow:none; } }
   .card.hl { animation:hl-flash 3s ease-out; }
-  /* 迷你月曆：依匯入批次篩選時，每個月一小格，只有這批動到的天亮起來 */
-  .mini-wrap { display:flex; gap:18px; flex-wrap:wrap; }
-  .mini { min-width:230px; } .mini .mt { font-weight:700; color:var(--b900); margin-bottom:4px; font-size:13.5px; }
-  .mini .mg { display:grid; grid-template-columns:repeat(7,30px); gap:3px; } .mini .mw { font-size:10px; color:var(--muted); text-align:center; }
-  .mini .md { height:30px; border-radius:6px; font-size:11px; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; color:var(--muted); background:#f8fafc; }
-  .mini .md.has { background:#e2e8f0; color:var(--ink2); } .mini .md.hit { cursor:pointer; color:#fff; font-weight:700; }
-  .mini .md.hit.n { background:var(--ok); } .mini .md.hit.u { background:var(--warn); } .mini .md.hit.g { background:var(--bad); } .mini .md.hit:hover { filter:brightness(1.12); }
-  .mini .md .k { font-size:9px; opacity:.9; font-weight:500; } .mini .md.blank { background:transparent; }
+  /* 依匯入批次篩選：行事曆／清單跟全部訂單同一套，只是這批沒動到的天壓淡；行事曆跨月時一個月一塊往下排 */
+  .cal-month { margin-bottom:10px; } .cal-month .cm-title { font-weight:700; color:var(--b900); font-size:13px; margin:4px 0 6px; }
+  /* 日期標題黏在上面：往下捲時目前這天的標題列停在畫面頂端，下一天來了才推走 */
+  .grp-date { position:sticky; top:0; z-index:5; }
+  /* 右側日期導覽條：捲到哪天亮哪天，點哪個跳哪天 */
+  #date-rail { position:fixed; right:14px; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:4px; z-index:30; max-height:70vh; overflow:auto; padding:6px; background:rgba(255,255,255,.92); border:1px solid var(--line2); border-radius:12px; box-shadow:0 6px 20px rgba(15,23,42,.08); }
+  #date-rail a { font-size:11.5px; font-weight:600; color:var(--muted); padding:3px 8px; border-radius:6px; cursor:pointer; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  #date-rail a:hover { background:var(--b50); color:var(--b800); } #date-rail a.on { background:var(--b700); color:#fff; }
+  #date-rail a .n { opacity:.7; font-weight:500; margin-left:4px; }
+  body.drawer-open #date-rail { display:none; }
+  /* 密度：緊湊時列高、字級都縮 */
+  #orders-list.dense table.m td { padding:3px 8px; font-size:12px; } #orders-list.dense .grp-po { padding:4px 12px; font-size:12px; } #orders-list.dense .grp-date { padding:6px 12px; font-size:13px; }
+  #orders-list.dense .grp-po .po { font-size:13.5px; padding:2px 8px; }
+  /* 抽屜是「推開」式：打開時主畫面往左縮，匯出、篩選都看得到；點抽屜以外任何地方就關 */
+  main { transition:margin-right .18s ease; } body.drawer-open main { margin-right:400px; }
   .grp-po input[type=date] { padding:3px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; }
   .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; user-select:none; }
   .cal .day.pick { outline:2px solid var(--b500); outline-offset:-2px; }
@@ -234,14 +241,19 @@
     </div>
     <div class="flex items-center gap-2 flex-wrap mb-3">
       <button id="btn-upload" class="btn btn-p"><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</button>
-      <span class="flex items-center gap-1 ml-2">
+      <span class="flex items-center gap-1 ml-2 dd">
         <button id="m-prev" class="btn btn-g btn-sm" title="上個月"><i class="bi bi-chevron-left"></i></button>
-        <input type="month" id="sel-month" class="sel" style="padding:4px 8px">
+        <button id="month-pill" class="fbtn" title="看哪個月；要一次看好幾個月就在這裡選起訖"><i class="bi bi-calendar3"></i><span class="fv" id="month-pill-txt"></span><i class="bi bi-chevron-down caret"></i></button>
         <button id="m-next" class="btn btn-g btn-sm" title="下個月"><i class="bi bi-chevron-right"></i></button>
+        <div id="month-menu" class="dd-menu hidden" style="min-width:300px;padding:12px">
+          <div class="text-sm mb-2"><b>看哪幾個月</b> <span class="kbd">平常只看一個月；要一次看、一次匯好幾個月，把「到」往後拉</span></div>
+          <div class="flex items-center gap-2 mb-2"><span class="text-sm muted" style="width:24px">從</span><input type="month" id="sel-month" class="sel" style="padding:4px 8px"></div>
+          <div class="flex items-center gap-2 mb-2"><span class="text-sm muted" style="width:24px">到</span><input type="month" id="exp-to" class="sel" style="padding:4px 8px"></div>
+          <div class="flex gap-2"><button class="btn btn-g btn-sm" id="month-one">只看一個月</button><button class="btn btn-g btn-sm" id="month-two">這個月＋下個月</button></div>
+        </div>
       </span>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <label class="text-sm muted" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">匯到</label><input type="month" id="exp-to" class="sel" style="padding:4px 8px" title="要一次匯好幾個月，把這裡往後拉；平常留著跟上面同一個月就好">
       <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁（0904交貨、0903交貨…），PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月；「匯到」往後拉可以跨月。"><i class="bi bi-calendar-week"></i> 匯出專案報價檔</a>
     </div>
 
@@ -263,7 +275,6 @@
     <div class="card p-4 mb-4">
       <div class="flex items-center gap-3 mb-2 flex-wrap">
         <span class="seg" id="cal-view"><button data-v="cal" class="on"><i class="bi bi-calendar3"></i> 行事曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 日期清單</button></span>
-        <span class="seg hidden" id="batch-view"><button data-v="mini" class="on"><i class="bi bi-grid-3x3-gap"></i> 迷你月曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 清單</button></span>
         <b id="cal-title" class="text-sm" style="color:var(--b900)"></b>
         <span class="kbd" id="cal-hint">點一天或按著滑過好幾天一起選，再點一次取消。格子裡是當天出貨總箱數／PO 數。</span>
         <div class="flex-1"></div>
@@ -272,7 +283,6 @@
       </div>
       <div id="cal" class="cal"></div>
       <div id="cal-list" class="hidden"></div>
-      <div id="cal-mini" class="hidden"></div>
 
       <div id="wh-block" class="mt-3"></div>
     </div>
@@ -280,6 +290,7 @@
     <div class="flex items-center gap-2 mb-2 text-sm muted">
       <label class="flex items-center gap-1"><input type="checkbox" id="sel-all-po"> 全選這頁的 PO</label>
       <span class="seg" style="margin-left:4px"><button id="btn-expand-all" title="展開所有 PO 的品項明細"><i class="bi bi-arrows-expand"></i> 全部展開</button><button id="btn-collapse-all" title="只留日期和 PO 標題"><i class="bi bi-arrows-collapse"></i> 全部收合</button></span>
+      <span class="seg" id="density" title="列高：資料多時切緊湊，一頁看得更多"><button data-d="normal" class="on">一般</button><button data-d="dense">緊湊</button></span>
       <span class="kbd">勾選 PO 可以批次改交貨日；點 PO 單號打開整張單一次改。出貨數量、備註直接點格子改：Enter 或點別處＝存，Esc＝取消。</span>
     </div>
     <div id="orders-list" class="space-y-4"></div>
@@ -382,6 +393,7 @@
 </dialog>
 
 <!-- 修改歷程 -->
+<nav id="date-rail" class="hidden" aria-label="日期導覽"></nav>
 <aside id="imp-drawer" class="drawer" aria-hidden="true">
   <div class="dh"><b><i class="bi bi-clock-history"></i> 匯入紀錄</b><span class="kbd">點一列，畫面就只剩那批動到的訂單</span><span class="x" id="imp-drawer-close" title="關閉"><i class="bi bi-x-lg"></i></span></div>
   <div class="df"><select id="imp-period" class="sel" style="padding:5px 8px;font-size:13px"><option value="">全部期間</option><option value="week">本週</option><option value="month">本月</option><option value="last">上個月</option></select>

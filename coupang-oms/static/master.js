@@ -7,7 +7,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const fmt = n => n == null ? "" : (Number.isInteger(n) ? n : Number(n).toFixed(2).replace(/\.?0+$/, ""));
 const state = { month: "", tab: "orders", lines: new Set(), dates: new Set(), pos: new Set(), brands: new Set(), warehouses: new Set(),
                 edited: false, missing: false, q: "", facets: null, rows: [], selected: new Set(), groups: [], sumLine: "", sumMonth: "",
-                batch: null, calView: localStorage.getItem("mst_calview") || "cal", batchView: localStorage.getItem("mst_batchview") || "mini", prevMonth: null, prevTo: null,
+                batch: null, calView: localStorage.getItem("mst_calview") || "cal", dense: localStorage.getItem("mst_dense") === "1", prevMonth: null, prevTo: null,
                 closedDates: new Set(), openPos: new Set(), hlDate: null };
 
 function toast(msg, kind="ok") {
@@ -74,6 +74,15 @@ function shiftMonth(delta) {
 function setMonth(v) { if (!v) return; state.month = v; localStorage.setItem("mst_month", v); $("#sel-month").value = v; $("#exp-to").value = v; state.dates.clear(); state.pos.clear(); state.selected.clear(); loadOrders(); }
 $("#m-prev").addEventListener("click", () => shiftMonth(-1)); $("#m-next").addEventListener("click", () => shiftMonth(1));
 $("#sel-month").addEventListener("change", e => setMonth(e.target.value));
+/* 月份藥丸：平常寫「2026 年 9 月」，拉了「到」就寫「2026 年 9 月 ～ 10 月」；點開才看到起訖兩格 */
+function renderMonthPill() {
+  const to = $("#exp-to").value; const [y, m] = state.month.split("-").map(Number);
+  $("#month-pill-txt").textContent = (to && to > state.month) ? `${y} 年 ${m} 月 ～ ${Number(to.slice(5))} 月` : `${y} 年 ${m} 月`;
+  $("#month-pill").classList.toggle("on", !!(to && to > state.month));
+}
+$("#month-pill").addEventListener("click", e => { e.stopPropagation(); document.querySelectorAll(".dd-menu").forEach(x => { if (x.id !== "month-menu") x.classList.add("hidden"); }); $("#month-menu").classList.toggle("hidden"); });
+$("#month-one").addEventListener("click", () => { $("#exp-to").value = state.month; $("#month-menu").classList.add("hidden"); loadOrders(); });
+$("#month-two").addEventListener("click", () => { const [y, m] = state.month.split("-").map(Number); const d = new Date(y, m, 1); $("#exp-to").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; $("#month-menu").classList.add("hidden"); loadOrders(); });
 function clearFilters() {
   state.lines.clear(); state.dates.clear(); state.pos.clear(); state.brands.clear(); state.warehouses.clear(); state.edited = state.missing = false; state.q = ""; state.batch = null;
   $("#q").value = ""; $("#chip-edited").classList.remove("on"); $("#chip-missing").classList.remove("on"); loadOrders();
@@ -88,12 +97,12 @@ function filterParams() {
     pos: [...state.pos].join(","), brands: [...state.brands].join(","), warehouses: [...state.warehouses].join(","),
     edited: state.edited ? "1" : "", missing: state.missing ? "1" : "", batch: state.batch || "", batch_scope: "all" });
 }
-$("#exp-to").addEventListener("change", () => { $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams(); });
+$("#exp-to").addEventListener("change", () => { loadOrders(); });
 function anyFilter() { return state.lines.size || state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing; }
 function anyScope() { return anyFilter() || state.batch; }
 
 async function loadOrders(opts = {}) {
-  $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams();
+  $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams(); renderMonthPill();
   $("#filter-hint").classList.toggle("hidden", !anyFilter()); $("#btn-clear").classList.toggle("hidden", !anyFilter());
   let data;
   try { data = await api("/api/master/orders?" + filterParams()); } catch (e) { toast(e.message, "err"); return; }
@@ -213,8 +222,11 @@ $("#imp-q").addEventListener("input", async () => {
   }
   renderDrawer();
 });
-function openDrawer() { renderDrawer(); const d = $("#imp-drawer"); d.classList.add("open"); d.setAttribute("aria-hidden", "false"); }
-function closeDrawer() { const d = $("#imp-drawer"); d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); }
+function openDrawer() { renderDrawer(); const d = $("#imp-drawer"); d.classList.add("open"); d.setAttribute("aria-hidden", "false"); document.body.classList.add("drawer-open"); }
+function closeDrawer() { const d = $("#imp-drawer"); d.classList.remove("open"); d.setAttribute("aria-hidden", "true"); document.body.classList.remove("drawer-open"); }
+// 點抽屜以外任何地方就關（開抽屜那顆按鈕除外，不然一開就關）
+// 用 click 不用 pointerdown：按下去就關的話主畫面會先往右展開，滑鼠放開時底下已經不是原本那格，那一下點擊就丟了
+document.addEventListener("click", e => { if ($("#imp-drawer").classList.contains("open") && !e.target.closest("#imp-drawer") && !e.target.closest("#btn-batch-filter")) closeDrawer(); }, true);
 $("#imp-drawer-close").addEventListener("click", closeDrawer);
 document.addEventListener("keydown", e => { if (e.key === "Escape" && $("#imp-drawer").classList.contains("open")) closeDrawer(); });
 /* 依某批篩選：月份自動拉成那批交期涵蓋的範圍（9 月～10 月），表格、匯出一次包完，不用逐月切；
@@ -256,26 +268,37 @@ function renderCalendar() {
   const chg = changesByDate();
   const curB = state.batch ? importBatches.find(b => b.id === state.batch) : null;
   $("#cal-clear-dates").classList.toggle("hidden", !state.dates.size); $("#cal-clear-dates").onclick = () => { state.dates.clear(); loadOrders(); };
-  // 依匯入批次篩選：行事曆換成「迷你月曆」（只有這批動到的天亮）或「清單」，兩個可切
-  $("#cal-view").classList.toggle("hidden", !!curB); $("#batch-view").classList.toggle("hidden", !curB);
-  const mode = curB ? (state.batchView === "list" ? "list" : "mini") : state.calView;
-  $("#cal").classList.toggle("hidden", mode !== "cal"); $("#cal-list").classList.toggle("hidden", mode !== "list"); $("#cal-mini").classList.toggle("hidden", mode !== "mini");
-  $("#cal-hint").textContent = curB ? (mode === "mini" ? "亮的是這批動到的天，數字是幾張 PO。點一天，下面表格捲到那天並亮起來。" : "這批動到的日期，一列一天。點一列，下面表格捲到那天並亮起來。")
+  // 行事曆／日期清單同一組切換，全部訂單跟依匯入批次篩選都一樣；批次模式只是沒動到的天壓淡、點一天跳到那天
+  const mode = state.calView;
+  $("#cal").classList.toggle("hidden", mode !== "cal"); $("#cal-list").classList.toggle("hidden", mode !== "list");
+  $("#cal-hint").textContent = curB ? (mode === "list" ? "這批動到的日期，一列一天。點一列，下面表格捲到那天並亮起來。" : "亮的是這批動到的天、角標是幾張 PO。點一天，下面表格捲到那天並亮起來。")
     : mode === "list" ? "點一列勾一天；按著往下拖一次勾好幾天；Shift 點兩列中間整段一起勾。" : "點一天選一天；按著滑過好幾天一起選；Shift 點兩天中間整段一起選。再點一次取消。";
-  if (mode === "mini") { renderMiniCalendars(chg); renderNoDateChip(); return; }
   if (mode === "list") { renderDateList(chg, curB); renderNoDateChip(); return; }
 
   const byDate = Object.fromEntries((state.facets?.dates || []).map(d => [d.date, d]));
-  const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
-  let html = ["日","一","二","三","四","五","六"].map(w => `<div class="wd">${w}</div>`).join("");
-  for (let i = 0; i < first.getDay(); i++) html += `<div class="day blank"></div>`;
-  for (let d = 1; d <= days; d++) {
-    const key = `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const f = byDate[key];
-    html += `<div class="day ${f ? "has" : ""} ${state.dates.has(key) ? "on" : ""}" data-date="${key}"><div class="n">${d}</div>${f ? cornerHtml(chg[key]) : ""}
-      ${f ? `<div class="c">${fmt(f.cases)} <span style="font-size:11px;font-weight:500">箱</span></div><div class="p">${f.po_count} 張 PO · ${f.rows} 品項</div>${f.missing_box ? `<span class="warn" title="${f.missing_box} 筆算不出箱數"><i class="bi bi-exclamation-triangle-fill"></i></span>` : ""}` : ""}</div>`;
+  const months = []; let yy = y, mm = m;
+  while (`${yy}-${String(mm).padStart(2, "0")}` <= (spans ? to : state.month) && months.length < 12) { months.push([yy, mm]); mm++; if (mm > 12) { mm = 1; yy++; } }
+  const grid = (Y, M) => {
+    const first = new Date(Y, M - 1, 1), days = new Date(Y, M, 0).getDate();
+    let html = ["日","一","二","三","四","五","六"].map(w => `<div class="wd">${w}</div>`).join("");
+    for (let i = 0; i < first.getDay(); i++) html += `<div class="day blank"></div>`;
+    for (let d = 1; d <= days; d++) {
+      const key = `${Y}-${String(M).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const f = byDate[key];
+      html += `<div class="day ${f ? "has" : ""} ${state.dates.has(key) ? "on" : ""} ${curB && f && !chg[key] ? "dim" : ""}" data-date="${key}"><div class="n">${d}</div>${f ? cornerHtml(chg[key]) : ""}
+        ${f ? `<div class="c">${fmt(f.cases)} <span style="font-size:11px;font-weight:500">箱</span></div><div class="p">${f.po_count} 張 PO · ${f.rows} 品項</div>${f.missing_box ? `<span class="warn" title="${f.missing_box} 筆算不出箱數"><i class="bi bi-exclamation-triangle-fill"></i></span>` : ""}` : ""}</div>`;
+    }
+    return html;
+  };
+  $("#cal").innerHTML = months.length > 1
+    ? months.map(([Y, M]) => `<div class="cal-month" style="grid-column:1/-1"><div class="cm-title">${Y} 年 ${M} 月</div><div class="cal">${grid(Y, M)}</div></div>`).join("")
+    : grid(y, m);
+  if (curB) {
+    // 批次模式：點一天不是篩選，是跳到那天（表格本來就只剩這批）
+    $("#cal").onpointerdown = $("#cal").onpointermove = $("#cal").onpointerup = null;
+    $("#cal").querySelectorAll(".day.has:not(.dim)").forEach(el => el.addEventListener("click", () => jumpToDate(el.dataset.date)));
+  } else {
+    bindDragSelect($("#cal"), ".day.has", el => el.dataset.date, (el, on) => el.classList.toggle("on", on), dateKeys());
   }
-  $("#cal").innerHTML = html;
-  bindDragSelect($("#cal"), ".day.has", el => el.dataset.date, (el, on) => el.classList.toggle("on", on), dateKeys());
   renderNoDateChip();
 }
 /* 拖選：按下去那一格原本沒選就是「選」模式，反之「取消」模式；拖過去的格子畫面立刻變色，
@@ -306,27 +329,7 @@ function bindDragSelect(root, sel, keyOf, paint, orderedKeys) {
   };
   root.onpointerup = root.onpointercancel = () => { if (!drag) return; drag = null; loadOrders({ keepCal: true }); };
 }
-/* 迷你月曆：這批交期涵蓋的每個月一小格；有訂單的天淺灰，這批動到的天上色（綠新增／黃有變／紅消失）並寫幾張 PO */
-function renderMiniCalendars(chg) {
-  const to = $("#exp-to").value || state.month; const months = [];
-  let [y, m] = state.month.split("-").map(Number);
-  while (`${y}-${String(m).padStart(2, "0")}` <= to && months.length < 12) { months.push([y, m]); m++; if (m > 12) { m = 1; y++; } }
-  const has = new Set(dateKeys());
-  const touched = Object.keys(chg).filter(Boolean).length; const pos = new Set(state.rows.map(r => r.po_number));
-  $("#cal-mini").innerHTML = `<div class="mini-wrap">${months.map(([yy, mm]) => {
-    const first = new Date(yy, mm - 1, 1), days = new Date(yy, mm, 0).getDate();
-    let g = ["日","一","二","三","四","五","六"].map(w => `<div class="mw">${w}</div>`).join("");
-    for (let i = 0; i < first.getDay(); i++) g += `<div class="md blank"></div>`;
-    for (let d = 1; d <= days; d++) {
-      const key = `${yy}-${String(mm).padStart(2, "0")}-${String(d).padStart(2, "0")}`; const c = chg[key];
-      const kind = c ? (c.n.size ? "n" : c.u.size ? "u" : "g") : ""; const n = c ? (c.n.size || c.u.size || c.g.size) : 0;
-      g += `<div class="md ${c ? "hit " + kind : has.has(key) ? "has" : ""}" ${c ? `data-date="${key}" title="${Number(mm)}/${d}：${c.n.size ? `新增 ${c.n.size} 張 PO ` : ""}${c.u.size ? `有變 ${c.u.size} 張 PO ` : ""}${c.g.size ? `消失 ${c.g.size} 張 PO` : ""}（${c.rows} 品項）"` : ""}><span>${d}</span>${c ? `<span class="k">${n} PO</span>` : ""}</div>`;
-    }
-    return `<div class="mini"><div class="mt">${yy} 年 ${mm} 月</div><div class="mg">${g}</div></div>`;
-  }).join("")}<div class="muted text-sm" style="align-self:flex-end;padding-bottom:6px">這批共動到 ${touched} 天 · ${pos.size} 張 PO · ${state.rows.length} 品項　<span class="kbd"><span class="badge bd-ok">綠</span> 新增　<span class="badge bd-warn">黃</span> 有變　<span class="badge bd-bad">紅</span> 消失　灰＝有訂單但這批沒動到</span></div></div>`;
-  $("#cal-mini").querySelectorAll(".md.hit").forEach(el => el.addEventListener("click", () => jumpToDate(el.dataset.date)));
-}
-/* 從迷你月曆／日期清單跳到某一天：展開那天和它底下的 PO、捲過去、整塊亮 3 秒；其他日期維持原狀 */
+/* 從行事曆／日期清單跳到某一天：展開那天和它底下的 PO、捲過去、整塊亮 3 秒；其他日期維持原狀 */
 function jumpToDate(d) {
   state.closedDates.delete(d);
   for (const r of state.rows) if ((r.delivery_date || "") === d) state.openPos.add(r.po_number);
@@ -366,7 +369,6 @@ function renderDateList(chg, curB) {
       `<tr data-date="${d.date}" class="${state.dates.has(d.date) ? "on" : ""}"><td><input type="checkbox" ${state.dates.has(d.date) ? "checked" : ""} tabindex="-1"></td><td>${dayLabel(d.date)}</td><td>${d.po_count} 張 PO</td><td class="muted">${d.rows} 品項</td><td><b>${fmt(d.cases)}</b> 箱${d.missing_box ? ` <span class="badge bd-warn">${d.missing_box} 筆算不出</span>` : ""}</td><td>${badges(chg[d.date])}</td></tr>`).join("")}</tbody></table>` : `<div class="muted p-3">這個範圍沒有排日期的訂單。</div>`;
   bindDragSelect($("#cal-list"), "tbody tr[data-date]", el => el.dataset.date, (el, on) => { el.classList.toggle("on", on); const cb = el.querySelector("input"); if (cb) cb.checked = on; }, ds.map(d => d.date));
 }
-$("#batch-view").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.batchView = b.dataset.v; localStorage.setItem("mst_batchview", state.batchView); $("#batch-view").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderCalendar(); }));
 $("#cal-view").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.calView = b.dataset.v; localStorage.setItem("mst_calview", state.calView); $("#cal-view").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderCalendar(); }));
 
 function ddRender(menuId, nId, items, set, key, labelFn, summaryFn) {
@@ -407,6 +409,7 @@ function renderOrders() {
     $("#orders-list").querySelectorAll(".month-chip").forEach(b => b.addEventListener("click", () => setMonth(b.dataset.m)));
     return;
   }
+  $("#date-rail").classList.add("hidden");
   if (!rows.length) { $("#orders-list").innerHTML = `<div class="card p-10 text-center muted">${anyScope() ? "沒有符合篩選的資料" : `${state.month} 這個月還沒有任何訂單，按上面的「上傳訂單彙總表」。`}</div>`; return; }
   const byDate = new Map();
   for (const r of rows) { const d = r.delivery_date || ""; if (!byDate.has(d)) byDate.set(d, new Map()); const pos = byDate.get(d); if (!pos.has(r.po_number)) pos.set(r.po_number, []); pos.get(r.po_number).push(r); }
@@ -472,7 +475,34 @@ function renderOrders() {
   }));
   $("#orders-list").querySelectorAll(".po-copy").forEach(b => b.addEventListener("click", async e => { e.stopPropagation(); try { await navigator.clipboard.writeText(b.dataset.po); toast(`已複製 ${b.dataset.po}`); } catch { toast("瀏覽器不讓複製，請手動選取", "warn"); } }));
   if (state.hlDate) setTimeout(() => { state.hlDate = null; }, 3200);
+  renderDateRail();
 }
+/* 右側日期導覽條：表格裡有哪幾天就列哪幾天，捲到哪天亮哪天，點哪個跳哪天。少於 3 天不顯示 */
+let railObserver = null;
+function renderDateRail() {
+  const rail = $("#date-rail"); const cards = [...document.querySelectorAll("#orders-list .card[data-date]")];
+  if (railObserver) { railObserver.disconnect(); railObserver = null; }
+  if (cards.length < 3) { rail.classList.add("hidden"); return; }
+  rail.classList.remove("hidden");
+  rail.innerHTML = cards.map(c => { const d = c.dataset.date; const n = c.querySelectorAll(".grp-po").length; return `<a data-date="${esc(d)}" title="${d ? d + " 交貨" : "未排日期"} · ${n} 張 PO">${d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}` : "未排"}<span class="n">${n}</span></a>`; }).join("");
+  rail.querySelectorAll("a").forEach(a => a.addEventListener("click", () => { const c = cards.find(x => x.dataset.date === a.dataset.date); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); }));
+  railObserver = new IntersectionObserver(entries => {
+    const vis = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (!vis.length) return;
+    const d = vis[0].target.dataset.date; rail.querySelectorAll("a").forEach(a => a.classList.toggle("on", a.dataset.date === d));
+  }, { rootMargin: "-80px 0px -60% 0px", threshold: 0 });
+  cards.forEach(c => railObserver.observe(c));
+  updateRailVisibility();
+}
+// 導覽條只在表格捲進畫面時出現，免得蓋到上面的行事曆
+function updateRailVisibility() {
+  const rail = $("#date-rail"); const list = $("#orders-list");
+  if (!rail.innerHTML || list.querySelectorAll(".card[data-date]").length < 3) return;
+  const r = list.getBoundingClientRect(); rail.classList.toggle("hidden", !(r.top < window.innerHeight * 0.6 && r.bottom > 120));
+}
+window.addEventListener("scroll", updateRailVisibility, { passive: true });
+$("#density").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.dense = b.dataset.d === "dense"; localStorage.setItem("mst_dense", state.dense ? "1" : "0"); $("#density").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); $("#orders-list").classList.toggle("dense", state.dense); }));
+$("#orders-list").classList.toggle("dense", state.dense); $("#density").querySelectorAll("button").forEach(x => x.classList.toggle("on", (x.dataset.d === "dense") === state.dense));
 $("#btn-expand-all").addEventListener("click", () => { state.closedDates.clear(); state.rows.forEach(r => state.openPos.add(r.po_number)); state.hlDate = null; renderOrders(); });
 $("#btn-collapse-all").addEventListener("click", () => { state.openPos.clear(); state.hlDate = null; renderOrders(); });
 

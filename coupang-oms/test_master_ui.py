@@ -50,6 +50,22 @@ def seed(client):
     for n in ["假_訂單彙總表_9月_第一次.xlsx", "假_訂單彙總表_9月_第二次.xlsx"]:
         pv = up("/api/master/import/preview", n).get_json()
         assert client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True}).status_code == 200
+    # 第三批：模擬 nicole 那次——6 張新 PO，1 張 9/23、5 張 10 月，用來驗跨月一次列完
+    import datetime, openpyxl
+    wb = openpyxl.load_workbook(os.path.join(FAKE, "假_訂單彙總表_9月_第二次.xlsx")); ws = wb.worksheets[0]
+    rows = [list(r) for r in ws.iter_rows(min_row=2, values_only=True) if r[1] == "寶僑"][:48]
+    ws.delete_rows(2, ws.max_row)
+    plan = [("13000000600901", datetime.datetime(2026, 9, 23), 3), ("13000000600902", datetime.datetime(2026, 10, 6), 1), ("13000000600903", datetime.datetime(2026, 10, 7), 12),
+            ("13000000600904", datetime.datetime(2026, 10, 13), 10), ("13000000600905", datetime.datetime(2026, 10, 13), 12), ("13000000600906", datetime.datetime(2026, 10, 13), 10)]
+    i = 0
+    for po, d, n in plan:
+        for k in range(n):
+            r = list(rows[i % len(rows)]); i += 1
+            r[2] = po; r[5] = d; r[6] = k + 1; r[3] = "TXRC8" if d.month == 9 else "TAO5"
+            ws.append(r)
+    buf = io.BytesIO(); wb.save(buf)
+    pv = client.post("/api/master/import/preview", data={"file": (io.BytesIO(buf.getvalue()), "假_訂單彙總表_第三次_跨月.xlsx")}, content_type="multipart/form-data").get_json()
+    assert client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True}).status_code == 200
 
 
 def main():
@@ -96,6 +112,10 @@ def main():
         check("行事曆角標標的是 PO 張數", pg.eval_on_selector_all("#cal .day .dc", "els => els.length") > 0 and "張 PO" in pg.get_attribute("#cal .day .dc", "title"))
         pg.click("#btn-batch-filter"); pg.wait_for_timeout(400)
         check("按「依匯入批次篩選」拉出抽屜、一次一列", pg.evaluate("document.getElementById('imp-drawer').classList.contains('open')") and pg.eval_on_selector_all("#imp-drawer .imp-row", "els => els.length") >= 2)
+        check("抽屜是推開式：主畫面往左縮、匯出按鈕沒被遮", pg.evaluate("document.body.classList.contains('drawer-open')") and pg.evaluate("(() => { const r = document.getElementById('btn-export-daily').getBoundingClientRect(); const d = document.getElementById('imp-drawer').getBoundingClientRect(); return r.right <= d.left + 1; })()"))
+        pg.mouse.click(300, 400); pg.wait_for_timeout(400)
+        check("點抽屜以外的地方就關", not pg.evaluate("document.getElementById('imp-drawer').classList.contains('open')"))
+        pg.click("#btn-batch-filter"); pg.wait_for_timeout(400)
         check("抽屜字放大到 14px", pg.eval_on_selector("#imp-drawer .imp-row", "e => parseFloat(getComputedStyle(e).fontSize)") >= 14)
         pg.fill("#imp-q", "第一次"); pg.wait_for_timeout(300)
         check("抽屜可以搜檔名", pg.eval_on_selector_all("#imp-drawer .imp-row", "els => els.length") == 1 and "第一次" in pg.inner_text("#imp-drawer .imp-row"))
@@ -106,23 +126,35 @@ def main():
         pg.select_option("#imp-period", "month"); pg.wait_for_timeout(300)
         check("抽屜可以篩期間（本月）", pg.eval_on_selector_all("#imp-drawer .imp-row", "els => els.length") >= 2)
         pg.select_option("#imp-period", ""); pg.wait_for_timeout(300)
-        pg.click("#imp-drawer .imp-row >> nth=0"); pg.wait_for_timeout(900)
+        pg.click("#imp-drawer .imp-row >> nth=0"); pg.wait_for_timeout(1000)
         bar = pg.inner_text("#last-import")
         check("選最近一批 → 那一行寫「依匯入批次篩選：… 這批」，有「清除批次篩選」", "依匯入批次篩選：" in bar and "這批" in bar and "清除批次篩選" in bar, bar)
         check("表格只剩有標籤的列", pg.eval_on_selector_all("#orders-list table.m tbody tr", "els => els.length") > 0 and pg.eval_on_selector_all("#orders-list table.m tbody tr:not(.chg-new):not(.chg-upd):not(.chg-gone)", "els => els.length") == 0)
-        check("行事曆換成迷你月曆，只有這批動到的天亮、寫幾張 PO", not pg.evaluate("document.getElementById('cal-mini').classList.contains('hidden')") and pg.eval_on_selector_all("#cal-mini .md.hit", "els => els.length") >= 1 and "PO" in pg.inner_text("#cal-mini .md.hit") and pg.evaluate("document.getElementById('cal').classList.contains('hidden')"))
-        hit_date = pg.eval_on_selector("#cal-mini .md.hit", "e => e.dataset.date")
-        pg.click("#cal-mini .md.hit >> nth=0"); pg.wait_for_timeout(500)
-        check("點迷你月曆的一天 → 那個日期區塊亮起來、底下 PO 展開", pg.eval_on_selector_all(f'#orders-list .card.hl[data-date="{hit_date}"]', "els => els.length") == 1 and pg.eval_on_selector_all(f'#orders-list .card[data-date="{hit_date}"] .grp-po:not(.collapsed)', "els => els.length") >= 1)
-        pg.click('#batch-view [data-v="list"]'); pg.wait_for_timeout(400)
+        check("批次模式行事曆跟全部訂單同一套：沒動到的天壓淡、動到的天亮著、有角標", not pg.evaluate("document.getElementById('cal').classList.contains('hidden')") and pg.eval_on_selector_all("#cal .day.dim", "els => els.length") >= 1 and pg.eval_on_selector_all("#cal .day.has:not(.dim) .dc", "els => els.length") >= 1)
+        check("跨月時行事曆一個月一塊往下排（9 月、10 月）", pg.eval_on_selector_all("#cal .cal-month", "els => els.length") == 2, str(pg.eval_on_selector_all("#cal .cm-title", "els => els.map(e => e.innerText)")))
+        hit_date = pg.eval_on_selector("#cal .day.has:not(.dim)", "e => e.dataset.date")
+        pg.click("#cal .day.has:not(.dim) >> nth=0"); pg.wait_for_timeout(500)
+        check("批次模式點一天 → 那個日期區塊亮起來、底下 PO 展開", pg.eval_on_selector_all(f'#orders-list .card.hl[data-date="{hit_date}"]', "els => els.length") == 1 and pg.eval_on_selector_all(f'#orders-list .card[data-date="{hit_date}"] .grp-po:not(.collapsed)', "els => els.length") >= 1)
+        check("月份藥丸寫出跨月範圍", "～" in pg.inner_text("#month-pill-txt"), pg.inner_text("#month-pill-txt"))
+        pg.click('#cal-view [data-v="list"]'); pg.wait_for_timeout(400)
         check("切成清單：一列一天、有「這批」欄", not pg.evaluate("document.getElementById('cal-list').classList.contains('hidden')") and pg.eval_on_selector_all("#cal-list tbody tr[data-date]", "els => els.length") >= 1 and "這批" in pg.inner_text("#cal-list thead"))
-        pg.click('#batch-view [data-v="mini"]'); pg.wait_for_timeout(300)
+        pg.click('#cal-view [data-v="cal"]'); pg.wait_for_timeout(300)
         check("匯出按鈕寫「匯出這批的專案報價檔（N 張 PO）」", "這批" in pg.inner_text("#btn-export-daily") and "張 PO" in pg.inner_text("#btn-export-daily"), pg.inner_text("#btn-export-daily"))
         check("月份自動對到那批的交期（9 月）", pg.input_value("#sel-month") == "2026-09", pg.input_value("#sel-month"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         check("Esc 關抽屜", not pg.evaluate("document.getElementById('imp-drawer').classList.contains('open')"))
         pg.click("#btn-batch-clear"); pg.wait_for_timeout(700)
-        check("清除批次篩選 → 回最近匯入、行事曆回來", "最近匯入" in pg.inner_text("#last-import") and "這批" not in pg.inner_text("#btn-export-daily") and not pg.evaluate("document.getElementById('cal').classList.contains('hidden')"))
+        check("清除批次篩選 → 回最近匯入、行事曆回來、月份藥丸回單月", "最近匯入" in pg.inner_text("#last-import") and "這批" not in pg.inner_text("#btn-export-daily") and not pg.evaluate("document.getElementById('cal').classList.contains('hidden')") and "～" not in pg.inner_text("#month-pill-txt"))
+        check("表格還沒捲進來時導覧條先藏著，不蓋行事曆", pg.evaluate("document.getElementById('date-rail').classList.contains('hidden')"))
+        pg.evaluate("document.querySelector('#orders-list').scrollIntoView()"); pg.wait_for_timeout(500)
+        check("表格捲進畫面 → 右側日期導覽條出來、一天一格", not pg.evaluate("document.getElementById('date-rail').classList.contains('hidden')") and pg.eval_on_selector_all("#date-rail a", "els => els.length") >= 3)
+        pg.click("#date-rail a >> nth=2"); pg.wait_for_timeout(600)
+        check("點導覽條跳到那天（那天的標題進到畫面上方）", pg.evaluate("(() => { const d = document.querySelector('#date-rail a:nth-child(3)').dataset.date; const c = [...document.querySelectorAll('#orders-list .card[data-date]')].find(x => x.dataset.date === d); const r = c.getBoundingClientRect(); return r.top >= -5 && r.top < 200; })()"))
+        pg.evaluate("window.scrollTo(0,0)"); pg.wait_for_timeout(300)
+        pg.click('#density [data-d="dense"]'); pg.wait_for_timeout(200)
+        check("密度切緊湊", pg.evaluate("document.getElementById('orders-list').classList.contains('dense')"))
+        pg.click('#density [data-d="normal"]'); pg.wait_for_timeout(200)
+        check("日期標題是黏頂的", pg.eval_on_selector("#orders-list .grp-date", "e => getComputedStyle(e).position === 'sticky'"))
 
         print("\n【3b】行事曆按著滑過多選、日期清單")
         days = pg.eval_on_selector_all("#cal .day.has", "els => els.map(e => e.dataset.date)")
