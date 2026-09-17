@@ -78,6 +78,15 @@ def api_imports():
                        COUNT(*) AS n, COUNT(DISTINCT po_number) AS pos
                 FROM mst_orders WHERE last_batch_id IN ({marks}) AND first_batch_id != last_batch_id
                 GROUP BY last_batch_id, substr(delivery_date, 1, 7), missing_in_file""", ids))
+        # PO 張數（OP 腦子裡的單位是 PO，不是品項）：一批裡「新增」的 PO＝那批第一次出現的 PO；
+        # 「有變」「消失」的 PO 照品項的最後一批算。跨月的 PO 只算一次，所以另外用 DISTINCT 算，不從月份加總。
+        po_new = {x["b"]: x["n"] for x in _rows(conn.execute(
+            f"SELECT first_batch_id AS b, COUNT(DISTINCT po_number) AS n FROM mst_orders WHERE first_batch_id IN ({marks}) GROUP BY first_batch_id", ids))}
+        po_upd = {}
+        for x in _rows(conn.execute(
+                f"""SELECT last_batch_id AS b, missing_in_file AS gone, COUNT(DISTINCT po_number) AS n FROM mst_orders
+                    WHERE last_batch_id IN ({marks}) AND first_batch_id != last_batch_id GROUP BY last_batch_id, missing_in_file""", ids)):
+            po_upd[(x["b"], 1 if x["gone"] else 0)] = x["n"]
         per = {b["id"]: {} for b in batches}
 
         def slot(bid, m):
@@ -93,7 +102,10 @@ def api_imports():
             b["changed_now"] = sum(x["changed"] for x in b["month_counts"])
             b["removed_now"] = sum(x["removed"] for x in b["month_counts"])
             b["months"] = [x["m"] for x in b["month_counts"] if x["m"]]
-            b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_now']}、有變 {b['changed_now']}、消失 {b['removed_now']}"
+            b["new_pos"] = po_new.get(b["id"], 0)
+            b["changed_pos"] = po_upd.get((b["id"], 0), 0)
+            b["removed_pos"] = po_upd.get((b["id"], 1), 0)
+            b["label"] = f"{(b['committed_at'] or '')[5:16]} {b['filename']}：新增 {b['new_pos']} 張 PO（{b['new_now']} 品項）、有變 {b['changed_pos']}、消失 {b['removed_pos']}"
     finally:
         conn.close()
     return jsonify({"batches": batches})

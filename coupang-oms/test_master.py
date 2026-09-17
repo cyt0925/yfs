@@ -373,6 +373,13 @@ def main():
     print("\n【12c】匯出範圍＝某一次匯入：分得出這次新增／有變了哪些")
     imps = client.get("/api/master/imports").get_json()["batches"]
     check("匯入歷程列出每次確認匯入（含 7 月那批）", len(imps) >= 2 and all(b["committed_at"] for b in imps), str([(b["id"], b["new_now"], b["months"]) for b in imps]))
+    check("每次匯入也算 PO 張數（new_pos／changed_pos／removed_pos），PO 數不會大於品項數",
+          all({"new_pos", "changed_pos", "removed_pos"} <= set(b) and b["new_pos"] <= b["new_now"] and (b["new_pos"] > 0) == (b["new_now"] > 0) for b in imps),
+          str([(b["new_pos"], b["new_now"]) for b in imps]))
+    od_span = orders(client, month="2026-07", month_to="2026-09")
+    check("訂單 API 帶 month_to 可以一次看好幾個月（7～9 月筆數 = 各月加總）",
+          od_span["count"] == orders(client, month="2026-07")["count"] + orders(client, month="2026-08")["count"] + orders(client, month="2026-09")["count"] and od_span["count"] > orders(client, month="2026-09")["count"],
+          str(od_span["count"]))
     check("每次匯入都有 新增／有變／消失 三個數字，而且互斥（有變不含消失）",
           all({"new_now", "changed_now", "removed_now"} <= set(b) for b in imps)
           and all(sum(x["new"] + x["changed"] + x["removed"] for x in b["month_counts"]) == b["new_now"] + b["changed_now"] + b["removed_now"] for b in imps),

@@ -5,13 +5,17 @@ from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyx
 @master_bp.route("/api/master/orders")
 def api_orders():
     month = norm_text(request.args.get("month")) or _this_month()
-    if not _valid_month(month):
+    # month_to：畫面要一次看好幾個月（依匯入批次篩選時，那批的交期跨月就一次列完，
+    # 不用逐月切；跟匯出用同一個範圍，畫面上看到的就是匯出去的）
+    month_to = norm_text(request.args.get("month_to")) or month
+    if not _valid_month(month) or not _valid_month(month_to):
         return jsonify({"error": "月份格式要像 2026-09。"}), 400
+    months = _month_span(month, month_to)
     filters = _read_filters(request.args)
     cfg = _line_groups()
     conn = get_conn()
     try:
-        rows = _month_orders(conn, month, cfg)
+        rows = _month_orders(conn, months, cfg)
     finally:
         conn.close()
 

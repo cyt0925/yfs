@@ -79,7 +79,14 @@
   .grp-po .po { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:700; color:var(--b800); cursor:pointer; text-decoration:underline dotted; }
   .grp-po .po:hover { color:var(--b600); }
   .grp-po input[type=date] { padding:3px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; }
-  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; user-select:none; }
+  .cal .day.pick { outline:2px solid var(--b500); outline-offset:-2px; }
+  /* 日期清單：行事曆以外的選法，一列一天、勾選框、Shift 連選；跨月時比月曆好用 */
+  .dl { width:100%; border-collapse:collapse; } .dl th { background:var(--b50); color:var(--b900); font-weight:700; text-align:left; padding:7px 10px; font-size:12.5px; }
+  .dl td { padding:7px 10px; border-bottom:1px solid var(--line2); font-size:13px; } .dl tr { cursor:pointer; } .dl tr:hover td { background:var(--b50); } .dl tr.on td { background:var(--b100); }
+  /* 依匯入批次篩選時，行事曆換成「這批動到的日期」卡片 */
+  .dchip { display:inline-flex; flex-direction:column; border:1px solid var(--b200); background:#fff; border-radius:10px; padding:8px 14px; cursor:pointer; min-width:130px; }
+  .dchip:hover { background:var(--b50); } .dchip .d { font-weight:700; color:var(--b900); font-size:15px; } .dchip .s { color:var(--muted); font-size:12px; }
   .cal .wd { font-size:11px; color:var(--muted); text-align:center; padding:2px 0; font-weight:600; }
   .cal .day { min-height:64px; border:1px solid var(--line2); border-radius:8px; padding:5px 7px; background:#fff; position:relative; font-size:12px; }
   .cal .day .n { font-weight:700; color:var(--muted); }
@@ -237,13 +244,17 @@
 
     <div id="last-import" class="hidden mb-3 text-sm" style="background:var(--b50);border:1px solid var(--b200);border-radius:10px;padding:8px 12px"></div>
     <div class="card p-4 mb-4">
-      <div class="flex items-center gap-3 mb-2">
+      <div class="flex items-center gap-3 mb-2 flex-wrap">
+        <span class="seg" id="cal-view"><button data-v="cal" class="on"><i class="bi bi-calendar3"></i> 行事曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 日期清單</button></span>
         <b id="cal-title" class="text-sm" style="color:var(--b900)"></b>
-        <span class="kbd">點日期可以多選，再點一次取消。格子裡是當天出貨總箱數／PO 數。</span>
+        <span class="kbd" id="cal-hint">點一天或按著滑過好幾天一起選，再點一次取消。格子裡是當天出貨總箱數／PO 數。</span>
         <div class="flex-1"></div>
+        <span class="flex gap-2" id="cal-quick"><button class="chip" data-q="week">本週</button><button class="chip" data-q="next">下週</button><button class="chip" data-q="batch">最近一批動到的天</button><button class="chip hidden" data-q="none">全部取消</button></span>
         <span id="chip-nodate" class="chip hidden"></span>
       </div>
       <div id="cal" class="cal"></div>
+      <div id="cal-list" class="hidden"></div>
+      <div id="cal-batch" class="hidden"></div>
       <div id="wh-block" class="mt-3"></div>
     </div>
 
