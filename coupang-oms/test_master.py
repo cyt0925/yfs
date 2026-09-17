@@ -337,6 +337,16 @@ def main():
     check("每張 PO 第一列 R 欄寫 PO_日期(倉別)", all(f"_{cpg_lbl}(" in v for v in pos_cells) and len(pos_cells) >= 1, str(pos_cells[:2]))
     yellow = [r for r in range(2, wsd.max_row + 1) if wsd.cell(r, 1).value is None and wsd.cell(r, 1).fill.fgColor.rgb in ("00FFFF00", "FFFFFF00")]
     check("PO 之間黃色空白列", len(yellow) == len(pos_cells) - 1, f"{len(yellow)} / {len(pos_cells)}")
+    first_data = next(r for r in range(2, wsd.max_row + 1) if wsd.cell(r, 1).value)
+    check("J／M／N 是活的 Excel 公式（出貨箱＝H/I、箱單價＝L×I、總計＝M×J），不是數字（Chloe 2026-09-17）",
+          str(wsd.cell(first_data, 10).value).startswith("=") and f"H{first_data}/I{first_data}" in str(wsd.cell(first_data, 10).value)
+          and f"L{first_data}*I{first_data}" in str(wsd.cell(first_data, 13).value) and f"M{first_data}*J{first_data}" in str(wsd.cell(first_data, 14).value),
+          str((wsd.cell(first_data, 10).value, wsd.cell(first_data, 13).value, wsd.cell(first_data, 14).value)))
+    multi = [m for m in wsd.merged_cells.ranges if m.min_col == 18 and m.max_col == 18]
+    check("同一張 PO 的交貨日欄合併成一格（有 2 個品項以上的 PO 才會合併）",
+          len(multi) >= 1 and all(wsd.cell(m.min_row, 18).value and wsd.cell(m.min_row, 1).value for m in multi)
+          and all(wsd.cell(rr, 1).value for m in multi for rr in range(m.min_row, m.max_row + 1)),
+          str([str(m) for m in multi][:3]))
     check("紙潔的分頁裡只有 CPG 的品項（沒有寶僑）", all("Pampers" not in str(wsd.cell(r, 6).value or "") for r in range(2, wsd.max_row + 1)))
     pg_date = next(r["delivery_date"] for r in orders(client, month="2026-09", lines="寶僑")["rows"] if r["barcode"] == BC)
     res = client.get(f"/api/master/export/daily?month=2026-09&lines=寶僑&dates={pg_date}")

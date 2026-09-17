@@ -49,14 +49,20 @@ def api_export_daily():
                 for c in ws[ws.max_row]:
                     c.fill = yellow
             first = False
+            po_first_row = ws.max_row + 1
             for i, o in enumerate(rows):
                 box = o["box_size"]; cp = o["unit_price"]
-                box_price = (cp * box) if (cp is not None and box) else None
-                total = (box_price * o["cases"]) if (box_price is not None and o["cases"] is not None) else None
+                r = ws.max_row + 1
+                # J／M／N 三欄寫成活的 Excel 公式，不是算好的數字（Chloe 2026-09-17：業務會在檔裡改
+                # 數量、單價，公式才會跟著動）。J＝出貨數量÷箱入數、M＝酷澎下單價×箱入數、N＝箱單價×箱數。
+                # 箱入數或單價空白時留空，不要跳 #DIV/0! 或算出 0 元誤導。
+                cases_f = f'=IF(OR(I{r}="",I{r}=0),"",H{r}/I{r})'
+                box_price_f = f'=IF(OR(L{r}="",I{r}=""),"",L{r}*I{r})'
+                total_f = f'=IF(OR(M{r}="",J{r}=""),"",M{r}*J{r})'
                 po_cell = (f"{po}_{label}({o['warehouse']})" if o["warehouse"] else f"{po}_{label}") if i == 0 else None
                 cells = [o["sku_id"], o.get("yf_sku_master") or o["yf_sku"], o["barcode"], o.get("category") or "",
                          o.get("brand_master") or o["brand"], o["product_name"], o["qty_coupang"], o["qty_ship"],
-                         box, o["cases"], o.get("cost_price"), cp, box_price, total, o["export_note"], "", "", po_cell]
+                         box, cases_f, o.get("cost_price"), cp, box_price_f, total_f, o["export_note"], "", "", po_cell]
                 if batch:
                     is_new = o.get("first_batch_id") == batch
                     cells.append("新增" if is_new else (o.get("last_batch_changes") or "有變"))
@@ -64,15 +70,20 @@ def api_export_daily():
                 if batch and not is_new:
                     for c in ws[ws.max_row]:
                         c.fill = changed_fill
+            # 同一張 PO 的「交貨日」欄合併成一格（Chloe 2026-09-17：同一張 PO 請跨欄位），
+            # 值在第一列、垂直置中，看起來就是一張單一塊。
+            if ws.max_row > po_first_row:
+                ws.merge_cells(start_row=po_first_row, start_column=18, end_row=ws.max_row, end_column=18)
+            ws.cell(row=po_first_row, column=18).alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         ws.freeze_panes = "A2"
         for i, w in enumerate([16, 15, 15, 8, 14, 44, 10, 9, 8, 11, 10, 12, 11, 12, 18, 8, 8, 30, 36], start=1):
             ws.column_dimensions[get_column_letter(i)].width = w
         for row in ws.iter_rows(min_row=2, min_col=1, max_col=3):
             for c in row:
                 c.number_format = "@"
-        for row in ws.iter_rows(min_row=2, min_col=18, max_col=18):
+        for row in ws.iter_rows(min_row=2, min_col=10, max_col=14):
             for c in row:
-                c.alignment = Alignment(horizontal="left")
+                c.number_format = "#,##0.##"
     if not wb.sheetnames:
         ws = wb.create_sheet("無資料"); ws.append(["目前的篩選條件下沒有任何訂單"])
     # 檔名照同事原本的檔就叫「專案報價檔」，分頁是 0904交貨、0903交貨…新的在前
