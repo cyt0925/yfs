@@ -77,8 +77,25 @@
   .save-flash { animation:save-flash 900ms ease-out; }
   .grp-date { display:flex; align-items:center; gap:12px; padding:10px 14px; background:var(--b100); border-left:5px solid var(--b700); border-radius:10px 10px 0 0; font-weight:700; color:var(--b900); }
   .grp-po { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 14px; background:#fff; border-top:1px solid var(--line2); border-bottom:1px solid var(--line2); font-size:13px; }
-  .grp-po .po { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:700; color:var(--b800); cursor:pointer; text-decoration:underline dotted; }
-  .grp-po .po:hover { color:var(--b600); }
+  /* PO 單號是最重要的東西：等寬粗體、深藍底白字的標籤，一眼就看到 */
+  .grp-po .po { font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:700; font-size:15.5px; color:#fff; background:var(--b800); padding:3px 10px; border-radius:8px; cursor:pointer; letter-spacing:.3px; }
+  .grp-po .po:hover { background:var(--b600); }
+  .grp-po .po-copy { color:var(--muted); cursor:pointer; font-size:13px; } .grp-po .po-copy:hover { color:var(--b700); }
+  /* 兩層展開收合：日期一層、PO 一層。標題列整列可點，箭頭指示開合 */
+  .grp-date, .grp-po { cursor:pointer; user-select:none; } .grp-po { background:var(--b50); }
+  .tg { display:inline-block; width:14px; transition:transform .15s; color:var(--b700); } .tg.closed { transform:rotate(-90deg); }
+  .card.collapsed .grp-po, .card.collapsed .po-body { display:none; } .grp-po.collapsed + .po-body { display:none; }
+  /* 從日期清單／迷你月曆跳過來：那個日期區塊亮一下 */
+  @keyframes hl-flash { 0%, 70% { box-shadow:0 0 0 3px #f59e0b, 0 0 0 8px #fde68a; background:#fffbeb; } 100% { box-shadow:none; } }
+  .card.hl { animation:hl-flash 3s ease-out; }
+  /* 迷你月曆：依匯入批次篩選時，每個月一小格，只有這批動到的天亮起來 */
+  .mini-wrap { display:flex; gap:18px; flex-wrap:wrap; }
+  .mini { min-width:230px; } .mini .mt { font-weight:700; color:var(--b900); margin-bottom:4px; font-size:13.5px; }
+  .mini .mg { display:grid; grid-template-columns:repeat(7,30px); gap:3px; } .mini .mw { font-size:10px; color:var(--muted); text-align:center; }
+  .mini .md { height:30px; border-radius:6px; font-size:11px; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; color:var(--muted); background:#f8fafc; }
+  .mini .md.has { background:#e2e8f0; color:var(--ink2); } .mini .md.hit { cursor:pointer; color:#fff; font-weight:700; }
+  .mini .md.hit.n { background:var(--ok); } .mini .md.hit.u { background:var(--warn); } .mini .md.hit.g { background:var(--bad); } .mini .md.hit:hover { filter:brightness(1.12); }
+  .mini .md .k { font-size:9px; opacity:.9; font-weight:500; } .mini .md.blank { background:transparent; }
   .grp-po input[type=date] { padding:3px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; }
   .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; user-select:none; }
   .cal .day.pick { outline:2px solid var(--b500); outline-offset:-2px; }
@@ -246,6 +263,7 @@
     <div class="card p-4 mb-4">
       <div class="flex items-center gap-3 mb-2 flex-wrap">
         <span class="seg" id="cal-view"><button data-v="cal" class="on"><i class="bi bi-calendar3"></i> 行事曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 日期清單</button></span>
+        <span class="seg hidden" id="batch-view"><button data-v="mini" class="on"><i class="bi bi-grid-3x3-gap"></i> 迷你月曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 清單</button></span>
         <b id="cal-title" class="text-sm" style="color:var(--b900)"></b>
         <span class="kbd" id="cal-hint">點一天或按著滑過好幾天一起選，再點一次取消。格子裡是當天出貨總箱數／PO 數。</span>
         <div class="flex-1"></div>
@@ -254,12 +272,14 @@
       </div>
       <div id="cal" class="cal"></div>
       <div id="cal-list" class="hidden"></div>
+      <div id="cal-mini" class="hidden"></div>
 
       <div id="wh-block" class="mt-3"></div>
     </div>
 
     <div class="flex items-center gap-2 mb-2 text-sm muted">
       <label class="flex items-center gap-1"><input type="checkbox" id="sel-all-po"> 全選這頁的 PO</label>
+      <span class="seg" style="margin-left:4px"><button id="btn-expand-all" title="展開所有 PO 的品項明細"><i class="bi bi-arrows-expand"></i> 全部展開</button><button id="btn-collapse-all" title="只留日期和 PO 標題"><i class="bi bi-arrows-collapse"></i> 全部收合</button></span>
       <span class="kbd">勾選 PO 可以批次改交貨日；點 PO 單號打開整張單一次改。出貨數量、備註直接點格子改：Enter 或點別處＝存，Esc＝取消。</span>
     </div>
     <div id="orders-list" class="space-y-4"></div>

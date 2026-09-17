@@ -7,7 +7,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const fmt = n => n == null ? "" : (Number.isInteger(n) ? n : Number(n).toFixed(2).replace(/\.?0+$/, ""));
 const state = { month: "", tab: "orders", lines: new Set(), dates: new Set(), pos: new Set(), brands: new Set(), warehouses: new Set(),
                 edited: false, missing: false, q: "", facets: null, rows: [], selected: new Set(), groups: [], sumLine: "", sumMonth: "",
-                batch: null, calView: localStorage.getItem("mst_calview") || "cal", prevMonth: null, prevTo: null };
+                batch: null, calView: localStorage.getItem("mst_calview") || "cal", batchView: localStorage.getItem("mst_batchview") || "mini", prevMonth: null, prevTo: null,
+                closedDates: new Set(), openPos: new Set(), hlDate: null };
 
 function toast(msg, kind="ok") {
   const t = $("#toast"); t.textContent = msg; t.className = "t-" + kind;
@@ -91,7 +92,7 @@ $("#exp-to").addEventListener("change", () => { $("#btn-export-daily").href = "/
 function anyFilter() { return state.lines.size || state.dates.size || state.pos.size || state.brands.size || state.warehouses.size || state.q || state.edited || state.missing; }
 function anyScope() { return anyFilter() || state.batch; }
 
-async function loadOrders() {
+async function loadOrders(opts = {}) {
   $("#btn-export-daily").href = "/api/master/export/daily?" + filterParams();
   $("#filter-hint").classList.toggle("hidden", !anyFilter()); $("#btn-clear").classList.toggle("hidden", !anyFilter());
   let data;
@@ -101,7 +102,9 @@ async function loadOrders() {
   $("#btn-export-daily").innerHTML = curBatch ? `<i class="bi bi-calendar-week"></i> 匯出這批的專案報價檔（${new Set(state.rows.map(r => r.po_number)).size} 張 PO）` : `<i class="bi bi-calendar-week"></i> 匯出專案報價檔`;
   $("#btn-export-daily").classList.toggle("btn-p", true);
   renderImportBar();
-  renderCalendar(); renderDropdowns(); renderOrders(); renderBatch(); renderWarehouses(); renderAlerts();
+  // 拖選日期時行事曆／清單已經先變色了，不再重畫它，畫面才不會頓、閃
+  if (!opts.keepCal) renderCalendar(); else $("#cal-clear-dates").classList.toggle("hidden", !state.dates.size);
+  renderDropdowns(); renderOrders(); renderBatch(); renderWarehouses(); renderAlerts();
 }
 function renderAlerts() {
   const fx = state.facets || {};
@@ -253,12 +256,14 @@ function renderCalendar() {
   const chg = changesByDate();
   const curB = state.batch ? importBatches.find(b => b.id === state.batch) : null;
   $("#cal-clear-dates").classList.toggle("hidden", !state.dates.size); $("#cal-clear-dates").onclick = () => { state.dates.clear(); loadOrders(); };
-  // 依匯入批次篩選：行事曆換成直排的日期清單（一列一天、只列這批動到的天），點一列表格捲到那天
-  $("#cal-view").classList.toggle("hidden", !!curB);
-  const useList = !!curB || state.calView === "list";
-  $("#cal").classList.toggle("hidden", useList); $("#cal-list").classList.toggle("hidden", !useList);
-  $("#cal-hint").textContent = curB ? "這批動到的日期，一列一天。點一列，下面表格就捲到那天。" : state.calView === "list" ? "勾幾天就看幾天；按住 Shift 點兩天，中間整段一起勾。" : "點一天或按著滑過好幾天一起選，再點一次取消。格子裡是當天出貨總箱數／PO 數。";
-  if (useList) { renderDateList(chg, curB); renderNoDateChip(); return; }
+  // 依匯入批次篩選：行事曆換成「迷你月曆」（只有這批動到的天亮）或「清單」，兩個可切
+  $("#cal-view").classList.toggle("hidden", !!curB); $("#batch-view").classList.toggle("hidden", !curB);
+  const mode = curB ? (state.batchView === "list" ? "list" : "mini") : state.calView;
+  $("#cal").classList.toggle("hidden", mode !== "cal"); $("#cal-list").classList.toggle("hidden", mode !== "list"); $("#cal-mini").classList.toggle("hidden", mode !== "mini");
+  $("#cal-hint").textContent = curB ? (mode === "mini" ? "亮的是這批動到的天，數字是幾張 PO。點一天，下面表格捲到那天並亮起來。" : "這批動到的日期，一列一天。點一列，下面表格捲到那天並亮起來。")
+    : mode === "list" ? "點一列勾一天；按著往下拖一次勾好幾天；Shift 點兩列中間整段一起勾。" : "點一天選一天；按著滑過好幾天一起選；Shift 點兩天中間整段一起選。再點一次取消。";
+  if (mode === "mini") { renderMiniCalendars(chg); renderNoDateChip(); return; }
+  if (mode === "list") { renderDateList(chg, curB); renderNoDateChip(); return; }
 
   const byDate = Object.fromEntries((state.facets?.dates || []).map(d => [d.date, d]));
   const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
@@ -270,51 +275,98 @@ function renderCalendar() {
       ${f ? `<div class="c">${fmt(f.cases)} <span style="font-size:11px;font-weight:500">箱</span></div><div class="p">${f.po_count} 張 PO · ${f.rows} 品項</div>${f.missing_box ? `<span class="warn" title="${f.missing_box} 筆算不出箱數"><i class="bi bi-exclamation-triangle-fill"></i></span>` : ""}` : ""}</div>`;
   }
   $("#cal").innerHTML = html;
-  // 按著滑過好幾天一起選（或一起取消）：從哪一天按下去，那天原本是沒選的就是「選」模式，反之是「取消」模式
-  let drag = null;
-  const days_ = $("#cal").querySelectorAll(".day.has");
-  days_.forEach(el => {
-    el.addEventListener("mousedown", e => { e.preventDefault(); drag = { on: !state.dates.has(el.dataset.date), keys: new Set([el.dataset.date]) }; el.classList.add("pick"); });
-    el.addEventListener("mouseenter", () => { if (!drag) return; drag.keys.add(el.dataset.date); el.classList.add("pick"); });
-  });
-  const finish = () => { if (!drag) return; const d = drag; drag = null; days_.forEach(x => x.classList.remove("pick")); applyDates([...d.keys], d.on); };
-  document.addEventListener("mouseup", finish, { once: true });
+  bindDragSelect($("#cal"), ".day.has", el => el.dataset.date, (el, on) => el.classList.toggle("on", on), dateKeys());
   renderNoDateChip();
+}
+/* 拖選：按下去那一格原本沒選就是「選」模式，反之「取消」模式；拖過去的格子畫面立刻變色，
+   放開才重撈一次表格（行事曆不重畫）。用「滑鼠底下是哪一格」判斷，快滑也不漏格。
+   Shift＋點：從上一次點的那格到這格，中間整段一起選。 */
+let lastPick = null;
+function bindDragSelect(root, sel, keyOf, paint, orderedKeys) {
+  let drag = null;
+  const apply = (k, on) => { on ? state.dates.add(k) : state.dates.delete(k); root.querySelectorAll(sel).forEach(el => { if (keyOf(el) === k) paint(el, on); }); };
+  root.onpointerdown = e => {
+    const el = e.target.closest(sel); if (!el || !root.contains(el) || e.button !== 0) return;
+    if (e.target.closest("input[type=checkbox]")) e.preventDefault();
+    e.preventDefault();
+    const k = keyOf(el);
+    if (e.shiftKey && lastPick && orderedKeys.includes(lastPick)) {
+      const [a, b] = [orderedKeys.indexOf(lastPick), orderedKeys.indexOf(k)].sort((x, y) => x - y);
+      orderedKeys.slice(a, b + 1).forEach(kk => apply(kk, true)); lastPick = k; loadOrders({ keepCal: true }); return;
+    }
+    drag = { on: !state.dates.has(k), seen: new Set([k]) }; apply(k, drag.on); lastPick = k;
+    root.setPointerCapture?.(e.pointerId);
+  };
+  root.onpointermove = e => {
+    if (!drag) return;
+    const under = document.elementFromPoint(e.clientX, e.clientY); const el = under && under.closest(sel);
+    if (!el || !root.contains(el)) return;
+    const k = keyOf(el); if (drag.seen.has(k)) return;
+    drag.seen.add(k); apply(k, drag.on);
+  };
+  root.onpointerup = root.onpointercancel = () => { if (!drag) return; drag = null; loadOrders({ keepCal: true }); };
+}
+/* 迷你月曆：這批交期涵蓋的每個月一小格；有訂單的天淺灰，這批動到的天上色（綠新增／黃有變／紅消失）並寫幾張 PO */
+function renderMiniCalendars(chg) {
+  const to = $("#exp-to").value || state.month; const months = [];
+  let [y, m] = state.month.split("-").map(Number);
+  while (`${y}-${String(m).padStart(2, "0")}` <= to && months.length < 12) { months.push([y, m]); m++; if (m > 12) { m = 1; y++; } }
+  const has = new Set(dateKeys());
+  const touched = Object.keys(chg).filter(Boolean).length; const pos = new Set(state.rows.map(r => r.po_number));
+  $("#cal-mini").innerHTML = `<div class="mini-wrap">${months.map(([yy, mm]) => {
+    const first = new Date(yy, mm - 1, 1), days = new Date(yy, mm, 0).getDate();
+    let g = ["日","一","二","三","四","五","六"].map(w => `<div class="mw">${w}</div>`).join("");
+    for (let i = 0; i < first.getDay(); i++) g += `<div class="md blank"></div>`;
+    for (let d = 1; d <= days; d++) {
+      const key = `${yy}-${String(mm).padStart(2, "0")}-${String(d).padStart(2, "0")}`; const c = chg[key];
+      const kind = c ? (c.n.size ? "n" : c.u.size ? "u" : "g") : ""; const n = c ? (c.n.size || c.u.size || c.g.size) : 0;
+      g += `<div class="md ${c ? "hit " + kind : has.has(key) ? "has" : ""}" ${c ? `data-date="${key}" title="${Number(mm)}/${d}：${c.n.size ? `新增 ${c.n.size} 張 PO ` : ""}${c.u.size ? `有變 ${c.u.size} 張 PO ` : ""}${c.g.size ? `消失 ${c.g.size} 張 PO` : ""}（${c.rows} 品項）"` : ""}><span>${d}</span>${c ? `<span class="k">${n} PO</span>` : ""}</div>`;
+    }
+    return `<div class="mini"><div class="mt">${yy} 年 ${mm} 月</div><div class="mg">${g}</div></div>`;
+  }).join("")}<div class="muted text-sm" style="align-self:flex-end;padding-bottom:6px">這批共動到 ${touched} 天 · ${pos.size} 張 PO · ${state.rows.length} 品項　<span class="kbd"><span class="badge bd-ok">綠</span> 新增　<span class="badge bd-warn">黃</span> 有變　<span class="badge bd-bad">紅</span> 消失　灰＝有訂單但這批沒動到</span></div></div>`;
+  $("#cal-mini").querySelectorAll(".md.hit").forEach(el => el.addEventListener("click", () => jumpToDate(el.dataset.date)));
+}
+/* 從迷你月曆／日期清單跳到某一天：展開那天和它底下的 PO、捲過去、整塊亮 3 秒；其他日期維持原狀 */
+function jumpToDate(d) {
+  state.closedDates.delete(d);
+  for (const r of state.rows) if ((r.delivery_date || "") === d) state.openPos.add(r.po_number);
+  state.hlDate = d; renderOrders();
+  const g = [...document.querySelectorAll("#orders-list .card[data-date]")].find(x => x.dataset.date === d);
+  if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function renderNoDateChip() {
   const nd = (state.facets?.dates || []).find(d => !d.date), chip = $("#chip-nodate");
   if (nd) { chip.classList.remove("hidden"); chip.classList.toggle("on", state.dates.has("")); chip.innerHTML = `<i class="bi bi-calendar-x"></i> 未排日期 ${nd.rows} 筆`; chip.onclick = () => { state.dates.has("") ? state.dates.delete("") : state.dates.add(""); loadOrders(); }; }
   else chip.classList.add("hidden");
 }
-/* 日期清單：只列有出貨的日子，一列一天，勾選框；按住 Shift 點兩列中間整段一起勾。
-   依匯入批次篩選時改成「這批動到的日期」：一列一天、點一列捲到那天；超過 6 天先收起來一行「還有 N 天」。 */
-let lastListPick = null; let listExpanded = false;
+/* 日期清單：只列有出貨的日子，一列一天。點一列勾一天、按著往下拖一次勾好幾天、Shift 點兩列中間整段一起勾。
+   依匯入批次篩選時改成「這批動到的日期」：一列一天、點一列跳到那天；超過 6 天先收起來一行「還有 N 天」。 */
+let listExpanded = false;
 function renderDateList(chg, curB) {
   const wd = ["日","一","二","三","四","五","六"];
   const dayLabel = d => { const dt = new Date(d); return `<b>${Number(d.slice(5, 7))}/${Number(d.slice(8))}</b> <span class="muted">週${wd[dt.getDay()]}</span>`; };
+  const badges = c => c ? `${c.n.size ? `<span class="badge bd-ok">新 ${c.n.size} PO</span> ` : ""}${c.u.size ? `<span class="badge bd-warn">變 ${c.u.size} PO</span> ` : ""}${c.g.size ? `<span class="badge bd-bad">消 ${c.g.size} PO</span>` : ""}` : "";
   if (curB) {
     const byDate = new Map();
     for (const r of state.rows) { const d = r.delivery_date || ""; const o = byDate.get(d) || { pos: new Set(), rows: 0, cases: 0 }; o.pos.add(r.po_number); o.rows++; o.cases += r.cases || 0; byDate.set(d, o); }
     const ds = [...byDate.keys()].sort((a, b) => (a || "9999") < (b || "9999") ? -1 : 1);
     const allPos = new Set(state.rows.map(r => r.po_number));
     const show = listExpanded ? ds : ds.slice(0, 6);
-    $("#cal-list").innerHTML = ds.length ? `<table class="dl"><thead><tr><th>日期</th><th>PO</th><th>品項</th><th>箱數</th><th>這批</th></tr></thead><tbody>${show.map(d => { const o = byDate.get(d); const c = chg[d];
-        return `<tr data-date="${esc(d)}"><td>${d ? dayLabel(d) : "<b>未排日期</b>"}</td><td>${o.pos.size} 張 PO</td><td class="muted">${o.rows} 品項</td><td><b>${fmt(Math.round(o.cases * 100) / 100)}</b> 箱</td><td>${c ? `${c.n.size ? `<span class="badge bd-ok">新 ${c.n.size} PO</span> ` : ""}${c.u.size ? `<span class="badge bd-warn">變 ${c.u.size} PO</span> ` : ""}${c.g.size ? `<span class="badge bd-bad">消 ${c.g.size} PO</span>` : ""}` : ""}</td></tr>`; }).join("")}
+    $("#cal-list").innerHTML = ds.length ? `<table class="dl"><thead><tr><th>日期</th><th>PO</th><th>品項</th><th>箱數</th><th>這批</th></tr></thead><tbody>${show.map(d => { const o = byDate.get(d);
+        return `<tr data-date="${esc(d)}"><td>${d ? dayLabel(d) : "<b>未排日期</b>"}</td><td>${o.pos.size} 張 PO</td><td class="muted">${o.rows} 品項</td><td><b>${fmt(Math.round(o.cases * 100) / 100)}</b> 箱</td><td>${badges(chg[d])}</td></tr>`; }).join("")}
         ${ds.length > 6 ? `<tr class="more"><td colspan="5">${listExpanded ? "收起來" : `還有 ${ds.length - 6} 天 ▾`}</td></tr>` : ""}
         <tr><td colspan="5" class="muted" style="text-align:center">全部 ${ds.length} 天 · ${allPos.size} 張 PO · ${state.rows.length} 品項</td></tr></tbody></table>` : `<div class="muted p-3">這批沒有動到任何訂單。</div>`;
-    $("#cal-list").querySelectorAll("tbody tr[data-date]").forEach(tr => tr.addEventListener("click", () => { const g = [...document.querySelectorAll("#orders-list .grp-date")].find(x => x.dataset.date === tr.dataset.date); if (g) g.scrollIntoView({ behavior: "smooth", block: "start" }); }));
+    $("#cal-list").onpointerdown = null; $("#cal-list").onpointermove = null; $("#cal-list").onpointerup = null;
+    $("#cal-list").querySelectorAll("tbody tr[data-date]").forEach(tr => tr.addEventListener("click", () => jumpToDate(tr.dataset.date)));
     const more = $("#cal-list").querySelector("tr.more"); if (more) more.addEventListener("click", () => { listExpanded = !listExpanded; renderDateList(chg, curB); });
     return;
   }
   const ds = (state.facets?.dates || []).filter(d => d.date).sort((a, b) => a.date < b.date ? -1 : 1);
-  $("#cal-list").innerHTML = ds.length ? `<table class="dl"><thead><tr><th style="width:34px"></th><th>日期</th><th>PO</th><th>品項</th><th>箱數</th><th>最近一批</th></tr></thead><tbody>${ds.map((d, i) => { const c = chg[d.date];
-      return `<tr data-date="${d.date}" data-i="${i}" class="${state.dates.has(d.date) ? "on" : ""}"><td><input type="checkbox" ${state.dates.has(d.date) ? "checked" : ""} tabindex="-1"></td><td>${dayLabel(d.date)}</td><td>${d.po_count} 張 PO</td><td class="muted">${d.rows} 品項</td><td><b>${fmt(d.cases)}</b> 箱${d.missing_box ? ` <span class="badge bd-warn">${d.missing_box} 筆算不出</span>` : ""}</td><td>${c ? `${c.n.size ? `<span class="badge bd-ok">新 ${c.n.size} PO</span> ` : ""}${c.u.size ? `<span class="badge bd-warn">變 ${c.u.size} PO</span> ` : ""}${c.g.size ? `<span class="badge bd-bad">消 ${c.g.size} PO</span>` : ""}` : ""}</td></tr>`; }).join("")}</tbody></table>` : `<div class="muted p-3">這個範圍沒有排日期的訂單。</div>`;
-  $("#cal-list").querySelectorAll("tbody tr").forEach(tr => tr.addEventListener("click", e => {
-    const i = Number(tr.dataset.i);
-    if (e.shiftKey && lastListPick != null) { const [a, b] = [Math.min(lastListPick, i), Math.max(lastListPick, i)]; applyDates(ds.slice(a, b + 1).map(d => d.date), true); }
-    else { lastListPick = i; applyDates([tr.dataset.date], !state.dates.has(tr.dataset.date)); }
-  }));
+  $("#cal-list").innerHTML = ds.length ? `<table class="dl"><thead><tr><th style="width:34px"></th><th>日期</th><th>PO</th><th>品項</th><th>箱數</th><th>最近一批</th></tr></thead><tbody>${ds.map(d =>
+      `<tr data-date="${d.date}" class="${state.dates.has(d.date) ? "on" : ""}"><td><input type="checkbox" ${state.dates.has(d.date) ? "checked" : ""} tabindex="-1"></td><td>${dayLabel(d.date)}</td><td>${d.po_count} 張 PO</td><td class="muted">${d.rows} 品項</td><td><b>${fmt(d.cases)}</b> 箱${d.missing_box ? ` <span class="badge bd-warn">${d.missing_box} 筆算不出</span>` : ""}</td><td>${badges(chg[d.date])}</td></tr>`).join("")}</tbody></table>` : `<div class="muted p-3">這個範圍沒有排日期的訂單。</div>`;
+  bindDragSelect($("#cal-list"), "tbody tr[data-date]", el => el.dataset.date, (el, on) => { el.classList.toggle("on", on); const cb = el.querySelector("input"); if (cb) cb.checked = on; }, ds.map(d => d.date));
 }
+$("#batch-view").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.batchView = b.dataset.v; localStorage.setItem("mst_batchview", state.batchView); $("#batch-view").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderCalendar(); }));
 $("#cal-view").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.calView = b.dataset.v; localStorage.setItem("mst_calview", state.calView); $("#cal-view").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); renderCalendar(); }));
 
 function ddRender(menuId, nId, items, set, key, labelFn, summaryFn) {
@@ -363,15 +415,18 @@ function renderOrders() {
   for (const d of dates) {
     const pos = byDate.get(d); const all = [...pos.values()].flat();
     const total = all.reduce((s, r) => s + (r.cases || 0), 0); const miss = all.filter(r => r.cases == null).length;
-    html += `<div class="card"><div class="grp-date" data-date="${esc(d)}"><i class="bi bi-calendar-event"></i> ${d ? esc(d) + " 交貨" : "未排日期"}
+    const dClosed = state.closedDates.has(d);
+    html += `<div class="card ${dClosed ? "collapsed" : ""} ${state.hlDate === d ? "hl" : ""}" data-date="${esc(d)}"><div class="grp-date" data-date="${esc(d)}" title="點一下收合／展開這一天"><i class="bi bi-chevron-down tg ${dClosed ? "closed" : ""}"></i> <i class="bi bi-calendar-event"></i> ${d ? esc(d) + " 交貨" : "未排日期"}
         <span class="badge bd-blue">${pos.size} 張 PO</span><span class="badge bd-gray">${all.length} 品項</span>
         <span style="margin-left:auto">出貨合計 <b style="font-size:16px">${fmt(total)}</b> 箱</span>${miss ? `<span class="badge bd-warn">${miss} 筆算不出箱數</span>` : ""}</div>`;
     for (const [po, list] of pos) {
       const sub = list.reduce((s, r) => s + (r.cases || 0), 0); const ov = list.some(r => r.delivery_date_overridden);
       const groups = [...new Set(list.map(r => r.line_group))];
-      html += `<div class="grp-po">
+      const pOpen = state.openPos.has(po);
+      html += `<div class="grp-po ${pOpen ? "" : "collapsed"}" data-po="${esc(po)}" title="點一下展開／收合這張 PO 的品項">
+        <i class="bi bi-chevron-down tg ${pOpen ? "" : "closed"}"></i>
         <input type="checkbox" class="po-sel" data-po="${esc(po)}" ${state.selected.has(po) ? "checked" : ""} title="勾選後可批次改交貨日">
-        <span class="po" data-po="${esc(po)}" title="點開整張單一次修改">PO ${esc(po)}</span>
+        <span class="po" data-po="${esc(po)}" title="點開整張單一次修改">${esc(po)}</span><i class="bi bi-clipboard po-copy" data-po="${esc(po)}" title="複製單號"></i>
         ${groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join("")}
         <span class="badge bd-gray">${esc(list[0].warehouse || "—")}</span>
         <span class="muted">${list.length} 品項 · ${fmt(sub)} 箱</span>
@@ -379,7 +434,7 @@ function renderOrders() {
           <input type="date" value="${esc(d)}" data-po="${esc(po)}" data-old="${esc(d)}" class="po-date">
           ${ov ? `<span class="badge bd-warn" title="整合表上的交貨日是 ${esc(list[0].delivery_date_file || "空白")}">人工改期</span><button class="btn btn-g btn-sm po-date-reset" data-po="${esc(po)}" data-old="${esc(d)}" title="恢復成整合表的交貨日"><i class="bi bi-arrow-counterclockwise"></i></button>` : ""}
         </span></div>
-      <div style="overflow:auto"><table class="m"><thead><tr><th>線別</th><th>SKU ID</th><th>國條</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">下單</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">出貨(箱)</th><th>備註 <span class="kbd" style="color:var(--b100)">Note＋OP</span></th><th></th></tr></thead><tbody>`;
+      <div class="po-body" style="overflow:auto"><table class="m"><thead><tr><th>線別</th><th>SKU ID</th><th>國條</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">下單</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">出貨(箱)</th><th>備註 <span class="kbd" style="color:var(--b100)">Note＋OP</span></th><th></th></tr></thead><tbody>`;
       for (const r of list) {
         const boxBadge = r.box_source === "master" ? "" : r.box_source === "file" ? `<span class="badge bd-warn" title="主檔裡沒有這個商品，箱入數先用訂單彙總表自帶的；把它補進主檔（或重匯酷澎主檔）就會以主檔為準">用整合表的</span>` : `<span class="badge bd-bad">缺</span>`;
         // 色條＋小標籤：預設對「最近一次匯入」標，選了某一次就對那一次標
@@ -409,7 +464,17 @@ function renderOrders() {
   }
   $("#orders-list").innerHTML = html;
   bindOrderEdits();
+  // 兩層開合：點日期標題收合整天；點 PO 標題列展開品項。裡面的勾選框、單號、日期欄、複製不觸發開合
+  $("#orders-list").querySelectorAll(".grp-date").forEach(h => h.addEventListener("click", () => { const d = h.dataset.date; state.closedDates.has(d) ? state.closedDates.delete(d) : state.closedDates.add(d); state.hlDate = null; renderOrders(); }));
+  $("#orders-list").querySelectorAll(".grp-po").forEach(h => h.addEventListener("click", e => {
+    if (e.target.closest("input, .po, .po-copy, button, .badge.bd-warn")) return;
+    const po = h.dataset.po; state.openPos.has(po) ? state.openPos.delete(po) : state.openPos.add(po); state.hlDate = null; renderOrders();
+  }));
+  $("#orders-list").querySelectorAll(".po-copy").forEach(b => b.addEventListener("click", async e => { e.stopPropagation(); try { await navigator.clipboard.writeText(b.dataset.po); toast(`已複製 ${b.dataset.po}`); } catch { toast("瀏覽器不讓複製，請手動選取", "warn"); } }));
+  if (state.hlDate) setTimeout(() => { state.hlDate = null; }, 3200);
 }
+$("#btn-expand-all").addEventListener("click", () => { state.closedDates.clear(); state.rows.forEach(r => state.openPos.add(r.po_number)); state.hlDate = null; renderOrders(); });
+$("#btn-collapse-all").addEventListener("click", () => { state.openPos.clear(); state.hlDate = null; renderOrders(); });
 
 function startInline(cell) {
   if (cell.dataset.editing) return;
