@@ -111,6 +111,22 @@ def api_imports():
     return jsonify({"batches": batches})
 
 
+@master_bp.route("/api/master/imports/pos")
+def api_imports_pos():
+    """每一批動到的 PO 單號（抽屜搜尋用：貼一個單號，找出它在哪幾批出現過）。一句 SQL 撈完。"""
+    conn = get_conn()
+    try:
+        rows = _rows(conn.execute(
+            """SELECT first_batch_id AS b, po_number FROM mst_orders WHERE first_batch_id IS NOT NULL
+               UNION SELECT last_batch_id AS b, po_number FROM mst_orders WHERE last_batch_id IS NOT NULL"""))
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(str(r["b"]), []).append(r["po_number"])
+    return jsonify({"pos": out})
+
+
 @master_bp.route("/api/master/logs")
 def api_logs():
     po = norm_key(request.args.get("po")); barcode = norm_key(request.args.get("barcode"))

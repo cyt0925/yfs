@@ -64,6 +64,9 @@ def api_orders():
             "brands": [{"brand": b, "rows": n} for b, n in sorted(f_brands.items())],
             "warehouses": [{"warehouse": w, "rows": n} for w, n in sorted(f_wh.items())],
             "overlap_pos": overlap_pos,
+            # 有事才出現的提醒用：這個範圔裡人工調整過幾筆、算不出箱數幾筆（沒事就不顯示按鈕）
+            "edited_rows": sum(1 for o in rows if o["qty_ship_overridden"] or o["delivery_date_overridden"] or o["remarks_overridden"]),
+            "missing_box_rows": sum(1 for o in rows if o["cases"] is None),
         },
     })
 
