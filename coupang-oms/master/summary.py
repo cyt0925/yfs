@@ -325,15 +325,19 @@ def _rewrite_month_total(ws, hdr, lay, block):
 
 
 def _write_cases(ws, lay, block, by_bc, by_sku, summary):
-    """把每個商品各交貨日的箱數填進對應格；對得到的列先把這個月的欄清空再填（沒出貨的日子留白）。
-    對不到的商品回傳出來，不混進總表。"""
+    """把每個商品各交貨日的箱數填進對應格。只動「系統這個月有訂單的那幾天」的欄：那幾天對得到的
+    商品先清空再填（那天沒出貨的商品留白）；其他日期欄是業務自己填的需求數字，一格都不碰。
+
+    2026-09-18 之前是把對到的商品整個月的日期欄全部清掉再填，結果 Chloe 在 10/2、10/5 手填的
+    74 格需求數字被洗掉了（系統那兩天沒有訂單）。對不到的商品回傳出來，不混進總表。"""
     matched, unmatched, filled = 0, [], 0
+    touch_cols = [lay["date_cols"][int(d[8:10])] for d in summary["dates"] if int(d[8:10]) in lay["date_cols"]]
     for r0 in summary["rows"]:
         r = by_bc.get(r0["barcode"]) or by_sku.get(r0["sku_id"])
         if r is None:
             unmatched.append(r0); continue
         matched += 1
-        for c in block:
+        for c in touch_cols:
             ws.cell(row=r, column=c).value = None
         for d, v in r0["by_date"].items():
             c = lay["date_cols"].get(int(d[8:10]))

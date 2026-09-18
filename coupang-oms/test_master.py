@@ -429,6 +429,20 @@ def main():
     check("8 月區塊的 TTL 是第 5 欄（標題雖寫 11月）", lay8["ttl_col"] == 5, str(lay8["ttl_col"]))
     check("月份區塊的欄位清單含日期欄與 TTL 欄", set(lay9["month_cols"]) == {4, 5, 6, 7, 8, 9}, str(lay9["month_cols"]))
 
+    print("\n【10e】填總表只動系統有訂單的那幾天，業務手填在別天的數字不能被洗掉（Chloe 2026-09-18）")
+    from master.summary import _write_cases, _row_index
+    wbw = openpyxl.Workbook(); wsw = wbw.active
+    wsw.append(["skuid", "Barcode", "箱入數", "10/2交貨_1", "10/5交貨_1", "10/6交貨_1", "10/交貨_1", "10月TTL下單總箱數"])
+    wsw.append(["S1", "4987176340894", 6, 618, 30, 99, None, "=SUM(D2:G2)"])
+    wsw.append(["S2", "4987176340863", 6, 154, None, None, None, "=SUM(D3:G3)"])
+    layw = _sheet_layout(wsw, 1, 10); by_bc, by_sku = _row_index(wsw, 1, layw["bc_col"], layw["sku_col"])
+    summ = {"dates": ["2026-10-06"], "rows": [
+        {"barcode": "4987176340894", "sku_id": "S1", "by_date": {"2026-10-06": 1}},
+        {"barcode": "4987176340863", "sku_id": "S2", "by_date": {}}]}
+    _write_cases(wsw, layw, layw["month_cols"], by_bc, by_sku, summ)
+    check("10/2、10/5 業務手填的數字原封不動", wsw["D2"].value == 618 and wsw["E2"].value == 30 and wsw["D3"].value == 154, str((wsw["D2"].value, wsw["E2"].value, wsw["D3"].value)))
+    check("10/6 系統有訂單：第一個商品填 1，第二個商品那天沒出貨 → 舊值清成空白", wsw["F2"].value == 1 and wsw["F3"].value is None, str((wsw["F2"].value, wsw["F3"].value)))
+
     print("\n【12b】清除資料（只有管理員）")
     before_orders = orders(client, month="2026-09")["count"]
     before_prods = len(client.get("/api/master/products").get_json()["products"])
