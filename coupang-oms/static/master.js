@@ -282,7 +282,7 @@ function changesByDate() {
 }
 const cornerHtml = c => c ? `<div class="dc" title="最近一批動到這天：${c.n.size ? `新增 ${c.n.size} 張 PO` : ""}${c.u.size ? ` 有變 ${c.u.size} 張 PO` : ""}${c.g.size ? ` 消失 ${c.g.size} 張 PO` : ""}（${c.rows} 品項）">${c.n.size ? `<span class="dn">新${c.n.size}</span>` : ""}${c.u.size ? `<span class="du">變${c.u.size}</span>` : ""}${c.g.size ? `<span class="dg">消${c.g.size}</span>` : ""}</div>` : "";
 const dateKeys = () => (state.facets?.dates || []).map(d => d.date).filter(Boolean).sort();
-function applyDates(keys, on) { for (const k of keys) on ? state.dates.add(k) : state.dates.delete(k); loadOrders(); }
+function applyDates(keys, on) { for (const k of keys) on ? state.dates.add(k) : state.dates.delete(k); afterPick(); }
 
 function renderCalendar() {
   const [y, m] = state.month.split("-").map(Number);
@@ -294,7 +294,7 @@ function renderCalendar() {
   // 行事曆／日期清單同一組切換，全部訂單跟依匯入批次篩選都一樣；批次模式只是沒動到的天壓淡、點一天跳到那天
   const mode = state.calView;
   $("#cal").classList.toggle("hidden", mode !== "cal"); $("#cal-list").classList.toggle("hidden", mode !== "list");
-  $("#cal-hint").textContent = curB ? (mode === "list" ? "這批動到的日期，一列一天。點一列，下面表格捲到那天並亮起來。" : "亮的是這批動到的天、角標是幾張 PO。點一天，下面表格捲到那天並亮起來。")
+  $("#cal-hint").textContent = curB ? (mode === "list" ? "這批動到的日期，一列一天。點一列選一天、按著往下拖選好幾天；只選一天會順便捲到那天。" : "亮的是這批動到的天、角標是幾張 PO。點一天、按著滑過幾天都是選日期；只選一天會順便捲到那天並亮一下。")
     : mode === "list" ? "點一列勾一天；按著往下拖一次勾好幾天；Shift 點兩列中間整段一起勾。" : "點一天選一天；按著滑過好幾天一起選；Shift 點兩天中間整段一起選。再點一次取消。";
   if (mode === "list") { renderDateList(chg, curB); renderNoDateChip(); return; }
 
@@ -315,13 +315,11 @@ function renderCalendar() {
   $("#cal").innerHTML = months.length > 1
     ? months.map(([Y, M]) => `<div class="cal-month" style="grid-column:1/-1"><div class="cm-title">${Y} 年 ${M} 月</div><div class="cal">${grid(Y, M)}</div></div>`).join("")
     : grid(y, m);
-  if (curB) {
-    // 批次模式：點一天不是篩選，是跳到那天（表格本來就只剩這批）
-    $("#cal").onpointerdown = $("#cal").onpointermove = $("#cal").onpointerup = null;
-    $("#cal").querySelectorAll(".day.has:not(.dim)").forEach(el => el.addEventListener("click", () => jumpToDate(el.dataset.date)));
-  } else {
-    bindDragSelect($("#cal"), ".day.has", el => el.dataset.date, (el, on) => el.classList.toggle("on", on), dateKeys());
-  }
+  // 全部訂單跟依匯入批次篩選同一套操作：點、拖、Shift 都是選日期；批次模式壓淡的天（這批沒動到）不給選，
+  // 只選一天時順便捲到那天並黃一下（afterPick）
+  const sel = curB ? ".day.has:not(.dim)" : ".day.has";
+  const keys = curB ? dateKeys().filter(k => chg[k]) : dateKeys();
+  bindDragSelect($("#cal"), sel, el => el.dataset.date, (el, on) => el.classList.toggle("on", on), keys);
   renderNoDateChip();
 }
 /* 拖選：按下去那一格原本沒選就是「選」模式，反之「取消」模式；拖過去的格子畫面立刻變色，
@@ -338,7 +336,7 @@ function bindDragSelect(root, sel, keyOf, paint, orderedKeys) {
     const k = keyOf(el);
     if (e.shiftKey && lastPick && orderedKeys.includes(lastPick)) {
       const [a, b] = [orderedKeys.indexOf(lastPick), orderedKeys.indexOf(k)].sort((x, y) => x - y);
-      orderedKeys.slice(a, b + 1).forEach(kk => apply(kk, true)); lastPick = k; loadOrders({ keepCal: true }); return;
+      orderedKeys.slice(a, b + 1).forEach(kk => apply(kk, true)); lastPick = k; afterPick(); return;
     }
     drag = { on: !state.dates.has(k), seen: new Set([k]) }; apply(k, drag.on); lastPick = k;
     root.setPointerCapture?.(e.pointerId);
@@ -350,7 +348,11 @@ function bindDragSelect(root, sel, keyOf, paint, orderedKeys) {
     const k = keyOf(el); if (drag.seen.has(k)) return;
     drag.seen.add(k); apply(k, drag.on);
   };
-  root.onpointerup = root.onpointercancel = () => { if (!drag) return; drag = null; loadOrders({ keepCal: true }); };
+  root.onpointerup = root.onpointercancel = () => { if (!drag) return; drag = null; afterPick(); };
+}
+// 選完日期：重撈表格（行事曆不重畫）；依匯入批次篩選中只選一天的話，順便捲到那天、黃一下
+function afterPick() {
+  loadOrders({ keepCal: true }).then(() => { if (state.batch && state.dates.size === 1) jumpToDate([...state.dates][0]); });
 }
 /* 從行事曆／日期清單跳到某一天：展開那天和它底下的 PO、捲過去、整塊亮 3 秒；其他日期維持原狀 */
 function jumpToDate(d) {
@@ -367,24 +369,20 @@ function renderNoDateChip() {
 }
 /* 日期清單：只列有出貨的日子，一列一天。點一列勾一天、按著往下拖一次勾好幾天、Shift 點兩列中間整段一起勾。
    依匯入批次篩選時改成「這批動到的日期」：一列一天、點一列跳到那天；超過 6 天先收起來一行「還有 N 天」。 */
-let listExpanded = false;
 function renderDateList(chg, curB) {
   const wd = ["日","一","二","三","四","五","六"];
   const dayLabel = d => { const dt = new Date(d); return `<b>${Number(d.slice(5, 7))}/${Number(d.slice(8))}</b> <span class="muted">週${wd[dt.getDay()]}</span>`; };
   const badges = c => c ? `${c.n.size ? `<span class="badge bd-ok">新 ${c.n.size} PO</span> ` : ""}${c.u.size ? `<span class="badge bd-warn">變 ${c.u.size} PO</span> ` : ""}${c.g.size ? `<span class="badge bd-bad">消 ${c.g.size} PO</span>` : ""}` : "";
   if (curB) {
+    // 批次模式：只列這批動到的天，操作跟全部訂單一樣（勾、拖、Shift），多一欄「這批」
     const byDate = new Map();
     for (const r of state.rows) { const d = r.delivery_date || ""; const o = byDate.get(d) || { pos: new Set(), rows: 0, cases: 0 }; o.pos.add(r.po_number); o.rows++; o.cases += r.cases || 0; byDate.set(d, o); }
-    const ds = [...byDate.keys()].sort((a, b) => (a || "9999") < (b || "9999") ? -1 : 1);
-    const allPos = new Set(state.rows.map(r => r.po_number));
-    const show = listExpanded ? ds : ds.slice(0, 6);
-    $("#cal-list").innerHTML = ds.length ? `<table class="dl"><thead><tr><th>日期</th><th>PO</th><th>品項</th><th>箱數</th><th>這批</th></tr></thead><tbody>${show.map(d => { const o = byDate.get(d);
-        return `<tr data-date="${esc(d)}"><td>${d ? dayLabel(d) : "<b>未排日期</b>"}</td><td>${o.pos.size} 張 PO</td><td class="muted">${o.rows} 品項</td><td><b>${fmt(Math.round(o.cases * 100) / 100)}</b> 箱</td><td>${badges(chg[d])}</td></tr>`; }).join("")}
-        ${ds.length > 6 ? `<tr class="more"><td colspan="5">${listExpanded ? "收起來" : `還有 ${ds.length - 6} 天 ▾`}</td></tr>` : ""}
-        <tr><td colspan="5" class="muted" style="text-align:center">全部 ${ds.length} 天 · ${allPos.size} 張 PO · ${state.rows.length} 品項</td></tr></tbody></table>` : `<div class="muted p-3">這批沒有動到任何訂單。</div>`;
-    $("#cal-list").onpointerdown = null; $("#cal-list").onpointermove = null; $("#cal-list").onpointerup = null;
-    $("#cal-list").querySelectorAll("tbody tr[data-date]").forEach(tr => tr.addEventListener("click", () => jumpToDate(tr.dataset.date)));
-    const more = $("#cal-list").querySelector("tr.more"); if (more) more.addEventListener("click", () => { listExpanded = !listExpanded; renderDateList(chg, curB); });
+    const touched = Object.keys(chg).filter(Boolean).sort();
+    const facetBy = Object.fromEntries((state.facets?.dates || []).map(d => [d.date, d]));
+    $("#cal-list").innerHTML = touched.length ? `<table class="dl"><thead><tr><th style="width:34px"></th><th>日期</th><th>PO</th><th>品項</th><th>箱數</th><th>這批</th></tr></thead><tbody>${touched.map(d => { const f = facetBy[d] || { po_count: 0, rows: 0, cases: 0 };
+        return `<tr data-date="${d}" class="${state.dates.has(d) ? "on" : ""}"><td><input type="checkbox" ${state.dates.has(d) ? "checked" : ""} tabindex="-1"></td><td>${dayLabel(d)}</td><td>${f.po_count} 張 PO</td><td class="muted">${f.rows} 品項</td><td><b>${fmt(f.cases)}</b> 箱</td><td>${badges(chg[d])}</td></tr>`; }).join("")}
+        <tr><td colspan="6" class="muted" style="text-align:center">這批共動到 ${touched.length} 天 · ${new Set(state.rows.map(r => r.po_number)).size} 張 PO · ${state.rows.length} 品項</td></tr></tbody></table>` : `<div class="muted p-3">這批沒有動到任何訂單。</div>`;
+    bindDragSelect($("#cal-list"), "tbody tr[data-date]", el => el.dataset.date, (el, on) => { el.classList.toggle("on", on); const cb = el.querySelector("input"); if (cb) cb.checked = on; }, touched);
     return;
   }
   const ds = (state.facets?.dates || []).filter(d => d.date).sort((a, b) => a.date < b.date ? -1 : 1);
