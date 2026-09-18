@@ -107,7 +107,8 @@ def main():
 
         print("\n【3】最近匯入那一行、依匯入批次篩選、抽屜")
         bar = pg.inner_text("#last-import")
-        check("上面一行：最近匯入＋新增 N 張 PO（品項當小字），沒有對帳算式", "最近匯入" in bar and "張 PO" in bar and "品項" in bar and "＝" not in bar and "第 " not in bar, bar)
+        check("上面四張卡：今天要出貨／本週要出貨／最近匯入／需要處理", pg.eval_on_selector_all("#last-import .kpi", "els => els.length") == 4 and "今天要出貨" in bar and "本週要出貨" in bar and "最近匯入" in bar and "需要處理" in bar and "張 PO" in bar, bar)
+        check("表頭不再是深藍底", pg.eval_on_selector("#orders-list table.m th", "e => getComputedStyle(e).backgroundColor !== 'rgb(30, 64, 175)'"))
         check("全部訂單模式下，最近一批動到的列有色條標籤", pg.eval_on_selector_all("#orders-list tr.chg-new, #orders-list tr.chg-upd, #orders-list tr.chg-gone", "els => els.length") > 0)
         check("行事曆角標標的是 PO 張數", pg.eval_on_selector_all("#cal .day .dc", "els => els.length") > 0 and "張 PO" in pg.get_attribute("#cal .day .dc", "title"))
         pg.click("#btn-batch-filter"); pg.wait_for_timeout(400)
@@ -150,13 +151,14 @@ def main():
         check("表格捲進畫面 → 右側日期導覽條出來、一天一格", not pg.evaluate("document.getElementById('date-rail').classList.contains('hidden')") and pg.eval_on_selector_all("#date-rail a", "els => els.length") >= 3)
         pg.click("#date-rail a >> nth=2"); pg.wait_for_timeout(600)
         check("點導覽條跳到那天（那天的標題進到畫面上方）", pg.evaluate("(() => { const d = document.querySelector('#date-rail a:nth-child(3)').dataset.date; const c = [...document.querySelectorAll('#orders-list .card[data-date]')].find(x => x.dataset.date === d); const r = c.getBoundingClientRect(); return r.top >= -5 && r.top < 200; })()"))
-        pg.evaluate("window.scrollTo(0,0)"); pg.wait_for_timeout(300)
+        pg.evaluate("window.scrollTo(0,0)"); pg.wait_for_timeout(900)   # 平滑捲動要等它停，不然下面拖選的座標會抓到捲動中的位置
         pg.click('#density [data-d="dense"]'); pg.wait_for_timeout(200)
         check("密度切緊湊", pg.evaluate("document.getElementById('orders-list').classList.contains('dense')"))
         pg.click('#density [data-d="normal"]'); pg.wait_for_timeout(200)
         check("日期標題是黏頂的", pg.eval_on_selector("#orders-list .grp-date", "e => getComputedStyle(e).position === 'sticky'"))
 
         print("\n【3b】行事曆按著滑過多選、日期清單")
+        pg.evaluate("window.scrollTo(0,0)"); pg.wait_for_timeout(700)
         days = pg.eval_on_selector_all("#cal .day.has", "els => els.map(e => e.dataset.date)")
         b1 = pg.locator(f'.day.has[data-date="{days[0]}"]').bounding_box(); b2 = pg.locator(f'.day.has[data-date="{days[2]}"]').bounding_box()
         pg.mouse.move(b1["x"] + 10, b1["y"] + 10); pg.mouse.down()

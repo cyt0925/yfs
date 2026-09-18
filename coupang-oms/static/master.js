@@ -171,21 +171,44 @@ function whenText(ts) {
 /* 數字以 PO 張數為主、品項數當小字（OP 的單位是 PO）；0 的灰掉 */
 const countBadges = b => `<span class="badge ${b.new_pos ? "bd-ok" : "z"}">新增 ${b.new_pos} 張 PO${b.new_now ? ` <span style="font-weight:500;opacity:.8">· ${b.new_now} 品項</span>` : ""}</span><span class="badge ${b.changed_pos ? "bd-warn" : "z"}">有變 ${b.changed_pos}${b.changed_pos ? ` 張 PO <span style="font-weight:500;opacity:.8">· ${b.changed_now} 品項</span>` : ""}</span><span class="badge ${b.removed_pos ? "bd-bad" : "z"}">消失 ${b.removed_pos}${b.removed_pos ? ` 張 PO <span style="font-weight:500;opacity:.8">· ${b.removed_now} 品項</span>` : ""}</span>`;
 const spanText = b => { const ms = b.months || []; return ms.length > 1 ? `交期跨 ${Number(ms[0].slice(5))}～${Number(ms[ms.length - 1].slice(5))} 月，已一次列出` : ""; };
-/* 上面那一行：沒篩批次時講「最近匯入」多少；篩了某批就寫「依匯入批次篩選：哪一批」。
-   右邊一顆「依匯入批次篩選」拉開抽屜選批次（第一列就是最近一批）；篩了就多一顆「清除批次篩選」。 */
+/* 上面四張數字卡：今天要出貨／本週要出貨／最近一批匯入／需要處理。
+   點卡就是動作：今天→勾今天、本週→勾這週有出貨的天、最近一批→拉開抽屜、需要處理→只看那些。
+   依匯入批次篩選中時第三張卡變黃，寫「依匯入批次篩選：哪一批」，上面有「清除批次篩選」。 */
 function renderImportBar() {
   const li = $("#last-import"); const last = importBatches[0];
-  if (!last) { li.classList.add("hidden"); return; }
+  const f = state.facets || {}; const dates = f.dates || [];
+  if (!last && !dates.length) { li.classList.add("hidden"); return; }
   li.classList.remove("hidden");
   const cur = importBatches.find(b => b.id === state.batch) || null;
-  li.style.background = cur ? "var(--warnbg)" : "var(--b50)"; li.style.borderColor = cur ? "#fcd34d" : "var(--b200)";
-  const head = cur
-    ? `<b style="color:var(--warn)"><i class="bi bi-funnel-fill"></i> 依匯入批次篩選：</b><span><b>${esc(whenText(cur.committed_at))}</b> 這批</span>${countBadges(cur)}${spanText(cur) ? `<span class="muted">${spanText(cur)}</span>` : ""}
-       <button class="btn btn-o btn-sm" id="btn-batch-clear"><i class="bi bi-x-lg"></i> 清除批次篩選</button>`
-    : `<b style="color:var(--b900)">最近匯入</b><span>${esc(whenText(last.committed_at))}</span>${countBadges(last)}`;
-  li.innerHTML = `<div class="imp-line">${head}<button class="btn ${cur ? "btn-g" : "btn-o"} btn-sm" id="btn-batch-filter" title="選一次匯入，畫面和匯出只剩那批動到的訂單"><i class="bi bi-funnel"></i> 依匯入批次篩選</button></div>`;
+  const iso = x => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  const now = new Date(); const today = iso(now);
+  const wk = []; const start = new Date(now); start.setDate(now.getDate() - now.getDay());
+  for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); wk.push(iso(d)); }
+  const inRange = d => d.slice(0, 7) >= state.month && d.slice(0, 7) <= ($("#exp-to").value || state.month);
+  const sum = keys => dates.filter(d => keys.includes(d.date)).reduce((a, d) => ({ pos: a.pos + d.po_count, rows: a.rows + d.rows, cases: a.cases + d.cases }), { pos: 0, rows: 0, cases: 0 });
+  const tdy = sum([today]); const wkS = sum(wk); const wkDays = wk.filter(k => dates.some(d => d.date === k));
+  const need = (f.missing_box_rows || 0) + (f.edited_rows || 0);
+  const todayOn = state.dates.size === 1 && state.dates.has(today); const weekOn = wkDays.length > 0 && wkDays.every(k => state.dates.has(k)) && state.dates.size === wkDays.length;
+  const card1 = inRange(today)
+    ? `<div class="kpi ${todayOn ? "on" : ""}" data-k="today" title="點一下只看今天"><div class="kt"><span>今天要出貨</span><i class="bi bi-truck"></i></div><div class="kn">${tdy.pos}<small>張 PO</small></div><div class="ks">${tdy.pos ? `${tdy.rows} 品項 · ${fmt(Math.round(tdy.cases * 100) / 100)} 箱` : "今天沒有出貨"}</div></div>`
+    : `<div class="kpi" title="今天不在目前看的月份裡"><div class="kt"><span>今天要出貨</span><i class="bi bi-truck"></i></div><div class="kn muted">—</div><div class="ks">今天不在目前看的月份</div></div>`;
+  const card2 = `<div class="kpi ${weekOn ? "on" : ""}" data-k="week" title="點一下只看這週"><div class="kt"><span>本週要出貨</span><i class="bi bi-calendar-week"></i></div><div class="kn">${wkS.pos}<small>張 PO</small></div><div class="ks">${wkS.pos ? `${wkS.rows} 品項 · ${fmt(Math.round(wkS.cases * 100) / 100)} 箱 · ${wkDays.length} 天` : "這週沒有出貨"}</div></div>`;
+  const card3 = !last ? `<div class="kpi"><div class="kt"><span>最近匯入</span></div><div class="kn muted">—</div><div class="ks">還沒匯入過</div></div>`
+    : cur ? `<div class="kpi batch" data-k="batch"><div class="kt"><span style="color:var(--warn);font-weight:700"><i class="bi bi-funnel-fill"></i> 依匯入批次篩選：${esc(whenText(cur.committed_at))} 這批</span><button class="btn btn-o btn-sm" id="btn-batch-clear"><i class="bi bi-x-lg"></i> 清除批次篩選</button></div><div class="kn">${cur.new_pos}<small>張 PO 新增</small></div><div class="ks">${countBadges(cur)}${spanText(cur) ? `<span>${spanText(cur)}</span>` : ""}<button class="btn btn-g btn-sm" id="btn-batch-filter" style="margin-left:auto" title="換一批"><i class="bi bi-funnel"></i> 依匯入批次篩選</button></div></div>`
+    : `<div class="kpi" data-k="batch" title="點一下依匯入批次篩選"><div class="kt"><span>最近匯入</span><span>${esc(whenText(last.committed_at))}</span></div><div class="kn">${last.new_pos}<small>張 PO 新增</small></div><div class="ks">${countBadges(last)}<button class="btn btn-o btn-sm" id="btn-batch-filter" style="margin-left:auto"><i class="bi bi-funnel"></i> 依匯入批次篩選</button></div></div>`;
+  const needOn = state.missing || state.edited;
+  const card4 = `<div class="kpi ${need ? "warn" : ""} ${needOn ? "on" : ""}" data-k="need" title="${need ? "點一下只看要處理的品項" : "沒有要處理的"}"><div class="kt"><span>需要處理</span><i class="bi ${need ? "bi-exclamation-triangle-fill" : "bi-check-circle"}"></i></div><div class="kn">${need}<small>筆</small></div><div class="ks">${need ? `${f.missing_box_rows ? `算不出箱數 ${f.missing_box_rows}` : ""}${f.missing_box_rows && f.edited_rows ? " · " : ""}${f.edited_rows ? `人工調整過 ${f.edited_rows}` : ""}` : "箱數都算得出來、沒有人工調整"}</div></div>`;
+  li.innerHTML = `<div class="kpis">${card1}${card2}${card3}${card4}</div>`;
+  li.querySelectorAll(".kpi[data-k]").forEach(k => k.addEventListener("click", e => {
+    if (e.target.closest("button")) return;
+    const kind = k.dataset.k;
+    if (kind === "today") { const on = todayOn; state.dates.clear(); if (!on) state.dates.add(today); loadOrders(); }
+    else if (kind === "week") { const on = weekOn; state.dates.clear(); if (!on) wkDays.forEach(d => state.dates.add(d)); loadOrders(); }
+    else if (kind === "batch") { if (cur) return; openDrawer(); }
+    else if (kind === "need") { if (!need) return; if (needOn) { state.missing = state.edited = false; } else { state.missing = !!f.missing_box_rows; state.edited = !f.missing_box_rows && !!f.edited_rows; } $("#chip-missing").classList.toggle("on", state.missing); $("#chip-edited").classList.toggle("on", state.edited); loadOrders(); }
+  }));
   const c = li.querySelector("#btn-batch-clear"); if (c) c.addEventListener("click", () => pickBatch(null));
-  li.querySelector("#btn-batch-filter").addEventListener("click", () => openDrawer());
+  const b = li.querySelector("#btn-batch-filter"); if (b) b.addEventListener("click", () => openDrawer());
   if ($("#imp-drawer").classList.contains("open")) renderDrawer();
 }
 /* 右邊抽屜：每一次匯入一列（時間、新增／有變／消失、檔名），最新在上；點一列就依那批篩選，抽屜不關 */
@@ -409,7 +432,7 @@ function renderOrders() {
     $("#orders-list").querySelectorAll(".month-chip").forEach(b => b.addEventListener("click", () => setMonth(b.dataset.m)));
     return;
   }
-  $("#date-rail").classList.add("hidden");
+  $("#date-rail").classList.add("hidden"); document.body.classList.remove("rail-on");
   if (!rows.length) { $("#orders-list").innerHTML = `<div class="card p-10 text-center muted">${anyScope() ? "沒有符合篩選的資料" : `${state.month} 這個月還沒有任何訂單，按上面的「上傳訂單彙總表」。`}</div>`; return; }
   const byDate = new Map();
   for (const r of rows) { const d = r.delivery_date || ""; if (!byDate.has(d)) byDate.set(d, new Map()); const pos = byDate.get(d); if (!pos.has(r.po_number)) pos.set(r.po_number, []); pos.get(r.po_number).push(r); }
@@ -482,7 +505,7 @@ let railObserver = null;
 function renderDateRail() {
   const rail = $("#date-rail"); const cards = [...document.querySelectorAll("#orders-list .card[data-date]")];
   if (railObserver) { railObserver.disconnect(); railObserver = null; }
-  if (cards.length < 3) { rail.classList.add("hidden"); return; }
+  if (cards.length < 3) { rail.classList.add("hidden"); document.body.classList.remove("rail-on"); return; }
   rail.classList.remove("hidden");
   rail.innerHTML = cards.map(c => { const d = c.dataset.date; const n = c.querySelectorAll(".grp-po").length; return `<a data-date="${esc(d)}" title="${d ? d + " 交貨" : "未排日期"} · ${n} 張 PO">${d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}` : "未排"}<span class="n">${n}</span></a>`; }).join("");
   rail.querySelectorAll("a").forEach(a => a.addEventListener("click", () => { const c = cards.find(x => x.dataset.date === a.dataset.date); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); }));
@@ -498,7 +521,10 @@ function renderDateRail() {
 function updateRailVisibility() {
   const rail = $("#date-rail"); const list = $("#orders-list");
   if (!rail.innerHTML || list.querySelectorAll(".card[data-date]").length < 3) return;
-  const r = list.getBoundingClientRect(); rail.classList.toggle("hidden", !(r.top < window.innerHeight * 0.6 && r.bottom > 120));
+  const r = list.getBoundingClientRect(); const show = r.top < window.innerHeight * 0.6 && r.bottom > 120;
+  rail.classList.toggle("hidden", !show);
+  // 導覽條出現時主畫面右邊讓一點位，免得蓋到表格最右邊的刪除鍵
+  document.body.classList.toggle("rail-on", show);
 }
 window.addEventListener("scroll", updateRailVisibility, { passive: true });
 $("#density").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.dense = b.dataset.d === "dense"; localStorage.setItem("mst_dense", state.dense ? "1" : "0"); $("#density").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); $("#orders-list").classList.toggle("dense", state.dense); }));

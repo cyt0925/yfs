@@ -44,7 +44,8 @@
   .bd-bad { background:var(--badbg); color:var(--bad); } .bd-blue { background:var(--b100); color:var(--b800); }
   .bd-gray { background:#f1f5f9; color:var(--muted); }
   table.m { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
-  table.m th { background:var(--b800); color:#fff; font-weight:600; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:2px solid var(--b200); }
+  /* 表頭淺灰不用深藍：整頁只剩 PO 單號一個重色，看起來才清爽（參考 ShipSync／ShopZen 那類後台） */
+  table.m th { background:#f4f6fa; color:var(--ink2); font-weight:600; font-size:12px; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:1px solid var(--line); }
   table.m td { padding:6px 10px; border-bottom:1px solid var(--line2); vertical-align:middle; }
   table.m tr:hover td { background:var(--b50); }
   /* 最近一次匯入動到的列：左邊一條細色條＋一個小標籤，掃一眼就知道這次動了哪些 */
@@ -53,6 +54,16 @@
   table.m tr.chg-gone td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
   table.m tr.chg-upd td, table.m tr.chg-gone td { background:#fffdf5; }
   .imp-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:13.5px; }
+  /* 上面四張數字卡：今天要出、本週要出、最近一批匯入、需要處理。大數字＋小標題，一眼看到今天的狀況 */
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .kpi { background:#fff; border:1px solid var(--line2); border-radius:12px; padding:12px 16px; cursor:pointer; position:relative; transition:box-shadow .15s, border-color .15s; }
+  .kpi:hover { border-color:var(--b200); box-shadow:0 4px 14px rgba(30,58,138,.08); } .kpi.on { border-color:var(--b700); box-shadow:0 0 0 2px var(--b100); }
+  .kpi .kt { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:12.5px; }
+  .kpi .kn { font-size:26px; font-weight:800; letter-spacing:-.5px; color:var(--ink); margin:4px 0 2px; line-height:1.1; } .kpi .kn small { font-size:13px; font-weight:600; color:var(--muted); margin-left:4px; }
+  .kpi .ks { font-size:12px; color:var(--muted); display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .kpi.warn { border-color:#fcd9a8; background:#fffaf2; } .kpi.warn .kt, .kpi.warn .kn { color:var(--warn); }
+  .kpi.batch { border-color:#fcd34d; background:var(--warnbg); }
+  .kpi .btn { position:relative; z-index:1; }
   .imp-line .n { font-weight:700; font-size:14px; }
   /* 匯入紀錄抽屜：從右邊滑出、不蓋住主畫面，可以邊看表格邊換看哪一次 */
   .drawer { position:fixed; top:0; right:0; bottom:0; width:400px; max-width:92vw; background:#fff; border-left:1px solid var(--line); box-shadow:-12px 0 32px rgba(15,23,42,.14); z-index:40; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .18s ease; }
@@ -85,9 +96,9 @@
   .grp-date, .grp-po { cursor:pointer; user-select:none; } .grp-po { background:var(--b50); }
   .tg { display:inline-block; width:14px; transition:transform .15s; color:var(--b700); } .tg.closed { transform:rotate(-90deg); }
   .card.collapsed .grp-po, .card.collapsed .po-body { display:none; } .grp-po.collapsed + .po-body { display:none; }
-  /* 從日期清單／迷你月曆跳過來：那個日期區塊亮一下 */
-  @keyframes hl-flash { 0%, 70% { box-shadow:0 0 0 3px #f59e0b, 0 0 0 8px #fde68a; background:#fffbeb; } 100% { box-shadow:none; } }
-  .card.hl { animation:hl-flash 3s ease-out; }
+  /* 跳到某一天：整塊淡淡染成黃色再快速退掉（yellow fade），不用外框 */
+  @keyframes hl-wash { 0% { background-color:transparent; } 25%, 55% { background-color:#fff3b0; } 100% { background-color:transparent; } }
+  .card.hl, .card.hl .grp-date, .card.hl .grp-po, .card.hl table.m td, .card.hl table.m th { animation:hl-wash 1.6s ease-out; }
   /* 依匯入批次篩選：行事曆／清單跟全部訂單同一套，只是這批沒動到的天壓淡；行事曆跨月時一個月一塊往下排 */
   .cal-month { margin-bottom:10px; } .cal-month .cm-title { font-weight:700; color:var(--b900); font-size:13px; margin:4px 0 6px; }
   /* 日期標題黏在上面：往下捲時目前這天的標題列停在畫面頂端，下一天來了才推走 */
@@ -98,6 +109,7 @@
   #date-rail a:hover { background:var(--b50); color:var(--b800); } #date-rail a.on { background:var(--b700); color:#fff; }
   #date-rail a .n { opacity:.7; font-weight:500; margin-left:4px; }
   body.drawer-open #date-rail { display:none; }
+  main { transition:padding-right .15s ease; } body.rail-on main { padding-right:84px; }
   /* 密度：緊湊時列高、字級都縮 */
   #orders-list.dense table.m td { padding:3px 8px; font-size:12px; } #orders-list.dense .grp-po { padding:4px 12px; font-size:12px; } #orders-list.dense .grp-date { padding:6px 12px; font-size:13px; }
   #orders-list.dense .grp-po .po { font-size:13.5px; padding:2px 8px; }
@@ -271,7 +283,7 @@
       <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔會照這個範圍">匯出會照這個篩選</span>
     </div>
 
-    <div id="last-import" class="hidden mb-3 text-sm" style="background:var(--b50);border:1px solid var(--b200);border-radius:10px;padding:8px 12px"></div>
+    <div id="last-import" class="hidden mb-3 text-sm"></div>
     <div class="card p-4 mb-4">
       <div class="flex items-center gap-3 mb-2 flex-wrap">
         <span class="seg" id="cal-view"><button data-v="cal" class="on"><i class="bi bi-calendar3"></i> 行事曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 日期清單</button></span>
