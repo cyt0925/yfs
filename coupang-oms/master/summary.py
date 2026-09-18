@@ -225,10 +225,24 @@ def _sheet_layout(ws, hdr, mm):
                 date_cols[int(m.group(2))] = c
             else:
                 spare.append(c)
+    # TTL 加總欄用「位置」認：這個月日期欄（含空欄）最右邊那欄之後、第一個「N月TTL」標題就是它，
+    # 不管標題寫幾月。Chloe 的總表 9 月區塊的 TTL 標題複製貼上寫成「12月TTL」，照標題找會找不到，
+    # 新插的日期欄就不會被加進 SUM（2026-09-18 抓到）。真的找不到才退回照標題月份找。
+    ttl_re = re.compile(r"^\s*\d{1,2}月TTL")
+    block_cols = list(date_cols.values()) + spare
+    ttl_col = None
+    if block_cols:
+        for c in range(max(block_cols) + 1, ws.max_column + 1):
+            h = headers[c]
+            if ttl_re.match(h):
+                ttl_col = c; break
+            if _DATE_HDR.match(h):      # 撞到別的月份的日期欄還沒看到 TTL，這個月沒有 TTL 欄
+                break
+    if ttl_col is None:
+        ttl_col = next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None)
     return {"headers": headers, "bc_col": col_of("barcode"), "sku_col": col_of("sku_id"),
-            "date_cols": date_cols, "spare": spare,
-            "ttl_col": next((c for c, h in headers.items() if re.match(rf"^\s*{mm}月TTL", h)), None),
-            "month_cols": [c for c, h in headers.items() if _DATE_HDR.match(h) or re.match(r"^\s*\d{1,2}月TTL", h)]}
+            "date_cols": date_cols, "spare": spare, "ttl_col": ttl_col,
+            "month_cols": [c for c, h in headers.items() if _DATE_HDR.match(h) or ttl_re.match(h)]}
 
 
 def _ensure_date_columns(ws, hdr, mm, dates):
@@ -361,7 +375,9 @@ def api_export():
     if tpl is not None:
         # 有底稿就照底稿填（寶僑要跟他們的總表一模一樣，含商品順序），檔名沿用底稿的
         wb, _rep = _fill_template(tpl, s, month, _operator())
-        return _xlsx_response(wb, tpl["filename"] or f"{group}_總表_{month}.xlsx")
+        # 檔名不能跟底稿一樣：Chloe 開著底稿再開匯出檔，Excel 會說「無法同時開啟兩個相同名稱的活頁簿」
+        # （2026-09-18）。改成「9月_總表.xlsx」。
+        return _xlsx_response(wb, f"{int(month[5:7])}月_總表.xlsx")
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "總表"
@@ -396,5 +412,5 @@ def api_export():
         ws2.append([dte, round(d["cases"], 2), len(d["pos"]), d["rows"]])
     for c in ws2[1]:
         c.font = bold; c.fill = fill
-    return _xlsx_response(wb, f"{group}_總表_{month}.xlsx")
+    return _xlsx_response(wb, f"{int(month[5:7])}月_總表.xlsx")
 

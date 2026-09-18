@@ -260,7 +260,7 @@ def main():
     check("有寫歷程", any(l["field"] == "template" for l in client.get("/api/master/logs?q=寶僑總表範例").get_json()["logs"]))
     s_pg = client.get("/api/master/summary?line=寶僑&month=2026-09").get_json()
     res = client.get("/api/master/export?line=寶僑&month=2026-09")
-    check("匯出檔名沿用底稿檔名", "寶僑總表範例.xlsx" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition"))
+    check("匯出檔名是「9月_總表.xlsx」，不跟底稿同名（Excel 不能同時開兩個同名檔）", "9月_總表.xlsx" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition"))
     wbt = openpyxl.load_workbook(io.BytesIO(res.data)); wst = wbt["Sheet1"]
     tpl_ws = openpyxl.load_workbook(PG_SHEET_XLSX)["Sheet1"]
     check("原本三個分頁都在、多一個「系統填入說明」", wbt.sheetnames == ["工作表1", "Sheet1", "工作表2", "系統填入說明"], str(wbt.sheetnames))
@@ -419,6 +419,15 @@ def main():
     html_m = client.get("/master").get_data(as_text=True)
     check("首頁不再有對帳算式；匯入紀錄是右邊抽屜，不是擋住畫面的視窗",
           "對帳" not in html_m and 'id="dlg-imports"' not in html_m and 'id="imp-drawer"' in html_m)
+
+    print("\n【10d】總表 TTL 欄用位置認，標題寫錯月份也找得到（Chloe 的 9 月區塊寫成 12月TTL）")
+    from master.summary import _sheet_layout
+    wbl = openpyxl.Workbook(); wsl = wbl.active
+    wsl.append(["skuid", "Barcode", "箱入數", "8/4交貨_1", "11月TTL下單總箱數", "9/2交貨", "9/3交貨", "9/交貨", "12月TTL下單總箱數", "Note"])
+    lay9 = _sheet_layout(wsl, 1, 9); lay8 = _sheet_layout(wsl, 1, 8)
+    check("9 月區塊的 TTL 是第 9 欄（標題雖寫 12月）", lay9["ttl_col"] == 9, str(lay9["ttl_col"]))
+    check("8 月區塊的 TTL 是第 5 欄（標題雖寫 11月）", lay8["ttl_col"] == 5, str(lay8["ttl_col"]))
+    check("月份區塊的欄位清單含日期欄與 TTL 欄", set(lay9["month_cols"]) == {4, 5, 6, 7, 8, 9}, str(lay9["month_cols"]))
 
     print("\n【12b】清除資料（只有管理員）")
     before_orders = orders(client, month="2026-09")["count"]

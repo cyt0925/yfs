@@ -8,7 +8,7 @@ const fmt = n => n == null ? "" : (Number.isInteger(n) ? n : Number(n).toFixed(2
 const state = { month: "", tab: "orders", lines: new Set(), dates: new Set(), pos: new Set(), brands: new Set(), warehouses: new Set(),
                 edited: false, missing: false, q: "", facets: null, rows: [], selected: new Set(), groups: [], sumLine: "", sumMonth: "",
                 batch: null, calView: localStorage.getItem("mst_calview") || "cal", dense: localStorage.getItem("mst_dense") === "1", prevMonth: null, prevTo: null,
-                closedDates: new Set(), openPos: new Set(), hlDate: null };
+                closedDates: new Set(), openPos: new Set(), hlDates: new Set() };
 
 function toast(msg, kind="ok") {
   const t = $("#toast"); t.textContent = msg; t.className = "t-" + kind;
@@ -336,7 +336,8 @@ function bindDragSelect(root, sel, keyOf, paint, orderedKeys) {
     const k = keyOf(el);
     if (e.shiftKey && lastPick && orderedKeys.includes(lastPick)) {
       const [a, b] = [orderedKeys.indexOf(lastPick), orderedKeys.indexOf(k)].sort((x, y) => x - y);
-      orderedKeys.slice(a, b + 1).forEach(kk => apply(kk, true)); lastPick = k; afterPick(); return;
+      const added = orderedKeys.slice(a, b + 1).filter(kk => !state.dates.has(kk));
+      orderedKeys.slice(a, b + 1).forEach(kk => apply(kk, true)); lastPick = k; afterPick(added); return;
     }
     drag = { on: !state.dates.has(k), seen: new Set([k]) }; apply(k, drag.on); lastPick = k;
     root.setPointerCapture?.(e.pointerId);
@@ -348,17 +349,27 @@ function bindDragSelect(root, sel, keyOf, paint, orderedKeys) {
     const k = keyOf(el); if (drag.seen.has(k)) return;
     drag.seen.add(k); apply(k, drag.on);
   };
-  root.onpointerup = root.onpointercancel = () => { if (!drag) return; drag = null; afterPick(); };
+  root.onpointerup = root.onpointercancel = () => { if (!drag) return; const d = drag; drag = null; afterPick(d.on ? [...d.seen] : []); };
 }
-// 選完日期：重撈表格（行事曆不重畫）；依匯入批次篩選中只選一天的話，順便捲到那天、黃一下
-function afterPick() {
-  loadOrders({ keepCal: true }).then(() => { if (state.batch && state.dates.size === 1) jumpToDate([...state.dates][0]); });
+/* 選完日期：重撈表格（行事曆不重畫）。剛「加進來」的那幾天，表格那幾塊淡淡黃一下再退掉，
+   點一天黃一天、滑選五天五塊一起黃；取消勾選不黃。黃色只在這次重畫時播一次，之後不管怎麼重畫都不會再閃。
+   同時捲到剛加進來的第一天。 */
+function afterPick(added) {
+  state.hlDates = new Set(added || []);
+  // 只加了一天：那天底下的 PO 順便展開（跟從導覽條跳過去一樣），多天就維持收合
+  if ((added || []).length === 1) for (const r of state.rows) if ((r.delivery_date || "") === added[0]) state.openPos.add(r.po_number);
+  loadOrders({ keepCal: true }).then(() => {
+    const first = [...(added || [])].sort()[0];
+    if (first == null) return;
+    const g = [...document.querySelectorAll("#orders-list .card[data-date]")].find(x => x.dataset.date === first);
+    if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
-/* 從行事曆／日期清單跳到某一天：展開那天和它底下的 PO、捲過去、整塊亮 3 秒；其他日期維持原狀 */
+/* 從右側導覽條跳到某一天：展開那天和它底下的 PO、捲過去、黃一下；其他日期維持原狀 */
 function jumpToDate(d) {
   state.closedDates.delete(d);
   for (const r of state.rows) if ((r.delivery_date || "") === d) state.openPos.add(r.po_number);
-  state.hlDate = d; renderOrders();
+  state.hlDates = new Set([d]); renderOrders();
   const g = [...document.querySelectorAll("#orders-list .card[data-date]")].find(x => x.dataset.date === d);
   if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -440,7 +451,7 @@ function renderOrders() {
     const pos = byDate.get(d); const all = [...pos.values()].flat();
     const total = all.reduce((s, r) => s + (r.cases || 0), 0); const miss = all.filter(r => r.cases == null).length;
     const dClosed = state.closedDates.has(d);
-    html += `<div class="card ${dClosed ? "collapsed" : ""} ${state.hlDate === d ? "hl" : ""}" data-date="${esc(d)}"><div class="grp-date" data-date="${esc(d)}" title="點一下收合／展開這一天"><i class="bi bi-chevron-down tg ${dClosed ? "closed" : ""}"></i> <i class="bi bi-calendar-event"></i> ${d ? esc(d) + " 交貨" : "未排日期"}
+    html += `<div class="card ${dClosed ? "collapsed" : ""} ${state.hlDates.has(d) ? "hl" : ""}" data-date="${esc(d)}"><div class="grp-date" data-date="${esc(d)}" title="點一下收合／展開這一天"><i class="bi bi-chevron-down tg ${dClosed ? "closed" : ""}"></i> <i class="bi bi-calendar-event"></i> ${d ? esc(d) + " 交貨" : "未排日期"}
         <span class="badge bd-blue">${pos.size} 張 PO</span><span class="badge bd-gray">${all.length} 品項</span>
         <span style="margin-left:auto">出貨合計 <b style="font-size:16px">${fmt(total)}</b> 箱</span>${miss ? `<span class="badge bd-warn">${miss} 筆算不出箱數</span>` : ""}</div>`;
     for (const [po, list] of pos) {
@@ -489,13 +500,14 @@ function renderOrders() {
   $("#orders-list").innerHTML = html;
   bindOrderEdits();
   // 兩層開合：點日期標題收合整天；點 PO 標題列展開品項。裡面的勾選框、單號、日期欄、複製不觸發開合
-  $("#orders-list").querySelectorAll(".grp-date").forEach(h => h.addEventListener("click", () => { const d = h.dataset.date; state.closedDates.has(d) ? state.closedDates.delete(d) : state.closedDates.add(d); state.hlDate = null; renderOrders(); }));
+  $("#orders-list").querySelectorAll(".grp-date").forEach(h => h.addEventListener("click", () => { const d = h.dataset.date; state.closedDates.has(d) ? state.closedDates.delete(d) : state.closedDates.add(d); renderOrders(); }));
   $("#orders-list").querySelectorAll(".grp-po").forEach(h => h.addEventListener("click", e => {
     if (e.target.closest("input, .po, .po-copy, button, .badge.bd-warn")) return;
-    const po = h.dataset.po; state.openPos.has(po) ? state.openPos.delete(po) : state.openPos.add(po); state.hlDate = null; renderOrders();
+    const po = h.dataset.po; state.openPos.has(po) ? state.openPos.delete(po) : state.openPos.add(po); renderOrders();
   }));
   $("#orders-list").querySelectorAll(".po-copy").forEach(b => b.addEventListener("click", async e => { e.stopPropagation(); try { await navigator.clipboard.writeText(b.dataset.po); toast(`已複製 ${b.dataset.po}`); } catch { toast("瀏覽器不讓複製，請手動選取", "warn"); } }));
-  if (state.hlDate) setTimeout(() => { state.hlDate = null; }, 3200);
+  // 黃色只播這一次：畫完就清掉，下一次重畫（收合、編輯、換篩選）不會再閃
+  state.hlDates = new Set();
   renderDateRail();
 }
 /* 右側日期導覽條：表格裡有哪幾天就列哪幾天，捲到哪天亮哪天，點哪個跳哪天。少於 3 天不顯示 */
@@ -506,7 +518,7 @@ function renderDateRail() {
   if (cards.length < 3) { rail.classList.add("hidden"); document.body.classList.remove("rail-on"); return; }
   rail.classList.remove("hidden");
   rail.innerHTML = cards.map(c => { const d = c.dataset.date; const n = c.querySelectorAll(".grp-po").length; return `<a data-date="${esc(d)}" title="${d ? d + " 交貨" : "未排日期"} · ${n} 張 PO">${d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8))}` : "未排"}<span class="n">${n}</span></a>`; }).join("");
-  rail.querySelectorAll("a").forEach(a => a.addEventListener("click", () => { const c = cards.find(x => x.dataset.date === a.dataset.date); if (c) c.scrollIntoView({ behavior: "smooth", block: "start" }); }));
+  rail.querySelectorAll("a").forEach(a => a.addEventListener("click", () => jumpToDate(a.dataset.date)));
   railObserver = new IntersectionObserver(entries => {
     const vis = entries.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
     if (!vis.length) return;
@@ -527,8 +539,8 @@ function updateRailVisibility() {
 window.addEventListener("scroll", updateRailVisibility, { passive: true });
 $("#density").querySelectorAll("button").forEach(b => b.addEventListener("click", () => { state.dense = b.dataset.d === "dense"; localStorage.setItem("mst_dense", state.dense ? "1" : "0"); $("#density").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); $("#orders-list").classList.toggle("dense", state.dense); }));
 $("#orders-list").classList.toggle("dense", state.dense); $("#density").querySelectorAll("button").forEach(x => x.classList.toggle("on", (x.dataset.d === "dense") === state.dense));
-$("#btn-expand-all").addEventListener("click", () => { state.closedDates.clear(); state.rows.forEach(r => state.openPos.add(r.po_number)); state.hlDate = null; renderOrders(); });
-$("#btn-collapse-all").addEventListener("click", () => { state.openPos.clear(); state.hlDate = null; renderOrders(); });
+$("#btn-expand-all").addEventListener("click", () => { state.closedDates.clear(); state.rows.forEach(r => state.openPos.add(r.po_number)); renderOrders(); });
+$("#btn-collapse-all").addEventListener("click", () => { state.openPos.clear(); renderOrders(); });
 
 function startInline(cell) {
   if (cell.dataset.editing) return;
