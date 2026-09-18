@@ -260,7 +260,8 @@ def main():
     check("有寫歷程", any(l["field"] == "template" for l in client.get("/api/master/logs?q=寶僑總表範例").get_json()["logs"]))
     s_pg = client.get("/api/master/summary?line=寶僑&month=2026-09").get_json()
     res = client.get("/api/master/export?line=寶僑&month=2026-09")
-    check("匯出檔名是「9月_總表.xlsx」，不跟底稿同名（Excel 不能同時開兩個同名檔）", "9月_總表.xlsx" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition"))
+    cd_s = unquote(res.headers.get("Content-Disposition", ""))
+    check("匯出檔名就叫「總表.xlsx」：不跟底稿同名、也不帶月份（整份總表不是某月的）", "''總表.xlsx" in cd_s and "寶僑總表範例" not in cd_s, cd_s)
     wbt = openpyxl.load_workbook(io.BytesIO(res.data)); wst = wbt["Sheet1"]
     tpl_ws = openpyxl.load_workbook(PG_SHEET_XLSX)["Sheet1"]
     check("原本三個分頁都在、多一個「系統填入說明」", wbt.sheetnames == ["工作表1", "Sheet1", "工作表2", "系統填入說明"], str(wbt.sheetnames))

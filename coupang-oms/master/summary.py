@@ -404,9 +404,9 @@ def api_export():
     if tpl is not None:
         # 有底稿就照底稿填（寶僑要跟他們的總表一模一樣，含商品順序），檔名沿用底稿的
         wb, _rep = _fill_template(tpl, s, month, _operator())
-        # 檔名不能跟底稿一樣：Chloe 開著底稿再開匯出檔，Excel 會說「無法同時開啟兩個相同名稱的活頁簿」
-        # （2026-09-18）。改成「9月_總表.xlsx」。
-        return _xlsx_response(wb, f"{int(month[5:7])}月_總表.xlsx")
+        # 檔名就叫「總表.xlsx」（Jerry 2026-09-18 定案）：不能跟底稿同名（Excel 無法同時開兩個同名活頁簿），
+        # 也不放月份——匯出的是整份總表，只是某個月的箱數填好了，叫「9月_總表」會誤導成只有 9 月。
+        return _xlsx_response(wb, "總表.xlsx")
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "總表"
@@ -441,5 +441,5 @@ def api_export():
         ws2.append([dte, round(d["cases"], 2), len(d["pos"]), d["rows"]])
     for c in ws2[1]:
         c.font = bold; c.fill = fill
-    return _xlsx_response(wb, f"{int(month[5:7])}月_總表.xlsx")
+    return _xlsx_response(wb, "總表.xlsx")
 
