@@ -342,6 +342,9 @@ def main():
           str(wsd.cell(first_data, 10).value).startswith("=") and f"H{first_data}/I{first_data}" in str(wsd.cell(first_data, 10).value)
           and f"L{first_data}*I{first_data}" in str(wsd.cell(first_data, 13).value) and f"M{first_data}*J{first_data}" in str(wsd.cell(first_data, 14).value),
           str((wsd.cell(first_data, 10).value, wsd.cell(first_data, 13).value, wsd.cell(first_data, 14).value)))
+    check("數字欄不設「#,##0.##」之類的格式（整數會顯示成 100. 帶逗號，Chloe 2026-09-18）",
+          all(wsd.cell(first_data, c).number_format in ("General", "@") for c in (7, 8, 9, 10, 11, 12, 13, 14)),
+          str([wsd.cell(first_data, c).number_format for c in (7, 8, 9, 10, 11, 12, 13, 14)]))
     multi = [m for m in wsd.merged_cells.ranges if m.min_col == 18 and m.max_col == 18]
     check("同一張 PO 的交貨日欄合併成一格（有 2 個品項以上的 PO 才會合併）",
           len(multi) >= 1 and all(wsd.cell(m.min_row, 18).value and wsd.cell(m.min_row, 1).value for m in multi)

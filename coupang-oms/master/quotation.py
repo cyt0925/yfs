@@ -81,9 +81,8 @@ def api_export_daily():
         for row in ws.iter_rows(min_row=2, min_col=1, max_col=3):
             for c in row:
                 c.number_format = "@"
-        for row in ws.iter_rows(min_row=2, min_col=10, max_col=14):
-            for c in row:
-                c.number_format = "#,##0.##"
+        # 數字欄不設格式（用 Excel 的「通用」）：之前設過「#,##0.##」，整數會被顯示成「100.」還帶逗號，
+        # Chloe 2026-09-18 抓到。通用格式整數就是整數、小數照實際位數顯示。
     if not wb.sheetnames:
         ws = wb.create_sheet("無資料"); ws.append(["目前的篩選條件下沒有任何訂單"])
     # 檔名照同事原本的檔就叫「專案報價檔」，分頁是 0904交貨、0903交貨…新的在前
