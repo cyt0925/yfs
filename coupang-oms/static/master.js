@@ -728,6 +728,25 @@ $("#btn-commit").addEventListener("click", async () => {
 });
 
 /* ════════════ ③ 總表 ════════════ */
+/* 匯出按鈕：按下去馬上變「產生中…」轉圈，檔案回來才恢復。以前是純連結，按了沒反應，
+   Chloe 覺得是當掉（總表底稿大、Render 主機慢，要跑十幾秒）。 */
+function bindDownload(id) {
+  const a = $(id); if (!a) return;
+  a.addEventListener("click", async e => {
+    e.preventDefault(); if (a.dataset.busy) return;
+    const html = a.innerHTML; a.dataset.busy = "1"; a.innerHTML = `<i class="bi bi-arrow-repeat" style="display:inline-block;animation:spin 1s linear infinite"></i> 產生中…`; a.style.pointerEvents = "none";
+    try {
+      const res = await fetch(a.href);
+      if (!res.ok) { const d = await res.json().catch(() => ({})); toast(d.error || `匯出失敗（${res.status}）`, "err"); return; }
+      const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : "匯出.xlsx";
+      const url = URL.createObjectURL(blob); const t = document.createElement("a"); t.href = url; t.download = name; document.body.appendChild(t); t.click(); t.remove(); URL.revokeObjectURL(url);
+    } catch (err) { toast("連線失敗：" + err, "err"); }
+    finally { delete a.dataset.busy; a.innerHTML = html; a.style.pointerEvents = ""; }
+  });
+}
+["#btn-export-daily", "#btn-export-daily-2", "#btn-export-2"].forEach(bindDownload);
+
 /* 匯出總表的樣子：① 匯進主檔的那份業務總表（有 M/D交貨 日期欄的）就是底稿，匯出只填箱數、含順序。
    沒匯過總表的線別，匯出用系統自己排的格式。 */
 async function loadTemplateInfo() {

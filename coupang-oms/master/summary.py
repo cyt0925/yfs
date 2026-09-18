@@ -134,9 +134,10 @@ _REF_PART = re.compile(r"^(\$?)([A-Za-z]{1,3})(\$?)(\d*)$")
 
 def _shift_ref_text(ref, at):
     """一個儲存格參照（A1、$B$2、AO2:BC2、$F:$AL）遇到「在第 at 欄前面插一欄」要怎麼改。
-    有 '!' 的是別的工作表或外部檔，不動。"""
+    有 '!' 的是別的工作表或外部檔，不動。at 也可以是一串插入點（一次插好幾欄、公式只挪一遍）。"""
     if "!" in ref:
         return ref
+    ats = sorted(at) if isinstance(at, (list, tuple, set)) else [at]
     parts = ref.split(":")
     out = []
     for part in parts:
@@ -146,8 +147,9 @@ def _shift_ref_text(ref, at):
         d1, letters, d2, row = m.groups()
         from openpyxl.utils import column_index_from_string, get_column_letter
         idx = column_index_from_string(letters.upper())
-        if idx >= at:
-            letters = get_column_letter(idx + 1)
+        shift = sum(1 for a in ats if idx >= a)     # 每個在它左邊（含同位置）的插入點都把它往右推一格
+        if shift:
+            letters = get_column_letter(idx + shift)
         out.append(f"{d1}{letters}{d2}{row}")
     return ":".join(out)
 
@@ -167,42 +169,62 @@ def _shift_formula(formula, at):
     return "=" + "".join(pieces)
 
 
-def _insert_column(ws, at, hdr, title, style_from):
-    """在第 at 欄前面插一欄，模仿 Excel 插欄：右邊的值搬過去、所有公式的參照跟著位移、
-    跨過插入點的範圍自動變寬、合併儲存格與欄寬跟著移。標題與樣式抄隔壁那個日期欄。"""
+def _insert_columns(ws, inserts, hdr):
+    """一次在好幾個位置插欄，模仿 Excel 插欄：右邊的值搬過去、所有公式的參照跟著位移、
+    跨過插入點的範圍自動變寬、合併儲存格與欄寬跟著移。標題與樣式抄指定的那個日期欄。
+
+    inserts：[(at, title, style_from), ...]，at／style_from 都是「插欄前」的欄號。
+    以前一欄一欄插，每插一欄就把整張表幾萬條公式重新解析一次，Chloe 的總表插 5 欄要 3 秒；
+    現在把所有插入點一次算好，公式只挪一遍（2026-09-18，匯出總表太慢）。"""
+    if not inserts:
+        return
     from copy import copy
     from openpyxl.utils import get_column_letter
+    from openpyxl.utils.cell import range_boundaries
+    inserts = sorted(inserts, key=lambda x: x[0])
+    ats = [a for a, _, _ in inserts]
+    # 插欄前的欄號 → 插欄後的欄號（左邊有幾個插入點就往右推幾格；插入點本身「>= a」也算）
+    def new_pos(col):
+        return col + sum(1 for a in ats if col >= a)
     max_col = ws.max_column
-    if style_from is not None and style_from >= at:
-        style_from += 1            # 樣板欄在插入點右邊，插完會往右移一格
-    ws.insert_cols(at)
+    # 由右往左插，這樣前面算好的「插欄前欄號」不會被自己弄亂
+    for a in sorted(ats, reverse=True):
+        ws.insert_cols(a)
     for row in ws.iter_rows():
         for c in row:
             if isinstance(c.value, str) and c.value.startswith("="):
-                c.value = _shift_formula(c.value, at)
+                c.value = _shift_formula(c.value, ats)
     merged = [str(r) for r in ws.merged_cells.ranges]
     for r in merged:
         ws.unmerge_cells(r)
-    from openpyxl.utils.cell import range_boundaries
     for r in merged:
         c1, r1, c2, r2 = range_boundaries(r)
-        if c1 >= at:
-            c1 += 1; c2 += 1
-        elif c2 >= at:
-            c2 += 1
-        ws.merge_cells(start_row=r1, start_column=c1, end_row=r2, end_column=c2)
+        # insert_cols 不會動合併範圍，所以這裡拿到的還是插欄前的欄號
+        ws.merge_cells(start_row=r1, start_column=new_pos(c1), end_row=r2, end_column=new_pos(c2))
     dims = ws.column_dimensions
-    for col in range(max_col, at - 1, -1):
-        src = dims.get(get_column_letter(col))
-        if src is not None and src.width:
-            dims[get_column_letter(col + 1)].width = src.width
-    if style_from:
-        src_w = dims.get(get_column_letter(style_from))
-        if src_w is not None and src_w.width:
-            dims[get_column_letter(at)].width = src_w.width
-        for r in range(1, ws.max_row + 1):
-            ws.cell(row=r, column=at)._style = copy(ws.cell(row=r, column=style_from)._style)
-    ws.cell(row=hdr, column=at).value = title
+    widths = {col: dims[get_column_letter(col)].width for col in range(1, max_col + 1)
+              if dims.get(get_column_letter(col)) is not None and dims[get_column_letter(col)].width}
+    for col, w in sorted(widths.items(), reverse=True):
+        dims[get_column_letter(new_pos(col))].width = w
+    # 新欄的位置：插入點 a 前面已有幾個插入點就再往右推
+    for i, (a, title, style_from) in enumerate(inserts):
+        at_new = a + i
+        if style_from:
+            sf = new_pos(style_from)
+            if sf in [aa + j for j, (aa, _, _) in enumerate(inserts)]:
+                sf = None
+            if sf:
+                w = dims.get(get_column_letter(sf))
+                if w is not None and w.width:
+                    dims[get_column_letter(at_new)].width = w.width
+                for r in range(1, ws.max_row + 1):
+                    ws.cell(row=r, column=at_new)._style = copy(ws.cell(row=r, column=sf)._style)
+        ws.cell(row=hdr, column=at_new).value = title
+
+
+def _insert_column(ws, at, hdr, title, style_from):
+    """插一欄（見 _insert_columns）。"""
+    _insert_columns(ws, [(at, title, style_from)], hdr)
 
 
 def _sheet_layout(ws, hdr, mm):
@@ -250,10 +272,17 @@ def _ensure_date_columns(ws, hdr, mm, dates):
     位置（右邊公式跟著位移，見 _insert_column）；「M/交貨」空欄是業務的，不動。
     底稿完全沒有這個月的區塊時，接在最後一個月份區塊後面補「日期欄＋TTL 加總欄」。回傳 (layout, 新增的日期)。"""
     lay = _sheet_layout(ws, hdr, mm); added = []
-    for d in dates:
-        day = int(d[8:10])
-        if day in lay["date_cols"]:
-            continue
+    need = sorted({int(d[8:10]) for d in dates} - set(lay["date_cols"]))
+    if not need:
+        return lay, added
+    if not lay["date_cols"] and not lay["spare"] and not lay["ttl_col"]:
+        # 底稿完全沒有這個月：先補一個 TTL 欄在最後一個月份區塊後面，日期欄再插在它前面
+        at = (max(lay["month_cols"]) + 1) if lay["month_cols"] else ws.max_column + 1
+        _insert_column(ws, at, hdr, f"{mm}月TTL下單總箱數", max(lay["month_cols"]) if lay["month_cols"] else None)
+        lay = _sheet_layout(ws, hdr, mm)
+    # 每個要補的日期各自算「插欄前」該插在哪一欄，然後一次插完
+    inserts = []
+    for day in need:
         later = sorted(c for dd, c in lay["date_cols"].items() if dd > day)
         if later:
             at = later[0]                                    # 插在下一個日期前面
@@ -261,17 +290,13 @@ def _ensure_date_columns(ws, hdr, mm, dates):
             at = lay["spare"][0]                             # 最後一個日期之後、空欄之前
         elif lay["ttl_col"]:
             at = lay["ttl_col"]                              # 空欄也沒有 → 加總欄前面
-        elif lay["date_cols"]:
-            at = max(lay["date_cols"].values()) + 1
         else:
-            at = (max(lay["month_cols"]) + 1) if lay["month_cols"] else ws.max_column + 1
-            _insert_column(ws, at, hdr, f"{mm}月TTL下單總箱數", max(lay["month_cols"]) if lay["month_cols"] else None)
-            lay = _sheet_layout(ws, hdr, mm)
-        neighbor = min(lay["date_cols"].values(), key=lambda c: abs(c - at)) if lay["date_cols"] else None
-        _insert_column(ws, at, hdr, f"{mm}/{day}交貨", neighbor)
+            at = max(lay["date_cols"].values()) + 1
+        neighbor = min(lay["date_cols"].values(), key=lambda c: abs(c - at)) if lay["date_cols"] else (lay["spare"][0] if lay["spare"] else None)
+        inserts.append((at, f"{mm}/{day}交貨", neighbor))
         added.append(f"{mm}/{day}")
-        lay = _sheet_layout(ws, hdr, mm)
-    return lay, added
+    _insert_columns(ws, inserts, hdr)
+    return _sheet_layout(ws, hdr, mm), added
 
 
 def _row_index(ws, hdr, bc_col, sku_col):
