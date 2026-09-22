@@ -36,6 +36,8 @@ def api_reset():
             parts.append(f"訂單明細 {counts['orders']} 筆")
         if clear_products:
             conn.execute("DELETE FROM mst_quotas")
+            conn.execute("DELETE FROM mst_month_stats")
+            conn.execute("DELETE FROM mst_source_uploads")
             conn.execute("DELETE FROM mst_products")
             parts.append(f"商品主檔 {counts['products']} 筆")
         if keep_logs:

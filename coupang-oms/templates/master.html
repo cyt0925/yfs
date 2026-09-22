@@ -166,6 +166,10 @@
   .rsn-opts button:hover { background:var(--b50, #f8fafc); }
   .rsn-opts button.on { background:var(--b700); color:#fff; border-color:var(--b700); }
   .bd-reason { background:#fff7ed; color:#9a3412; } .bd-test { background:#f1f5f9; color:#64748b; }
+  .src-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:8px; }
+  .src { border:1px solid var(--line2); border-radius:10px; padding:8px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:2px; background:#fff; }
+  .src b { font-size:13px; color:var(--ink); } .src span { color:var(--b800); font-weight:600; } .src small { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .src.none { background:#f8fafc; border-style:dashed; }
   .st-n { color:var(--b700); font-weight:700; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
   .st-n:hover { color:var(--b900); background:var(--b50); }
   .dd { position:relative; }
@@ -230,8 +234,8 @@
     <div class="card p-4 mb-4">
       <div id="dz-prod" class="dropzone compact">
         <i class="bi bi-file-earmark-arrow-up text-2xl"></i>
-        <div class="flex-1"><b>匯入主檔</b> — 把「酷澎主檔」（一個線別一份）拖到這裡，寶僑總表也可以（補品類／PG code）。可以分幾次加，加完按「匯入主檔」。
-          <div class="kbd">用標題找欄位：條碼(國條)、箱入數必須有；線別、品牌、永豐料號、品名、單位、業務報價單價(含稅)、效期、啟用、報價備註有就帶。只更新有值的欄位。</div></div>
+        <div class="flex-1"><b>匯入主檔與來源檔</b> — 寶僑相關的檔通通拖到這裡：酷澎主檔、寶僑總表、寶僑 supply 表、Coupang Master、庫存銷售表。系統看表頭自己認是哪一種。可以分幾次加，加完按「匯入主檔」。
+          <div class="kbd">都是認表頭文字不認位置：酷澎主檔／總表補商品資料；supply 表帶每月 Supply 與 demand；Coupang Master 帶 GIV／NIV；庫存銷售表帶每月下單與實銷。來源空白或 #N/A 的格子不會蓋掉既有的值。</div></div>
       </div>
       <input type="file" id="file-prod" accept=".xlsx" multiple class="hidden">
       <div id="prod-files" class="mt-2 hidden">
@@ -243,6 +247,7 @@
         <div id="prod-files-list" class="flex gap-2 flex-wrap mt-2"></div>
       </div>
       <div id="prod-imp-msg" class="text-sm mt-2"></div>
+      <div id="src-status" class="src-row mt-3"></div>
     </div>
     <div class="flex items-center gap-2 flex-wrap mb-4">
       <button id="btn-prod-add" class="btn btn-p"><i class="bi bi-plus-lg"></i> 新增商品</button>

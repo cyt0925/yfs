@@ -1,5 +1,6 @@
 """① 商品主檔：清單、手動存、刪除、從酷澎主檔／寶僑總表匯入（含把總表存成匯出樣式）。"""
 from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyxl 都從這裡來
+from . import sources
 
 
 @master_bp.route("/api/master/products")
@@ -186,13 +187,26 @@ def api_import_products():
         wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"無法開啟 Excel：{exc}"}), 400
+    # 先看是不是三種外部來源檔（supply 表／Coupang Master／庫存銷售表），是的話走 sources.py，
+    # 只更新它們負責的欄位，不碰品名、品牌那些。
+    kind, sws, sidx, shs, _raw = sources.find_source_sheet(wb)
+    if kind:
+        conn = get_conn()
+        try:
+            fn = {"supply": sources.import_supply, "master_price": sources.import_master_price, "stock": sources.import_stock}[kind]
+            result = fn(conn, sws, sidx, shs, _operator(), upload.filename)
+            conn.commit()
+        finally:
+            conn.close()
+        result.update({"ok": True, "added": 0, "unchanged": 0, "template_line": "", "columns_found": []})
+        return jsonify(result)
     chosen = None
     for ws in wb.worksheets:
         hdr_idx, mapping, _ = _find_columns(ws, want=("barcode", "box_size"))
         if hdr_idx:
             chosen = (ws, hdr_idx, mapping); break
     if chosen is None:
-        return jsonify({"error": "找不到同時有「國條／Barcode」和「箱入數」標題的工作表。"}), 400
+        return jsonify({"error": "找不到同時有「國條／Barcode」和「箱入數」標題的工作表，也不是 supply 表／Coupang Master／庫存銷售表。"}), 400
     ws, hdr_idx, mapping = chosen
 
     def get(row, field):
@@ -218,19 +232,23 @@ def api_import_products():
             counts[_upsert_product(conn, barcode, fields, norm_int(get(row, "box_size")),
                                    norm_decimal(get(row, "cost_price")), operator, "import",
                                    upload.filename, only_filled=True)] += 1
-        template_line = ""
+        template_line = ""; extras = {}
         if is_sheet and seen_barcodes:
             # 業務的總表就是「匯出總表要長的樣子」，整份記起來當底稿，之後匯出只填箱數。
             # 總表沒有線別欄，線別看這些商品在主檔屬於誰（多數決）；都不知道就當寶僑——
             # 目前只有寶僑有這種總表。
             template_line = _guess_line(conn, seen_barcodes) or "寶僑"
             _save_template(conn, template_line, upload.filename, ws.title, hdr_idx, raw, operator)
+            # 總表 K／L 的 GIV／NIV、M～R 的 Supply／demand 也一起帶進來（read_only 的 ws 要重開一次才能再讀）
+            ws2 = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)[ws.title]
+            extras = sources.absorb_sheet_extras(conn, ws2, hdr_idx, list(header_cells), operator, upload.filename)
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"ok": True, "sheet": ws.title, "added": counts["added"], "updated": counts["updated"],
+    return jsonify({"ok": True, "kind": "sheet" if is_sheet else "coupang_master", "sheet": ws.title,
+                    "added": counts["added"], "updated": counts["updated"],
                     "unchanged": counts["unchanged"], "template_line": template_line,
-                    "columns_found": sorted(mapping.keys())})
+                    "columns_found": sorted(mapping.keys()), "extras": extras})
 
 
 _DATE_HDR = re.compile(r"^\s*(\d{1,2})/(\d{0,2})交貨")   # 9/2交貨、7/9交貨_1、9/18交貨\n竹運出、9/交貨（空欄）

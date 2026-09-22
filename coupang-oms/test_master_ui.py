@@ -277,6 +277,18 @@ def main():
         check("點改最多次的 PO 會打開 PO 視窗", pg.evaluate("document.getElementById('dlg-po').open")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         pg.fill("#st-min", "0"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(500)
 
+        print("\n【4d】① 來源檔上傳：三個檔一起拖進主檔匯入口")
+        pg.click('.m-tab[data-tab="products"]'); pg.wait_for_timeout(700)
+        check("主檔表格有 GIV／NIV 兩欄", "GIV" in pg.inner_text("#prod-table thead") and "NIV" in pg.inner_text("#prod-table thead"))
+        check("匯入口下面有四格「上次上傳」、還沒上傳過", pg.eval_on_selector_all("#src-status .src", "els => els.length") == 4 and "還沒上傳過" in pg.inner_text("#src-status"))
+        pg.set_input_files("#file-prod", [os.path.join(FAKE, n) for n in ("假_寶僑supply表.xlsx", "假_CoupangMaster.xlsx", "假_庫存銷售表.xlsx")]); pg.wait_for_timeout(300)
+        pg.click("#prod-files-go"); pg.wait_for_selector("#prod-imp-msg .bi-check-circle", timeout=30000); pg.wait_for_timeout(800)
+        msg = pg.inner_text("#prod-imp-msg")
+        check("三個檔各自被認出來：supply 表／Coupang Master／庫存銷售表", all(k in msg for k in ["寶僑 supply 表", "Coupang Master", "庫存銷售表"]), msg[:200])
+        check("訊息寫了對到幾個商品、更新幾筆、哪幾個月", "對到主檔" in msg and "月份" in msg)
+        check("上傳後「上次上傳」三格變成今天", pg.inner_text("#src-status").count("今天") >= 3, pg.inner_text("#src-status")[:200])
+        check("主檔表格出現 GIV 數字", pg.eval_on_selector_all("#prod-table tbody tr", "els => els.filter(tr => /\\d/.test(tr.children[9].innerText)).length") >= 1)
+
         print("\n【5】其他分頁與視窗")
         for tab in ["products", "summary", "orders"]:
             pg.click(f'.m-tab[data-tab="{tab}"]'); pg.wait_for_timeout(700)

@@ -29,6 +29,7 @@ LINE_GROUPS_DEFAULT，不做設定面板。
 #   orders_import.py   ② 訂單明細的匯入：多檔合併解析 → 預覽（比對新增／有變／消失）→ 確認寫入。
 #   orders_api.py      ② 訂單明細的查詢與修改：清單＋篩選面、就地編輯、PO 改期、PO 視窗整張存。
 #   products.py        ① 商品主檔：清單、手動存、刪除、從酷澎主檔／寶僑總表匯入（含把總表存成匯出樣式）。
+#   sources.py         ① 外部來源檔：寶僑 supply 表／Coupang Master／庫存銷售表 → GIV、NIV、每月供需與進銷；庫存現算。
 #   summary.py         ③ 總表：現算每日箱數、月配額、匯出總表（有底稿就照底稿填、缺的日期自動插欄）。
 #   quotation.py       匯出專案報價檔（一個交貨日一個分頁，A～R 欄）。
 #   admin_api.py       清除資料、匯入歷程（各次匯入新增／有變）、修改歷程查詢。
@@ -39,6 +40,7 @@ from .page import *  # noqa: F401,F403
 from .orders_import import *  # noqa: F401,F403
 from .orders_api import *  # noqa: F401,F403
 from .products import *  # noqa: F401,F403
+from .sources import *  # noqa: F401,F403
 from .summary import *  # noqa: F401,F403
 from .quotation import *  # noqa: F401,F403
 from .admin_api import *  # noqa: F401,F403

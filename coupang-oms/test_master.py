@@ -342,7 +342,7 @@ def main():
     tm = client.get("/api/master/template?line=寶僑").get_json()
     check("記到 Sheet1、7／8／9 月日期欄與 3 個空欄", tm["exists"] and tm["sheet"] == "Sheet1" and tm["months"]["9"] == {"dates": 12, "spare": 3}, str(tm.get("months")))
     check("酷澎主檔（沒日期欄）匯入不會被當成總表樣式", upload(client, "/api/master/products/import", CPG_MASTER_XLSX).get_json()["template_line"] == "")
-    check("有寫歷程", any(l["field"] == "template" for l in client.get("/api/master/logs?q=寶僑總表範例").get_json()["logs"]))
+    check("有寫歷程", any(l["field"] == "template" for l in client.get("/api/master/logs?q=寶僑總表範例&limit=1000").get_json()["logs"]))
     s_pg = client.get("/api/master/summary?line=寶僑&month=2026-09").get_json()
     res = client.get("/api/master/export?line=寶僑&month=2026-09")
     cd_s = unquote(res.headers.get("Content-Disposition", ""))
@@ -576,6 +576,58 @@ def main():
     files = [(io.BytesIO(open(JUL_XLSX, "rb").read()), "好的.xlsx"), (io.BytesIO(b"not excel"), "壞的.xlsx")]
     res = client.post("/api/master/import/preview", data={"file": files}, content_type="multipart/form-data")
     check("一份壞掉整批不收，錯誤訊息點名檔名", res.status_code == 400 and "壞的.xlsx" in res.get_json()["error"], res.get_data(as_text=True)[:200])
+
+    print("\n【12d】外部來源檔：總表帶 GIV／NIV／供需、supply 表、Coupang Master、庫存銷售表")
+    FAKE = os.path.join(SAMPLES, "fake")
+    res = upload(client, "/api/master/products/import", os.path.join(FAKE, "假_寶僑總表.xlsx")); d = res.get_json()
+    check("假總表匯入成功、認出是總表（kind=sheet）", res.status_code == 200 and d.get("kind") == "sheet" and d["template_line"] == "寶僑", str(d)[:160])
+    check("總表順便帶進 GIV／NIV 與 7～9 月 Supply", d["extras"]["price_updated"] > 0 and {"2026-07", "2026-08", "2026-09"} <= set(d["extras"]["months"]), str(d["extras"]))
+    prods = {p["barcode"]: p for p in client.get("/api/master/products").get_json()["products"]}
+    fk = openpyxl.load_workbook(os.path.join(FAKE, "假_寶僑總表.xlsx")).worksheets[0]
+    fhdr = [c.value for c in fk[1]]; frows = [dict(zip(fhdr, [c.value for c in r])) for r in fk.iter_rows(min_row=2) if r[4].value]
+    bc0, bc1, bc3, bc_last = (str(frows[i]["Barcode"]) for i in (0, 1, 3, len(frows) - 1))
+    check("主檔 GIV 等於總表 K 欄", prods[bc0]["giv"] == round(float(frows[0]["GIV"]), 4), f"{prods[bc0]['giv']} vs {frows[0]['GIV']}")
+    ms = client.get("/api/master/month_stats?month=2026-07").get_json()
+    row0 = next((r for r in ms["rows"] if r["barcode"] == bc0), None)
+    check("月統計有 7 月 Supply（來自總表 Supply_CS (Jul)）", row0 and row0["supply_cs"] == float(frows[0]["Supply_CS (Jul)"]), str(row0)[:120])
+
+    res = upload(client, "/api/master/products/import", os.path.join(FAKE, "假_寶僑supply表.xlsx")); d = res.get_json()
+    check("supply 表：認出（kind=supply）、對到 18 個商品、主檔沒有的 1 個略過", res.status_code == 200 and d.get("kind") == "supply" and d["matched"] == 18 and d["not_in_master"] == 1, str(d)[:200])
+    check("supply 表：月份從表頭抓到 10～12 月（年份自己推）", d["months"] == ["2026-10", "2026-11", "2026-12"], str(d["months"]))
+    check("supply 表：#N/A 那格算「來源沒值」略過", d["skipped"] >= 1)
+    ms10 = {r["barcode"]: r for r in client.get("/api/master/month_stats?month=2026-10").get_json()["rows"]}
+    check("10 月：第一個商品 Supply 是 #N/A → 空，demand 有值", ms10[bc0]["supply_cs"] is None and ms10[bc0]["demand_cs"] is not None, str(ms10[bc0]))
+    check("10 月：其他商品 Supply、demand 都有", ms10[bc1]["supply_cs"] is not None and ms10[bc1]["demand_cs"] is not None)
+    check("PG 最大剩餘可供貨量 = Supply − 該月下單（還沒下單 → 等於 Supply）", ms10[bc1]["pg_remaining_supply"] == ms10[bc1]["supply_cs"])
+
+    giv_before = prods[bc1]["giv"]
+    res = upload(client, "/api/master/products/import", os.path.join(FAKE, "假_CoupangMaster.xlsx")); d = res.get_json()
+    check("Coupang Master：跳過隱藏分頁與說明頁，認出「4月」（kind=master_price）", res.status_code == 200 and d.get("kind") == "master_price" and d["sheet"] == "4月", str(d)[:200])
+    check("Coupang Master：對到 17 個（最後一個商品 Master 沒有）", d["matched"] == 17 and d["not_in_master"] == 0, str(d)[:120])
+    prods = {p["barcode"]: p for p in client.get("/api/master/products").get_json()["products"]}
+    check("GIV 照 Master 更新（×1.1）", prods[bc0]["giv"] == round(round(float(frows[0]["GIV"]) * 1.1, 2), 4), f"{prods[bc0]['giv']}")
+    check("Master 是 #N/A 的商品 GIV 不被蓋掉", prods[bc1]["giv"] == giv_before, f"{prods[bc1]['giv']} vs {giv_before}")
+    check("GIV 變動有記歷程", any(l["field"] == "giv" for l in client.get("/api/master/logs?q=假_CoupangMaster").get_json()["logs"]))
+
+    res = upload(client, "/api/master/products/import", os.path.join(FAKE, "假_庫存銷售表.xlsx")); d = res.get_json()
+    check("庫存銷售表：認出（kind=stock）、年份從 Y26 來、4～10 月", res.status_code == 200 and d.get("kind") == "stock" and d["months"] == [f"2026-{m:02d}" for m in range(4, 11)], str(d)[:200])
+    st = openpyxl.load_workbook(os.path.join(FAKE, "假_庫存銷售表.xlsx")).worksheets[0]
+    shdr = [c.value for c in st[1]]; srows = {str(r[5].value): dict(zip(shdr, [c.value for c in r])) for r in st.iter_rows(min_row=2)}
+    r1 = srows[bc1]
+    ordered = sum(r1[f"Y26 {m}月實際下單總箱數"] for m in range(4, 9)) + r1["Y26 9月目前下單總箱數(在途)"]
+    sold = sum(r1[f"Y26 {m}月實銷總箱數"] for m in range(4, 9)) + r1["Y26 9/1-9/20實銷總箱數"]
+    ms9 = {r["barcode"]: r for r in client.get("/api/master/month_stats?month=2026-09").get_json()["rows"]}
+    check("剩餘庫存 = 累計下單 − 累計實銷（照庫存表 AK 欄公式）", ms9[bc1]["remaining_cs"] == round(ordered - sold, 2), f"{ms9[bc1]['remaining_cs']} vs {ordered - sold}")
+    check("「9/1-9/20實銷」涵蓋 20 天 → 庫存天數 = 剩餘 ÷ (實銷÷20)（AM 欄）", ms9[bc1]["sold_days"] == 20 and ms9[bc1]["stock_days"] == round((ordered - sold) / (r1["Y26 9/1-9/20實銷總箱數"] / 20), 1), str(ms9[bc1]))
+    daily = r1["Y26 9/1-9/20實銷總箱數"] / 20
+    check("預計到月底銷售 = 日均 × 30、到月底剩餘 = 剩餘 − 日均 × 10（AN／AO 欄）", ms9[bc1]["month_sales_proj"] == round(daily * 30, 2) and ms9[bc1]["remaining_eom"] == round((ordered - sold) - daily * 10, 2), str(ms9[bc1]))
+    ms4 = {r["barcode"]: r for r in client.get("/api/master/month_stats?month=2026-04").get_json()["rows"]}
+    check("4 月下單是 #REF! 的商品 → 4 月 ordered 空、不當 0", ms4[bc3]["ordered_cs"] is None and ms4[bc3]["sold_cs"] is not None, str(ms4[bc3]))
+    src = client.get("/api/master/sources").get_json()["sources"]
+    check("來源狀態：四種都有「上次上傳」", [x["kind"] for x in src] == ["supply", "master_price", "stock", "sheet"] and all(x["last"] for x in src), str([(x["kind"], bool(x["last"])) for x in src]))
+    check("來源上傳有記歷程", len([l for l in client.get("/api/master/logs?q=對到").get_json()["logs"] if l["field"] == "source_upload"]) >= 4)
+    res = client.post("/api/master/products/import", data={"file": (io.BytesIO(b"PK\x03\x04junk"), "怪檔.xlsx")}, content_type="multipart/form-data")
+    check("認不出來的檔一樣回 400", res.status_code == 400)
 
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")

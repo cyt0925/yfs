@@ -736,8 +736,45 @@ CREATE TABLE IF NOT EXISTS mst_products (
     shelf_days    INTEGER,                -- 酷澎主檔 總效期天數
     active        TEXT DEFAULT 'Y',       -- 酷澎主檔 啟用(Y/N)
     date_format   TEXT DEFAULT '',        -- 酷澎主檔 日期格式
+    giv           REAL,                   -- 每箱進價 GIV（Coupang Master／總表 K 欄）
+    niv           REAL,                   -- 每箱進價 NIV（Coupang Master／總表 L 欄）
     updated_by    TEXT DEFAULT '',
     updated_at    TEXT DEFAULT ''
+);
+
+-- 每個商品每個月的供需與進銷（總表 M～R、庫存銷售表 O～AC 那些欄的家）。
+-- supply_cs／demand_cs 來自寶僑 supply 表；ordered_cs（下單箱數）／sold_cs（實銷箱數）
+-- 來自庫存銷售表的期初值，之後下單由訂單明細算、實銷由酷澎銷售報表匯入。
+-- sold_days：實銷數字涵蓋幾天（「9/1-9/20實銷」= 20，整月 = 那個月天數），算庫存天數用。
+-- 剩餘庫存、庫存天數不存，讀的時候現算（累計下單 − 累計實銷）。
+CREATE TABLE IF NOT EXISTS mst_month_stats (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    barcode     TEXT NOT NULL,
+    month       TEXT NOT NULL,             -- YYYY-MM
+    supply_cs   REAL,
+    demand_cs   REAL,
+    ordered_cs  REAL,
+    sold_cs     REAL,
+    sold_days   INTEGER,
+    updated_by  TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT '',
+    UNIQUE(barcode, month)
+);
+
+-- 外部來源檔每次上傳的紀錄（畫面上「上次上傳」用）：kind = supply／master_price／stock／sheet
+CREATE TABLE IF NOT EXISTS mst_source_uploads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind          TEXT NOT NULL,
+    filename      TEXT DEFAULT '',
+    sheet         TEXT DEFAULT '',
+    operator      TEXT DEFAULT '',
+    uploaded_at   TEXT NOT NULL,
+    rows_total    INTEGER DEFAULT 0,
+    rows_matched  INTEGER DEFAULT 0,
+    rows_updated  INTEGER DEFAULT 0,
+    rows_skipped  INTEGER DEFAULT 0,
+    months        TEXT DEFAULT '',         -- 這次帶進來哪幾個月，逗號分隔
+    note          TEXT DEFAULT ''
 );
 
 -- 訂單明細：鍵是 (PO, SKU)，跟訂單管理一樣。線別是每一列自己帶的原始值
@@ -987,6 +1024,12 @@ def _migrate_master_columns(conn):
                          ("date_format", "TEXT DEFAULT ''")):
             if col not in have:
                 conn.execute(f"ALTER TABLE mst_products ADD COLUMN {col} {ddl}")
+    # 2026-09-22：主檔多 GIV／NIV 兩欄（缺欄就補）。
+    if _table_exists(conn, "mst_products"):
+        have = _cols(conn, "mst_products")
+        for col in ("giv", "niv"):
+            if col not in have:
+                conn.execute(f"ALTER TABLE mst_products ADD COLUMN {col} REAL")
     # 2026-09-22：變動紀錄多一欄「原因」。人手改出貨數量或交貨日時一定要選（缺貨／沒車／
     # 酷澎要求／其他），之後統計「一年改了幾次單、為什麼」才有東西可算。舊紀錄留空。
     if _table_exists(conn, "mst_logs") and "reason" not in _cols(conn, "mst_logs"):

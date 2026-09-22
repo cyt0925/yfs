@@ -100,7 +100,7 @@ async function checkMaster() {
 }
 function refresh() {
   checkMaster();
-  if (state.tab === "orders") loadOrders(); else if (state.tab === "summary") loadSummary(); else if (state.tab === "stats") loadStats(); else loadProducts();
+  if (state.tab === "orders") loadOrders(); else if (state.tab === "summary") loadSummary(); else if (state.tab === "stats") loadStats(); else { loadProducts(); loadSources(); }
 }
 
 /* ════════════ ② 訂單明細 ════════════ */
@@ -928,13 +928,27 @@ $("#prod-files-go").addEventListener("click", async () => {
   for (const file of files) {
     const fd = new FormData(); fd.append("file", file);
     try { const d = await api("/api/master/products/import", { method: "POST", body: fd });
-      out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${files.length > 1 ? esc(file.name) + " " : ""}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}${d.template_line ? `<br><i class="bi bi-file-earmark-check"></i> 這是${esc(d.template_line)}的總表，已記住它的樣子：之後「匯出總表」會長得跟這份一模一樣（含順序），只填箱數。` : ""}</span>`);
-      toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`); }
+      const fname = files.length > 1 ? esc(file.name) + " " : "";
+      if (d.kind === "supply" || d.kind === "master_price" || d.kind === "stock") {
+        // 外部來源檔：只更新它負責的欄位（supply／demand、GIV／NIV、下單／實銷）
+        out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${fname}認出是「${esc(d.label)}」（工作表「${esc(d.sheet)}」）：${d.rows} 列，對到主檔 ${d.matched} 個商品，更新 ${d.updated} 筆${d.months.length ? `，月份 ${d.months.map(m => Number(m.slice(5)) + " 月").join("、")}` : ""}。${d.skipped ? `來源空白或壞掉的格子 ${d.skipped} 個沒動。` : ""}${d.not_in_master ? `<span class="muted">主檔沒有的商品 ${d.not_in_master} 個略過（例如 ${d.not_in_master_examples.map(esc).join("、")}）。</span>` : ""}</span>`);
+        toast(`${d.label}匯入完成：對到 ${d.matched}、更新 ${d.updated}`);
+      } else {
+        const ex = d.extras && (d.extras.price_updated || d.extras.month_updated) ? `<br><i class="bi bi-plus-circle"></i> 順便帶進 GIV／NIV ${d.extras.price_updated} 筆、每月供需 ${d.extras.month_updated} 筆${d.extras.months.length ? `（${d.extras.months.map(m => Number(m.slice(5)) + " 月").join("、")}）` : ""}。` : "";
+        out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${fname}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}${d.template_line ? `<br><i class="bi bi-file-earmark-check"></i> 這是${esc(d.template_line)}的總表，已記住它的樣子：之後「匯出總表」會長得跟這份一模一樣（含順序），只填箱數。` : ""}${ex}</span>`);
+        toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`);
+      } }
     catch (e) { out.push(`<span class="neg">${files.length > 1 ? esc(file.name) + "：" : ""}${esc(e.message)}</span>`); }
   }
   $("#prod-files-go").disabled = false; stagedProd = []; renderStagedProd();
-  $("#prod-imp-msg").innerHTML = out.join("<br>"); loadProducts();
+  $("#prod-imp-msg").innerHTML = out.join("<br>"); loadProducts(); loadSources();
 });
+/* 來源檔上次上傳：supply 表／Coupang Master／庫存銷售表／總表 各一格，一眼看出哪個該補了 */
+async function loadSources() {
+  let d; try { d = await api("/api/master/sources"); } catch (e) { return; }
+  const ago = t => { if (!t) return ""; const days = Math.floor((Date.now() - new Date(t.replace(" ", "T"))) / 86400000); return days <= 0 ? "今天" : days === 1 ? "昨天" : `${days} 天前`; };
+  $("#src-status").innerHTML = d.sources.map(s => `<div class="src ${s.last ? "" : "none"}"><b>${esc(s.label)}</b>${s.last ? `<span>${esc(ago(s.last.uploaded_at))} · ${esc(s.last.uploaded_at.slice(0, 10))}</span><small title="${esc(s.last.filename)}">${esc(s.last.filename)}</small>${s.last.months ? `<small>${s.last.months.split(",").map(m => Number(m.slice(5)) + " 月").join("、")}</small>` : ""}` : `<span class="muted">還沒上傳過</span>`}</div>`).join("");
+}
 $("#pq").addEventListener("input", () => { clearTimeout(window._pq); window._pq = setTimeout(loadProducts, 200); });
 $("#prod-line").addEventListener("change", loadProducts);
 async function loadProducts() {
@@ -949,7 +963,7 @@ async function loadProducts() {
     orph.querySelectorAll(".add-orphan").forEach(b => b.addEventListener("click", () => { const o = JSON.parse(b.dataset.o); openProductDialog({ barcode: o.barcode, sku_id: o.sku_id, yf_sku: o.yf_sku, brand: o.brand, product_name: o.product_name, box_size: o.box_size_file }); }));
   } else orph.classList.add("hidden");
   $("#prod-count").textContent = `${d.total} 筆`;
-  $("#prod-table").innerHTML = `<thead><tr><th>國條</th><th>線別</th><th>SKU ID</th><th>永豐料號</th><th>品類</th><th>品牌</th><th>品名</th><th>單位</th><th class="num">箱入數</th><th class="num">單價(含稅)</th><th>Note／報價備註</th><th class="num">訂單筆數</th><th>最後更新</th><th></th></tr></thead><tbody>
+  $("#prod-table").innerHTML = `<thead><tr><th>國條</th><th>線別</th><th>SKU ID</th><th>永豐料號</th><th>品類</th><th>品牌</th><th>品名</th><th>單位</th><th class="num">箱入數</th><th class="num">單價(含稅)</th><th class="num" title="每箱進價，來自 Coupang Master 或總表 K 欄">GIV</th><th class="num" title="每箱進價（扣折讓），來自 Coupang Master 或總表 L 欄">NIV</th><th>Note／報價備註</th><th class="num">訂單筆數</th><th>最後更新</th><th></th></tr></thead><tbody>
     ${d.products.length ? d.products.map(p => `<tr data-id="${p.id}" ${p.active === "N" ? 'style="opacity:.55"' : ""}>
       <td class="mono">${esc(p.barcode)}</td>
       <td>${p.line_groups.length ? p.line_groups.map(g => `<span class="line-tag">${esc(g)}</span>`).join(" ") : (p.order_rows ? `<span class="line-tag" style="color:var(--bad)">未分類</span>` : `<span class="kbd">尚未出現在訂單</span>`)}</td>
@@ -958,9 +972,10 @@ async function loadProducts() {
       <td>${esc(p.unit || "")}${p.active === "N" ? ` <span class="badge bd-gray" title="酷澎主檔標記為停用">停用</span>` : ""}</td>
       <td class="num">${p.box_size ? fmt(p.box_size) : `<span class="neg">缺</span>`}${p.auto_created ? ` <span class="badge bd-warn" title="匯入訂單時用整合表的箱入數自動建的，還沒人核對；存一次或重匯總表就解除">請核對</span>` : ""}</td>
       <td class="num">${p.cost_price != null ? fmt(p.cost_price) : `<span class="muted">—</span>`}</td>
+      <td class="num">${p.giv != null ? fmt(p.giv) : `<span class="muted">—</span>`}</td><td class="num">${p.niv != null ? fmt(p.niv) : `<span class="muted">—</span>`}</td>
       <td class="muted">${esc(p.note)}</td><td class="num">${p.order_rows}</td><td class="kbd">${esc(p.updated_at)}<br>${esc(p.updated_by)}</td>
       <td class="whitespace-nowrap"><button class="btn btn-g btn-sm edit" data-p='${esc(JSON.stringify(p))}'><i class="bi bi-pencil"></i></button> <button class="btn btn-danger btn-sm del"><i class="bi bi-trash"></i></button></td></tr>`).join("")
-    : `<tr><td colspan="14" class="text-center muted p-8">還沒有主檔。把酷澎主檔（或寶僑總表）拖到上面的框裡，或匯入訂單時勾「自動建主檔」。</td></tr>`}</tbody>`;
+    : `<tr><td colspan="16" class="text-center muted p-8">還沒有主檔。把酷澎主檔（或寶僑總表）拖到上面的框裡，或匯入訂單時勾「自動建主檔」。</td></tr>`}</tbody>`;
   $("#prod-table").querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openProductDialog(JSON.parse(b.dataset.p))));
   $("#prod-table").querySelectorAll(".del").forEach(b => b.addEventListener("click", async () => { const id = b.closest("tr").dataset.id; if (!confirm("確定刪除這筆主檔？")) return;
     try { await api(`/api/master/products/${id}`, { method: "DELETE" }); toast("已刪除"); loadProducts(); } catch (e) { toast(e.message, "err"); } }));
