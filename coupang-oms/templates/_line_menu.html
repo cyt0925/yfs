@@ -10,40 +10,49 @@
   lm_current = 現在在哪一頁的工具（例如 'master'），選單裡那一項會亮起來標「目前在這」。
   樣式全部自己帶，不用 Tailwind class（static/tailwind.css 是預編譯的，新 class 沒編進去不會生效）。
 #}
+{# color／accent 是從 logo 取的色：按鈕外框、字、選單標題都用它，跟 logo 呼應。瑪氏 logo 是藍＋青兩色，外框用漸層 #}
 {% set LINES = [
-  {"key": "pg",   "name": "寶僑", "logo": "line_pg.png",   "tools": [
+  {"key": "pg",   "name": "寶僑", "logo": "line_pg.png",   "color": "#175fab", "accent": "#175fab", "tools": [
       {"id": "master", "label": "商品主檔自動化", "icon": "bi-calendar3", "url": url_for('master.master_page'),
        "desc": "匯訂單彙總表，自動出總表、專案報價檔、改單統計"} ]},
-  {"key": "mars", "name": "瑪氏", "logo": "line_mars.png", "tools": []},
-  {"key": "cpg",  "name": "紙潔", "logo": "line_cpg.png",  "tools": []},
+  {"key": "mars", "name": "瑪氏", "logo": "line_mars.png", "color": "#000fb7", "accent": "#06d9be", "tools": []},
+  {"key": "cpg",  "name": "紙潔", "logo": "line_cpg.png",  "color": "#c90121", "accent": "#c90121", "tools": []},
 ] %}
 <style>
-  .lm { position:relative; display:inline-block; }
-  .lm-btn { display:inline-flex; align-items:center; gap:7px; padding:8px 14px; border-radius:10px; font-size:14px; font-weight:600; color:#fff;
+  .lm { position:relative; display:inline-block; --lc:#1d4ed8; --la:#1d4ed8; }
+  /* 合併版（其他頁）：一顆白底、深藍字的「線別工具」 */
+  .lm-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px; border-radius:10px; font-size:14px; font-weight:700; color:#fff;
             background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.45); cursor:pointer; line-height:1.2; white-space:nowrap; }
   .lm-btn:hover, .lm.open .lm-btn { background:rgba(255,255,255,.22); }
-  .lm-btn img { height:16px; width:auto; background:#fff; border-radius:4px; padding:1px 3px; }
-  .lm-btn .lm-logos { display:inline-flex; gap:3px; align-items:center; } .lm-btn .lm-logos img { height:14px; padding:1px 2px; }
+  .lm-btn .lm-logos { display:inline-flex; gap:3px; align-items:center; } .lm-btn .lm-logos img { height:14px; width:auto; background:#fff; border-radius:3px; padding:1px 2px; }
   .lm-btn .chev { font-size:11px; transition:transform .15s; } .lm.open .lm-btn .chev { transform:rotate(180deg); }
-  .lm-btn.soon { opacity:.72; } .lm-btn.soon .lm-tag { font-size:10.5px; font-weight:500; color:rgba(255,255,255,.75); border:1px solid rgba(255,255,255,.35); border-radius:6px; padding:1px 5px; }
+  /* 分開版（首頁）：一條線一顆，白底、外框和字都是那條線 logo 的顏色 */
+  .lm-split .lm-btn { color:var(--lc); background:linear-gradient(#fff,#fff) padding-box, linear-gradient(90deg, var(--lc), var(--la)) border-box;
+                      border:2px solid transparent; box-shadow:0 1px 2px rgba(0,0,0,.25); padding:6px 13px 6px 10px; }
+  .lm-split .lm-btn img { height:18px; width:auto; }
+  .lm-split .lm-btn:hover, .lm-split.open .lm-btn { background:linear-gradient(color-mix(in srgb, var(--lc) 9%, #fff), color-mix(in srgb, var(--lc) 9%, #fff)) padding-box, linear-gradient(90deg, var(--lc), var(--la)) border-box; }
+  .lm-split .lm-btn .chev { color:var(--la); }
+  .lm-split .lm-btn.soon { opacity:.85; } .lm-split .lm-btn.soon .lm-tag { font-size:10.5px; font-weight:600; color:var(--lc); background:color-mix(in srgb, var(--lc) 10%, #fff); border-radius:6px; padding:2px 6px; }
+  /* 下拉 */
   .lm-pop { position:absolute; right:0; top:calc(100% + 8px); z-index:80; background:#fff; color:#0f172a; border-radius:14px;
             box-shadow:0 18px 50px rgba(15,23,42,.28); border:1px solid #e2e8f0; padding:14px; display:none; gap:14px; }
-  .lm-pop.wide { min-width:640px; } .lm-pop.one { min-width:260px; }
+  .lm-split .lm-pop { left:0; right:auto; border-top:3px solid var(--lc); }
+  .lm-pop.wide { min-width:640px; } .lm-pop.one { min-width:270px; }
   .lm.open .lm-pop { display:flex; }
-  .lm-col { flex:1 1 0; min-width:190px; }
-  .lm-h { display:flex; align-items:center; gap:8px; font-weight:800; font-size:14px; color:#0f172a; padding:4px 8px 8px; border-bottom:2px solid #e2e8f0; margin-bottom:6px; }
+  .lm-col { flex:1 1 0; min-width:190px; --lc:#1d4ed8; }
+  .lm-h { display:flex; align-items:center; gap:8px; font-weight:800; font-size:14px; color:var(--lc); padding:4px 8px 8px; border-bottom:2px solid var(--lc); margin-bottom:6px; }
   .lm-h img { height:22px; width:auto; }
   .lm-item { display:flex; align-items:flex-start; gap:9px; padding:9px 10px; border-radius:10px; text-decoration:none; color:#0f172a; font-size:14px; font-weight:600; line-height:1.25; }
-  .lm-item i { color:#1d4ed8; margin-top:2px; }
+  .lm-item i { color:var(--lc); margin-top:2px; }
   .lm-item small { display:block; font-weight:400; color:#64748b; font-size:11.5px; margin-top:2px; }
-  a.lm-item:hover { background:#eff6ff; }
-  .lm-item.on { background:#dbeafe; } .lm-item.on::after { content:"目前在這"; font-size:10.5px; color:#1d4ed8; font-weight:600; margin-left:auto; white-space:nowrap; align-self:center; }
+  a.lm-item:hover { background:color-mix(in srgb, var(--lc) 8%, #fff); }
+  .lm-item.on { background:color-mix(in srgb, var(--lc) 14%, #fff); } .lm-item.on::after { content:"目前在這"; font-size:10.5px; color:var(--lc); font-weight:700; margin-left:auto; white-space:nowrap; align-self:center; }
   .lm-item.soon { color:#94a3b8; font-weight:500; cursor:default; } .lm-item.soon i { color:#cbd5e1; }
   @media (max-width: 760px) { .lm-pop, .lm-pop.wide { min-width:0; width:calc(100vw - 32px); flex-direction:column; right:auto; left:0; } }
 </style>
 
 {% macro column(line, current) %}
-  <div class="lm-col">
+  <div class="lm-col" style="--lc:{{ line.color }};--la:{{ line.accent }}">
     <div class="lm-h"><img src="{{ url_for('static', filename=line.logo) }}" alt="{{ line.name }}"> {{ line.name }}</div>
     {% for t in line.tools %}
       <a class="lm-item {{ 'on' if current == t.id else '' }}" href="{{ t.url }}" role="menuitem">
@@ -56,7 +65,7 @@
 
 {% if lm_mode == 'split' %}
   {% for line in LINES %}
-  <div class="lm lm-split" data-line="{{ line.key }}">
+  <div class="lm lm-split" data-line="{{ line.key }}" style="--lc:{{ line.color }};--la:{{ line.accent }}">
     <button type="button" class="lm-btn {{ '' if line.tools else 'soon' }}" aria-haspopup="true" aria-expanded="false"
             title="{{ line.name }}的工具{{ '' if line.tools else '（還沒有，準備中）' }}">
       <img src="{{ url_for('static', filename=line.logo) }}" alt=""> {{ line.name }}
