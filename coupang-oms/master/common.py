@@ -81,14 +81,18 @@ def _log(conn, line, po, sku, barcode, field, label, old, new, operator, source,
 # 人手改出貨數量／交貨日一定要選一個原因。選項寫死，不讓人自己打字——「沒車」「無車」
 # 「車不夠」打成三種，之後就統計不出來。選「其他」才要寫一句說明。
 CHANGE_REASONS = ["缺貨", "沒車", "酷澎要求", "其他"]
+TEST_REASON = "測試"        # 「這是測試，不算進統計」：正式站沒有測試站，同事試改單就勾這個；統計預設排除
 REASON_REQUIRED_MSG = "請選改單原因（缺貨／沒車／酷澎要求／其他）。"
 
 
 def _parse_reason(payload):
     """從請求裡拿 (原因, 說明)。沒給原因回 ("", "")，由呼叫端在真的有改到數量／日期時才擋；
-    給了但不在清單裡、或選「其他」沒寫說明 → ValueError。"""
-    reason = norm_text((payload or {}).get("reason"))
-    note = norm_text((payload or {}).get("reason_note"))
+    給了但不在清單裡、或選「其他」沒寫說明 → ValueError。is_test=true 就記成「測試」，不用選原因。"""
+    payload = payload or {}
+    note = norm_text(payload.get("reason_note"))
+    if payload.get("is_test") in (True, 1, "1", "true"):
+        return TEST_REASON, note
+    reason = norm_text(payload.get("reason"))
     if not reason:
         return "", ""
     if reason not in CHANGE_REASONS:
@@ -293,6 +297,7 @@ __all__ = [
     "_row",
     "_log",
     "CHANGE_REASONS",
+    "TEST_REASON",
     "REASON_REQUIRED_MSG",
     "_parse_reason",
     "_this_month",

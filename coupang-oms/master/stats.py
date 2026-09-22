@@ -14,6 +14,8 @@
 - 原因：只有我們改的才有（缺貨／沒車／酷澎要求／其他）；2026-09-22 以前的紀錄沒有原因，列「未填」。
 - 明細：每一次改單一列（時間、PO、誰、來源、改了什麼、原因），畫面上點任何數字都能看到它背後是哪幾次；
   Excel 也有「明細」分頁，主管想自己做樞紐分析就用那一頁。
+- 測試：原因記成「測試」的改單（同事在正式站試功能時勾的）預設不算，統計頁「含測試」勾了才算；
+  排除掉的次數另外回 test_events，畫面上寫一句「另有 N 次測試沒算」讓人知道有這回事。
 - 估計工時：每次改單大約幾分鐘由主管給（畫面上填），系統只是乘出來，不是系統決定的。
 資料從系統開始用（2026-09 中）才有，之前 Excel 時代的不在裡面。
 """
@@ -107,8 +109,13 @@ def _event_row(e, p):
             "reason": (e["reason"] or NO_REASON) if e["source"] == "manual" else "", "note": e["note"]}
 
 
-def _collect(conn, month_from, month_to, line_group):
-    """範圍內的 PO（keep）與它們的改單事件（events）。統計頁和明細 API 共用。"""
+def _include_test():
+    return request.args.get("include_test") in ("1", "true")
+
+
+def _collect(conn, month_from, month_to, line_group, include_test=False):
+    """範圍內的 PO（keep）與它們的改單事件（events）。統計頁和明細 API 共用。
+    回傳的第三個值是被排除的「測試」次數（include_test=True 時為 0）。"""
     cfg = _line_groups()
     rows = _rows(conn.execute("SELECT po_number, sku_id, line, delivery_date FROM mst_orders"))
     pos = {}
@@ -127,7 +134,7 @@ def _collect(conn, month_from, month_to, line_group):
         p["month"] = m
         keep[po] = p
     if not keep:
-        return keep, {}
+        return keep, {}, 0
     logs = _rows(conn.execute(
         """SELECT po_number, source, field, field_label, old_value, new_value, operator, note, reason, changed_at
            FROM mst_logs
@@ -136,14 +143,21 @@ def _collect(conn, month_from, month_to, line_group):
               OR (source = 'import' AND field = 'qty_ship' AND note LIKE ?)
               OR (source = 'manual' AND field IN ('qty_ship', 'delivery_date') AND note NOT LIKE ?))""",
         ("%已沒有這個品項%", f"{_RESTORE_PREFIX}%")))
-    return keep, _events([l for l in logs if l["po_number"] in keep])
+    events = _events([l for l in logs if l["po_number"] in keep])
+    if include_test:
+        return keep, events, 0
+    tests = [k for k, e in events.items() if e["source"] == "manual" and e["reason"] == TEST_REASON]
+    for k in tests:
+        events.pop(k)
+    return keep, events, len(tests)
 
 
-def _build_stats(conn, month_from, month_to, line_group):
-    keep, events = _collect(conn, month_from, month_to, line_group)
+def _build_stats(conn, month_from, month_to, line_group, include_test=False):
+    keep, events, n_test = _collect(conn, month_from, month_to, line_group, include_test)
+    reasons = CHANGE_REASONS + ([TEST_REASON] if include_test else []) + [NO_REASON]
     if not keep:
-        return {"months": [], "total": _finish_month(_empty_month("合計")), "reasons": CHANGE_REASONS + [NO_REASON],
-                "top_pos": [], "month_from": month_from, "month_to": month_to}
+        return {"months": [], "total": _finish_month(_empty_month("合計"), reasons), "reasons": reasons,
+                "top_pos": [], "month_from": month_from, "month_to": month_to, "test_events": 0}
 
     per_po = {po: {"events": 0, "coupang": 0, "manual": 0, "reasons": collections.Counter(), "kinds": collections.Counter()}
               for po in keep}
@@ -183,8 +197,8 @@ def _build_stats(conn, month_from, month_to, line_group):
             total["reasons"][k] = total["reasons"].get(k, 0) + v
         for k, v in m["kinds"].items():
             total["kinds"][k] = total["kinds"].get(k, 0) + v
-    out_months = [_finish_month(months[m]) for m in order if m in months]   # 合計要先加完才能收尾（收尾會把 SKU 集合換成數字）
-    total = _finish_month(total)
+    out_months = [_finish_month(months[m], reasons) for m in order if m in months]   # 合計要先加完才能收尾（收尾會把 SKU 集合換成數字）
+    total = _finish_month(total, reasons)
 
     top = sorted(((po, keep[po], per_po[po]) for po in keep if per_po[po]["events"]),
                  key=lambda x: (-x[2]["events"], x[0]))[:15]
@@ -193,8 +207,8 @@ def _build_stats(conn, month_from, month_to, line_group):
         "events": s["events"], "coupang": s["coupang"], "manual": s["manual"],
         "reasons": "、".join(f"{k}{v}" if v > 1 else k for k, v in s["reasons"].most_common()),
     } for po, p, s in top]
-    return {"months": out_months, "total": total, "reasons": CHANGE_REASONS + [NO_REASON],
-            "top_pos": top_pos, "month_from": month_from, "month_to": month_to}
+    return {"months": out_months, "total": total, "reasons": reasons,
+            "top_pos": top_pos, "month_from": month_from, "month_to": month_to, "test_events": n_test}
 
 
 def _event_rows(keep, events):
@@ -211,11 +225,11 @@ def _empty_month(label):
             "events": 0, "coupang": 0, "manual": 0, "reasons": {}, "kinds": {}}
 
 
-def _finish_month(m):
+def _finish_month(m, reasons=None):
     m["skus"] = len(m.pop("_skus"))
     m["changed_pct"] = round(m["changed_pos"] * 100 / m["pos"]) if m["pos"] else 0
     m["per_changed_po"] = round(m["events"] / m["changed_pos"], 1) if m["changed_pos"] else 0
-    m["reasons"] = {k: m["reasons"].get(k, 0) for k in CHANGE_REASONS + [NO_REASON]}
+    m["reasons"] = {k: m["reasons"].get(k, 0) for k in (reasons or CHANGE_REASONS + [NO_REASON])}
     m["kinds"] = {k: m["kinds"].get(k, 0) for k in KIND_KEYS}
     return m
 
@@ -228,10 +242,10 @@ def api_stats():
     line = norm_text(request.args.get("line"))
     conn = get_conn()
     try:
-        data = _build_stats(conn, month_from, month_to, line)
+        data = _build_stats(conn, month_from, month_to, line, _include_test())
     finally:
         conn.close()
-    data["line"] = line
+    data["line"] = line; data["include_test"] = _include_test()
     return jsonify(data)
 
 
@@ -244,10 +258,10 @@ def api_stats_events():
     line = norm_text(request.args.get("line"))
     conn = get_conn()
     try:
-        keep, events = _collect(conn, month_from, month_to, line)
+        keep, events, n_test = _collect(conn, month_from, month_to, line, _include_test())
     finally:
         conn.close()
-    return jsonify({"events": _event_rows(keep, events), "month_from": month_from, "month_to": month_to})
+    return jsonify({"events": _event_rows(keep, events), "month_from": month_from, "month_to": month_to, "test_events": n_test})
 
 
 @master_bp.route("/api/master/stats/export")
@@ -259,8 +273,8 @@ def api_stats_export():
     minutes = norm_int(request.args.get("minutes")) or 0
     conn = get_conn()
     try:
-        d = _build_stats(conn, month_from, month_to, line)
-        keep, events = _collect(conn, month_from, month_to, line)
+        d = _build_stats(conn, month_from, month_to, line, _include_test())
+        keep, events, n_test = _collect(conn, month_from, month_to, line, _include_test())
     finally:
         conn.close()
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -315,7 +329,8 @@ def api_stats_export():
 
     ws4 = wb.create_sheet("怎麼算的")
     for line_text in [
-        f"範圍：{month_from} ～ {month_to}" + (f"，線別 {line}" if line else "，全部線別"),
+        f"範圍：{month_from} ～ {month_to}" + (f"，線別 {line}" if line else "，全部線別")
+        + ("，含勾了「這是測試」的改單" if _include_test() else f"，不含勾了「這是測試」的改單（這段期間有 {n_test} 次）"),
         "PO 歸哪個月：看它目前的交貨日（多個日期取最早那天）。沒排日期的另列「未排日期」。",
         "被改過：這張 PO 在變動紀錄裡至少有一次改單事件。",
         "改單事件：同一張 PO、同一來源、同一時間的變動算一次（整張 PO 改期會一個品項記一筆，一次動作不能算很多次）。",

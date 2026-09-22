@@ -165,7 +165,7 @@
   .rsn-opts button { padding:12px 10px; font-size:15px; font-weight:700; color:var(--b800); background:#fff; border:1px solid var(--b200); border-radius:10px; cursor:pointer; }
   .rsn-opts button:hover { background:var(--b50, #f8fafc); }
   .rsn-opts button.on { background:var(--b700); color:#fff; border-color:var(--b700); }
-  .bd-reason { background:#fff7ed; color:#9a3412; }
+  .bd-reason { background:#fff7ed; color:#9a3412; } .bd-test { background:#f1f5f9; color:#64748b; }
   .st-n { color:var(--b700); font-weight:700; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
   .st-n:hover { color:var(--b900); background:var(--b50); }
   .dd { position:relative; }
@@ -341,6 +341,7 @@
       <label class="text-sm muted ml-2">線別</label><select id="st-line" class="sel"><option value="">全部線別</option></select>
       <label class="text-sm muted ml-3" title="這個數字是人估的，系統只是拿來乘。留 0 就不算工時">每次改單約</label>
       <input type="number" id="st-min" class="sel" min="0" step="5" style="width:70px;padding:4px 8px" value="0"><span class="text-sm muted">分鐘</span>
+      <label class="flex items-center gap-1 text-sm muted ml-3" title="同事在正式站試功能時勾了「這是測試」的改單，預設不算"><input type="checkbox" id="st-test"> 含測試</label>
       <div class="flex-1"></div>
       <a id="btn-export-stats" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
     </div>
@@ -357,7 +358,7 @@
         <div>「被改過」是這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期會一個品項記一筆，一次動作不能算很多次。</div>
         <div>「酷澎改的」是整合表上的出貨數量或交貨日跟上次不一樣，或品項從檔案裡消失。「我們改的」是人手改出貨數量或交貨日；恢復成整合表的數字不算。</div>
         <div>「改了什麼」分改數量、改交期、品項被拿掉三類。一次改單可能同時改數量和交期，三類各自算，加起來會比改單次數多。改數量再分下修、上修。</div>
-        <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。</div>
+        <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。改單時勾了「這是測試」的預設不算，上面勾「含測試」才會算進來。</div>
         <div>估計工時是改單次數乘上你填的分鐘數，分鐘數是人估的，不是系統算的。資料從系統開始用（2026 年 9 月中）才有。</div>
       </div>
     </details>
@@ -381,7 +382,7 @@
     <input type="file" id="file-import" accept=".xlsx" multiple class="hidden">
     <div id="imp-files" class="mt-3 hidden">
       <div class="flex items-center gap-2 flex-wrap text-sm">
-        <b>已加入的檔案</b><span class="kbd">再拖或再點一次可以繼續加（可以換資料夾），加完按右下「確認匯入」</span>
+        <b>已加入的檔案</b><span class="kbd">再拖或再點一次可以繼續加（可以換資料夾），加完按右下「確認匯入」。只看預覽不會寫進系統，想試試看可以放心按。</span>
         <button id="imp-files-clear" class="btn btn-g btn-sm" style="margin-left:auto"><i class="bi bi-x-circle"></i> 全部移除</button>
       </div>
       <div id="imp-files-list" class="flex gap-2 flex-wrap mt-2"></div>
@@ -429,6 +430,7 @@
     <div id="rsn-opts" class="rsn-opts"></div>
     <input id="rsn-note" class="txt mt-3 hidden" placeholder="簡單寫一下是什麼原因">
     <div id="rsn-msg" class="neg text-sm mt-2"></div>
+    <label class="flex items-center gap-2 mt-3 kbd" style="cursor:pointer"><input type="checkbox" id="rsn-test"> 這是測試，不算進統計</label>
   </div>
   <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="rsn-ok" class="btn btn-p" disabled><i class="bi bi-check2"></i> 確定</button></div>
 </dialog>

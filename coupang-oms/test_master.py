@@ -278,6 +278,23 @@ def main():
     check("改了什麼：改交期（我們）= 明細裡我們改交期的筆數", k["date_m"] == sum(1 for e in man if "date" in e["kinds"]), str(k))
     check("改了什麼：品項被拿掉（酷澎）≥ 1、下修 ≥ 1", k["gone_c"] >= 1 and k["qty_down"] >= 1, str(k))
     check("下修＋上修＋有上有下 = 改數量總次數", k["qty_down"] + k["qty_up"] + k["qty_mixed"] == k["qty_c"] + k["qty_m"], str(k))
+    # 「這是測試」：不用選原因、記成「測試」、統計預設不算
+    tpo = [x for x in od_pg["facets"]["pos"] if x["po_number"] not in (cross_po,) + tuple(two)][0]["po_number"]
+    tdet = client.get(f"/api/master/pos/{tpo}").get_json(); tr0 = tdet["rows"][0]
+    import time as _t; _t.sleep(1.05)
+    res = jput(client, f"/api/master/orders/{tr0['id']}", {"version": tr0["version"], "qty_ship": (tr0["qty_ship"] or 0) + 1, "is_test": True})
+    check("勾「這是測試」不用選原因也能存", res.status_code == 200, str(res.get_json())[:100])
+    tl = [l for l in client.get(f"/api/master/pos/{tpo}").get_json()["logs"] if l["field"] == "qty_ship"]
+    check("歷程原因記成「測試」", tl and tl[0]["reason"] == "測試", str(tl[:1]))
+    st2 = client.get("/api/master/stats?month=2026-09").get_json()
+    check("統計預設不算測試：改單次數沒變、另外回報 1 次測試", st2["total"]["events"] == st["total"]["events"] and st2["test_events"] == 1, f"{st2['total']['events']} vs {st['total']['events']}, test={st2['test_events']}")
+    check("原因清單裡預設沒有「測試」", "測試" not in st2["reasons"])
+    st3 = client.get("/api/master/stats?month=2026-09&include_test=1").get_json()
+    check("勾含測試：多 1 次、原因表多「測試」一列", st3["total"]["events"] == st["total"]["events"] + 1 and st3["total"]["reasons"].get("測試") == 1 and st3["test_events"] == 0, str(st3["total"]["reasons"]))
+    ev2 = client.get("/api/master/stats/events?month=2026-09").get_json()["events"]
+    check("明細預設也不含測試", len(ev2) == len(ev) and not any(e["reason"] == "測試" for e in ev2))
+    wbt = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2026-09").data))
+    check("Excel 說明頁寫了不含測試、有幾次", any("不含" in str(c.value) and "1 次" in str(c.value) for row in wbt["怎麼算的"].iter_rows() for c in row))
     res = client.get("/api/master/stats/export?month=2026-09&minutes=15")
     from urllib.parse import unquote
     check("匯出統計 Excel：200、是 xlsx、檔名帶月份", res.status_code == 200 and "spreadsheetml" in res.mimetype and "改單統計_2026-09" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition", ""))

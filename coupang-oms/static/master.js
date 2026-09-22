@@ -45,10 +45,12 @@ window.addEventListener("dragover", e => e.preventDefault()); window.addEventLis
 let REASONS = ["缺貨", "沒車", "酷澎要求", "其他"];
 function askReason(title, desc = "") {
   return new Promise(resolve => {
-    const dlg = $("#dlg-reason"), ok = $("#rsn-ok"), note = $("#rsn-note"), msg = $("#rsn-msg");
+    const dlg = $("#dlg-reason"), ok = $("#rsn-ok"), note = $("#rsn-note"), msg = $("#rsn-msg"), test = $("#rsn-test");
     let picked = "";
     $("#rsn-title").textContent = title || "為什麼要改？"; $("#rsn-desc").textContent = desc; msg.textContent = "";
-    note.value = ""; note.classList.add("hidden"); ok.disabled = true;
+    note.value = ""; note.classList.add("hidden"); ok.disabled = true; test.checked = false;
+    // 勾「這是測試」就不用選原因；統計預設不算這種
+    test.onchange = () => { ok.disabled = !(test.checked || picked); $("#rsn-opts").style.opacity = test.checked ? ".45" : ""; msg.textContent = ""; };
     $("#rsn-opts").innerHTML = REASONS.map(r => `<button type="button" data-r="${esc(r)}">${esc(r)}</button>`).join("");
     $("#rsn-opts").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
       picked = b.dataset.r; $("#rsn-opts").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
@@ -58,6 +60,7 @@ function askReason(title, desc = "") {
     const finish = v => { dlg.removeEventListener("close", onClose); dlg.close(); resolve(v); };
     const onClose = () => { dlg.removeEventListener("close", onClose); resolve(null); };
     ok.onclick = () => {
+      if (test.checked) { finish({ is_test: true, reason_note: note.value.trim() }); return; }
       if (!picked) return;
       if (picked === "其他" && !note.value.trim()) { msg.textContent = "選「其他」要簡單寫一下是什麼原因。"; note.focus(); return; }
       finish({ reason: picked, reason_note: note.value.trim() });
@@ -67,7 +70,7 @@ function askReason(title, desc = "") {
     dlg.showModal();
   });
 }
-const reasonBadge = l => l.reason ? ` <span class="badge bd-reason">${esc(l.reason)}</span>` : "";
+const reasonBadge = l => l.reason ? ` <span class="badge ${l.reason === "測試" ? "bd-test" : "bd-reason"}">${esc(l.reason)}</span>` : "";
 
 /* ── 分頁 ── */
 function setTab(name) {
@@ -722,7 +725,7 @@ async function loadStats() {
   if (!to || to < from) { to = from; $("#st-to").value = to; }
   const line = $("#st-line").value; const minutes = Math.max(0, Number($("#st-min").value) || 0);
   localStorage.setItem("mst_stat_min", String(minutes));
-  const qs = `month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`;
+  const qs = `month=${from}&month_to=${to}&line=${encodeURIComponent(line)}&include_test=${$("#st-test").checked ? 1 : 0}`;
   $("#btn-export-stats").href = `/api/master/stats/export?${qs}&minutes=${minutes}`;
   let d; try { d = await api(`/api/master/stats?${qs}`); } catch (e) { toast(e.message, "err"); return; }
   renderStats(d, minutes);
@@ -737,7 +740,7 @@ function renderStats(d, minutes) {
   const card = (title, num, unit, sub) => `<div class="kpi" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
   $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
     + card("被改過的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
-    + card("改單次數", stN(t.events, {}), "次", `酷澎改的 ${stN(t.coupang, { source: "import" })} · 我們改的 ${stN(t.manual, { source: "manual" })}`)
+    + card("改單次數", stN(t.events, {}), "次", `酷澎改的 ${stN(t.coupang, { source: "import" })} · 我們改的 ${stN(t.manual, { source: "manual" })}${d.test_events ? `<span class="kbd" title="改單時勾了「這是測試」的，預設不算；上面勾「含測試」才會算進來">另有 ${fmt(d.test_events)} 次測試沒算</span>` : ""}`)
     + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`) : card("估計工時", "—", "", "上面填「每次改單約幾分鐘」就會算"));
   const rows = d.months.concat(d.months.length > 1 ? [t] : []);
   const mf = m => m.month === "合計" ? {} : { month: m.month };
@@ -759,10 +762,10 @@ function renderStats(d, minutes) {
 /* 點數字 → 撈這段期間全部改單事件，照條件過濾後列出來 */
 let STEV = null;
 async function showStatEvents(f) {
-  const from = $("#st-from").value, to = $("#st-to").value || from, line = $("#st-line").value;
-  const key = `${from}|${to}|${line}`;
+  const from = $("#st-from").value, to = $("#st-to").value || from, line = $("#st-line").value, inc = $("#st-test").checked ? 1 : 0;
+  const key = `${from}|${to}|${line}|${inc}`;
   if (!STEV || STEV.key !== key) {
-    try { const d = await api(`/api/master/stats/events?month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`); STEV = { key, events: d.events }; }
+    try { const d = await api(`/api/master/stats/events?month=${from}&month_to=${to}&line=${encodeURIComponent(line)}&include_test=${inc}`); STEV = { key, events: d.events }; }
     catch (e) { toast(e.message, "err"); return; }
   }
   const list = STEV.events.filter(e => (!f.month || e.month === f.month) && (!f.source || e.source === f.source) && (!f.reason || e.reason === f.reason)
@@ -771,11 +774,11 @@ async function showStatEvents(f) {
     f.kind ? ({ qty: "改數量", date: "改交期", gone: "品項被拿掉" })[f.kind] : "", f.dir ? ({ down: "下修", up: "上修", mixed: "有上有下" })[f.dir] : "", f.reason ? `原因：${f.reason}` : ""].filter(Boolean);
   $("#stev-title").textContent = `改單明細 · ${list.length} 次`; $("#stev-sub").textContent = desc.join(" · ");
   $("#stev-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>誰</th><th>來源</th><th>改了什麼</th><th>原因</th></tr></thead><tbody>`
-    + (list.map(e => `<tr><td class="kbd" style="white-space:nowrap">${esc(e.when.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(e.po_number)}">${esc(e.po_number)}</a></td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge ${e.source === "import" ? "bd-blue" : "bd-gray"}">${e.source_label}</span></td><td style="max-width:480px">${esc(e.summary)}</td><td>${e.reason ? `<span class="badge bd-reason">${esc(e.reason)}</span>` : ""}${e.note ? `<div class="kbd">${esc(e.note)}</div>` : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="muted p-4 text-center">沒有符合的改單</td></tr>`) + `</tbody>`;
+    + (list.map(e => `<tr><td class="kbd" style="white-space:nowrap">${esc(e.when.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(e.po_number)}">${esc(e.po_number)}</a></td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge ${e.source === "import" ? "bd-blue" : "bd-gray"}">${e.source_label}</span></td><td style="max-width:480px">${esc(e.summary)}</td><td>${reasonBadge(e)}${e.note ? `<div class="kbd">${esc(e.note)}</div>` : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="muted p-4 text-center">沒有符合的改單</td></tr>`) + `</tbody>`;
   $("#stev-table").querySelectorAll(".stev-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
   $("#dlg-stev").showModal();
 }
-["#st-from", "#st-to", "#st-line", "#st-min"].forEach(sel => $(sel).addEventListener("change", () => { STEV = null; loadStats(); }));
+["#st-from", "#st-to", "#st-line", "#st-min", "#st-test"].forEach(sel => $(sel).addEventListener("change", () => { STEV = null; loadStats(); }));
 $("#st-min").value = localStorage.getItem("mst_stat_min") || "0";
 bindDownload("#btn-export-stats");
 
@@ -980,7 +983,7 @@ $("#btn-prod-save").addEventListener("click", async () => {
 /* ── 修改歷程 ── */
 async function loadLogs() {
   const d = await api(`/api/master/logs?q=${encodeURIComponent($("#lg-q").value.trim())}&limit=300`);
-  $("#lg-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>PO</th><th>國條</th><th>欄位</th><th>改前</th><th>改後</th><th>原因</th><th>說明</th></tr></thead><tbody>${d.logs.map(l => `<tr><td class="kbd">${esc(l.changed_at)}</td><td>${esc(l.operator)}</td><td><span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span></td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode)}</td><td>${esc(l.field_label)}</td><td>${esc(fmt(l.old_value))}</td><td><b>${esc(fmt(l.new_value))}</b></td><td>${l.reason ? `<span class="badge bd-reason">${esc(l.reason)}</span>` : ""}</td><td class="kbd">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="10" class="muted p-6 text-center">沒有紀錄</td></tr>`}</tbody>`;
+  $("#lg-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>PO</th><th>國條</th><th>欄位</th><th>改前</th><th>改後</th><th>原因</th><th>說明</th></tr></thead><tbody>${d.logs.map(l => `<tr><td class="kbd">${esc(l.changed_at)}</td><td>${esc(l.operator)}</td><td><span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span></td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode)}</td><td>${esc(l.field_label)}</td><td>${esc(fmt(l.old_value))}</td><td><b>${esc(fmt(l.new_value))}</b></td><td>${reasonBadge(l)}</td><td class="kbd">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="10" class="muted p-6 text-center">沒有紀錄</td></tr>`}</tbody>`;
 }
 $("#btn-logs").addEventListener("click", () => { $("#dlg-logs").showModal(); loadLogs(); });
 
