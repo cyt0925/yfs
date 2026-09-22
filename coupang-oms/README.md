@@ -177,7 +177,8 @@ coupang-oms/
 │   ├── products.py          ① 主檔清單／匯入（酷澎主檔、寶僑總表 → 匯出樣式）
 │   ├── summary.py           ③ 總表現算、匯出總表（底稿填入、自動插欄）
 │   ├── quotation.py         匯出專案報價檔
-│   └── admin_api.py         清除資料、匯入歷程、修改歷程
+│   ├── admin_api.py         清除資料、匯入歷程、修改歷程
+│   └── stats.py             ④ 改單統計（每月幾張 PO、改幾次、原因、匯出）
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔
 ├── defaults/                設定檔出廠預設值，只在第一次啟動、還沒有這份
 │                             設定時用來種資料（本機模式種進 DATA_DIR 底下

@@ -236,6 +236,19 @@ def main():
         pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         pg.click("#btn-clear"); pg.wait_for_timeout(500)
 
+        print("\n【4c】④ 改單統計分頁")
+        pg.click('.m-tab[data-tab="stats"]'); pg.wait_for_timeout(900)
+        check("四張卡：PO 張數／被改過的 PO／改單次數／估計工時", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4 and "被改過的 PO" in pg.inner_text("#st-kpi"))
+        check("剛剛改的那筆算進「我們改的」，原因表有缺貨", "我們改的 1" in pg.inner_text("#st-kpi") or "我們改的" in pg.inner_text("#st-kpi"))
+        check("每月表有 9 月那列", "2026-09" in pg.inner_text("#st-months"))
+        check("原因表列出缺貨／沒車／酷澎要求／其他／未填", all(r in pg.inner_text("#st-reasons") for r in ["缺貨", "沒車", "酷澎要求", "其他", "未填"]))
+        check("沒填分鐘數時估計工時顯示破折號", "—" in pg.inner_text("#st-kpi"))
+        pg.fill("#st-min", "15"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(700)
+        check("填 15 分鐘後算出估計工時、表格多一欄", "小時" in pg.inner_text("#st-kpi") and "估計工時" in pg.inner_text("#st-months"))
+        pg.click("#st-top .st-po >> nth=0"); pg.wait_for_timeout(700)
+        check("點改最多次的 PO 會打開 PO 視窗", pg.evaluate("document.getElementById('dlg-po').open")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+        pg.fill("#st-min", "0"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(500)
+
         print("\n【5】其他分頁與視窗")
         for tab in ["products", "summary", "orders"]:
             pg.click(f'.m-tab[data-tab="{tab}"]'); pg.wait_for_timeout(700)
@@ -254,7 +267,7 @@ def main():
         print("\n【6】匯出連結都能下載")
         cookies = {c["name"]: c["value"] for c in pg.context.cookies()}
         import urllib.request
-        for sel in ["#btn-export-daily", "#btn-export-2", "#btn-export-daily-2"]:
+        for sel in ["#btn-export-daily", "#btn-export-2", "#btn-export-daily-2", "#btn-export-stats"]:
             if sel != "#btn-export-daily":
                 pg.click('.m-tab[data-tab="summary"]'); pg.wait_for_timeout(400)
             href = pg.get_attribute(sel, "href")

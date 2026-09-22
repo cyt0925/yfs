@@ -73,7 +73,7 @@ const reasonBadge = l => l.reason ? ` <span class="badge bd-reason">${esc(l.reas
 function setTab(name) {
   state.tab = name;
   document.querySelectorAll(".m-tab").forEach(x => x.classList.toggle("active", x.dataset.tab === name));
-  ["orders","summary","products"].forEach(t => $("#tab-"+t).classList.toggle("hidden", t !== name));
+  ["orders","summary","products","stats"].forEach(t => $("#tab-"+t).classList.toggle("hidden", t !== name));
 }
 document.querySelectorAll(".m-tab").forEach(b => b.addEventListener("click", () => { setTab(b.dataset.tab); refresh(); }));
 async function loadMeta() {
@@ -87,6 +87,9 @@ async function loadMeta() {
   state.sumLine = sl.value; state.sumMonth = state.sumMonth || state.month; $("#sum-month").value = state.sumMonth; if (!$("#sum-exp-to").value || $("#sum-exp-to").value < state.sumMonth) $("#sum-exp-to").value = state.sumMonth;
   const pl = $("#prod-line"); const pv = pl.value;
   pl.innerHTML = `<option value="">全部線別</option>` + d.groups.map(g => `<option ${g === pv ? "selected" : ""}>${esc(g)}</option>`).join("");
+  const stl = $("#st-line"); const sv = stl.value;
+  stl.innerHTML = `<option value="">全部線別</option>` + d.groups.map(g => `<option ${g === sv ? "selected" : ""}>${esc(g)}</option>`).join("");
+  if (!$("#st-from").value) { $("#st-from").value = d.months[d.months.length - 1] || d.this_month; $("#st-to").value = d.months[0] || d.this_month; }
 }
 async function checkMaster() {
   try { const d = await api("/api/master/products"); const empty = !d.products.length; $("#no-master-banner").classList.toggle("hidden", !empty); return empty; }
@@ -94,7 +97,7 @@ async function checkMaster() {
 }
 function refresh() {
   checkMaster();
-  if (state.tab === "orders") loadOrders(); else if (state.tab === "summary") loadSummary(); else loadProducts();
+  if (state.tab === "orders") loadOrders(); else if (state.tab === "summary") loadSummary(); else if (state.tab === "stats") loadStats(); else loadProducts();
 }
 
 /* ════════════ ② 訂單明細 ════════════ */
@@ -710,6 +713,40 @@ $("#po-save").addEventListener("click", async () => {
   catch (e) { if (e.status === 409) { $("#dlg-po").close(); loadOrders(); } else $("#po-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
   finally { $("#po-save").disabled = false; }
 });
+
+/* ════════════ ④ 改單統計 ════════════
+   主管要的：一段期間幾張 PO、涉及幾個 SKU、幾張被改過（佔比）、改了幾次、酷澎改的還是我們改的、
+   我們改的原因分佈、改最多次的 PO。「每次改單約幾分鐘」是人填的，只拿來乘出估計工時。 */
+async function loadStats() {
+  let from = $("#st-from").value, to = $("#st-to").value; if (!from) return;
+  if (!to || to < from) { to = from; $("#st-to").value = to; }
+  const line = $("#st-line").value; const minutes = Math.max(0, Number($("#st-min").value) || 0);
+  localStorage.setItem("mst_stat_min", String(minutes));
+  const qs = `month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`;
+  $("#btn-export-stats").href = `/api/master/stats/export?${qs}&minutes=${minutes}`;
+  let d; try { d = await api(`/api/master/stats?${qs}`); } catch (e) { toast(e.message, "err"); return; }
+  renderStats(d, minutes);
+}
+function renderStats(d, minutes) {
+  const t = d.total; const hours = minutes ? (t.events * minutes / 60) : null;
+  const card = (title, num, unit, sub) => `<div class="kpi" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
+  $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
+    + card("被改過的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
+    + card("改單次數", fmt(t.events), "次", `酷澎改的 ${fmt(t.coupang)} · 我們改的 ${fmt(t.manual)}`)
+    + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`) : card("估計工時", "—", "", "上面填「每次改單約幾分鐘」就會算"));
+  const rows = d.months.concat(d.months.length > 1 ? [t] : []);
+  $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">被改過</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎改</th><th class="num">我們改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    + (rows.map(m => `<tr ${m.month === "合計" ? 'style="font-weight:700;background:#f8fafc"' : ""}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${fmt(m.items)}</td><td class="num">${fmt(m.skus)}</td><td class="num">${fmt(m.changed_pos)}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td><td class="num"><b>${fmt(m.events)}</b></td><td class="num">${fmt(m.coupang)}</td><td class="num">${fmt(m.manual)}</td>${minutes ? `<td class="num">${fmt(Math.round(m.events * minutes / 6) / 10)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="10" class="muted p-4 text-center">這段期間沒有訂單</td></tr>`) + `</tbody>`;
+  $("#st-reasons").innerHTML = `<thead><tr><th>原因</th>${rows.map(m => `<th class="num">${esc(m.month === "合計" ? "合計" : m.month.slice(5).replace(/^0/, "") + (m.month.length === 7 ? " 月" : ""))}</th>`).join("")}</tr></thead><tbody>`
+    + d.reasons.map(r => `<tr><td>${esc(r)}</td>${rows.map(m => `<td class="num">${m.reasons[r] ? fmt(m.reasons[r]) : '<span class="muted">0</span>'}</td>`).join("")}</tr>`).join("")
+    + `<tr style="font-weight:700;background:#f8fafc"><td>我們改的合計</td>${rows.map(m => `<td class="num">${fmt(m.manual)}</td>`).join("")}</tr></tbody>`;
+  $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎改</th><th class="num">我們改</th><th>原因</th></tr></thead><tbody>`
+    + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num"><b>${fmt(p.events)}</b></td><td class="num">${fmt(p.coupang)}</td><td class="num">${fmt(p.manual)}</td><td>${esc(p.reasons)}</td></tr>`).join("") || `<tr><td colspan="8" class="muted p-4 text-center">這段期間沒有被改過的 PO</td></tr>`) + `</tbody>`;
+  $("#st-top").querySelectorAll(".st-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
+}
+["#st-from", "#st-to", "#st-line", "#st-min"].forEach(sel => $(sel).addEventListener("change", loadStats));
+$("#st-min").value = localStorage.getItem("mst_stat_min") || "0";
+bindDownload("#btn-export-stats");
 
 /* ── 匯入訂單 ── */
 let pendingBatch = null;

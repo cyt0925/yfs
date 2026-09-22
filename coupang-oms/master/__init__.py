@@ -32,6 +32,7 @@ LINE_GROUPS_DEFAULT，不做設定面板。
 #   summary.py         ③ 總表：現算每日箱數、月配額、匯出總表（有底稿就照底稿填、缺的日期自動插欄）。
 #   quotation.py       匯出專案報價檔（一個交貨日一個分頁，A～R 欄）。
 #   admin_api.py       清除資料、匯入歷程（各次匯入新增／有變）、修改歷程查詢。
+#   stats.py           ④ 改單統計：每月幾張 PO、幾張被改過、改幾次、原因分佈、匯出 Excel（給主管算成本）。
 # 路由都掛在 common.master_bp 上，這裡把各模組 import 進來讓路由生效，並保留 `master.master_bp` 給 app.py 用。
 from .common import *  # noqa: F401,F403
 from .page import *  # noqa: F401,F403
@@ -41,6 +42,7 @@ from .products import *  # noqa: F401,F403
 from .summary import *  # noqa: F401,F403
 from .quotation import *  # noqa: F401,F403
 from .admin_api import *  # noqa: F401,F403
+from .stats import *  # noqa: F401,F403
 
 # 給測試與腳本用的內部名稱（保持跟舊的 master.py 一樣可以 master._xxx 拿到）
 from .page import master_page, api_lines  # noqa: F401
@@ -50,3 +52,4 @@ from .products import api_products, _upsert_product, api_save_product, api_delet
 from .summary import api_set_quota, _build_summary, api_summary, _template_meta, api_template_get, _REF_PART, _shift_ref_text, _shift_formula, _insert_column, _fill_template, api_export  # noqa: F401
 from .quotation import api_export_daily  # noqa: F401
 from .admin_api import api_reset, api_imports, api_logs  # noqa: F401
+from .stats import api_stats, api_stats_export, _build_stats  # noqa: F401

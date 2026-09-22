@@ -219,6 +219,7 @@
     <button class="m-tab" data-tab="products"><i class="bi bi-box-seam"></i> ① 商品主檔 <span class="kbd">先匯總表鋪底</span></button>
     <button class="m-tab active" data-tab="orders"><i class="bi bi-calendar3"></i> ② 訂單明細 <span class="kbd">匯訂單彙總表、改數量交期</span></button>
     <button class="m-tab" data-tab="summary"><i class="bi bi-table"></i> ③ 總表 <span class="kbd">自動算好</span></button>
+    <button class="m-tab" data-tab="stats"><i class="bi bi-bar-chart-line"></i> ④ 改單統計 <span class="kbd">幾張 PO、改幾次、為什麼</span></button>
   </div>
 
   <!-- ══════════ ① 商品主檔 ══════════ -->
@@ -328,6 +329,34 @@
     </div>
     <div class="flex gap-3 flex-wrap mb-4" id="sum-stats"></div>
     <div class="tbl-wrap"><table class="m" id="sum-table"></table></div>
+  </section>
+
+  <!-- ④ 改單統計：主管要看「一段期間幾張 PO、幾張被改過、改幾次、為什麼」 -->
+  <section id="tab-stats" class="hidden">
+    <div class="flex items-center gap-2 flex-wrap mb-4">
+      <label class="text-sm muted">從</label><input type="month" id="st-from" class="sel" style="padding:4px 8px">
+      <label class="text-sm muted">到</label><input type="month" id="st-to" class="sel" style="padding:4px 8px">
+      <label class="text-sm muted ml-2">線別</label><select id="st-line" class="sel"><option value="">全部線別</option></select>
+      <label class="text-sm muted ml-3" title="這個數字是人估的，系統只是拿來乘。留 0 就不算工時">每次改單約</label>
+      <input type="number" id="st-min" class="sel" min="0" step="5" style="width:70px;padding:4px 8px" value="0"><span class="text-sm muted">分鐘</span>
+      <div class="flex-1"></div>
+      <a id="btn-export-stats" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
+    </div>
+    <div class="grid gap-3 mb-4" id="st-kpi" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
+    <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
+      <div class="card p-4"><b class="text-sm">每個月</b><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+      <div class="card p-4"><b class="text-sm">我們改單的原因</b><span class="kbd ml-2">只有我們改的才有原因，酷澎不會講</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
+    </div>
+    <div class="card p-4 mb-4"><b class="text-sm">改最多次的 PO</b><div class="tbl-wrap mt-2"><table class="m" id="st-top"></table></div></div>
+    <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">這些數字怎麼算的</summary>
+      <div class="mt-2 space-y-1 muted">
+        <div>PO 歸哪個月看它目前的交貨日。沒排日期的另外列「未排日期」。</div>
+        <div>「被改過」是這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期會一個品項記一筆，一次動作不能算很多次。</div>
+        <div>「酷澎改的」是整合表上的出貨數量或交貨日跟上次不一樣，或品項從檔案裡消失。「我們改的」是人手改出貨數量或交貨日；恢復成整合表的數字不算。</div>
+        <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。</div>
+        <div>估計工時是改單次數乘上你填的分鐘數，分鐘數是人估的，不是系統算的。資料從系統開始用（2026 年 9 月中）才有。</div>
+      </div>
+    </details>
   </section>
 </main>
 

@@ -244,6 +244,35 @@ def main():
     g2 = next(r for r in client.get(f"/api/master/pos/{cross_po}").get_json()["rows"] if r["sku_id"] == gone)
     check("重新出現：標記解除", g2["missing_in_file"] == 0)
 
+    print("\n【7b】④ 改單統計：幾張 PO、幾張被改過、改幾次、為什麼")
+    st = client.get("/api/master/stats?month=2026-09").get_json()
+    all_pos = {r["po_number"] for r in orders(client, month="2026-09")["rows"]}
+    check("9 月 PO 張數 = 訂單明細裡不同 PO 數", st["total"]["pos"] == len(all_pos), f"{st['total']['pos']} vs {len(all_pos)}")
+    check("有品項數與 SKU 數，SKU 數 ≤ 品項數", st["total"]["items"] >= st["total"]["skus"] > 0)
+    check("被改過的 PO ≥ 1、佔比是整數百分比", st["total"]["changed_pos"] >= 1 and 0 < st["total"]["changed_pct"] <= 100)
+    check("改單次數 ≥ 被改過的 PO 數", st["total"]["events"] >= st["total"]["changed_pos"])
+    check("分得出酷澎改的（再匯入少一筆）與我們改的", st["total"]["coupang"] >= 1 and st["total"]["manual"] >= 1, str({k: st["total"][k] for k in ("coupang", "manual")}))
+    rs = st["total"]["reasons"]
+    check("原因分佈：缺貨／沒車／酷澎要求／其他都有、清單含「未填」", all(rs.get(k, 0) >= 1 for k in ("缺貨", "沒車", "酷澎要求", "其他")) and "未填" in st["reasons"], str(rs))
+    check("原因加總 = 我們改的次數", sum(rs.values()) == st["total"]["manual"], f"{sum(rs.values())} vs {st['total']['manual']}")
+    check("整張 PO 改期（很多品項）只算一次改單", st["total"]["events"] < len(orders(client, month="2026-09")["rows"]))
+    check("改最多次的 PO 排在前面、有原因字串", st["top_pos"] and st["top_pos"][0]["events"] >= st["top_pos"][-1]["events"] and any(t["reasons"] for t in st["top_pos"]), str(st["top_pos"][:1]))
+    st_pg = client.get("/api/master/stats?month=2026-09&line=寶僑").get_json()
+    check("線別篩選：寶僑的 PO 數 < 全部", 0 < st_pg["total"]["pos"] < st["total"]["pos"])
+    st_span = client.get("/api/master/stats?month=2026-07&month_to=2026-09").get_json()
+    check("跨月：每個月一列、合計另算", len(st_span["months"]) >= 1 and st_span["total"]["pos"] >= st["total"]["pos"] and all(m["month"] <= "2026-09" for m in st_span["months"]))
+    check("月份格式不對回 400", client.get("/api/master/stats?month=2026/09").status_code == 400)
+    res = client.get("/api/master/stats/export?month=2026-09&minutes=15")
+    from urllib.parse import unquote
+    check("匯出統計 Excel：200、是 xlsx、檔名帶月份", res.status_code == 200 and "spreadsheetml" in res.mimetype and "改單統計_2026-09" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition", ""))
+    wbs = openpyxl.load_workbook(io.BytesIO(res.data))
+    check("四個分頁：每月統計／改單原因／改最多次的 PO／怎麼算的", wbs.sheetnames == ["每月統計", "改單原因", "改最多次的 PO", "怎麼算的"], str(wbs.sheetnames))
+    ws1 = wbs["每月統計"]; hdr1 = [c.value for c in ws1[1]]
+    check("填了分鐘數就多一欄估計工時，最後一列是合計", "估計工時（每次 15 分鐘）" in hdr1 and ws1.cell(row=ws1.max_row, column=1).value == "合計")
+    check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == st["total"]["pos"])
+    res0 = client.get("/api/master/stats/export?month=2026-09")
+    check("沒填分鐘數就沒有估計工時欄", "估計工時" not in "".join(str(c.value) for c in openpyxl.load_workbook(io.BytesIO(res0.data))["每月統計"][1]))
+
     print("\n【8】7 月單線別檔也能一起進（資料照月份分）")
     res = upload(client, "/api/master/import/preview", JUL_XLSX); pvj = res.get_json()
     check("7 月檔 53 筆全部新增", pvj["new_count"] == 53)
