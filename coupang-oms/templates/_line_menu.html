@@ -5,8 +5,8 @@
   不放這裡，留在各頁原本的位置。之後新工具都往 LINES 裡加一行，上方那排按鈕不會再變長。
 
   兩種長相：
-    lm_mode = 'split'    首頁用：三顆按鈕（寶僑／瑪氏／紙潔各一顆，帶 logo），點哪顆就展開那條線的工具
-    lm_mode 不給         其他頁用：一顆「線別工具」，點開三欄
+    lm_mode 不給         一顆「線別工具」（白底、三個線別色點、不放 logo），點開三欄各帶 logo 與線別色。三頁都用這個
+    lm_mode = 'split'    三顆按鈕（一條線一顆、帶 logo）。做過，首頁太擠，Jerry 決定不用；留著以後版面夠寬再說
   lm_current = 現在在哪一頁的工具（例如 'master'），選單裡那一項會亮起來標「目前在這」。
   樣式全部自己帶，不用 Tailwind class（static/tailwind.css 是預編譯的，新 class 沒編進去不會生效）。
 #}
@@ -20,12 +20,13 @@
 ] %}
 <style>
   .lm { position:relative; display:inline-block; --lc:#1d4ed8; --la:#1d4ed8; }
-  /* 合併版（其他頁）：一顆白底、深藍字的「線別工具」 */
-  .lm-btn { display:inline-flex; align-items:center; gap:7px; padding:7px 14px; border-radius:10px; font-size:14px; font-weight:700; color:#fff;
-            background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.45); cursor:pointer; line-height:1.2; white-space:nowrap; }
-  .lm-btn:hover, .lm.open .lm-btn { background:rgba(255,255,255,.22); }
-  .lm-btn .lm-logos { display:inline-flex; gap:3px; align-items:center; } .lm-btn .lm-logos img { height:14px; width:auto; background:#fff; border-radius:3px; padding:1px 2px; }
-  .lm-btn .chev { font-size:11px; transition:transform .15s; } .lm.open .lm-btn .chev { transform:rotate(180deg); }
+  /* 合併版：一顆白底深字的「線別工具」，不放 logo，前面三個小色點是三條線的顏色 */
+  .lm-btn { display:inline-flex; align-items:center; gap:8px; padding:7px 14px 7px 12px; border-radius:10px; font-size:14px; font-weight:700; color:#0f172a;
+            background:#fff; border:2px solid #fff; cursor:pointer; line-height:1.2; white-space:nowrap; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .lm-btn:hover, .lm.open .lm-btn { background:#f1f5f9; }
+  .lm-btn .lm-dots { display:inline-flex; gap:3px; align-items:center; }
+  .lm-btn .lm-dots i { display:block; width:8px; height:8px; border-radius:50%; background:var(--d); }
+  .lm-btn .chev { font-size:11px; transition:transform .15s; color:#64748b; } .lm.open .lm-btn .chev { transform:rotate(180deg); }
   /* 分開版（首頁）：一條線一顆，白底、外框和字都是那條線 logo 的顏色 */
   .lm-split .lm-btn { color:var(--lc); background:linear-gradient(#fff,#fff) padding-box, linear-gradient(90deg, var(--lc), var(--la)) border-box;
                       border:2px solid transparent; box-shadow:0 1px 2px rgba(0,0,0,.25); padding:6px 13px 6px 10px; }
@@ -40,7 +41,8 @@
   .lm-pop.wide { min-width:640px; } .lm-pop.one { min-width:270px; }
   .lm.open .lm-pop { display:flex; }
   .lm-col { flex:1 1 0; min-width:190px; --lc:#1d4ed8; }
-  .lm-h { display:flex; align-items:center; gap:8px; font-weight:800; font-size:14px; color:var(--lc); padding:4px 8px 8px; border-bottom:2px solid var(--lc); margin-bottom:6px; }
+  .lm-h { display:flex; align-items:center; gap:8px; font-weight:800; font-size:14px; color:var(--lc); padding:8px 10px; border-radius:10px;
+          background:linear-gradient(90deg, color-mix(in srgb, var(--lc) 10%, #fff), color-mix(in srgb, var(--la) 10%, #fff)); border-bottom:2px solid var(--lc); margin-bottom:6px; }
   .lm-h img { height:22px; width:auto; }
   .lm-item { display:flex; align-items:flex-start; gap:9px; padding:9px 10px; border-radius:10px; text-decoration:none; color:#0f172a; font-size:14px; font-weight:600; line-height:1.25; }
   .lm-item i { color:var(--lc); margin-top:2px; }
@@ -77,7 +79,7 @@
 {% else %}
   <div class="lm" id="line-menu">
     <button type="button" class="lm-btn" id="lm-btn" aria-haspopup="true" aria-expanded="false" title="各線別自己的工具都在這裡">
-      <span class="lm-logos">{% for line in LINES %}<img src="{{ url_for('static', filename=line.logo) }}" alt="">{% endfor %}</span>
+      <span class="lm-dots">{% for line in LINES %}<i style="--d:linear-gradient(135deg, {{ line.color }}, {{ line.accent }})"></i>{% endfor %}</span>
       線別工具 <i class="bi bi-chevron-down chev"></i>
     </button>
     <div class="lm-pop wide" id="lm-pop" role="menu">{% for line in LINES %}{{ column(line, lm_current) }}{% endfor %}</div>
