@@ -262,11 +262,31 @@ def main():
     st_span = client.get("/api/master/stats?month=2026-07&month_to=2026-09").get_json()
     check("跨月：每個月一列、合計另算", len(st_span["months"]) >= 1 and st_span["total"]["pos"] >= st["total"]["pos"] and all(m["month"] <= "2026-09" for m in st_span["months"]))
     check("月份格式不對回 400", client.get("/api/master/stats?month=2026/09").status_code == 400)
+    ev = client.get("/api/master/stats/events?month=2026-09").get_json()["events"]
+    check("明細：一次改單一列，筆數 = 改單次數", len(ev) == st["total"]["events"], f"{len(ev)} vs {st['total']['events']}")
+    check("明細最新的在最上面", ev == sorted(ev, key=lambda e: (e["when"], e["po_number"]), reverse=True))
+    man = [e for e in ev if e["source"] == "manual"]
+    check("我們改的每一筆都有原因、有誰改、有改了什麼", man and all(e["reason"] and e["operator"] and e["summary"] and e["kind_labels"] for e in man), str(man[:1]))
+    q0 = [e for e in man if "qty" in e["kinds"] and "→0" in e["summary"]]
+    check("出貨改成 0 算下修", q0 and all(e["qty_dir"] == "down" for e in q0), str(q0[:1]))
+    other = [e for e in man if e["reason"] == "其他"]
+    check("「其他」的說明帶在明細裡", other and any("倉庫說要併車" in e["note"] for e in other), str(other[:1]))
+    cp = [e for e in ev if e["source"] == "import"]
+    check("酷澎改的那筆是「品項被拿掉」、沒有原因", cp and all("gone" in e["kinds"] and e["reason"] == "" for e in cp), str(cp[:1]))
+    k = st["total"]["kinds"]
+    check("改了什麼：改數量（我們）= 明細裡我們改數量的筆數", k["qty_m"] == sum(1 for e in man if "qty" in e["kinds"]), str(k))
+    check("改了什麼：改交期（我們）= 明細裡我們改交期的筆數", k["date_m"] == sum(1 for e in man if "date" in e["kinds"]), str(k))
+    check("改了什麼：品項被拿掉（酷澎）≥ 1、下修 ≥ 1", k["gone_c"] >= 1 and k["qty_down"] >= 1, str(k))
+    check("下修＋上修＋有上有下 = 改數量總次數", k["qty_down"] + k["qty_up"] + k["qty_mixed"] == k["qty_c"] + k["qty_m"], str(k))
     res = client.get("/api/master/stats/export?month=2026-09&minutes=15")
     from urllib.parse import unquote
     check("匯出統計 Excel：200、是 xlsx、檔名帶月份", res.status_code == 200 and "spreadsheetml" in res.mimetype and "改單統計_2026-09" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition", ""))
     wbs = openpyxl.load_workbook(io.BytesIO(res.data))
-    check("四個分頁：每月統計／改單原因／改最多次的 PO／怎麼算的", wbs.sheetnames == ["每月統計", "改單原因", "改最多次的 PO", "怎麼算的"], str(wbs.sheetnames))
+    check("六個分頁：每月統計／改單原因／改了什麼／改最多次的 PO／明細／怎麼算的", wbs.sheetnames == ["每月統計", "改單原因", "改了什麼", "改最多次的 PO", "明細", "怎麼算的"], str(wbs.sheetnames))
+    wsd = wbs["明細"]
+    check("明細分頁一次改單一列（含表頭）", wsd.max_row == len(ev) + 1 and [c.value for c in wsd[1]][:3] == ["時間", "月份", "PO 單號"], f"{wsd.max_row} vs {len(ev) + 1}")
+    wsk = wbs["改了什麼"]
+    check("改了什麼分頁最後一列是合計、下修欄對得上", wsk.cell(row=wsk.max_row, column=1).value == "合計" and wsk.cell(row=wsk.max_row, column=4).value == k["qty_down"])
     ws1 = wbs["每月統計"]; hdr1 = [c.value for c in ws1[1]]
     check("填了分鐘數就多一欄估計工時，最後一列是合計", "估計工時（每次 15 分鐘）" in hdr1 and ws1.cell(row=ws1.max_row, column=1).value == "合計")
     check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == st["total"]["pos"])

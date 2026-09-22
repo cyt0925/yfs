@@ -52,4 +52,4 @@ from .products import api_products, _upsert_product, api_save_product, api_delet
 from .summary import api_set_quota, _build_summary, api_summary, _template_meta, api_template_get, _REF_PART, _shift_ref_text, _shift_formula, _insert_column, _fill_template, api_export  # noqa: F401
 from .quotation import api_export_daily  # noqa: F401
 from .admin_api import api_reset, api_imports, api_logs  # noqa: F401
-from .stats import api_stats, api_stats_export, _build_stats  # noqa: F401
+from .stats import api_stats, api_stats_events, api_stats_export, _build_stats  # noqa: F401

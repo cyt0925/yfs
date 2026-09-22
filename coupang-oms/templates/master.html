@@ -166,6 +166,8 @@
   .rsn-opts button:hover { background:var(--b50, #f8fafc); }
   .rsn-opts button.on { background:var(--b700); color:#fff; border-color:var(--b700); }
   .bd-reason { background:#fff7ed; color:#9a3412; }
+  .st-n { color:var(--b700); font-weight:700; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
+  .st-n:hover { color:var(--b900); background:var(--b50); }
   .dd { position:relative; }
   .fbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fff; border:1px solid var(--line2); border-radius:12px; padding:8px 12px; }
   .fbar .flabel { font-size:12px; color:var(--muted); font-weight:600; margin-right:2px; }
@@ -343,9 +345,10 @@
       <a id="btn-export-stats" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
     </div>
     <div class="grid gap-3 mb-4" id="st-kpi" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
-    <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
-      <div class="card p-4"><b class="text-sm">每個月</b><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+    <div class="card p-4 mb-4"><b class="text-sm">每個月</b><span class="kbd ml-2">藍色數字都可以點，會列出背後是哪幾次改單</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+    <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
       <div class="card p-4"><b class="text-sm">我們改單的原因</b><span class="kbd ml-2">只有我們改的才有原因，酷澎不會講</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
+      <div class="card p-4"><b class="text-sm">改了什麼</b><span class="kbd ml-2">一次改單可能同時改數量和交期，所以加起來會比改單次數多</span><div class="tbl-wrap mt-2"><table class="m" id="st-kinds"></table></div></div>
     </div>
     <div class="card p-4 mb-4"><b class="text-sm">改最多次的 PO</b><div class="tbl-wrap mt-2"><table class="m" id="st-top"></table></div></div>
     <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">這些數字怎麼算的</summary>
@@ -353,6 +356,7 @@
         <div>PO 歸哪個月看它目前的交貨日。沒排日期的另外列「未排日期」。</div>
         <div>「被改過」是這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期會一個品項記一筆，一次動作不能算很多次。</div>
         <div>「酷澎改的」是整合表上的出貨數量或交貨日跟上次不一樣，或品項從檔案裡消失。「我們改的」是人手改出貨數量或交貨日；恢復成整合表的數字不算。</div>
+        <div>「改了什麼」分改數量、改交期、品項被拿掉三類。一次改單可能同時改數量和交期，三類各自算，加起來會比改單次數多。改數量再分下修、上修。</div>
         <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。</div>
         <div>估計工時是改單次數乘上你填的分鐘數，分鐘數是人估的，不是系統算的。資料從系統開始用（2026 年 9 月中）才有。</div>
       </div>
@@ -427,6 +431,12 @@
     <div id="rsn-msg" class="neg text-sm mt-2"></div>
   </div>
   <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="rsn-ok" class="btn btn-p" disabled><i class="bi bi-check2"></i> 確定</button></div>
+</dialog>
+
+<!-- 改單統計：點數字看明細 -->
+<dialog id="dlg-stev" style="max-width:1100px">
+  <div class="dlg-h"><b><i class="bi bi-list-ul"></i> <span id="stev-title">改單明細</span></b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b"><div id="stev-sub" class="text-sm muted mb-2"></div><div class="tbl-wrap" style="max-height:62vh"><table class="m" id="stev-table"></table></div></div>
 </dialog>
 
 <!-- 商品編輯 -->
