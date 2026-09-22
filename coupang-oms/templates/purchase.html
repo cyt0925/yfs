@@ -74,6 +74,7 @@
       </div>
     </div>
     <div class="flex-1"></div>
+    {% set lm_current = 'purchase' %}{% include '_line_menu.html' %}
     <a href="{{ url_for('index') }}"
        class="text-sm text-[#f7efe2] hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#D2AB75]/70 hover:bg-[#D2AB75]/20">
       <i class="bi bi-arrow-left"></i> 回訂單管理系統</a>

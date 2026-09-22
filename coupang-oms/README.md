@@ -179,6 +179,7 @@ coupang-oms/
 │   ├── quotation.py         匯出專案報價檔
 │   ├── admin_api.py         清除資料、匯入歷程、修改歷程
 │   └── stats.py             ④ 改單統計（每月幾張 PO、改幾次、原因、匯出）
+├── templates/_line_menu.html 三頁共用的「線別工具」選單（寶僑／瑪氏／紙潔）
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔
 ├── defaults/                設定檔出廠預設值，只在第一次啟動、還沒有這份
 │                             設定時用來種資料（本機模式種進 DATA_DIR 底下

@@ -96,6 +96,16 @@ def main():
         pg.evaluate("setMonth('2026-09')"); pg.wait_for_selector("#last-import:not(.hidden)"); pg.wait_for_timeout(600)
         check("訂單明細有資料", "筆" in pg.inner_text("#orders-count"))
 
+        print("\n【1b】線別工具選單（三頁共用）")
+        pg.click("#lm-btn"); pg.wait_for_timeout(200)
+        check("點「線別工具」展開、三欄：寶僑／瑪氏／紙潔", pg.evaluate("document.getElementById('line-menu').classList.contains('open')") and pg.eval_on_selector_all("#lm-pop .lm-h", "els => els.map(e => e.innerText.trim())") == ["寶僑", "瑪氏", "紙潔"])
+        check("寶僑底下有商品主檔自動化、而且標「目前在這」", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("商品主檔自動化"))
+        check("每欄都有 logo 圖", pg.eval_on_selector_all("#lm-pop .lm-h img", "els => els.every(i => i.complete && i.naturalWidth > 0)"))
+        pg.mouse.click(700, 500); pg.wait_for_timeout(200)
+        check("點外面收起", not pg.evaluate("document.getElementById('line-menu').classList.contains('open')"))
+        pg.click("#lm-btn"); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+        check("按 Esc 收起", not pg.evaluate("document.getElementById('line-menu').classList.contains('open')"))
+
         print("\n【2】篩選列")
         pg.click("#dd-line-btn"); pg.click('#dd-line input[data-v="寶僑"]'); pg.wait_for_timeout(600)
         check("勾線別後按鈕寫出選了什麼", pg.inner_text("#dd-line-n") == "寶僑", pg.inner_text("#dd-line-n"))
