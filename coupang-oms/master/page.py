@@ -26,5 +26,6 @@ def api_lines():
     finally:
         conn.close()
     groups = sorted({_group_of(r, cfg) for r in raws})
-    return jsonify({"groups": groups, "months": months, "this_month": _this_month()})
+    return jsonify({"groups": groups, "months": months, "this_month": _this_month(),
+                    "reasons": CHANGE_REASONS})
 

@@ -808,6 +808,7 @@ CREATE TABLE IF NOT EXISTS mst_logs (
     operator    TEXT NOT NULL,
     source      TEXT NOT NULL,           -- import / manual / system
     note        TEXT DEFAULT '',
+    reason      TEXT DEFAULT '',         -- 人手改出貨數量／交貨日的原因（缺貨／沒車／酷澎要求／其他），主管要統計改單成本用
     changed_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mst_logs_po ON mst_logs(po_number);
@@ -986,6 +987,10 @@ def _migrate_master_columns(conn):
                          ("date_format", "TEXT DEFAULT ''")):
             if col not in have:
                 conn.execute(f"ALTER TABLE mst_products ADD COLUMN {col} {ddl}")
+    # 2026-09-22：變動紀錄多一欄「原因」。人手改出貨數量或交貨日時一定要選（缺貨／沒車／
+    # 酷澎要求／其他），之後統計「一年改了幾次單、為什麼」才有東西可算。舊紀錄留空。
+    if _table_exists(conn, "mst_logs") and "reason" not in _cols(conn, "mst_logs"):
+        conn.execute("ALTER TABLE mst_logs ADD COLUMN reason TEXT DEFAULT ''")
     # v3 → v4：訂單列記住「哪一批匯入帶進來／最後改到」。用批次 id 而不是時間戳，因為同一秒
     # 內連按兩次確認匯入時間戳會撞在一起。舊資料用時間戳盡量回填。
     if _table_exists(conn, "mst_orders"):

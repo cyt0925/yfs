@@ -161,6 +161,11 @@
   .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
   .tbl-wrap { overflow:auto; max-height:70vh; border:1px solid var(--line2); border-radius:10px; background:#fff; }
   .kbd { font-size:11px; color:var(--muted); }
+  .rsn-opts { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .rsn-opts button { padding:12px 10px; font-size:15px; font-weight:700; color:var(--b800); background:#fff; border:1px solid var(--b200); border-radius:10px; cursor:pointer; }
+  .rsn-opts button:hover { background:var(--b50, #f8fafc); }
+  .rsn-opts button.on { background:var(--b700); color:#fff; border-color:var(--b700); }
+  .bd-reason { background:#fff7ed; color:#9a3412; }
   .dd { position:relative; }
   .fbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fff; border:1px solid var(--line2); border-radius:12px; padding:8px 12px; }
   .fbar .flabel { font-size:12px; color:var(--muted); font-weight:600; margin-right:2px; }
@@ -381,6 +386,18 @@
     <button data-close class="btn btn-g">關閉</button>
     <button id="po-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存修改</button>
   </div>
+</dialog>
+
+<!-- 改單原因：人手改出貨數量／交貨日前一定要選，主管之後要統計改單成本 -->
+<dialog id="dlg-reason" style="max-width:440px">
+  <div class="dlg-h"><b><i class="bi bi-question-circle"></i> <span id="rsn-title">為什麼要改？</span></b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-b">
+    <div id="rsn-desc" class="text-sm muted mb-3"></div>
+    <div id="rsn-opts" class="rsn-opts"></div>
+    <input id="rsn-note" class="txt mt-3 hidden" placeholder="簡單寫一下是什麼原因">
+    <div id="rsn-msg" class="neg text-sm mt-2"></div>
+  </div>
+  <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="rsn-ok" class="btn btn-p" disabled><i class="bi bi-check2"></i> 確定</button></div>
 </dialog>
 
 <!-- 商品編輯 -->

@@ -38,6 +38,37 @@ function dropzone(el, input, onFiles) {
 }
 window.addEventListener("dragover", e => e.preventDefault()); window.addEventListener("drop", e => e.preventDefault());
 
+/* ── 改單原因 ──
+   人手改出貨數量或交貨日之前先問一句為什麼（缺貨／沒車／酷澎要求／其他）。選項從後端來，
+   不讓人自己打字，統計才算得出來。回傳 {reason, reason_note}，取消回 null。
+   備註、恢復整合表數字／日期不問（那不是改單）。 */
+let REASONS = ["缺貨", "沒車", "酷澎要求", "其他"];
+function askReason(title, desc = "") {
+  return new Promise(resolve => {
+    const dlg = $("#dlg-reason"), ok = $("#rsn-ok"), note = $("#rsn-note"), msg = $("#rsn-msg");
+    let picked = "";
+    $("#rsn-title").textContent = title || "為什麼要改？"; $("#rsn-desc").textContent = desc; msg.textContent = "";
+    note.value = ""; note.classList.add("hidden"); ok.disabled = true;
+    $("#rsn-opts").innerHTML = REASONS.map(r => `<button type="button" data-r="${esc(r)}">${esc(r)}</button>`).join("");
+    $("#rsn-opts").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+      picked = b.dataset.r; $("#rsn-opts").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+      note.classList.toggle("hidden", picked !== "其他"); ok.disabled = false; msg.textContent = "";
+      if (picked === "其他") note.focus();
+    }));
+    const finish = v => { dlg.removeEventListener("close", onClose); dlg.close(); resolve(v); };
+    const onClose = () => { dlg.removeEventListener("close", onClose); resolve(null); };
+    ok.onclick = () => {
+      if (!picked) return;
+      if (picked === "其他" && !note.value.trim()) { msg.textContent = "選「其他」要簡單寫一下是什麼原因。"; note.focus(); return; }
+      finish({ reason: picked, reason_note: note.value.trim() });
+    };
+    note.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); ok.click(); } };
+    dlg.addEventListener("close", onClose);
+    dlg.showModal();
+  });
+}
+const reasonBadge = l => l.reason ? ` <span class="badge bd-reason">${esc(l.reason)}</span>` : "";
+
 /* ── 分頁 ── */
 function setTab(name) {
   state.tab = name;
@@ -47,7 +78,7 @@ function setTab(name) {
 document.querySelectorAll(".m-tab").forEach(b => b.addEventListener("click", () => { setTab(b.dataset.tab); refresh(); }));
 async function loadMeta() {
   const d = await api("/api/master/lines");
-  state.groups = d.groups;
+  state.groups = d.groups; if (d.reasons && d.reasons.length) REASONS = d.reasons;
   if (!state.month) state.month = localStorage.getItem("mst_month") || d.months[0] || d.this_month;
   $("#sel-month").value = state.month; if (!$("#exp-to").value || $("#exp-to").value < state.month) $("#exp-to").value = state.month;
   loadImportScopes();
@@ -562,6 +593,11 @@ function startInline(cell) {
     if (String(inp.value) === String(cur)) { restore(); return; }
     try {
       const body = { version: Number(tr.dataset.ver) }; body[field] = inp.value;
+      if (field === "qty_ship") {
+        const why = await askReason("出貨數量為什麼要改？", `${cur === "" ? "空" : fmt(cur)} → ${fmt(Number(inp.value))}`);
+        if (!why) { restore(); return; }
+        Object.assign(body, why);
+      }
       const d = await api(`/api/master/orders/${tr.dataset.id}`, J(body));
       await loadOrders();
       const fresh = document.querySelector(`tr[data-id="${tr.dataset.id}"] td[data-field="${field}"]`);
@@ -587,7 +623,9 @@ function bindOrderEdits() {
   }));
   list.querySelectorAll(".po-date").forEach(inp => inp.addEventListener("change", async () => {
     if (!inp.value) { inp.value = inp.dataset.old; return; }
-    try { const d = await api("/api/master/pos/date", J({ po_numbers: [inp.dataset.po], delivery_date: inp.value, expected: { [inp.dataset.po]: inp.dataset.old } }));
+    const why = await askReason("交貨日為什麼要改？", `PO ${inp.dataset.po}：${inp.dataset.old || "空"} → ${inp.value}`);
+    if (!why) { inp.value = inp.dataset.old; return; }
+    try { const d = await api("/api/master/pos/date", J({ po_numbers: [inp.dataset.po], delivery_date: inp.value, expected: { [inp.dataset.po]: inp.dataset.old }, ...why }));
       toast(`PO ${inp.dataset.po} 已改到 ${d.delivery_date}，${d.moved} 個品項一起搬過去`); loadOrders(); }
     catch (e) { if (e.status === 409) loadOrders(); else { toast(e.message, "err"); inp.value = inp.dataset.old; } }
   }));
@@ -610,8 +648,10 @@ async function batchMove(reset) {
   const pos = [...state.selected]; if (!pos.length) return;
   const date = $("#batch-date").value; if (!reset && !date) { toast("先選要改到哪一天。", "warn"); return; }
   const expected = {}; for (const r of state.rows) if (state.selected.has(r.po_number)) expected[r.po_number] = expected[r.po_number] ?? (r.delivery_date || "");
-  if (!confirm(reset ? `把 ${pos.length} 張 PO 的交貨日恢復成整合表的日期？` : `把 ${pos.length} 張 PO 全部改到 ${date}？每張單底下所有品項會一起搬。`)) return;
-  try { const d = await api("/api/master/pos/date", J({ po_numbers: pos, delivery_date: date, reset, expected })); toast(`${d.po_count} 張 PO、${d.moved} 個品項${reset ? "已恢復整合表日期" : "已改到 " + d.delivery_date}`); state.selected.clear(); loadOrders(); }
+  let why = {};
+  if (reset) { if (!confirm(`把 ${pos.length} 張 PO 的交貨日恢復成整合表的日期？`)) return; }
+  else { why = await askReason("交貨日為什麼要改？", `${pos.length} 張 PO 全部改到 ${date}，每張單底下所有品項會一起搬。`); if (!why) return; }
+  try { const d = await api("/api/master/pos/date", J({ po_numbers: pos, delivery_date: date, reset, expected, ...why })); toast(`${d.po_count} 張 PO、${d.moved} 個品項${reset ? "已恢復整合表日期" : "已改到 " + d.delivery_date}`); state.selected.clear(); loadOrders(); }
   catch (e) { if (e.status === 409) loadOrders(); else toast(e.message, "err"); }
 }
 $("#batch-apply").addEventListener("click", () => batchMove(false)); $("#batch-reset").addEventListener("click", () => batchMove(true));
@@ -639,7 +679,7 @@ async function openPo(po) {
     const box = Number(inp.dataset.box); const c = inp.closest("tr").querySelector(".po-cases b"); c.textContent = box && inp.value !== "" ? fmt(Number(inp.value) / box) : "—";
     let tot = 0; $("#po-table").querySelectorAll(".po-qty").forEach(i => { const b = Number(i.dataset.box); if (b && i.value !== "") tot += Number(i.value) / b; }); $("#po-total").textContent = fmt(tot);
   }));
-  $("#po-logs").innerHTML = PO.logs.length ? PO.logs.map(l => `<div style="border-bottom:1px solid var(--line2);padding:3px 0"><span class="muted">${esc(l.changed_at)}</span> <b>${esc(l.operator)}</b> <span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span><br>${esc(l.field_label)}${l.barcode ? ` <span class="mono kbd">${esc(l.barcode)}</span>` : ""}：${esc(fmt(l.old_value) || "空")} → <b>${esc(fmt(l.new_value) || "空")}</b>${l.note ? `<div class="kbd">${esc(l.note)}</div>` : ""}</div>`).join("") : `<div class="muted">還沒有修改紀錄</div>`;
+  $("#po-logs").innerHTML = PO.logs.length ? PO.logs.map(l => `<div style="border-bottom:1px solid var(--line2);padding:3px 0"><span class="muted">${esc(l.changed_at)}</span> <b>${esc(l.operator)}</b> <span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span>${reasonBadge(l)}<br>${esc(l.field_label)}${l.barcode ? ` <span class="mono kbd">${esc(l.barcode)}</span>` : ""}：${esc(fmt(l.old_value) || "空")} → <b>${esc(fmt(l.new_value) || "空")}</b>${l.note ? `<div class="kbd">${esc(l.note)}</div>` : ""}</div>`).join("") : `<div class="muted">還沒有修改紀錄</div>`;
   $("#dlg-po").showModal();
 }
 $("#po-date-reset").addEventListener("click", async () => {
@@ -658,6 +698,13 @@ $("#po-save").addEventListener("click", async () => {
   const body = { items }; const nd = $("#po-date").value;
   if (nd && nd !== $("#po-date").dataset.old) { body.delivery_date = nd; body.expected_date = $("#po-date").dataset.old; }
   if (!items.length && !body.delivery_date) { $("#po-msg").textContent = "沒有任何變動。"; return; }
+  const nQty = items.filter(it => "qty_ship" in it).length;
+  if (nQty || body.delivery_date) {
+    const parts = []; if (body.delivery_date) parts.push(`交貨日 ${$("#po-date").dataset.old || "空"} → ${nd}`); if (nQty) parts.push(`${nQty} 個品項的出貨數量`);
+    const why = await askReason("為什麼要改？", `PO ${PO.po_number}：${parts.join("、")}`);
+    if (!why) return;
+    Object.assign(body, why);
+  }
   $("#po-save").disabled = true;
   try { const d = await api(`/api/master/pos/${encodeURIComponent(PO.po_number)}/save`, J(body)); toast(`已儲存，記錄了 ${d.changed} 項變更`); $("#dlg-po").close(); loadOrders(); }
   catch (e) { if (e.status === 409) { $("#dlg-po").close(); loadOrders(); } else $("#po-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
@@ -865,7 +912,7 @@ $("#btn-prod-save").addEventListener("click", async () => {
 /* ── 修改歷程 ── */
 async function loadLogs() {
   const d = await api(`/api/master/logs?q=${encodeURIComponent($("#lg-q").value.trim())}&limit=300`);
-  $("#lg-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>PO</th><th>國條</th><th>欄位</th><th>改前</th><th>改後</th><th>說明</th></tr></thead><tbody>${d.logs.map(l => `<tr><td class="kbd">${esc(l.changed_at)}</td><td>${esc(l.operator)}</td><td><span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span></td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode)}</td><td>${esc(l.field_label)}</td><td>${esc(fmt(l.old_value))}</td><td><b>${esc(fmt(l.new_value))}</b></td><td class="kbd">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="9" class="muted p-6 text-center">沒有紀錄</td></tr>`}</tbody>`;
+  $("#lg-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>PO</th><th>國條</th><th>欄位</th><th>改前</th><th>改後</th><th>原因</th><th>說明</th></tr></thead><tbody>${d.logs.map(l => `<tr><td class="kbd">${esc(l.changed_at)}</td><td>${esc(l.operator)}</td><td><span class="badge ${l.source === "import" ? "bd-blue" : "bd-gray"}">${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span></td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode)}</td><td>${esc(l.field_label)}</td><td>${esc(fmt(l.old_value))}</td><td><b>${esc(fmt(l.new_value))}</b></td><td>${l.reason ? `<span class="badge bd-reason">${esc(l.reason)}</span>` : ""}</td><td class="kbd">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="10" class="muted p-6 text-center">沒有紀錄</td></tr>`}</tbody>`;
 }
 $("#btn-logs").addEventListener("click", () => { $("#dlg-logs").showModal(); loadLogs(); });
 

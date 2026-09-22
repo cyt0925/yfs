@@ -71,17 +71,23 @@ def api_orders():
     })
 
 
-def _apply_item_edit(conn, o, payload, operator):
-    """單一品項的編輯（出貨數量、備註、恢復整合表數字）。回傳 (sets, vals, changed)。"""
+def _apply_item_edit(conn, o, payload, operator, reason=None):
+    """單一品項的編輯（出貨數量、備註、恢復整合表數字）。回傳 (sets, vals, changed)。
+
+    reason = (原因, 說明)；沒傳就從 payload 自己拿。真的改到出貨數量時原因不能空——
+    備註、恢復整合表數字不用（恢復是把人改的撤掉，不是改單）。"""
     sets, vals, changed = [], [], 0
+    reason, reason_note = reason if reason is not None else _parse_reason(payload)
     if "qty_ship" in payload and payload.get("qty_ship") not in (None, ""):
         new = norm_int(payload.get("qty_ship"))
         if new is None or new < 0:
             raise ValueError("出貨數量要是 0 或正整數。")
         if not _same(o["qty_ship"], new):
+            if not reason:
+                raise ValueError(REASON_REQUIRED_MSG)
             sets += ["qty_ship = ?", "qty_ship_overridden = 1"]; vals.append(new)
             _log(conn, o["line"], o["po_number"], o["sku_id"], o["barcode"], "qty_ship", "出貨數量",
-                 o["qty_ship"], new, operator, "manual")
+                 o["qty_ship"], new, operator, "manual", reason_note, reason)
             changed += 1
     if "remarks" in payload:
         new = norm_text(payload.get("remarks"))
@@ -150,9 +156,15 @@ def api_delete_order(order_id):
         conn.close()
 
 
-def _move_po_dates(conn, pos, new_date, reset, expected, operator, note):
+def _move_po_dates(conn, pos, new_date, reset, expected, operator, note, reason=("", "")):
     """整張 PO（跨線別的全部品項）搬到新日期。expected = {po: 畫面上看到的舊日期}，
-    對不上就是有人先改過 → 丟 conflict。回傳搬了幾個品項。"""
+    對不上就是有人先改過 → 丟 conflict。回傳搬了幾個品項。
+    reason = (原因, 說明)：改到新日期一定要有；恢復整合表日期不用。"""
+    reason, reason_note = reason
+    if not reset and not reason:
+        raise ValueError(REASON_REQUIRED_MSG)
+    if reason_note:
+        note = f"{note}；{reason_note}" if note else reason_note
     moved = 0
     for po in pos:
         rows = _rows(conn.execute("SELECT * FROM mst_orders WHERE po_number = ?", (po,)))
@@ -172,7 +184,7 @@ def _move_po_dates(conn, pos, new_date, reset, expected, operator, note):
                 """UPDATE mst_orders SET delivery_date = ?, delivery_date_overridden = ?,
                    updated_at = ?, version = version + 1 WHERE id = ?""", (target, flag, stamp, r["id"]))
             _log(conn, r["line"], po, r["sku_id"], r["barcode"], "delivery_date", "交貨日",
-                 r["delivery_date"], target, operator, "manual", note)
+                 r["delivery_date"], target, operator, "manual", note, "" if reset else reason)
             moved += 1
     return moved
 
@@ -189,11 +201,18 @@ def api_update_po_date():
         return jsonify({"error": "缺少 PO 單號。"}), 400
     if not reset and not new_date:
         return jsonify({"error": "交貨日格式不對，請用 2026-09-17 這種寫法。"}), 400
+    try:
+        reason = _parse_reason(payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     conn = get_conn()
     try:
         try:
             moved = _move_po_dates(conn, pos, new_date, reset, expected, operator,
-                                   "恢復為整合表日期" if reset else ("批次改期" if len(pos) > 1 else "整張 PO 改期"))
+                                   "恢復為整合表日期" if reset else ("批次改期" if len(pos) > 1 else "整張 PO 改期"),
+                                   reason)
+        except ValueError as exc:
+            conn.rollback(); return jsonify({"error": str(exc)}), 400
         except LookupError as exc:
             conn.rollback(); return jsonify({"error": str(exc)}), 404
         except PermissionError as exc:
@@ -240,6 +259,10 @@ def api_po_save(po):
     payload = request.get_json(silent=True) or {}
     operator = _operator()
     items = payload.get("items") or []
+    try:
+        reason = _parse_reason(payload)   # 整個視窗一個原因，改期和每個品項共用
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     conn = get_conn()
     try:
         changed_total = 0
@@ -250,7 +273,10 @@ def api_po_save(po):
             try:
                 changed_total += _move_po_dates(conn, [po], new_date, bool(payload.get("reset_date")),
                                                 {po: payload.get("expected_date")}, operator,
-                                                "PO 視窗改期" if not payload.get("reset_date") else "恢復為整合表日期")
+                                                "PO 視窗改期" if not payload.get("reset_date") else "恢復為整合表日期",
+                                                reason)
+            except ValueError as exc:
+                conn.rollback(); return jsonify({"error": str(exc)}), 400
             except LookupError as exc:
                 conn.rollback(); return jsonify({"error": str(exc)}), 404
             except PermissionError as exc:
@@ -269,7 +295,7 @@ def api_po_save(po):
                 return jsonify({"error": "conflict",
                                 "message": f"品項 {o['sku_id']} 剛被別人改過，請重新載入後再存。"}), 409
             try:
-                sets, vals, changed = _apply_item_edit(conn, o, it, operator)
+                sets, vals, changed = _apply_item_edit(conn, o, it, operator, reason)
             except ValueError as exc:
                 conn.rollback(); return jsonify({"error": str(exc)}), 400
             if changed:

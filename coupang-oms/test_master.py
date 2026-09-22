@@ -165,10 +165,20 @@ def main():
     row = next(r for r in od_pg["rows"] if r["cases"] is not None and r["box_size"] and r["box_size"] > 1)
     oid, ver = row["id"], row["version"]
     res = jput(client, f"/api/master/orders/{oid}", {"version": ver, "qty_ship": row["box_size"] * 3})
-    check("改出貨數量 → 箱數 3、立旗標", res.status_code == 200 and res.get_json()["row"]["cases"] == 3 and res.get_json()["row"]["qty_ship_overridden"] == 1, str(res.get_json())[:100])
-    check("舊版本再存被擋（409）", jput(client, f"/api/master/orders/{oid}", {"version": ver, "qty_ship": 1}).status_code == 409)
+    unchanged = next(r for r in client.get(f"/api/master/pos/{row['po_number']}").get_json()["rows"] if r["id"] == oid)
+    check("改出貨數量沒選原因 → 擋下（400）、數字沒動", res.status_code == 400 and "原因" in res.get_json()["error"] and unchanged["qty_ship"] == row["qty_ship"], str(res.get_json())[:100])
+    res = jput(client, f"/api/master/orders/{oid}", {"version": ver, "qty_ship": row["box_size"] * 3, "reason": "車不夠"})
+    check("原因不在清單裡 → 擋下（400）", res.status_code == 400)
+    res = jput(client, f"/api/master/orders/{oid}", {"version": ver, "qty_ship": row["box_size"] * 3, "reason": "其他"})
+    check("選「其他」沒寫說明 → 擋下（400）", res.status_code == 400 and "其他" in res.get_json()["error"])
+    res = jput(client, f"/api/master/orders/{oid}", {"version": ver, "qty_ship": row["box_size"] * 3, "reason": "缺貨"})
+    check("帶原因改出貨數量 → 箱數 3、立旗標", res.status_code == 200 and res.get_json()["row"]["cases"] == 3 and res.get_json()["row"]["qty_ship_overridden"] == 1, str(res.get_json())[:100])
+    lg = [l for l in client.get(f"/api/master/pos/{row['po_number']}").get_json()["logs"] if l["field"] == "qty_ship"]
+    check("歷程記了原因「缺貨」", lg and lg[0]["reason"] == "缺貨", str(lg[:1]))
+    check("舊版本再存被擋（409）", jput(client, f"/api/master/orders/{oid}", {"version": ver, "qty_ship": 1, "reason": "缺貨"}).status_code == 409)
     v2 = res.get_json()["row"]["version"]
     res = jput(client, f"/api/master/orders/{oid}", {"version": v2, "remarks": "打單缺貨"})
+    check("改備註不用選原因", res.status_code == 200)
     check("備註存成 OP 備註", res.get_json()["row"]["remarks"] == "打單缺貨" and res.get_json()["row"]["remarks_overridden"] == 1)
     check("匯出備註 = Note＋OP 備註（若 Note 為空就只有 OP）", res.get_json()["row"]["export_note"].endswith("打單缺貨"))
     v3 = res.get_json()["row"]["version"]
@@ -179,25 +189,34 @@ def main():
     before = orders(client, month="2026-09", pos=cross_po)
     n_rows = before["count"]; old_date = before["rows"][0]["delivery_date"]
     res = jput(client, "/api/master/pos/date", {"po_numbers": [cross_po], "delivery_date": "2026-09-27", "expected": {cross_po: old_date}})
+    check("改期沒選原因 → 擋下（400）、日期沒動", res.status_code == 400 and orders(client, month="2026-09", pos=cross_po)["rows"][0]["delivery_date"] == old_date, str(res.get_json()))
+    res = jput(client, "/api/master/pos/date", {"po_numbers": [cross_po], "delivery_date": "2026-09-27", "expected": {cross_po: old_date}, "reason": "沒車"})
     check(f"跨線別 PO 改期：潔品＋紙品 {n_rows} 個品項一起搬", res.status_code == 200 and res.get_json()["moved"] == n_rows, str(res.get_json()))
+    lg = [l for l in client.get(f"/api/master/pos/{cross_po}").get_json()["logs"] if l["field"] == "delivery_date"]
+    check("改期歷程每一筆都記了原因「沒車」", lg and all(l["reason"] == "沒車" for l in lg), str(lg[:1]))
     after = orders(client, month="2026-09", pos=cross_po)
     check("全部在 9/27", all(r["delivery_date"] == "2026-09-27" for r in after["rows"]))
-    check("用舊日期當依據再改被擋（409）", jput(client, "/api/master/pos/date", {"po_numbers": [cross_po], "delivery_date": "2026-09-28", "expected": {cross_po: old_date}}).status_code == 409)
+    check("用舊日期當依據再改被擋（409）", jput(client, "/api/master/pos/date", {"po_numbers": [cross_po], "delivery_date": "2026-09-28", "expected": {cross_po: old_date}, "reason": "沒車"}).status_code == 409)
     two = [x["po_number"] for x in od_pg["facets"]["pos"][:2]]
     exp = {x["po_number"]: x["date"] for x in od_pg["facets"]["pos"][:2]}
-    res = jput(client, "/api/master/pos/date", {"po_numbers": two, "delivery_date": "2026-09-30", "expected": exp})
+    res = jput(client, "/api/master/pos/date", {"po_numbers": two, "delivery_date": "2026-09-30", "expected": exp, "reason": "其他", "reason_note": "倉庫說要併車"})
     check("批次改兩張 PO", res.status_code == 200 and res.get_json()["po_count"] == 2 and res.get_json()["moved"] > 0, str(res.get_json()))
     check("批次改完都在 9/30", all(r["delivery_date"] == "2026-09-30" for r in orders(client, month="2026-09", pos=",".join(two))["rows"]))
+    lg = client.get("/api/master/logs?q=倉庫說要併車").get_json()["logs"]
+    check("「其他」的說明接在歷程說明後面、原因記「其他」", lg and lg[0]["reason"] == "其他" and "批次改期" in lg[0]["note"], str(lg[:1]))
     res = jput(client, "/api/master/pos/date", {"po_numbers": two, "reset": True})
+    check("恢復整合表日期不用選原因", res.status_code == 200)
     check("批次恢復整合表日期", res.status_code == 200 and all(r["delivery_date_overridden"] == 0 for r in orders(client, month="2026-09", pos=",".join(two))["rows"]))
     detail = client.get(f"/api/master/pos/{cross_po}").get_json()
     check("PO 視窗：兩個原始線別、歸紙潔、有歷程", detail["lines"] == ["紙潔"] and set(detail["lines_raw"]) == {"CPG-潔品", "CPG-紙品"} and any(l["field"] == "delivery_date" for l in detail["logs"]))
     items = [{"id": r["id"], "version": r["version"], "qty_ship": 0, "remarks": "視窗改的"} for r in detail["rows"][:2]]
     res = jput(client, f"/api/master/pos/{cross_po}/save", {"items": items, "delivery_date": "2026-09-25", "expected_date": "2026-09-27"})
+    check("PO 視窗沒選原因 → 整批擋下（400），一筆都沒存", res.status_code == 400 and client.get(f"/api/master/pos/{cross_po}").get_json()["delivery_date"] == "2026-09-27", str(res.get_json()))
+    res = jput(client, f"/api/master/pos/{cross_po}/save", {"items": items, "delivery_date": "2026-09-25", "expected_date": "2026-09-27", "reason": "酷澎要求"})
     check("PO 視窗一次儲存：改期＋兩個品項", res.status_code == 200 and res.get_json()["changed"] >= n_rows + 4, str(res.get_json()))
     d2 = client.get(f"/api/master/pos/{cross_po}").get_json()
     check("視窗儲存後：日期 9/25、兩筆出貨 0 且備註「視窗改的」", d2["delivery_date"] == "2026-09-25" and sum(1 for r in d2["rows"] if r["qty_ship"] == 0 and r["remarks"] == "視窗改的") == 2)
-    res = jput(client, f"/api/master/pos/{cross_po}/save", {"items": [{"id": detail["rows"][0]["id"], "version": detail["rows"][0]["version"], "qty_ship": 5}]})
+    res = jput(client, f"/api/master/pos/{cross_po}/save", {"items": [{"id": detail["rows"][0]["id"], "version": detail["rows"][0]["version"], "qty_ship": 5}], "reason": "缺貨"})
     check("視窗用舊版本存被擋、整批不寫", res.status_code == 409)
 
     print("\n【7】再匯入：人改過的不覆蓋；消失的品項留列歸 0")

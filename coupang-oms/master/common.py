@@ -67,15 +67,35 @@ def _row(cur):
     return dict(r) if r is not None else None
 
 
-def _log(conn, line, po, sku, barcode, field, label, old, new, operator, source, note=""):
+def _log(conn, line, po, sku, barcode, field, label, old, new, operator, source, note="", reason=""):
     conn.execute(
         """INSERT INTO mst_logs
            (line, po_number, sku_id, barcode, field, field_label, old_value,
-            new_value, operator, source, note, changed_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            new_value, operator, source, note, reason, changed_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (line or "", po or "", sku or "", barcode or "", field, label,
          "" if old is None else str(old), "" if new is None else str(new),
-         operator, source, note, now()))
+         operator, source, note, reason or "", now()))
+
+
+# 人手改出貨數量／交貨日一定要選一個原因。選項寫死，不讓人自己打字——「沒車」「無車」
+# 「車不夠」打成三種，之後就統計不出來。選「其他」才要寫一句說明。
+CHANGE_REASONS = ["缺貨", "沒車", "酷澎要求", "其他"]
+REASON_REQUIRED_MSG = "請選改單原因（缺貨／沒車／酷澎要求／其他）。"
+
+
+def _parse_reason(payload):
+    """從請求裡拿 (原因, 說明)。沒給原因回 ("", "")，由呼叫端在真的有改到數量／日期時才擋；
+    給了但不在清單裡、或選「其他」沒寫說明 → ValueError。"""
+    reason = norm_text((payload or {}).get("reason"))
+    note = norm_text((payload or {}).get("reason_note"))
+    if not reason:
+        return "", ""
+    if reason not in CHANGE_REASONS:
+        raise ValueError(REASON_REQUIRED_MSG)
+    if reason == "其他" and not note:
+        raise ValueError("選「其他」要簡單寫一下是什麼原因。")
+    return reason, note
 
 
 def _this_month():
@@ -272,6 +292,9 @@ __all__ = [
     "_rows",
     "_row",
     "_log",
+    "CHANGE_REASONS",
+    "REASON_REQUIRED_MSG",
+    "_parse_reason",
     "_this_month",
     "_valid_month",
     "_cases",
