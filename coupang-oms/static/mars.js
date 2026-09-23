@@ -27,8 +27,8 @@ async function loadStatus() {
   $("#d-chips").querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { $("#d-from").value = $("#d-to").value = c.dataset.d; loadSplits(); }));
   if (!$("#d-from").value) { const first = up[0] || d.dates[d.dates.length - 1] || today(); $("#d-from").value = $("#d-to").value = first; }
 }
-$("#mp-file").addEventListener("change", async e => {
-  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+$("#mp-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadMaster(f); });
+async function uploadMaster(f) {
   const fd = new FormData(); fd.append("file", f); $("#mp-msg").innerHTML = `<span class="muted">上傳中…</span>`;
   try {
     const d = await api("/api/mars/products/import", { method: "POST", body: fd });
@@ -37,12 +37,20 @@ $("#mp-file").addEventListener("change", async e => {
       + (d.warnings.length ? `<details class="kbd"><summary>${d.warnings.length} 列有問題（跳過或標出來）</summary>${d.warnings.map(esc).join("<br>")}</details>` : "");
     toast("商品總表已更新"); await loadStatus(); loadSplits();
   } catch (err) { $("#mp-msg").innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
-});
+}
+/* 拖檔進卡片就等於按上傳 */
+function dropzone(el, onFiles) {
+  ["dragenter", "dragover"].forEach(ev => el.addEventListener(ev, e => { e.preventDefault(); el.classList.add("over"); }));
+  ["dragleave", "drop"].forEach(ev => el.addEventListener(ev, e => { e.preventDefault(); el.classList.remove("over"); }));
+  el.addEventListener("drop", e => { const fs = [...e.dataTransfer.files].filter(f => /\.xlsx?$/i.test(f.name)); if (fs.length) onFiles(fs); else toast("要拖 Excel 檔（.xlsx）", "err"); });
+}
+dropzone($("#dz-mp"), fs => uploadMaster(fs[0]));
+dropzone($("#dz-od"), fs => previewOrders(fs));
 
 /* ── 出貨彙總表：走 ② 訂單明細同一套匯入（預覽 → 確認），只是從這頁傳 ── */
 let ODP = null;
-$("#od-file").addEventListener("change", async e => {
-  const files = [...e.target.files]; e.target.value = ""; if (!files.length) return;
+$("#od-file").addEventListener("change", e => { const files = [...e.target.files]; e.target.value = ""; if (files.length) previewOrders(files); });
+async function previewOrders(files) {
   const fd = new FormData(); files.forEach(f => fd.append("file", f));
   $("#od-msg").innerHTML = `<span class="muted">讀檔中…</span>`; $("#od-preview").classList.add("hidden");
   try { ODP = await api("/api/master/import/preview", { method: "POST", body: fd }); } catch (err) { $("#od-msg").innerHTML = `<span class="neg">${esc(err.message)}</span>`; return; }
@@ -64,10 +72,12 @@ $("#od-file").addEventListener("change", async e => {
     $("#od-commit").disabled = true;
     try { const d = await api("/api/master/import/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batch_id: ODP.batch_id, add_missing_products: true }) });
       $("#od-preview").classList.add("hidden"); $("#od-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.removed ? `、消失歸 0 ${d.removed}` : ""}。</span>`;
-      toast("出貨彙總表匯入完成"); ODP = null; await loadStatus(); loadSplits();
+      toast("出貨彙總表匯入完成，已跳到這批的到貨日"); const ds = (ODP.dates || []).slice().sort(); ODP = null; await loadStatus();
+      if (ds.length) { $("#d-from").value = ds[0]; $("#d-to").value = ds[ds.length - 1]; }     // 匯完直接跳到這批的到貨日
+      loadSplits();
     } catch (err) { toast(err.message, "err"); $("#od-commit").disabled = false; }
   };
-});
+}
 
 /* ── 拆單 ── */
 ["#d-from", "#d-to"].forEach(s => $(s).addEventListener("change", loadSplits));
@@ -90,13 +100,21 @@ function render() {
   $("#btn-gen").disabled = !v.splits.length || !v.has_products || blocking.length > 0;
 
   let h = `<thead><tr><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
+  const ncol = v.split_by_unit ? 13 : 12;
+  let lastPo = null, gi = 0;
   for (const r of v.splits) {
     const key = r.split_key, warn = r.items.some(i => i.issues && i.issues.length);
     const dis = r.id ? "" : "disabled title=\"先按「產出拆單表」才能填\"";
-    h += `<tr class="sp" data-k="${esc(key)}">
+    if (r.po_number !== lastPo) {
+      lastPo = r.po_number; gi++;
+      const same = v.splits.filter(x => x.po_number === r.po_number);
+      const filled = same.filter(x => x.eip_po).length;
+      h += `<tr class="pog"><td colspan="${ncol}"><i class="bi bi-receipt"></i> PO ${esc(r.po_number)}<span class="kbd">${md(r.delivery_date)} 到貨 · ${esc(r.warehouse)} · 拆成 ${same.length} 份 · ${fmt(same.reduce((a, x) => a + (x.cases_total || 0), 0))} 箱 · 已回填 ${filled}／${same.length}</span></td></tr>`;
+    }
+    h += `<tr class="sp ${gi % 2 ? "g1" : "g0"}" data-k="${esc(key)}">
       <td><span class="badge st-${r.status}">${STATUS[r.status]}</span>${r.diff ? `<div class="kbd" style="max-width:220px;color:var(--bad)">${esc(r.diff)}</div>` : ""}</td>
       <td><span class="fn fname">${esc(r.filename)}</span> <button class="btn btn-o btn-sm cp" title="複製檔名" data-t="${esc(r.filename)}" style="padding:1px 6px"><i class="bi bi-clipboard"></i></button></td>
-      <td>${md(r.delivery_date)}</td><td class="fn">${esc(r.po_number)}</td><td>${esc(r.warehouse)}</td>
+      <td class="muted">${md(r.delivery_date)}</td><td class="fn muted">${esc(r.po_number)}</td><td class="muted">${esc(r.warehouse)}</td>
       <td><span class="cat cat-${esc(r.category)}">${esc(r.category || "?")}</span></td>${v.split_by_unit ? `<td>${esc(r.unit)}</td>` : ""}
       <td><span class="cat lbl-${r.label}">${r.label === "V" ? "需貼中標" : "不貼中標"}</span></td>
       <td class="num">${r.item_count}${warn ? ` <i class="bi bi-exclamation-triangle-fill" style="color:var(--warn)" title="有品項要注意，點開看"></i>` : ""}</td><td class="num"><b>${fmt(r.cases_total)}</b></td>
@@ -109,7 +127,7 @@ function render() {
       </tbody></table></td></tr>`;
     }
   }
-  if (!v.splits.length) h += `<tr><td colspan="13" class="muted" style="padding:24px;text-align:center">這段期間沒有瑪氏的訂單。訂單在「商品主檔自動化 ② 訂單明細」匯入。</td></tr>`;
+  if (!v.splits.length) h += `<tr><td colspan="${ncol}" class="muted" style="padding:24px;text-align:center">這段期間沒有瑪氏的訂單。換個到貨日，或把出貨彙總表拖到上面的框匯進來。</td></tr>`;
   $("#sp-table").innerHTML = h + "</tbody>";
   $("#sp-table").querySelectorAll("tr.sp").forEach(tr => tr.addEventListener("click", e => {
     if (e.target.closest("input, a, button")) return;

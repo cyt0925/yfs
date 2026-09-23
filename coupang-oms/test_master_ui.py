@@ -361,9 +361,12 @@ def main():
         check("傳有瑪氏的檔 → 預覽寫瑪氏幾列、另有哪些線別", "瑪氏" in pg.inner_text("#od-preview") and "另有" in pg.inner_text("#od-preview"), pg.inner_text("#od-preview")[:160])
         pg.click("#od-commit"); pg.wait_for_selector("#od-msg .bi-check-circle", timeout=30000); pg.wait_for_timeout(600)
         check("確認匯入：訂單狀態寫出最近一次匯入", "最近一次匯入" in pg.inner_text("#od-status") and "假_訂單彙總表_9月_第二次" in pg.inner_text("#od-status"), pg.inner_text("#od-status")[:160])
+        check("匯完自動跳到這批的到貨日範圍（9/1 開頭那個月）", pg.input_value("#d-from") < pg.input_value("#d-to") and pg.input_value("#d-from").startswith("2026-09"), f"{pg.input_value('#d-from')}～{pg.input_value('#d-to')}")
+        check("同一張 PO 的幾份用 PO 標題列包起來（標題列數＝PO 張數）", pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == len(set(pg.eval_on_selector_all("#sp-table tr.sp td:nth-child(4)", "els => els.map(e => e.innerText)"))) > 3)
         pg.fill("#d-from", "2026-09-18"); pg.fill("#d-to", "2026-09-18"); pg.dispatch_event("#d-to", "change"); pg.wait_for_timeout(800)
-        check("9/18：5 份拆單表、都是「還沒產出」、單號格子鎖住", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
-              and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and pg.is_disabled("#sp-table input.eip"))
+        check("9/18：5 份拆單表、都是「還沒產出」、單號格子鎖住、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
+              and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and pg.is_disabled("#sp-table input.eip")
+              and pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == 1 and "拆成 5 份" in pg.inner_text("#sp-table tr.pog"))
         pg.click("#sp-table tr.sp >> nth=0"); pg.wait_for_timeout(300)
         check("點一列展開看品項（下採料號、箱數）", pg.eval_on_selector_all("#sp-table tr.sub", "els => els.length") == 1 and "下採料號" in pg.inner_text("#sp-table tr.sub"))
         with pg.expect_download() as dl:

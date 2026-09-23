@@ -54,6 +54,14 @@
   #toasts { position:fixed; right:18px; top:78px; z-index:99; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
   .toast { background:#0f172a; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.25); max-width:520px; }
   .toast.err { background:var(--bad); }
+  .dz { border:2px dashed transparent; transition:border-color .15s, background .15s; }
+  .dz.over { border-color:var(--m7); background:var(--m0); }
+  /* 同一張酷澎 PO 會拆成好幾份：一條 PO 標題列包起來，底下幾份同一個底色、左邊一條藍線 */
+  table.t tr.pog td { background:var(--m1); color:var(--m9); font-weight:700; border-top:2px solid var(--m2); padding:6px 10px; }
+  table.t tr.pog td .kbd { color:var(--m8); font-weight:500; margin-left:10px; }
+  table.t tr.sp.g1 td { background:#fafbff; } table.t tr.sp td:first-child { box-shadow:inset 4px 0 0 var(--m2); }
+  table.t tr.sp.g1 td:first-child { box-shadow:inset 4px 0 0 var(--teal); }
+  table.t tr.sp:hover td { background:var(--m0); }
   .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
 </style>
 </head>
@@ -77,10 +85,10 @@
 <main class="max-w-[1560px] mx-auto px-5 py-5 space-y-4">
   <!-- 兩份要傳的檔：出貨彙總表（訂單）、瑪氏商品總表 -->
   <section class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
-    <div class="card p-4">
+    <div class="card p-4 dz" id="dz-od" title="把出貨彙總表拖進這裡也可以">
       <div class="flex items-center gap-3 flex-wrap">
         <div>
-          <b>出貨彙總表（訂單）</b>
+          <b>出貨彙總表（訂單）</b> <span class="kbd">拖進來或按右邊</span>
           <div id="od-status" class="text-sm muted mt-1">讀取中…</div>
         </div>
         <div class="flex-1"></div>
@@ -90,10 +98,10 @@
       <div id="od-preview" class="hidden mt-3 text-sm"></div>
       <div id="od-msg" class="text-sm mt-2"></div>
     </div>
-    <div class="card p-4">
+    <div class="card p-4 dz" id="dz-mp" title="把商品總表拖進這裡也可以">
       <div class="flex items-center gap-3 flex-wrap">
         <div>
-          <b>瑪氏商品總表</b>
+          <b>瑪氏商品總表</b> <span class="kbd">拖進來或按右邊</span>
           <div id="mp-status" class="text-sm muted mt-1">讀取中…</div>
         </div>
         <div class="flex-1"></div>
