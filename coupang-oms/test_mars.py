@@ -77,6 +77,10 @@ def main():
     print("\n【0】登入、頁面、選單")
     check("沒登入打 API → 401", c.get("/api/mars/status").status_code == 401)
     c.post("/login", data={"username": "小真", "password": "changeme123"})
+    # CI 把幾套測試跑在同一個 PostgreSQL 裡，前一套會留下訂單、匯入批次；這裡先清空，不依賴資料庫是空的
+    app_module._write_users(app_module.get_users(), {"Jerry", "小真"})
+    r = c.post("/api/master/reset", json={"confirm": "清空資料", "orders": True, "products": True})
+    check("開始前先清空訂單與主檔（含瑪氏的表）", r.status_code == 200, r.get_data(as_text=True)[:120])
     html = c.get("/mars").get_data(as_text=True)
     check("/mars 頁面打得開、有拆單與 JS 版本號", "瑪氏出貨" in html and "btn-gen" in html and "mars.js?v=" in html)
     check("線別工具的瑪氏欄有「瑪氏出貨」，不再是準備中", "/mars" in c.get("/master").get_data(as_text=True))
