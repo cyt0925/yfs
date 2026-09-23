@@ -123,7 +123,7 @@
       <span id="d-chips" class="flex gap-1 flex-wrap ml-2"></span>
       <div class="flex-1"></div>
       <button id="btn-gen" class="btn btn-p"><i class="bi bi-scissors"></i> 產出拆單表（下載）</button>
-      <button id="btn-po" class="btn btn-o" title="這段期間裡已填 EIP 單號與約倉時間的，全部套進瑪氏採購單範本打包下載"><i class="bi bi-file-earmark-text"></i> 下載瑪氏採購單（全部）</button>
+      <button id="btn-po" class="btn btn-o" title="這段期間裡已填 EIP 單號的，全部套進瑪氏採購單範本打包下載"><i class="bi bi-file-earmark-text"></i> 下載瑪氏採購單（全部）</button>
     </div>
     <div id="sum" class="sum text-sm mb-3"></div>
     <div id="alerts" class="space-y-2 mb-3"></div>
@@ -136,7 +136,7 @@
         <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>
         <div>下載的 zip 裡每份兩個檔：拆單表（.xlsx）、EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。</div>
         <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
-        <div>③ 瑪氏採購單：單號跟約倉時間都填了，每列最右邊的「採購單」就能按，套的是 V2 範本。下單日＝到貨日往前推 2 個工作天（扣週末和下面設定的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
+        <div>③ 瑪氏採購單：填了 EIP 單號、倉庫資料齊了，每列最右邊的「採購單」就能按，套的是 V2 範本。約倉時間不強制：沒填就先不放「進倉時間」那兩行，填了再下載一次就有。下單日＝到貨日往前推 2 個工作天（扣週末和下面設定的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
       </div>
     </details>
   </section>

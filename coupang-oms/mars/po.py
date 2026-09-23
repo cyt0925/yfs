@@ -13,7 +13,8 @@
 - D「單位需求(for嘜頭)」直接填出貨數量（酷澎下單的單位數）。Alice 的公式（盒＝每箱中盒數×箱數）在整合表箱入數跟
   商品總表不一樣時會算錯（M10403852：36 vs 酷澎要的 432）；嘜頭要寫的就是酷澎下單的數量。
 - 同一個下採料號（同單位）合成一列，箱數、出貨數量加總；組出商品在備註寫「訂單料號 M…」。
-- 一定要先填 EIP 採購單號（C5）跟約倉時間（特殊需求那行）才產得出來，缺哪個講清楚。
+- 一定要先填 EIP 採購單號（C5）才產得出來。約倉時間不強制（Jerry：採購單可能先出）：沒填時特殊需求裡用到約倉時間的那幾行整行省略，
+  之後填了重新下載就有。
 - 各倉的地址、電話、ship-to、聯絡人放 mst_mars_warehouses，畫面「採購單設定」裡填；地址沒填就用該倉訂單上的地址。
 - 檔名：永豐Mars採購單_箱_品類_中標_倉_酷澎PO(原單位).xlsx（Alice 的規則單位固定箱；盒、包那份在最後加括弧才不會撞名）。
 """
@@ -195,6 +196,8 @@ def special_text(settings, s, items):
     if s.get("label") == "V" and settings["label_line"]:
         lines.append(settings["label_line"])
     for ln in settings["special_text"].split("\n"):
+        if not slot and ("{約倉時間}" in ln or "{約倉開始}" in ln):
+            continue                                  # 約倉時間還沒填：這幾行整行不放，不留「進倉時間」後面空白
         ln = ln.replace("{約倉時間}", slot).replace("{約倉開始}", m.group(0) if m else slot).strip()
         if ln:
             lines.append(ln)
@@ -238,8 +241,6 @@ def po_missing(s, items, wh, settings=None):
     miss = []
     if not s.get("eip_po"):
         miss.append("還沒填 EIP 採購單號")
-    if not (s.get("slot_time") or "").strip():
-        miss.append("還沒填約倉時間")
     if s.get("category") not in CAT_FULL:
         miss.append("分不出品類")
     if not items:

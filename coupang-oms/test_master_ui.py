@@ -381,7 +381,7 @@ def main():
         pg.fill("#sp-table input.slot >> nth=0", "12:30~15:30（1台車）"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
         check("約倉時間存進去、重新整理還在", pg.eval_on_selector("#sp-table input.slot", "e => e.value") == "12:30~15:30（1台車）")
         # ③ 瑪氏採購單：倉庫資料沒填 → 按鈕鎖住、提示寫差什麼；到採購單設定填 TAO1 → 解鎖 → 下載
-        check("採購單按鈕：單號約倉都填了但 TAO1 倉庫資料還缺 → 鎖住、提示寫差什麼、上面有提醒", pg.is_disabled("#sp-table button.po >> nth=0")
+        check("採購單按鈕：單號填了但 TAO1 倉庫資料還缺 → 鎖住、提示寫差什麼、上面有提醒", pg.is_disabled("#sp-table button.po >> nth=0")
               and "TAO1" in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "TAO1" in pg.inner_text("#alerts"), pg.get_attribute("#sp-table button.po >> nth=0", "title"))
         check("其他沒填單號的那幾份：按鈕鎖住、提示寫還沒填 EIP 採購單號", "EIP" in pg.get_attribute("#sp-table button.po >> nth=1", "title"))
         pg.click("#ps-details summary"); pg.wait_for_selector("#wh-table input.wh"); pg.wait_for_timeout(200)
