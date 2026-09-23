@@ -706,6 +706,13 @@ def main():
     tl = [l for l in client.get("/api/master/logs?q=" + b0["brand"] + "&limit=1000").get_json()["logs"] if l["field"] in ("brand_target_giv", "brand_rebate_target")]
     check("填目標有記歷程（填、改 REBATE、清掉各一筆）", len(tl) >= 3, str([(l["field"], l["old_value"], l["new_value"]) for l in tl][:4]))
 
+    conn = db.get_conn()
+    conn.execute("INSERT INTO mst_brand_targets (line, month, brand, target_giv, updated_by, updated_at) VALUES (?,?,?,?,?,?)", ("寶僑", "2026-11", "舊版月目標", 777.0, "t", "t"))
+    conn.commit(); db._migrate_master_columns(conn); conn.commit()
+    moved = conn.execute("SELECT month, target_giv FROM mst_brand_targets WHERE brand = ?", ("舊版月目標",)).fetchall()
+    conn.execute("DELETE FROM mst_brand_targets WHERE brand = ?", ("舊版月目標",)); conn.commit(); conn.close()
+    check("升級：前一版用月份存的品牌目標（2026-11）搬到那一季（2026-10）", [(r["month"], r["target_giv"]) for r in moved] == [("2026-10", 777.0)], str([tuple(r) for r in moved]))
+
     print("\n【12f】匯出總表：畫面上的數字要跟匯出的一樣（GIV／NIV、供需、庫存、品牌目標填回底稿；附系統看板）")
     jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": 50000})
     bd = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); rows = {r["barcode"]: r for r in bd["rows"]}

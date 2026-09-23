@@ -1068,6 +1068,23 @@ def _migrate_master_columns(conn):
                        WHERE b.committed = 1 AND b.committed_at = mst_orders.updated_at)
                    WHERE last_batch_id IS NULL""")
 
+    # 2026-09-23：品牌目標改成一季一個（鍵用季的第一個月 01／04／07／10）。前一版用月份存的，
+    # 搬到那一季；那一季已經有值就保留季的、丟掉月的。只在 Python 裡算季，SQL 不用 LIKE。
+    if _table_exists(conn, "mst_brand_targets"):
+        for r in conn.execute("SELECT id, line, month, brand FROM mst_brand_targets").fetchall():
+            m = r["month"] or ""
+            if len(m) != 7 or not m[5:7].isdigit():
+                continue
+            q = f"{m[:4]}-{((int(m[5:7]) - 1) // 3) * 3 + 1:02d}"
+            if q == m:
+                continue
+            clash = conn.execute("SELECT id FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?",
+                                 (r["line"], q, r["brand"])).fetchone()
+            if clash:
+                conn.execute("DELETE FROM mst_brand_targets WHERE id = ?", (r["id"],))
+            else:
+                conn.execute("UPDATE mst_brand_targets SET month = ? WHERE id = ?", (q, r["id"]))
+
     # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，一次性搬成旗標並清空。
     if _table_exists(conn, "mst_products"):
         conn.execute(
