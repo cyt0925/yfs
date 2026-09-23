@@ -280,7 +280,9 @@ def main():
     f2 = next(x for x in v["splits"] if x["id"] == s2["id"])          # 9/30、已填 PO202609301、還沒填約倉時間
     check("清單帶每份差什麼才能產採購單：這份只差約倉時間", f2["po_missing"] == ["還沒填約倉時間"], str(f2["po_missing"]))
     check("9/29 那幾份：沒填 EIP 單號、沒填約倉時間", all("還沒填 EIP 採購單號" in x["po_missing"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"))
-    check("檔名照 Alice 的規則：永豐Mars採購單_單位_品類_中標_倉_酷澎PO", f2["po_filename"] == f"永豐Mars採購單_{f2['unit']}_{f2['category']}_{'需貼中標' if f2['label'] == 'V' else '不貼中標'}_TAO3_13000000699901.xlsx", f2["po_filename"])
+    tail = f"({f2['unit']})" if f2["unit"] != "箱" else ""
+    check("檔名照 Alice 的規則、單位固定箱：永豐Mars採購單_箱_品類_中標_倉_酷澎PO；盒、包那份最後加(原單位)", f2["po_filename"] == f"永豐Mars採購單_箱_{f2['category']}_{'需貼中標' if f2['label'] == 'V' else '不貼中標'}_TAO3_13000000699901{tail}.xlsx", f2["po_filename"])
+    check("本來就是箱的那份不加括弧", all(("(" in x["po_filename"]) == (x["unit"] != "箱") and "_箱_" in x["po_filename"] for x in v["splits"]), str([x["po_filename"] for x in v["splits"]]))
     r = c.get(f"/api/mars/splits/{s2['id']}/po")
     check("差東西時下載 → 400 講清楚差什麼", r.status_code == 400 and "約倉時間" in r.get_json()["error"], str(r.get_json()))
     put(s2["id"], {"slot_time": "12:30~15:30（1台車）"})

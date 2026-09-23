@@ -392,7 +392,7 @@ def main():
         check("採購單按鈕解鎖、統計寫 1／5 可產瑪氏採購單", not pg.is_disabled("#sp-table button.po >> nth=0") and "1／5 可產瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
         with pg.expect_download() as dl:
             pg.click("#sp-table button.po >> nth=0")
-        check("按採購單 → 下載 永豐Mars採購單_…_TAO1_PO.xlsx", dl.value.suggested_filename.startswith("永豐Mars採購單_") and dl.value.suggested_filename.endswith("_TAO1_13000000600028.xlsx"), dl.value.suggested_filename)
+        check("按採購單 → 下載 永豐Mars採購單_箱_…_TAO1_PO(盒).xlsx", dl.value.suggested_filename.startswith("永豐Mars採購單_箱_") and dl.value.suggested_filename.endswith("_TAO1_13000000600028(盒).xlsx"), dl.value.suggested_filename)
         with pg.expect_download() as dl:
             pg.click("#btn-po")
         check("「下載瑪氏採購單（全部）」→ zip", dl.value.suggested_filename == "瑪氏採購單_20260918.zip", dl.value.suggested_filename)

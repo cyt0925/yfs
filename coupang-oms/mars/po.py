@@ -15,7 +15,7 @@
 - 同一個下採料號（同單位）合成一列，箱數、出貨數量加總；組出商品在備註寫「訂單料號 M…」。
 - 一定要先填 EIP 採購單號（C5）跟約倉時間（特殊需求那行）才產得出來，缺哪個講清楚。
 - 各倉的地址、電話、ship-to、聯絡人放 mst_mars_warehouses，畫面「採購單設定」裡填；地址沒填就用該倉訂單上的地址。
-- 檔名：永豐Mars採購單_單位_品類_中標_倉_酷澎PO.xlsx（Alice 的規則；單位那段照拆單的單位，才不會盒跟包撞名）。
+- 檔名：永豐Mars採購單_箱_品類_中標_倉_酷澎PO(原單位).xlsx（Alice 的規則單位固定箱；盒、包那份在最後加括弧才不會撞名）。
 """
 import copy
 import datetime as _dt
@@ -250,8 +250,10 @@ def po_missing(s, items, wh, settings=None):
 
 
 def po_filename(s):
-    unit = s["unit"] if SPLIT_BY_UNIT else "箱"
-    return f"永豐Mars採購單_{unit}_{s['category'] or '品類不明'}_{label_text(s['label'])}_{s['warehouse']}_{s['po_number']}.xlsx"
+    """單位那段照 Alice 固定寫「箱」（給瑪氏看的就是箱）；依單位拆時同 PO 會有盒、包兩份，
+    原本的單位放最後面括弧裡才不會撞名，也看得出是哪份（Jerry 定的）。本來就是箱的不加。"""
+    tail = f"({s['unit']})" if SPLIT_BY_UNIT and s["unit"] and s["unit"] != "箱" else ""
+    return f"永豐Mars採購單_箱_{s['category'] or '品類不明'}_{label_text(s['label'])}_{s['warehouse']}_{s['po_number']}{tail}.xlsx"
 
 
 def _copy_style(src, dst):
