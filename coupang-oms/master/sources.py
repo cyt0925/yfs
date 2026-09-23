@@ -9,7 +9,7 @@ BH～BJ 欄指庫存銷售表）。系統接手後改成「檔案拖進同一個
   supply       表頭有 SKU ID，且有「N月supply cs」／「N月demand cs」
   stock        表頭有「Y26 N月…下單總箱數」或「…實銷總箱數」（Y26 = 2026）
   master_price 表頭同時有 Barcode、GIV、NIV，而且沒有總表才有的 Supply_CS／M/D交貨 欄
-  sheet        寶僑總表 Sheet1（走原本的主檔匯入），這裡只多吸 K／L／M～R 幾欄
+  sheet        寶僑總表 Sheet1（走原本的主檔匯入），這裡多吸 K／L／M～R 幾欄，和右邊品牌區的 目標／REBATE目標（季）
 
 年份：supply 表與總表的月份欄只寫「10月」「(Oct)」沒有年，取離今天最近的那一年（±6 個月內）。
 來源格子是空白、#N/A、#REF 一律不覆蓋，只算進 skipped；來源沒有的商品不新建主檔，只回報。
@@ -131,7 +131,7 @@ def _set_price(conn, barcode, cur, giv, niv, operator, fname):
     for field, label, new in (("giv", "GIV", giv), ("niv", "NIV", niv)):
         if new is None:
             continue
-        new = round(new, 4)
+        new = float(new)      # 原樣存，不四捨五入：匯出要跟來源檔一模一樣（NIV 常有 5 位小數）
         if not _same(cur.get(field), new):
             sets.append(f"{field} = ?"); vals.append(new); changed = True
             _log(conn, "", "", cur.get("sku_id") or "", barcode, field, label, cur.get(field), new, operator, "import", fname)
@@ -259,10 +259,26 @@ def import_stock(conn, ws, hdr_idx, headers, operator, fname):
             "not_in_master_examples": missing[:5]}
 
 
-def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname):
-    """寶僑總表 Sheet1 多吸幾欄：GIV／NIV → 主檔；Supply_CS (Oct)／demand_CS (Oct) → 月統計。
-    主檔匯入（products.py）認出是總表時呼叫。回傳摘要 dict。"""
+def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname, line=""):
+    """寶僑總表 Sheet1 多吸幾欄：GIV／NIV → 主檔；Supply_CS (Oct)／demand_CS (Oct) → 月統計；
+    右邊品牌區的 目標／REBATE目標 → 品牌目標（季，line 要給）。主檔匯入（products.py）認出是總表時呼叫。回傳摘要 dict。"""
     headers = [_h(c) for c in raw_headers]
+    targets_updated = 0
+    blk = brand_block_cols(headers); q = sheet_quarter(headers)
+    if blk and q and line:
+        i_key, i_t, i_r = blk
+        for row in ws.iter_rows(min_row=hdr_idx + 1, values_only=True):
+            key = norm_text(row[i_key]) if i_key < len(row) else ""
+            if not key:
+                continue
+            vals = {}
+            for k, i in (("target_giv", i_t), ("rebate_target", i_r)):
+                v = _num(row[i]) if i is not None and i < len(row) else None
+                if v is not None:
+                    vals[k] = v
+            if vals:
+                _fresh, changed = set_brand_target(conn, line, q, key, vals, operator, "import", f"{fname} 品牌區")
+                targets_updated += changed
     by_bc, _ = _barcode_map(conn)
     i_bc = headers.index("barcode") if "barcode" in headers else None
     if i_bc is None:
@@ -298,9 +314,67 @@ def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname):
             if _upsert_month(conn, bc, month, operator, **vals):
                 month_updated += 1
     months = {m for m, _ in month_cols}
-    _record_upload(conn, "sheet", fname, ws.title, operator, 0, 0, price_updated + month_updated, 0, months,
-                   note="總表順便帶進 GIV／NIV／供需")
-    return {"price_updated": price_updated, "month_updated": month_updated, "months": sorted(months)}
+    _record_upload(conn, "sheet", fname, ws.title, operator, 0, 0, price_updated + month_updated + targets_updated, 0, months,
+                   note="總表順便帶進 GIV／NIV／供需／品牌目標")
+    return {"price_updated": price_updated, "month_updated": month_updated, "months": sorted(months),
+            "targets_updated": targets_updated, "quarter": q if blk else None}
+
+
+def brand_block_cols(headers):
+    """總表右邊的品牌彙總區（BY～CU）：回傳 (品牌鍵欄, 目標欄, REBATE目標欄) 的 index（從 0 起），找不到回 None。
+    headers 是 _h() 過的表頭 list。鍵欄是「目標」左邊最近的那個 brand 欄（左邊商品區也有 Brand，取最近的）。"""
+    i_t = headers.index("目標") if "目標" in headers else None
+    i_r = headers.index("rebate目標") if "rebate目標" in headers else None
+    anchor = i_t if i_t is not None else i_r
+    if anchor is None:
+        return None
+    i_key = max((i for i, h in enumerate(headers[:anchor]) if h == "brand"), default=None)
+    if i_key is None:
+        return None
+    return i_key, i_t, i_r
+
+
+_RE_BRAND_MONTH = re.compile(r"^(\d{1,2})月下單giv$")
+
+
+def sheet_quarter(headers):
+    """品牌區的目標是哪一季的：看「N月下單GIV」那幾欄的月份，取最早那個月所屬的季；沒有就看 Supply_CS(mon)。回傳季首月 2026-10 或 None。"""
+    months = []
+    for h in headers:
+        m = _RE_BRAND_MONTH.match(h)
+        if m:
+            months.append(int(m.group(1)))
+    if not months:
+        for h in headers:
+            m = _RE_SHEET_MONTH.match(h)
+            if m and m.group(2) in _MON_EN:
+                months.append(_MON_EN[m.group(2)])
+    if not months:
+        return None
+    mon = min(months)
+    return _quarter_start(f"{_year_for(mon):04d}-{mon:02d}")
+
+
+def set_brand_target(conn, group, month, brand, vals, operator, source="manual", note=""):
+    """寫品牌目標（季）。vals 只放要改的欄：{"target_giv": 數字或 None, "rebate_target": ...}，None = 清掉。
+    有變才寫、才記歷程。回傳 (寫完的那筆, 有沒有改到)。"""
+    qstart = _quarter_start(month)
+    cur = _row(conn.execute("SELECT * FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?", (group, qstart, brand)))
+    changed = {k: v for k, v in vals.items() if (cur or {}).get(k) != v}
+    if not changed:
+        return cur, False
+    if cur is None:
+        conn.execute("INSERT INTO mst_brand_targets (line, month, brand, target_giv, rebate_target, updated_by, updated_at) VALUES (?,?,?,?,?,?,?)",
+                     (group, qstart, brand, vals.get("target_giv"), vals.get("rebate_target"), operator, now()))
+    else:
+        sets = ", ".join(f"{k} = ?" for k in changed)
+        conn.execute(f"UPDATE mst_brand_targets SET {sets}, updated_by = ?, updated_at = ? WHERE id = ?",
+                     list(changed.values()) + [operator, now(), cur["id"]])
+    for k, v in changed.items():
+        _log(conn, group, "", "", "", f"brand_{k}", "品牌目標" if k == "target_giv" else "REBATE目標",
+             (cur or {}).get(k), v, operator, source, note or f"{brand} {_quarter_label(month)}")
+    fresh = _row(conn.execute("SELECT * FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?", (group, qstart, brand)))
+    return fresh, True
 
 
 def _days_in_month(month):
@@ -431,4 +505,5 @@ def api_month_stats():
 
 
 __all__ = ["KIND_LABEL", "detect_kind", "find_source_sheet", "import_supply", "import_master_price", "import_stock",
-           "absorb_sheet_extras", "api_sources", "api_month_stats", "stock_by_barcode"]
+           "absorb_sheet_extras", "api_sources", "api_month_stats", "stock_by_barcode",
+           "set_brand_target", "brand_block_cols", "sheet_quarter"]

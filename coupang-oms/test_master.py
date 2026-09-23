@@ -349,13 +349,36 @@ def main():
     check("匯出檔名就叫「總表.xlsx」：不跟底稿同名、也不帶月份（整份總表不是某月的）", "''總表.xlsx" in cd_s and "寶僑總表範例" not in cd_s, cd_s)
     wbt = openpyxl.load_workbook(io.BytesIO(res.data)); wst = wbt["Sheet1"]
     tpl_ws = openpyxl.load_workbook(PG_SHEET_XLSX)["Sheet1"]
-    check("原本三個分頁都在、多一個「系統填入說明」", wbt.sheetnames == ["工作表1", "Sheet1", "工作表2", "系統填入說明"], str(wbt.sheetnames))
+    check("原本三個分頁都在、多「系統看板」「系統填入說明」", wbt.sheetnames == ["工作表1", "Sheet1", "工作表2", "系統看板", "系統填入說明"], str(wbt.sheetnames))
     check("列數與商品順序跟底稿完全一樣", [wst.cell(row=r, column=1).value for r in range(1, 300)] == [tpl_ws.cell(row=r, column=1).value for r in range(1, 300)])
     def same_cell(a, b):   # Excel 存的 183.00000000000003 轉一手會變 183，這不算動到
         if isinstance(a, (int, float)) and isinstance(b, (int, float)):
             return abs(float(a) - float(b)) < 1e-6
         return a == b
-    check("A～U 欄（業務的欄位）一格都沒動", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(1, 22)))
+    check("A～J 欄（業務維護的商品欄）一格都沒動", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(1, 11)))
+    tpl_vals = openpyxl.load_workbook(PG_SHEET_XLSX, data_only=True)["Sheet1"]
+    def ku_ok(r, c):
+        a = wst.cell(row=r, column=c).value
+        if isinstance(a, str) and a.startswith("="):                      # 沒動的格：公式一字不差
+            return a == tpl_ws.cell(row=r, column=c).value
+        return tpl_vals.cell(row=r, column=c).value is None or same_cell(a, tpl_vals.cell(row=r, column=c).value)
+    check("K～U（GIV／NIV／供需）填的是系統的值，而系統的值就是這份總表帶進來的 → 數字跟原本一樣（9 月 VLOOKUP 那些格變成值，其他月份的公式不動）",
+          all(ku_ok(r, c) for r in range(2, 245) for c in range(11, 22)),
+          str([(r, c, tpl_ws.cell(row=1, column=c).value, str(wst.cell(row=r, column=c).value)[:30], tpl_vals.cell(row=r, column=c).value, wst.cell(row=r, column=5).value) for r in range(2, 245) for c in range(11, 22) if not ku_ok(r, c)][:6]))
+    o_col = [str(c.value or "").replace("\n", " ") for c in wst[1]].index("Supply_CS (Sep)") + 1
+    check("Supply_CS (Sep) 原本 124 格 VLOOKUP 外部檔 → 有數字的全部變成值（含只在總表、沒出過貨的商品）", not any(str(wst.cell(row=r, column=o_col).value).startswith("=") for r in range(2, 297) if isinstance(tpl_vals.cell(row=r, column=o_col).value, (int, float))),
+          str([(r, wst.cell(row=r, column=5).value, str(wst.cell(row=r, column=o_col).value)[:40]) for r in range(2, 297) if str(wst.cell(row=r, column=o_col).value).startswith("=") and isinstance(tpl_vals.cell(row=r, column=o_col).value, (int, float))][:5]))
+    bd_pg = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); bmap = {b["brand"]: b for b in bd_pg["brands"]}
+    check("總表右邊品牌區的 目標／REBATE目標 匯進來當這一季（7～9 月）的品牌目標", bd_pg["quarter"]["label"] == "7～9 月" and bmap["Pampers 幫寶適"]["target_giv"] == 40000000 and bmap["ARIEL"]["rebate_target"] == 17600000, str({k: (v["target_giv"], v["rebate_target"]) for k, v in bmap.items() if k in ("Pampers 幫寶適", "ARIEL")}))
+    check("ARIEL 的達成 = 這季下單 GIV 合計 ÷ 目標（目標還沒填 → 空）、DIFF = REBATE目標 − 這季 COGS 含稅合計", bmap["ARIEL"]["target_pct"] is None and bmap["ARIEL"]["rebate_diff"] == round(17600000 - bmap["ARIEL"]["q_cogs_tax"], 2))
+    jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": "ARIEL", "target_giv": 1234567})
+    wst2 = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export?line=寶僑&month=2026-09").data))["Sheet1"]
+    hdr2 = [str(c.value or "").strip() for c in wst2[1]]
+    c_goal = hdr2.index("目標") + 1; c_brand = max(i for i, h in enumerate(hdr2[:c_goal]) if h.lower() == "brand") + 1
+    row_ariel = next(r for r in range(2, 30) if str(wst2.cell(row=r, column=c_brand).value).strip() == "ARIEL")
+    row_pamp = next(r for r in range(2, 30) if str(wst2.cell(row=r, column=c_brand).value).startswith("Pampers"))
+    check("匯出時品牌區的 目標 填回系統的值（ARIEL 1,234,567；幫寶適維持 40,000,000）", wst2.cell(row=row_ariel, column=c_goal).value == 1234567 and wst2.cell(row=row_pamp, column=c_goal).value == 40000000, str((wst2.cell(row=row_ariel, column=c_goal).value, wst2.cell(row=row_pamp, column=c_goal).value)))
+    jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": "ARIEL", "target_giv": ""})
     check("7、8 月的日期欄沒被動到", all(same_cell(wst.cell(row=r, column=c).value, tpl_ws.cell(row=r, column=c).value) for r in range(1, 245) for c in range(22, 41)))
     hdr_t = [wst.cell(row=1, column=c).value for c in range(1, wst.max_column + 1)]
     sep_hdrs = [h for h in hdr_t if h and str(h).startswith("9/")]
@@ -586,7 +609,7 @@ def main():
     fk = openpyxl.load_workbook(os.path.join(FAKE, "假_寶僑總表.xlsx")).worksheets[0]
     fhdr = [c.value for c in fk[1]]; frows = [dict(zip(fhdr, [c.value for c in r])) for r in fk.iter_rows(min_row=2) if r[4].value]
     bc0, bc1, bc3, bc_last = (str(frows[i]["Barcode"]) for i in (0, 1, 3, len(frows) - 1))
-    check("主檔 GIV 等於總表 K 欄", prods[bc0]["giv"] == round(float(frows[0]["GIV"]), 4), f"{prods[bc0]['giv']} vs {frows[0]['GIV']}")
+    check("主檔 GIV 等於總表 K 欄（原樣存，不四捨五入）", prods[bc0]["giv"] == float(frows[0]["GIV"]), f"{prods[bc0]['giv']} vs {frows[0]['GIV']}")
     ms = client.get("/api/master/month_stats?month=2026-07").get_json()
     row0 = next((r for r in ms["rows"] if r["barcode"] == bc0), None)
     check("月統計有 7 月 Supply（來自總表 Supply_CS (Jul)）", row0 and row0["supply_cs"] == float(frows[0]["Supply_CS (Jul)"]), str(row0)[:120])
@@ -605,7 +628,7 @@ def main():
     check("Coupang Master：跳過隱藏分頁與說明頁，認出「4月」（kind=master_price）", res.status_code == 200 and d.get("kind") == "master_price" and d["sheet"] == "4月", str(d)[:200])
     check("Coupang Master：對到 17 個（最後一個商品 Master 沒有）", d["matched"] == 17 and d["not_in_master"] == 0, str(d)[:120])
     prods = {p["barcode"]: p for p in client.get("/api/master/products").get_json()["products"]}
-    check("GIV 照 Master 更新（×1.1）", prods[bc0]["giv"] == round(round(float(frows[0]["GIV"]) * 1.1, 2), 4), f"{prods[bc0]['giv']}")
+    check("GIV 照 Master 更新（×1.1）", abs(prods[bc0]["giv"] - round(float(frows[0]["GIV"]) * 1.1, 2)) < 1e-6, f"{prods[bc0]['giv']}")
     check("Master 是 #N/A 的商品 GIV 不被蓋掉", prods[bc1]["giv"] == giv_before, f"{prods[bc1]['giv']} vs {giv_before}")
     check("GIV 變動有記歷程", any(l["field"] == "giv" for l in client.get("/api/master/logs?q=假_CoupangMaster").get_json()["logs"]))
 
@@ -664,12 +687,15 @@ def main():
     res = jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": "50000"})
     check("填品牌目標 200", res.status_code == 200 and res.get_json()["target"]["target_giv"] == 50000.0, res.get_data(as_text=True)[:120])
     b1 = next(b for b in client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["brands"] if b["brand"] == b0["brand"])
-    check("達成 = 下單 GIV ÷ 目標、diff = 目標 − 下單 GIV", b1["target_pct"] == round(b0["ttl_giv"] / 50000 * 100) and b1["target_diff"] == round(50000 - b0["ttl_giv"], 2), str(b1))
+    check("達成 = 這季下單 GIV 合計 ÷ 目標、diff = 目標 − 這季下單 GIV 合計（目標是一季的，跟總表 CJ 一樣）", b1["target_pct"] == round(b0["q_ttl_giv"] / 50000 * 100) and b1["target_diff"] == round(50000 - b0["q_ttl_giv"], 2), str(b1))
+    q_sum = sum(next((x["ttl_giv"] for x in client.get(f"/api/master/board?line=寶僑&month={m}").get_json()["brands"] if x["brand"] == b0["brand"]), 0) for m in ("2026-07", "2026-08", "2026-09"))
+    check("這季下單 GIV 合計 = 7、8、9 月三張看板同品牌下單 GIV 相加", abs(b0["q_ttl_giv"] - q_sum) < 0.02, f"{b0['q_ttl_giv']} vs {q_sum}")
     res = jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "rebate_target": 1234.5})
     b2 = next(b for b in client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["brands"] if b["brand"] == b0["brand"])
-    check("REBATE 目標另外填、原本的目標不動、REBATE DIFF = 目標 − COGS 含稅", res.status_code == 200 and b2["target_giv"] == 50000.0 and b2["rebate_target"] == 1234.5
-          and b2["rebate_diff"] == round(1234.5 - b2["cogs_tax"], 2), str(b2))
-    check("目標是別的月份的事：10 月那個品牌沒目標", next(b for b in client.get("/api/master/board?line=寶僑&month=2026-10").get_json()["brands"] if b["brand"] == b0["brand"])["target_giv"] is None)
+    check("REBATE 目標另外填、原本的目標不動、REBATE DIFF = 目標 − 這季 COGS 含稅合計", res.status_code == 200 and b2["target_giv"] == 50000.0 and b2["rebate_target"] == 1234.5
+          and b2["rebate_diff"] == round(1234.5 - b2["q_cogs_tax"], 2), str(b2))
+    check("目標是一季的：8 月看到同一個目標，10 月（下一季）沒有", next(b for b in client.get("/api/master/board?line=寶僑&month=2026-08").get_json()["brands"] if b["brand"] == b0["brand"])["target_giv"] == 50000.0
+          and next((b for b in client.get("/api/master/board?line=寶僑&month=2026-10").get_json()["brands"] if b["brand"] == b0["brand"]), {"target_giv": None})["target_giv"] is None)
     check("看板合計的目標 = 各品牌目標加總", client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["totals"]["target_giv"] == 50000.0)
     res = jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": ""})
     b3 = next(b for b in client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["brands"] if b["brand"] == b0["brand"])
@@ -679,6 +705,38 @@ def main():
           and jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"]}).status_code == 400)
     tl = [l for l in client.get("/api/master/logs?q=" + b0["brand"] + "&limit=1000").get_json()["logs"] if l["field"] in ("brand_target_giv", "brand_rebate_target")]
     check("填目標有記歷程（填、改 REBATE、清掉各一筆）", len(tl) >= 3, str([(l["field"], l["old_value"], l["new_value"]) for l in tl][:4]))
+
+    print("\n【12f】匯出總表：畫面上的數字要跟匯出的一樣（GIV／NIV、供需、庫存、品牌目標填回底稿；附系統看板）")
+    jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": 50000})
+    bd = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); rows = {r["barcode"]: r for r in bd["rows"]}
+    res = client.get("/api/master/export?line=寶僑&month=2026-09")
+    wbe = openpyxl.load_workbook(io.BytesIO(res.data)); wse = wbe["Sheet1"]
+    check("底稿是假總表、多「系統看板」「系統填入說明」", "系統看板" in wbe.sheetnames and wbe.sheetnames[-1] == "系統填入說明", str(wbe.sheetnames))
+    hde = [str(c.value or "").replace("\n", " ").strip() for c in wse[1]]
+    col = lambda name: next(i + 1 for i, h in enumerate(hde) if h.replace(" ", "").lower() == name.replace(" ", "").lower())   # noqa: E731
+    rowe = {str(wse.cell(row=r, column=5).value).strip(): r for r in range(2, wse.max_row + 1) if wse.cell(row=r, column=5).value}
+    r1 = rowe[bc1]; x1 = rows[bc1]
+    check("GIV／NIV 填成主檔的值（Coupang Master 更新過的，不是底稿貼死的舊值）", wse.cell(row=r1, column=col("GIV")).value == x1["giv"] and wse.cell(row=r1, column=col("NIV")).value == x1["niv"]
+          and wse.cell(row=rowe[bc0], column=col("GIV")).value == rows[bc0]["giv"] != frows[0]["GIV"], str((wse.cell(row=r1, column=col("GIV")).value, x1["giv"])))
+    check("Supply_CS (Sep) 填成 supply 資料的值", wse.cell(row=r1, column=col("Supply_CS (Sep)")).value == x1["supply"], str((wse.cell(row=r1, column=col("Supply_CS (Sep)")).value, x1["supply"])))
+    fk_r1 = next(r for r in range(2, fk.max_row + 1) if str(fk.cell(row=r, column=5).value) == bc1)
+    check("Supply_CS (Oct) 不是這個月的，不動", wse.cell(row=r1, column=col("Supply_CS (Oct)")).value == fk.cell(row=fk_r1, column=19).value)
+    check("目前庫存數量 填成系統算的剩餘庫存（不是底稿的舊數字）", wse.cell(row=r1, column=col("目前庫存數量")).value == x1["stock_remaining"] == ms9[bc1]["remaining_cs"], str((wse.cell(row=r1, column=col("目前庫存數量")).value, x1["stock_remaining"])))
+    check("每一個對得到的商品：GIV、Supply、庫存都跟看板一樣", all(
+        (x["giv"] is None or wse.cell(row=rowe[bc], column=col("GIV")).value == x["giv"]) and (x["supply"] is None or wse.cell(row=rowe[bc], column=col("Supply_CS (Sep)")).value == x["supply"])
+        and (x["stock_remaining"] is None or wse.cell(row=rowe[bc], column=col("目前庫存數量")).value == x["stock_remaining"]) for bc, x in rows.items() if bc in rowe))
+    check("底稿裡的公式（PG剩餘、TTL）還是公式，沒被貼成值", str(wse.cell(row=r1, column=col("PG剩餘 可供貨量(CS)")).value).startswith("=") and str(wse.cell(row=r1, column=col("9月TTL下單總箱數")).value).startswith("=SUM("))
+    kb = wbe["系統看板"]; kb_txt = "\n".join("|".join(str(c) for c in row if c is not None) for row in kb.iter_rows(values_only=True))
+    check("系統看板：品牌列、商品列跟畫面一樣多，目標與季累計在", all(b["brand"] in kb_txt for b in bd["brands"]) and all(x["barcode"] in kb_txt for x in bd["rows"]) and "累計" in kb_txt and "50,000" not in kb_txt, kb_txt[:200])
+    kb_rows = list(kb.iter_rows(values_only=True))
+    brow = next(r for r in kb_rows if r[0] == b0["brand"])
+    check("系統看板品牌列：季累計下單 GIV、目標、達成、差距是數字且等於看板", brow[8] == b0["q_ttl_giv"] and brow[9] == 50000 and brow[10] == round(b0["q_ttl_giv"] / 50000 * 100) and brow[11] == round(50000 - b0["q_ttl_giv"], 2), str(brow[:12]))
+    prow = next(r for r in kb_rows if r[1] == bc1)
+    check("系統看板商品列：COGS／GIV／Supply／下單／剩餘庫存／下單 GIV 都等於看板", prow[7] == x1["cost"] and prow[8] == x1["giv"] and prow[10] == x1["supply"] and prow[12] == x1["ttl"] and prow[14] == x1["stock_remaining"] and prow[18] == x1["ttl_giv"], str(prow[:20]))
+    info_txt = "\n".join("|".join(str(c) for c in row if c is not None) for row in wbe["系統填入說明"].iter_rows(values_only=True))
+    check("填入說明寫了 GIV／NIV、供需、庫存三欄各填幾格；品牌區底稿沒有就說跳過", "GIV／NIV|填了" in info_txt and "Supply_CS／demand_CS (9月)|填了" in info_txt and "到月底庫存天數|填了" in info_txt and "底稿沒有品牌區" in info_txt, info_txt[:400])
+    wbn = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export?line=紙潔&month=2026-09").data))
+    check("沒底稿的線別（紙潔）系統格式也附系統看板", wbn.sheetnames == ["總表", "系統看板", "每日合計"], str(wbn.sheetnames))
 
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")

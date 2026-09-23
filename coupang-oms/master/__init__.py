@@ -31,7 +31,8 @@ LINE_GROUPS_DEFAULT，不做設定面板。
 #   products.py        ① 商品主檔：清單、手動存、刪除、從酷澎主檔／寶僑總表匯入（含把總表存成匯出樣式）。
 #   board.py           ③ 總表看板：一個月一頁，商品層（供需／庫存／金額）與品牌層（目標達成），總表每欄的公式在這裡現算。
 #   sources.py         ① 外部來源檔：寶僑 supply 表／Coupang Master／庫存銷售表 → GIV、NIV、每月供需與進銷；庫存現算。
-#   summary.py         ③ 總表：現算每日箱數、月配額、匯出總表（有底稿就照底稿填、缺的日期自動插欄）。
+#   summary.py         ③ 總表：現算每日箱數、月配額、底稿欄位判讀與自動插欄。
+#   sheet_export.py    ③ 匯出總表：把箱數、GIV／NIV、供需、庫存、品牌目標填回業務的底稿，附「系統看板」與「系統填入說明」分頁。
 #   quotation.py       匯出專案報價檔（一個交貨日一個分頁，A～R 欄）。
 #   admin_api.py       清除資料、匯入歷程（各次匯入新增／有變）、修改歷程查詢。
 #   stats.py           ④ 改單統計：每月幾張 PO、幾張被改過、改幾次、原因分佈、匯出 Excel（給主管算成本）。
@@ -44,6 +45,7 @@ from .products import *  # noqa: F401,F403
 from .sources import *  # noqa: F401,F403
 from .board import *  # noqa: F401,F403
 from .summary import *  # noqa: F401,F403
+from .sheet_export import *  # noqa: F401,F403
 from .quotation import *  # noqa: F401,F403
 from .admin_api import *  # noqa: F401,F403
 from .stats import *  # noqa: F401,F403
@@ -53,7 +55,8 @@ from .page import master_page, api_lines  # noqa: F401
 from .orders_import import _diff_import, _parse_uploads, api_import_preview, api_import_commit  # noqa: F401
 from .orders_api import api_orders, _apply_item_edit, api_update_order, api_delete_order, _move_po_dates, api_update_po_date, api_po_detail, api_po_save  # noqa: F401
 from .products import api_products, _upsert_product, api_save_product, api_delete_product, _HEADER_ALIASES, _PRODUCT_TEXT_FIELDS, _find_columns, api_import_products, _DATE_HDR, _template_row, _guess_line, _save_template  # noqa: F401
-from .summary import api_set_quota, _build_summary, api_summary, _template_meta, api_template_get, _REF_PART, _shift_ref_text, _shift_formula, _insert_column, _fill_template, api_export  # noqa: F401
+from .summary import api_set_quota, _build_summary, api_summary, _template_meta, api_template_get, _REF_PART, _shift_ref_text, _shift_formula, _insert_column  # noqa: F401
+from .sheet_export import _fill_template, api_export  # noqa: F401
 from .quotation import api_export_daily  # noqa: F401
 from .admin_api import api_reset, api_imports, api_logs  # noqa: F401
 from .stats import api_stats, api_stats_events, api_stats_export, _build_stats  # noqa: F401

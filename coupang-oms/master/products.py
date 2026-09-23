@@ -239,9 +239,17 @@ def api_import_products():
             # 目前只有寶僑有這種總表。
             template_line = _guess_line(conn, seen_barcodes) or "寶僑"
             _save_template(conn, template_line, upload.filename, ws.title, hdr_idx, raw, operator)
+            # 這份是寶僑的總表，裡面的商品就算寶僑的：lines_seen 補上，沒出過貨、只在總表裡的商品
+            # 看板與匯出才會把它們算進寶僑（不然 Supply／庫存有值卻填不回總表）
+            for i in range(0, len(seen_barcodes), 400):
+                chunk = seen_barcodes[i:i + 400]
+                for pr in _rows(conn.execute(f"SELECT id, lines_seen FROM mst_products WHERE barcode IN ({','.join('?' * len(chunk))})", chunk)):
+                    cur_lines = _split_lines(pr["lines_seen"])
+                    if template_line not in cur_lines:
+                        conn.execute("UPDATE mst_products SET lines_seen = ? WHERE id = ?", (",".join(sorted(set(cur_lines) | {template_line})), pr["id"]))
             # 總表 K／L 的 GIV／NIV、M～R 的 Supply／demand 也一起帶進來（read_only 的 ws 要重開一次才能再讀）
             ws2 = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)[ws.title]
-            extras = sources.absorb_sheet_extras(conn, ws2, hdr_idx, list(header_cells), operator, upload.filename)
+            extras = sources.absorb_sheet_extras(conn, ws2, hdr_idx, list(header_cells), operator, upload.filename, template_line)
         conn.commit()
     finally:
         conn.close()

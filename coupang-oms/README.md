@@ -175,11 +175,12 @@ coupang-oms/
 │   ├── orders_import.py     ② 匯入：多檔合併 → 預覽 → 確認寫入
 │   ├── orders_api.py        ② 查詢、就地編輯、PO 改期、PO 視窗
 │   ├── products.py          ① 主檔清單／匯入（酷澎主檔、寶僑總表 → 匯出樣式）
-│   ├── summary.py           ③ 總表現算、匯出總表（底稿填入、自動插欄）
+│   ├── summary.py           ③ 總表現算、底稿欄位判讀、自動插欄
 │   ├── quotation.py         匯出專案報價檔
 │   ├── admin_api.py         清除資料、匯入歷程、修改歷程
 │   ├── sources.py           ① 外部來源檔：supply 表／Coupang Master／庫存銷售表 → GIV、NIV、每月供需進銷；庫存現算
 │   ├── board.py             ③ 總表看板：商品／品牌／每日出貨三個視圖，公式照總表算；品牌目標人填
+│   ├── sheet_export.py      ③ 匯出總表：箱數、GIV／NIV、供需、庫存、品牌目標填回底稿；附「系統看板」「系統填入說明」
 │   └── stats.py             ④ 改單統計（每月幾張 PO、改幾次、原因、匯出）
 ├── templates/_line_menu.html 三頁共用的「線別工具」選單（寶僑／瑪氏／紙潔）
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔

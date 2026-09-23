@@ -865,15 +865,15 @@ function bindDownload(id) {
 }
 ["#btn-export-daily", "#btn-export-daily-2", "#btn-export-2"].forEach(bindDownload);
 
-/* 匯出總表的樣子：① 匯進主檔的那份業務總表（有 M/D交貨 日期欄的）就是底稿，匯出只填箱數、含順序。
-   沒匯過總表的線別，匯出用系統自己排的格式。 */
+/* 匯出總表的樣子：① 匯進主檔的那份業務總表（有 M/D交貨 日期欄的）就是底稿，匯出照它的樣子填值、含順序。
+   沒匯過總表的線別，匯出用系統自己排的格式。填哪些欄見 master/sheet_export.py 檔頭。 */
 async function loadTemplateInfo() {
   let t; try { t = await api(`/api/master/template?line=${encodeURIComponent(state.sumLine)}`); } catch (e) { return; }
   const info = $("#tpl-info");
   if (t.exists) {
     const months = Object.entries(t.months || {}).sort((a, b) => Number(a[0]) - Number(b[0])).map(([m, e]) => `${m}月 ${e.dates} 天${e.spare ? `＋${e.spare} 空欄` : ""}`).join("、");
     info.innerHTML = `<span class="badge bd-blue" title="${esc(t.uploaded_at)} 由 ${esc(t.uploaded_by)} 匯進主檔的那份。要換樣子就再匯一次新的總表。"><i class="bi bi-file-earmark-check"></i> 匯出照「${esc(t.filename)}」的樣子，含順序</span> <span class="kbd">${esc(months)}</span>`;
-    $("#btn-export-2").title = `打開「${t.filename}」只填 ${state.sumMonth} 各交貨日箱數，其他一格不動；對不到的商品與沒欄位的日期寫在最後一個分頁「系統填入說明」`;
+    $("#btn-export-2").title = `打開「${t.filename}」，填 ${state.sumMonth} 各交貨日箱數、GIV／NIV、Supply／demand、庫存三欄、品牌目標（系統有值的才填），其他一格不動；另附「系統看板」「系統填入說明」兩個分頁`;
   } else {
     info.innerHTML = `<span class="kbd">${esc(state.sumLine)} 還沒匯過總表，匯出用系統格式；到 ① 把總表匯進主檔就會照它的樣子</span>`;
     $("#btn-export-2").title = "系統自己排的總表格式：一列一國條、往右各交貨日箱數";
@@ -917,7 +917,7 @@ function renderBoard() {
   const pct = t.supply ? Math.round(t.ttl / t.supply * 100) : null;
   $("#bd-kpi").innerHTML =
     card(`${mm} 月下單`, fmt(t.ttl), "箱", t.has_supply ? `Supply ${fmt(t.supply)} 箱 · 已下 ${pct}%${t.over ? ` · <span class="neg">${t.over} 個商品超打</span>` : ""}` : `${t.with_orders} 個商品有出貨 · supply 表還沒上傳`)
-    + card("下單金額 GIV", money(t.ttl_giv), "", `COGS 含稅 ${money(t.cogs_tax)} · 永豐成本未稅 ${money(t.yf_cost)}${t.target_giv ? ` · 目標 ${money(t.target_giv)}` : ""}`)
+    + card("下單金額 GIV", money(t.ttl_giv), "", `COGS 含稅 ${money(t.cogs_tax)} · 永豐成本未稅 ${money(t.yf_cost)}${t.target_giv ? ` · ${b.quarter.label}累計 ${money(t.q_ttl_giv)}／目標 ${money(t.target_giv)}` : ""}`)
     + (t.has_stock ? card("剩餘庫存", fmt(t.stock_remaining), "箱", `庫金 ${money(t.stock_giv)}${t.low_stock ? ` · <span class="neg">${t.low_stock} 個商品不到 ${b.low_stock_days} 天</span>` : ""}`) : card("剩餘庫存", "—", "", "庫存銷售表還沒上傳"))
     + card("需要注意", fmt(t.alerts), "個商品", t.alerts ? [t.over ? `超打 ${t.over}` : "", t.low_stock ? `庫存低 ${t.low_stock}` : "", t.no_box ? `算不出箱數 ${t.no_box}` : ""].filter(Boolean).join(" · ") : "沒有超打、庫存低、算不出箱數的", t.alerts > 0);
 
@@ -948,24 +948,30 @@ function renderBoard() {
       <td class="num sec">${money(t.ttl_giv)}</td><td class="num">${money(t.cogs_tax)}</td><td class="num">${money(t.yf_cost)}</td></tr></tfoot>`;
   $("#bd-prod-table").innerHTML = h;
 
-  // ── 品牌 ──
-  let bh = `<thead><tr><th class="g" colspan="3">品牌</th><th class="g b4 sec" colspan="4">下單 GIV</th><th class="g b1 sec" colspan="3">成本</th><th class="g b3 sec" colspan="2">庫存</th></tr>
+  // ── 品牌 ──（目標是一季一個數字，跟總表一樣：diff = 目標 − 該季三個月下單 GIV）
+  const ql = b.quarter.label;
+  let bh = `<thead><tr><th class="g" colspan="3">品牌</th><th class="g b4 sec" colspan="3">${mm} 月</th><th class="g bq sec" colspan="6">${ql}累計 <span class="kbd" style="color:inherit;font-weight:400">目標是一季的</span></th><th class="g b3 sec" colspan="2">庫存</th></tr>
     <tr><th>品牌</th><th>品類</th><th class="num">商品</th>
-      <th class="num sec">Supply GIV</th><th class="num">下單 GIV</th><th class="num" title="點一下填">目標</th><th class="num">達成</th>
-      <th class="num sec">COGS 含稅</th><th class="num" title="點一下填">REBATE 目標</th><th class="num">差距</th>
+      <th class="num sec">Supply GIV</th><th class="num">下單 GIV</th><th class="num">COGS 含稅</th>
+      <th class="num sec">下單 GIV</th><th class="num" title="這一季的下單 GIV 目標，點一下填">目標</th><th class="num">達成</th>
+      <th class="num">COGS 含稅</th><th class="num" title="這一季的 REBATE 目標，點一下填">REBATE 目標</th><th class="num" title="REBATE 目標 − 季累計 COGS 含稅">DIFF</th>
       <th class="num sec">剩餘箱</th><th class="num">庫金</th></tr></thead><tbody>`;
   for (const r of b.brands) {
     const p = r.target_pct; const over = p != null && p > 100;
-    bh += `<tr data-brand="${esc(r.brand)}"><td><b>${esc(r.brand)}</b>${r.flags ? ` <span class="badge bd-warn" title="這個品牌有 ${r.flags} 個要注意的商品">${r.flags}</span>` : ""}</td><td>${esc(r.category || "")}</td><td class="num">${r.products}</td>
-      <td class="num sec">${money(r.supply_giv)}</td><td class="num"><b>${money(r.ttl_giv)}</b></td>
-      <td class="num ed" data-k="target_giv" title="下單 GIV 目標，點一下填">${r.target_giv == null ? `<span class="dim">填目標</span>` : money(r.target_giv)}</td>
+    bh += `<tr data-brand="${esc(r.brand)}"><td><b>${esc(r.brand)}</b>${r.flags ? ` <span class="badge bd-warn" title="這個品牌有 ${r.flags} 個要注意的商品">${r.flags}</span>` : ""}</td><td>${esc(r.category || "")}</td><td class="num">${r.products || `<span class="dim">—</span>`}</td>
+      <td class="num sec">${money(r.supply_giv)}</td><td class="num"><b>${money(r.ttl_giv)}</b></td><td class="num">${money(r.cogs_tax)}</td>
+      <td class="num sec"><b>${money(r.q_ttl_giv)}</b></td>
+      <td class="num ed" data-k="target_giv" title="${ql}的下單 GIV 目標，點一下填">${r.target_giv == null ? `<span class="dim">填目標</span>` : money(r.target_giv)}</td>
       <td class="num">${p == null ? `<span class="dim">—</span>` : `<div class="flex items-center gap-2 justify-end"><div class="bar ${over ? "over" : ""}"><i style="width:${Math.min(100, p)}%"></i></div><span class="${over ? "neg" : ""}">${p}%</span></div><div class="kbd">差 ${money(r.target_diff)}</div>`}</td>
-      <td class="num sec">${money(r.cogs_tax)}</td>
-      <td class="num ed" data-k="rebate_target" title="REBATE 目標，點一下填">${r.rebate_target == null ? `<span class="dim">填目標</span>` : money(r.rebate_target)}</td>
+      <td class="num">${money(r.q_cogs_tax)}</td>
+      <td class="num ed" data-k="rebate_target" title="${ql}的 REBATE 目標，點一下填">${r.rebate_target == null ? `<span class="dim">填目標</span>` : money(r.rebate_target)}</td>
       <td class="num">${r.rebate_diff == null ? `<span class="dim">—</span>` : `<span class="${r.rebate_diff < 0 ? "neg" : ""}">${money(r.rebate_diff)}</span>`}</td>
       <td class="num sec">${r.stock_remaining ? fmt(r.stock_remaining) : `<span class="dim">—</span>`}</td><td class="num">${r.stock_giv ? money(r.stock_giv) : `<span class="dim">—</span>`}</td></tr>`;
   }
-  bh += `</tbody><tfoot><tr><td>合計</td><td></td><td class="num">${t.products}</td><td class="num sec">${money(t.supply_giv)}</td><td class="num">${money(t.ttl_giv)}</td><td class="num">${t.target_giv ? money(t.target_giv) : ""}</td><td class="num">${t.target_giv ? Math.round(t.ttl_giv / t.target_giv * 100) + "%" : ""}</td><td class="num sec">${money(t.cogs_tax)}</td><td></td><td></td><td class="num sec">${t.has_stock ? fmt(t.stock_remaining) : ""}</td><td class="num">${t.has_stock ? money(t.stock_giv) : ""}</td></tr></tfoot>`;
+  bh += `</tbody><tfoot><tr><td>合計</td><td></td><td class="num">${t.products}</td><td class="num sec">${money(t.supply_giv)}</td><td class="num">${money(t.ttl_giv)}</td><td class="num">${money(t.cogs_tax)}</td>
+      <td class="num sec">${money(t.q_ttl_giv)}</td><td class="num">${t.target_giv ? money(t.target_giv) : ""}</td><td class="num">${t.target_giv ? Math.round(t.q_ttl_giv / t.target_giv * 100) + "%" : ""}</td>
+      <td class="num">${money(t.q_cogs_tax)}</td><td class="num">${t.rebate_target ? money(t.rebate_target) : ""}</td><td class="num">${t.rebate_target ? money(t.rebate_target - t.q_cogs_tax) : ""}</td>
+      <td class="num sec">${t.has_stock ? fmt(t.stock_remaining) : ""}</td><td class="num">${t.has_stock ? money(t.stock_giv) : ""}</td></tr></tfoot>`;
   $("#bd-brand-table").innerHTML = bh;
   $("#bd-brand-table").querySelectorAll("td.ed").forEach(td => td.addEventListener("click", () => editTarget(td)));
 
@@ -989,7 +995,7 @@ function editTarget(td) {
   let done = false;
   const save = async () => { if (done) return; done = true;
     if (String(inp.value) === String(cur ?? "")) { td.innerHTML = keep; return; }
-    try { await api("/api/master/brand_targets", J({ line: state.sumLine, month: state.sumMonth, brand, [k]: inp.value })); toast(`${brand} 的${k === "target_giv" ? "目標" : "REBATE 目標"}已存`); loadSummary(); }
+    try { await api("/api/master/brand_targets", J({ line: state.sumLine, month: state.sumMonth, brand, [k]: inp.value })); toast(`${brand} ${BOARD.quarter.label}的${k === "target_giv" ? "目標" : "REBATE 目標"}已存`); loadSummary(); }
     catch (e) { toast(e.message, "err"); td.innerHTML = keep; } };
   inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { done = true; td.innerHTML = keep; } });
   inp.addEventListener("blur", () => setTimeout(save, 0));

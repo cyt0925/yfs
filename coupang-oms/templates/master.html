@@ -168,7 +168,7 @@
   .bd-reason { background:#fff7ed; color:#9a3412; } .bd-test { background:#f1f5f9; color:#64748b; }
   /* 總表看板（第三個分頁） */
   .bd th.g { background:#eef2f7; color:var(--ink2); font-weight:700; text-align:center; border-bottom:0; font-size:11.5px; letter-spacing:.3px; }
-  .bd th.g.b1 { background:#e8eefb; } .bd th.g.b2 { background:#eef7ee; } .bd th.g.b3 { background:#fbf3e6; } .bd th.g.b4 { background:#f3eefb; }
+  .bd th.g.b1 { background:#e8eefb; } .bd th.g.b2 { background:#eef7ee; } .bd th.g.b3 { background:#fbf3e6; } .bd th.g.b4 { background:#f3eefb; } .bd th.g.bq { background:#fdf2f8; }
   .bd td.sec, .bd th.sec { border-left:2px solid #e2e8f0; }
   .bd .pn { font-weight:600; color:var(--ink); max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .bd .sub { font-size:11px; color:var(--muted); display:flex; gap:6px; align-items:center; margin-top:1px; }
@@ -364,7 +364,9 @@
         <div>COGS、GIV、NIV 來自商品主檔；GIV、NIV 由 Coupang Master 更新。Supply、demand 來自寶僑 supply 表。下單是這個月訂單明細的出貨箱數加總。</div>
         <div>剩餘可供貨 = Supply − 下單。下單超過 Supply 就標「超打」，Note 寫「不可超打」的會標紅。</div>
         <div>剩餘庫存 = 累計下單 − 累計實銷（從庫存銷售表帶進來的期初，之後由訂單與酷澎銷售報表更新）。庫存天數 = 剩餘 ÷ 本月日均實銷，低於 14 天標紅。到月底天數是用日均實銷往後推。</div>
-        <div>下單 GIV = 下單 × GIV。COGS 含稅 = 下單 × COGS × 箱入數。永豐成本未稅 = 下單 × NIV × 1.02。品牌那頁是同品牌加總；目標和 REBATE 目標點一下就能填。</div>
+        <div>下單 GIV = 下單 × GIV。COGS 含稅 = 下單 × COGS × 箱入數。永豐成本未稅 = 下單 × NIV × 1.02。品牌那頁是同品牌加總。</div>
+        <div>目標和 REBATE 目標跟總表一樣是<b>一季一個數字</b>（10～12 月算一季）：達成 = 這季三個月的下單 GIV 合計 ÷ 目標；DIFF = REBATE 目標 − 這季 COGS 含稅合計。點格子就能填，匯總表進來時裡面的目標也會帶進來。</div>
+        <div>匯出總表：照業務的底稿填各交貨日箱數、GIV／NIV、這個月的 Supply／demand、庫存三欄、品牌目標（系統有值的才填），其他格不動；另附「系統看板」（畫面原樣）和「系統填入說明」兩個分頁。</div>
       </div>
     </details>
   </section>

@@ -110,6 +110,25 @@ def _valid_month(text):
     return bool(re.fullmatch(r"\d{4}-\d{2}", text or ""))
 
 
+def _quarter_start(month):
+    """月份所屬那一季的第一個月：2026-11 → 2026-10。總表的品牌目標、REBATE 目標是一季一個數字
+    （diff = 目標 − 該季三個月下單 GIV 合計），所以品牌目標一律用季的第一個月當鍵存。"""
+    y, m = int(month[:4]), int(month[5:7])
+    return f"{y:04d}-{((m - 1) // 3) * 3 + 1:02d}"
+
+
+def _quarter_months(month):
+    """該季的三個月：2026-11 → [2026-10, 2026-11, 2026-12]。"""
+    q = _quarter_start(month); y, m = int(q[:4]), int(q[5:7])
+    return [f"{y:04d}-{m + i:02d}" for i in range(3)]
+
+
+def _quarter_label(month):
+    """給人看的：2026-11 → 「10～12 月」。"""
+    m = int(_quarter_start(month)[5:7])
+    return f"{m}～{m + 2} 月"
+
+
 def _cases(qty, box):
     """出貨數量 ÷ 箱入數。箱入數缺或 0 回 None（畫面標紅），不硬塞 0——
     0 是「這天沒出貨」，跟「算不出來」是兩回事。"""
@@ -302,6 +321,9 @@ __all__ = [
     "_parse_reason",
     "_this_month",
     "_valid_month",
+    "_quarter_start",
+    "_quarter_months",
+    "_quarter_label",
     "_cases",
     "_same",
     "_split_lines",

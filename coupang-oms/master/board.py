@@ -12,8 +12,11 @@
     下單 COGS 含稅               TTL × COGS × 箱入數（總表 BO）
     下單永豐成本未稅             NIV × 1.02 × TTL（總表 BP）
   品牌層（一列一個品牌，總表 BY～CU）
-    各金額 = 該品牌商品加總（SUMIF）；目標／REBATE目標 人填（mst_brand_targets）；
-    達成 = 下單 GIV ÷ 目標；diff = 目標 − 下單 GIV；REBATE DIFF = REBATE目標 − COGS 含稅
+    各金額 = 該品牌商品加總（SUMIF）。本月一組、**該季三個月合計**一組（總表的 JAS合計 那幾欄）。
+    目標／REBATE目標 是**一季一個數字**、人填（mst_brand_targets，鍵用季的第一個月）：
+      總表 CJ diff = 目標 − (10月+11月+12月 下單GIV)、CT DIFF = REBATE目標 − JAS合計 下單COGS含稅
+    所以 達成 = 季累計下單 GIV ÷ 目標；diff = 目標 − 季累計下單 GIV；REBATE DIFF = REBATE目標 − 季累計 COGS 含稅。
+    2026-09-23 之前做成「一個月一個目標」是判讀錯誤，已改。
 
 列哪些商品：這個線別、這個月「有下單」或「supply 表有給 Supply／demand」或「有庫存資料」的商品。
 主檔裡有但三者皆無的不列（跟 Excel 一樣，沒事的商品不佔位）。
@@ -22,7 +25,7 @@ low_stock（庫存天數 < LOW_STOCK_DAYS）、no_box（算不出箱數）、no_
 """
 from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyxl 都從這裡來
 from .summary import _build_summary
-from .sources import stock_by_barcode
+from .sources import stock_by_barcode, set_brand_target
 
 LOW_STOCK_DAYS = 14
 YF_COST_FACTOR = 1.02        # 總表 BP：永豐成本未稅 = NIV × 1.02 × 下單箱數
@@ -46,14 +49,36 @@ def _line_products(conn, group, cfg):
     return out
 
 
+def _quarter_sums(conn, group, month, cfg, products, summary, stats):
+    """該季三個月，每個商品的 下單 GIV／COGS 含稅／Supply GIV 加總（總表 JAS合計 那幾欄的原料）。
+    回傳 {barcode: {"ttl_giv","cogs_tax","supply_giv","brand","category"}}。"""
+    acc = {}
+    for qm in _quarter_months(month):
+        s_q = summary if qm == month else _build_summary(conn, group, qm, cfg)
+        st_q = stats if qm == month else {r["barcode"]: r for r in _rows(conn.execute(
+            "SELECT barcode, supply_cs FROM mst_month_stats WHERE month = ?", (qm,)))}
+        sum_q = {r["barcode"]: r for r in s_q["rows"]}
+        for bc in set(sum_q) | {b for b in st_q if b in products}:
+            p = products.get(bc) or {}; r = sum_q.get(bc) or {}
+            ttl = r.get("month_total") or 0.0
+            giv, cost, box = p.get("giv"), p.get("cost_price"), p.get("box_size") or r.get("box_size")
+            a = acc.setdefault(bc, {"ttl_giv": 0.0, "cogs_tax": 0.0, "supply_giv": 0.0,
+                                    "brand": p.get("brand") or r.get("brand") or "", "category": p.get("category") or r.get("category") or ""})
+            a["ttl_giv"] += _mul(ttl, giv) or 0
+            a["cogs_tax"] += _mul(ttl, cost, box) or 0
+            a["supply_giv"] += _mul((st_q.get(bc) or {}).get("supply_cs"), giv) or 0
+    return acc
+
+
 def build_board(conn, group, month, cfg):
     summary = _build_summary(conn, group, month, cfg)          # 訂單那一段：每日箱數、TTL
     sum_by_bc = {r["barcode"]: r for r in summary["rows"]}
     products = _line_products(conn, group, cfg)
     stats = {r["barcode"]: r for r in _rows(conn.execute(
         "SELECT * FROM mst_month_stats WHERE month = ?", (month,)))}
+    qstart = _quarter_start(month)
     targets = {t["brand"]: t for t in _rows(conn.execute(
-        "SELECT * FROM mst_brand_targets WHERE line = ? AND month = ?", (group, month)))}
+        "SELECT * FROM mst_brand_targets WHERE line = ? AND month = ?", (group, qstart)))}
 
     barcodes = set(sum_by_bc) | {bc for bc in stats if bc in products}
     stock = stock_by_barcode(conn, month, sorted(barcodes)) if barcodes else {}
@@ -96,29 +121,36 @@ def build_board(conn, group, month, cfg):
         })
     rows.sort(key=lambda r: (r["brand"] or "", r["product_name"] or "", r["barcode"]))
 
-    # 品牌層
+    # 品牌層：本月（這一頁的商品加總）＋ 該季三個月合計（目標是季的）
+    qsum = _quarter_sums(conn, group, month, cfg, products, summary, stats)
+    NB = "（無品牌）"
+    def new_brand(name, cat):
+        return {"brand": name, "category": cat, "products": 0, "supply": 0.0, "ttl": 0.0, "supply_giv": 0.0,
+                "ttl_giv": 0.0, "cogs_tax": 0.0, "yf_cost": 0.0, "stock_remaining": 0.0, "stock_giv": 0.0, "flags": 0,
+                "q_ttl_giv": 0.0, "q_cogs_tax": 0.0, "q_supply_giv": 0.0}
     brands = collections.OrderedDict()
     for r in rows:
-        b = brands.setdefault(r["brand"] or "（無品牌）", {"brand": r["brand"] or "（無品牌）", "category": r["category"],
-                                                          "products": 0, "supply": 0.0, "ttl": 0.0, "supply_giv": 0.0,
-                                                          "ttl_giv": 0.0, "cogs_tax": 0.0, "yf_cost": 0.0,
-                                                          "stock_remaining": 0.0, "stock_giv": 0.0, "flags": 0})
+        b = brands.setdefault(r["brand"] or NB, new_brand(r["brand"] or NB, r["category"]))
         b["products"] += 1; b["supply"] += r["supply"] or 0; b["ttl"] += r["ttl"]
         for k in ("supply_giv", "ttl_giv", "cogs_tax", "yf_cost", "stock_remaining", "stock_giv"):
             b[k] += r[k] or 0
         b["flags"] += len(r["flags"])
+    for bc, a in qsum.items():
+        b = brands.setdefault(a["brand"] or NB, new_brand(a["brand"] or NB, a["category"]))
+        b["q_ttl_giv"] += a["ttl_giv"]; b["q_cogs_tax"] += a["cogs_tax"]; b["q_supply_giv"] += a["supply_giv"]
     brand_rows = []
     for b in brands.values():
         t = targets.get(b["brand"]) or {}
         tg, rb = t.get("target_giv"), t.get("rebate_target")
-        for k in ("supply", "ttl", "supply_giv", "ttl_giv", "cogs_tax", "yf_cost", "stock_remaining", "stock_giv"):
+        for k in ("supply", "ttl", "supply_giv", "ttl_giv", "cogs_tax", "yf_cost", "stock_remaining", "stock_giv",
+                  "q_ttl_giv", "q_cogs_tax", "q_supply_giv"):
             b[k] = round(b[k], 2)
         b.update({"target_giv": tg, "rebate_target": rb,
-                  "target_pct": round(b["ttl_giv"] / tg * 100) if tg else None,
-                  "target_diff": round(tg - b["ttl_giv"], 2) if tg is not None else None,
-                  "rebate_diff": round(rb - b["cogs_tax"], 2) if rb is not None else None})
+                  "target_pct": round(b["q_ttl_giv"] / tg * 100) if tg else None,
+                  "target_diff": round(tg - b["q_ttl_giv"], 2) if tg is not None else None,
+                  "rebate_diff": round(rb - b["q_cogs_tax"], 2) if rb is not None else None})
         brand_rows.append(b)
-    brand_rows.sort(key=lambda b: -b["ttl_giv"])
+    brand_rows.sort(key=lambda b: (-b["ttl_giv"], -b["q_ttl_giv"]))
 
     totals = {k: round(sum(r[k] or 0 for r in rows), 2) for k in
               ("supply", "ttl", "supply_giv", "ttl_giv", "cogs_tax", "yf_cost", "stock_giv")}
@@ -132,7 +164,11 @@ def build_board(conn, group, month, cfg):
     totals["has_supply"] = any(r["supply"] is not None for r in rows)
     totals["has_stock"] = any(r["stock_remaining"] is not None for r in rows)
     totals["target_giv"] = round(sum(b["target_giv"] or 0 for b in brand_rows), 2) or None
+    totals["rebate_target"] = round(sum(b["rebate_target"] or 0 for b in brand_rows), 2) or None
+    for k in ("q_ttl_giv", "q_cogs_tax", "q_supply_giv"):
+        totals[k] = round(sum(b[k] for b in brand_rows), 2)
     return {"line": group, "month": month, "dates": summary["dates"], "totals_by_date": summary["totals_by_date"],
+            "quarter": {"start": qstart, "months": _quarter_months(month), "label": _quarter_label(month)},
             "rows": rows, "brands": brand_rows, "totals": totals, "low_stock_days": LOW_STOCK_DAYS}
 
 
@@ -153,7 +189,7 @@ def api_board():
 
 @master_bp.route("/api/master/brand_targets", methods=["PUT"])
 def api_set_brand_target():
-    """品牌目標（下單 GIV 目標、REBATE 目標）：人填。空字串 = 清掉。"""
+    """品牌目標（下單 GIV 目標、REBATE 目標）：一季一個數字、人填。給任何一個月都會歸到那一季。空字串 = 清掉。"""
     payload = request.get_json(silent=True) or {}
     group, month, brand = norm_text(payload.get("line")), norm_text(payload.get("month")), norm_text(payload.get("brand"))
     if not group or not _valid_month(month) or not brand:
@@ -171,25 +207,13 @@ def api_set_brand_target():
                 vals[k] = float(n)
     if not vals:
         return jsonify({"error": "沒有要改的欄位。"}), 400
-    operator = _operator()
     conn = get_conn()
     try:
-        cur = _row(conn.execute("SELECT * FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?", (group, month, brand)))
-        if cur is None:
-            conn.execute("INSERT INTO mst_brand_targets (line, month, brand, target_giv, rebate_target, updated_by, updated_at) VALUES (?,?,?,?,?,?,?)",
-                         (group, month, brand, vals.get("target_giv"), vals.get("rebate_target"), operator, now()))
-        else:
-            sets = ", ".join(f"{k} = ?" for k in vals)
-            conn.execute(f"UPDATE mst_brand_targets SET {sets}, updated_by = ?, updated_at = ? WHERE id = ?",
-                         list(vals.values()) + [operator, now(), cur["id"]])
-        for k, v in vals.items():
-            _log(conn, group, "", "", "", f"brand_{k}", "品牌目標" if k == "target_giv" else "REBATE目標",
-                 (cur or {}).get(k), v, operator, "manual", f"{brand} {month}")
+        fresh, _changed = set_brand_target(conn, group, month, brand, vals, _operator())
         conn.commit()
-        fresh = _row(conn.execute("SELECT * FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?", (group, month, brand)))
-        return jsonify({"ok": True, "target": fresh})
+        return jsonify({"ok": True, "target": fresh, "quarter": {"start": _quarter_start(month), "label": _quarter_label(month)}})
     finally:
         conn.close()
 
 
-__all__ = ["build_board", "api_board", "api_set_brand_target", "LOW_STOCK_DAYS"]
+__all__ = ["build_board", "api_board", "api_set_brand_target", "set_brand_target", "LOW_STOCK_DAYS"]
