@@ -36,8 +36,10 @@ def api_products():
     return jsonify({"products": rows, "orphans": orphans, "total": len(rows)})
 
 
-def _upsert_product(conn, barcode, fields, box, cost, operator, source, fname="", only_filled=False):
-    """新增或更新主檔一筆。only_filled=True 時（總表匯入）只更新有值的欄位。"""
+def _upsert_product(conn, barcode, fields, box, cost, operator, source, fname="", only_filled=False, guard=None):
+    """新增或更新主檔一筆。only_filled=True 時（總表匯入）只更新有值的欄位。
+    guard（SheetGuard）有給 = 這是重匯總表：系統上改過的格子要先問它能不能蓋。
+    人在系統上改（source=manual）的欄位記進 mst_field_src；酷澎主檔匯入蓋過的欄位從 mst_field_src 拿掉。"""
     existing = _row(conn.execute("SELECT * FROM mst_products WHERE barcode = ?", (barcode,)))
     stamp = now()
     if cost is not None:
@@ -47,6 +49,13 @@ def _upsert_product(conn, barcode, fields, box, cost, operator, source, fname=""
         fields.setdefault(k, "")
     fields.setdefault("shelf_days", None)
     master_line = fields.get("master_line") or ""
+
+    def track(k):
+        if source == "manual":
+            _mark_src(conn, "product", barcode, k, "manual", operator)
+        elif guard is None:
+            _clear_src(conn, "product", barcode, k)
+
     if existing is None:
         conn.execute(
             """INSERT INTO mst_products
@@ -59,6 +68,14 @@ def _upsert_product(conn, barcode, fields, box, cost, operator, source, fname=""
              fields["unit"], fields["shelf_days"], fields["active"] or "Y", fields["date_format"],
              operator, stamp))
         _log(conn, master_line, "", fields["sku_id"], barcode, "product_new", "新增主檔", "", box, operator, source, fname)
+        if source == "manual":
+            for k in ("sku_id", "yf_sku", "brand", "product_name", "category", "pgcode", "note"):
+                if fields[k]:
+                    track(k)
+            if cost is not None:
+                track("cost_price")
+            if box:
+                track("box_size")
         return "added"
     sets, params, changed = [], [], False
     if master_line and master_line not in _split_lines(existing.get("lines_seen")):
@@ -68,14 +85,18 @@ def _upsert_product(conn, barcode, fields, box, cost, operator, source, fname=""
         if only_filled and (v is None or v == ""):
             continue
         if not _same(existing[k], v):
-            sets.append(f"{k} = ?"); params.append(v); changed = True
+            if guard is not None and not guard.allow("product", barcode, k, existing[k], v):
+                continue
+            sets.append(f"{k} = ?"); params.append(v); changed = True; track(k)
             if k == "note":
                 _log(conn, "", "", existing["sku_id"], barcode, "note", "Note", existing["note"], v,
                      operator, source, fname)
-    if (cost is not None or not only_filled) and not _same(existing["cost_price"], cost):
-        sets.append("cost_price = ?"); params.append(cost); changed = True
-    if (box or not only_filled) and not _same(existing["box_size"], box):
-        sets.append("box_size = ?"); params.append(box); changed = True
+    if (cost is not None or not only_filled) and not _same(existing["cost_price"], cost) \
+            and (guard is None or guard.allow("product", barcode, "cost_price", existing["cost_price"], cost)):
+        sets.append("cost_price = ?"); params.append(cost); changed = True; track("cost_price")
+    if (box or not only_filled) and not _same(existing["box_size"], box) \
+            and (guard is None or guard.allow("product", barcode, "box_size", existing["box_size"], box)):
+        sets.append("box_size = ?"); params.append(box); changed = True; track("box_size")
         _log(conn, "", "", existing["sku_id"], barcode, "box_size", "箱入數", existing["box_size"], box,
              operator, source, fname)
     if existing["auto_created"]:
@@ -103,9 +124,19 @@ def api_save_product():
               for k in _PRODUCT_TEXT_FIELDS}
     fields["active"] = (fields["active"] or "Y").upper()[:1]
     fields["shelf_days"] = norm_int(payload.get("shelf_days"))
+    prices = {}
+    for k in ("giv", "niv"):
+        if k in payload:
+            v = payload.get(k)
+            prices[k] = None if v in (None, "") else norm_decimal(v)
+            if v not in (None, "") and prices[k] is None:
+                return jsonify({"error": f"{k.upper()} 要是數字。"}), 400
+    operator = _operator()
     conn = get_conn()
     try:
-        _upsert_product(conn, barcode, fields, box, cost, _operator(), "manual")
+        _upsert_product(conn, barcode, fields, box, cost, operator, "manual")
+        for k, v in prices.items():
+            sources.set_product_value(conn, barcode, k, v, operator)
         conn.commit()
         fresh = _row(conn.execute("SELECT * FROM mst_products WHERE barcode = ?", (barcode,)))
         return jsonify({"ok": True, "product": fresh})
@@ -216,9 +247,13 @@ def api_import_products():
     operator = _operator()
     header_cells = next(ws.iter_rows(min_row=hdr_idx, max_row=hdr_idx, values_only=True))
     is_sheet = any(_DATE_HDR.match(norm_text(h)) for h in header_cells)   # 有「M/D交貨」日期欄 → 這是業務的總表
+    mode = norm_text(request.form.get("on_conflict"))
+    if mode not in ("", "keep", "overwrite"):
+        mode = ""
     seen_barcodes = []
     conn = get_conn()
     try:
+        guard = SheetGuard(conn, mode) if is_sheet else None
         counts = collections.Counter()
         for row in ws.iter_rows(min_row=hdr_idx + 1, values_only=True):
             barcode = norm_key(get(row, "barcode"))
@@ -231,7 +266,7 @@ def api_import_products():
             fields["shelf_days"] = norm_int(get(row, "shelf_days"))
             counts[_upsert_product(conn, barcode, fields, norm_int(get(row, "box_size")),
                                    norm_decimal(get(row, "cost_price")), operator, "import",
-                                   upload.filename, only_filled=True)] += 1
+                                   upload.filename, only_filled=True, guard=guard)] += 1
         template_line = ""; extras = {}
         if is_sheet and seen_barcodes:
             # 業務的總表就是「匯出總表要長的樣子」，整份記起來當底稿，之後匯出只填箱數。
@@ -249,14 +284,37 @@ def api_import_products():
                         conn.execute("UPDATE mst_products SET lines_seen = ? WHERE id = ?", (",".join(sorted(set(cur_lines) | {template_line})), pr["id"]))
             # 總表 K／L 的 GIV／NIV、M～R 的 Supply／demand 也一起帶進來（read_only 的 ws 要重開一次才能再讀）
             ws2 = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)[ws.title]
-            extras = sources.absorb_sheet_extras(conn, ws2, hdr_idx, list(header_cells), operator, upload.filename, template_line)
+            extras = sources.absorb_sheet_extras(conn, ws2, hdr_idx, list(header_cells), operator, upload.filename, template_line, guard=guard)
+        if guard is not None and guard.conflicts and mode == "":
+            # 總表要蓋掉系統上改過／來源檔更新過的數字：這次什麼都不寫，把清單交給畫面問人
+            items = _describe_conflicts(conn, guard.conflicts)
+            conn.rollback()
+            return jsonify({"ok": False, "needs_confirm": True, "filename": upload.filename, "count": len(items), "conflicts": items[:300]})
         conn.commit()
     finally:
         conn.close()
+    kept = len(guard.conflicts) if guard is not None and mode == "keep" else 0
+    overwritten = len(guard.conflicts) if guard is not None and mode == "overwrite" else 0
     return jsonify({"ok": True, "kind": "sheet" if is_sheet else "coupang_master", "sheet": ws.title,
                     "added": counts["added"], "updated": counts["updated"],
                     "unchanged": counts["unchanged"], "template_line": template_line,
-                    "columns_found": sorted(mapping.keys()), "extras": extras})
+                    "columns_found": sorted(mapping.keys()), "extras": extras, "kept": kept, "overwritten": overwritten})
+
+
+def _describe_conflicts(conn, conflicts):
+    """衝突清單補上品名，給畫面列表用。"""
+    names = {r["barcode"]: r["product_name"] for r in _rows(conn.execute("SELECT barcode, product_name FROM mst_products"))}
+    out = []
+    for c in conflicts:
+        parts = c["rkey"].split("|")
+        if c["kind"] == "brand":
+            who, where = parts[2], f"品牌目標（{_quarter_label(parts[1])}）"
+        else:
+            who, where = f"{names.get(parts[0], '')} {parts[0]}".strip(), (f"{int(parts[1][5:7])} 月" if c["kind"] == "month" else "")
+        out.append({"item": who, "field": (c["field_label"] + (f"（{where}）" if where and c["kind"] == "month" else "")) if c["kind"] != "brand" else f"{c['field_label']}（{_quarter_label(parts[1])}）",
+                    "current": c["current"], "incoming": c["incoming"],
+                    "from": c["src_label"] + (f"（{c['operator']}）" if c["src"] == "manual" and c["operator"] else ""), "at": (c["at"] or "")[:16]})
+    return out
 
 
 _DATE_HDR = re.compile(r"^\s*(\d{1,2})/(\d{0,2})交貨")   # 9/2交貨、7/9交貨_1、9/18交貨\n竹運出、9/交貨（空欄）

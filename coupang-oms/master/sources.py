@@ -105,40 +105,88 @@ def _barcode_map(conn):
     return by_bc, by_sku
 
 
-def _upsert_month(conn, barcode, month, operator, **vals):
-    """只寫有值的欄位；回傳是否有改到。"""
+def _upsert_month(conn, barcode, month, operator, _src=None, _guard=None, **vals):
+    """只寫有值的欄位；回傳是否有改到。_src（supply）有給就記下 supply／demand 是它給的；
+    _guard（重匯總表）有給就先問它能不能蓋。"""
     vals = {k: v for k, v in vals.items() if v is not None}
     if not vals:
         return False
     cur = _row(conn.execute("SELECT * FROM mst_month_stats WHERE barcode = ? AND month = ?", (barcode, month)))
-    stamp = now()
-    if cur is None:
-        cols = ["barcode", "month", "updated_by", "updated_at"] + list(vals)
-        conn.execute(f"INSERT INTO mst_month_stats ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
-                     [barcode, month, operator, stamp] + list(vals.values()))
-        return True
-    changed = {k: v for k, v in vals.items() if not _same(cur.get(k), v)}
+    rkey = f"{barcode}|{month}"
+    changed = {k: v for k, v in vals.items() if not _same((cur or {}).get(k), v)}
+    if _guard is not None:
+        changed = {k: v for k, v in changed.items() if _guard.allow("month", rkey, k, (cur or {}).get(k), v)}
     if not changed:
         return False
-    sets = ", ".join(f"{k} = ?" for k in changed) + ", updated_by = ?, updated_at = ?"
-    conn.execute(f"UPDATE mst_month_stats SET {sets} WHERE id = ?", list(changed.values()) + [operator, stamp, cur["id"]])
+    stamp = now()
+    if cur is None:
+        cols = ["barcode", "month", "updated_by", "updated_at"] + list(changed)
+        conn.execute(f"INSERT INTO mst_month_stats ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                     [barcode, month, operator, stamp] + list(changed.values()))
+    else:
+        sets = ", ".join(f"{k} = ?" for k in changed) + ", updated_by = ?, updated_at = ?"
+        conn.execute(f"UPDATE mst_month_stats SET {sets} WHERE id = ?", list(changed.values()) + [operator, stamp, cur["id"]])
+    if _src:
+        for k in changed:
+            if k in ("supply_cs", "demand_cs"):
+                _mark_src(conn, "month", rkey, k, _src, operator)
     return True
 
 
-def _set_price(conn, barcode, cur, giv, niv, operator, fname):
-    """GIV／NIV：來源有數字才更新，有變才記歷程。回傳是否有改到。"""
+def _set_price(conn, barcode, cur, giv, niv, operator, fname, src=None, guard=None):
+    """GIV／NIV：來源有數字才更新，有變才記歷程。回傳是否有改到。
+    src（master_price）有給就記下是它給的；guard（重匯總表）有給就先問它能不能蓋。"""
     sets, vals, changed = [], [], False
     for field, label, new in (("giv", "GIV", giv), ("niv", "NIV", niv)):
         if new is None:
             continue
         new = float(new)      # 原樣存，不四捨五入：匯出要跟來源檔一模一樣（NIV 常有 5 位小數）
         if not _same(cur.get(field), new):
+            if guard is not None and not guard.allow("product", barcode, field, cur.get(field), new):
+                continue
             sets.append(f"{field} = ?"); vals.append(new); changed = True
             _log(conn, "", "", cur.get("sku_id") or "", barcode, field, label, cur.get(field), new, operator, "import", fname)
+            if src:
+                _mark_src(conn, "product", barcode, field, src, operator)
     if changed:
         conn.execute(f"UPDATE mst_products SET {', '.join(sets)}, updated_by = ?, updated_at = ? WHERE barcode = ?",
                      vals + [operator, now(), barcode])
     return changed
+
+
+def set_product_value(conn, barcode, field, value, operator):
+    """人在系統上改 GIV／NIV（可以清空）。有變才寫、記歷程、記成 manual。回傳有沒有改到。"""
+    assert field in ("giv", "niv")
+    cur = _row(conn.execute("SELECT barcode, sku_id, giv, niv FROM mst_products WHERE barcode = ?", (barcode,)))
+    if cur is None:
+        raise ValueError("主檔裡沒有這個國條。")
+    value = None if value is None else float(value)
+    if _same(cur[field], value):
+        return False
+    conn.execute(f"UPDATE mst_products SET {field} = ?, updated_by = ?, updated_at = ? WHERE barcode = ?", (value, operator, now(), barcode))
+    _log(conn, "", "", cur["sku_id"] or "", barcode, field, FIELD_LABEL[field], cur[field], value, operator, "manual", "")
+    _mark_src(conn, "product", barcode, field, "manual", operator)
+    return True
+
+
+def set_month_value(conn, barcode, month, field, value, operator):
+    """人在系統上改某個月的 Supply／demand（可以清空）。有變才寫、記歷程、記成 manual。回傳有沒有改到。"""
+    assert field in ("supply_cs", "demand_cs")
+    p = _row(conn.execute("SELECT sku_id FROM mst_products WHERE barcode = ?", (barcode,)))
+    if p is None:
+        raise ValueError("主檔裡沒有這個國條。")
+    cur = _row(conn.execute("SELECT * FROM mst_month_stats WHERE barcode = ? AND month = ?", (barcode, month)))
+    value = None if value is None else float(value)
+    if _same((cur or {}).get(field), value):
+        return False
+    if cur is None:
+        conn.execute(f"INSERT INTO mst_month_stats (barcode, month, {field}, updated_by, updated_at) VALUES (?,?,?,?,?)",
+                     (barcode, month, value, operator, now()))
+    else:
+        conn.execute(f"UPDATE mst_month_stats SET {field} = ?, updated_by = ?, updated_at = ? WHERE id = ?", (value, operator, now(), cur["id"]))
+    _log(conn, "", "", p["sku_id"] or "", barcode, field, f"{FIELD_LABEL[field]}（{int(month[5:7])} 月）", (cur or {}).get(field), value, operator, "manual", month)
+    _mark_src(conn, "month", f"{barcode}|{month}", field, "manual", operator)
+    return True
 
 
 def _record_upload(conn, kind, fname, sheet, operator, total, matched, updated, skipped, months, note=""):
@@ -179,7 +227,7 @@ def import_supply(conn, ws, hdr_idx, headers, operator, fname):
             else:
                 per_month[month][field] = v
         for month, vals in per_month.items():
-            if _upsert_month(conn, barcode, month, operator, **vals):
+            if _upsert_month(conn, barcode, month, operator, _src="supply", **vals):
                 updated += 1
     months = {m for m, _ in month_cols}
     _record_upload(conn, "supply", fname, ws.title, operator, total, matched, updated, skipped, months)
@@ -205,7 +253,7 @@ def import_master_price(conn, ws, hdr_idx, headers, operator, fname):
         giv = _num(row[i_giv]) if i_giv < len(row) else None
         niv = _num(row[i_niv]) if i_niv < len(row) else None
         skipped += (giv is None) + (niv is None)
-        if _set_price(conn, bc, cur, giv, niv, operator, fname):
+        if _set_price(conn, bc, cur, giv, niv, operator, fname, src="master_price"):
             updated += 1
     _record_upload(conn, "master_price", fname, ws.title, operator, total, matched, updated, skipped, set())
     return {"kind": "master_price", "label": KIND_LABEL["master_price"], "sheet": ws.title, "rows": total, "matched": matched,
@@ -259,7 +307,7 @@ def import_stock(conn, ws, hdr_idx, headers, operator, fname):
             "not_in_master_examples": missing[:5]}
 
 
-def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname, line=""):
+def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname, line="", guard=None):
     """寶僑總表 Sheet1 多吸幾欄：GIV／NIV → 主檔；Supply_CS (Oct)／demand_CS (Oct) → 月統計；
     右邊品牌區的 目標／REBATE目標 → 品牌目標（季，line 要給）。主檔匯入（products.py）認出是總表時呼叫。回傳摘要 dict。"""
     headers = [_h(c) for c in raw_headers]
@@ -277,7 +325,7 @@ def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname, line=""
                 if v is not None:
                     vals[k] = v
             if vals:
-                _fresh, changed = set_brand_target(conn, line, q, key, vals, operator, "import", f"{fname} 品牌區")
+                _fresh, changed = set_brand_target(conn, line, q, key, vals, operator, "import", f"{fname} 品牌區", guard=guard)
                 targets_updated += changed
     by_bc, _ = _barcode_map(conn)
     i_bc = headers.index("barcode") if "barcode" in headers else None
@@ -303,7 +351,7 @@ def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname, line=""
                 continue
         giv = _num(row[i_giv]) if i_giv is not None and i_giv < len(row) else None
         niv = _num(row[i_niv]) if i_niv is not None and i_niv < len(row) else None
-        if _set_price(conn, bc, cur, giv, niv, operator, fname):
+        if _set_price(conn, bc, cur, giv, niv, operator, fname, guard=guard):
             price_updated += 1
         per_month = collections.defaultdict(dict)
         for (month, field), i in month_cols.items():
@@ -311,7 +359,7 @@ def absorb_sheet_extras(conn, ws, hdr_idx, raw_headers, operator, fname, line=""
             if v is not None:
                 per_month[month][field] = v
         for month, vals in per_month.items():
-            if _upsert_month(conn, bc, month, operator, **vals):
+            if _upsert_month(conn, bc, month, operator, _guard=guard, **vals):
                 month_updated += 1
     months = {m for m, _ in month_cols}
     _record_upload(conn, "sheet", fname, ws.title, operator, 0, 0, price_updated + month_updated + targets_updated, 0, months,
@@ -355,17 +403,23 @@ def sheet_quarter(headers):
     return _quarter_start(f"{_year_for(mon):04d}-{mon:02d}")
 
 
-def set_brand_target(conn, group, month, brand, vals, operator, source="manual", note=""):
+def set_brand_target(conn, group, month, brand, vals, operator, source="manual", note="", guard=None):
     """寫品牌目標（季）。vals 只放要改的欄：{"target_giv": 數字或 None, "rebate_target": ...}，None = 清掉。
-    有變才寫、才記歷程。回傳 (寫完的那筆, 有沒有改到)。"""
+    有變才寫、才記歷程。人填的記成 manual；guard（重匯總表）有給就先問它能不能蓋。回傳 (寫完的那筆, 有沒有改到)。"""
     qstart = _quarter_start(month)
+    rkey = f"{group}|{qstart}|{brand}"
     cur = _row(conn.execute("SELECT * FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?", (group, qstart, brand)))
-    changed = {k: v for k, v in vals.items() if (cur or {}).get(k) != v}
+    changed = {k: v for k, v in vals.items() if not _same((cur or {}).get(k), v)}
+    if guard is not None:
+        changed = {k: v for k, v in changed.items() if guard.allow("brand", rkey, k, (cur or {}).get(k), v)}
+    if source == "manual":
+        for k in changed:
+            _mark_src(conn, "brand", rkey, k, "manual", operator)
     if not changed:
         return cur, False
     if cur is None:
         conn.execute("INSERT INTO mst_brand_targets (line, month, brand, target_giv, rebate_target, updated_by, updated_at) VALUES (?,?,?,?,?,?,?)",
-                     (group, qstart, brand, vals.get("target_giv"), vals.get("rebate_target"), operator, now()))
+                     (group, qstart, brand, changed.get("target_giv"), changed.get("rebate_target"), operator, now()))
     else:
         sets = ", ".join(f"{k} = ?" for k in changed)
         conn.execute(f"UPDATE mst_brand_targets SET {sets}, updated_by = ?, updated_at = ? WHERE id = ?",
@@ -402,44 +456,93 @@ def api_sources():
     return jsonify({"sources": out, "recent": rows[:30]})
 
 
+def _system_ordered(conn, upto_month):
+    """訂單明細每個國條、每個交貨月份的下單箱數（月份 ≤ upto_month，所有線別，跟總表 TTL 同一個算法）。
+    回傳 ({(國條, 月份): 箱數}, 系統有訂單的月份 set)。"""
+    months = sorted({(r["m"] or "") for r in _rows(conn.execute(
+        "SELECT DISTINCT SUBSTR(delivery_date, 1, 7) AS m FROM mst_orders WHERE delivery_date IS NOT NULL AND delivery_date != ''"))})
+    months = [m for m in months if _valid_month(m) and m <= upto_month]
+    out = collections.defaultdict(float)
+    if not months:
+        return out, set()
+    for o in _month_orders(conn, months, _line_groups()):
+        d = (o["delivery_date"] or "")[:7]
+        if d in months and o["barcode"] and o["cases"] is not None:
+            out[(o["barcode"], d)] += o["cases"]
+    return out, set(months)
+
+
+def stock_basis(conn, month):
+    """給畫面說明用：到 month 為止，下單哪幾個月有用到訂單明細、哪幾個月有用到庫存銷售表，
+    以及兩邊都有數字但不一樣的（用的是訂單明細，列出來讓人知道）。"""
+    sys_ordered, _ = _system_ordered(conn, month)
+    file_rows = _rows(conn.execute(
+        "SELECT barcode, month, ordered_cs FROM mst_month_stats WHERE month <= ? AND ordered_cs IS NOT NULL", (month,)))
+    file_months, diffs = set(), []
+    for r in file_rows:
+        k = (r["barcode"], r["month"])
+        if k in sys_ordered:
+            if abs(sys_ordered[k] - r["ordered_cs"]) > 0.01:
+                diffs.append({"barcode": r["barcode"], "month": r["month"], "file": r["ordered_cs"], "orders": round(sys_ordered[k], 2)})
+        else:
+            file_months.add(r["month"])
+    return {"file_months": sorted(file_months), "system_months": sorted({m for _, m in sys_ordered}),
+            "diff_count": len(diffs), "diffs": diffs[:20]}
+
+
 def stock_by_barcode(conn, month, barcodes=None):
     """到 month 為止每個商品的庫存現算（公式見 api_month_stats）。回傳 {barcode: {...}}。
-    barcodes 給了就只算那些；None 算全部有月統計的商品。"""
+    barcodes 給了就只算那些；None 算全部有月統計的商品。
+    下單：一個商品一個月看——系統有這個商品這個月的訂單就用訂單明細（總表的 TTL 本來就是從這裡來的），
+    沒有就用庫存銷售表帶進來的數字。整個月一起切換會把系統還沒匯到的商品當成 0，庫存變負的（做過，測出來拿掉）。
+    實銷：只有庫存銷售表（之後接酷澎銷售報表）。沒有任何實銷資料的商品不算庫存（只加不減會越算越多）。"""
+    sys_ordered, sys_months = _system_ordered(conn, month)
     if barcodes is None:
-        return _stock_chunk(conn, month, None)
+        return _stock_chunk(conn, month, None, sys_ordered, sys_months)
     out_all = {}
     for i in range(0, len(barcodes), 400):          # IN (...) 一次最多 400 個，PostgreSQL／SQLite 都安全
-        out_all.update(_stock_chunk(conn, month, barcodes[i:i + 400]))
+        out_all.update(_stock_chunk(conn, month, barcodes[i:i + 400], sys_ordered, sys_months))
     return out_all
 
 
-def _stock_chunk(conn, month, barcodes):
+def _stock_chunk(conn, month, barcodes, sys_ordered, sys_months):
     where, params = ["s.month <= ?"], [month]
     if barcodes:
         where.append(f"s.barcode IN ({','.join('?' * len(barcodes))})"); params += barcodes
     rows = _rows(conn.execute(
         f"SELECT s.* FROM mst_month_stats s WHERE {' AND '.join(where)} ORDER BY s.barcode, s.month", params))
     dim = _days_in_month(month)
-    acc = {}
+    per = collections.defaultdict(dict)                  # barcode → {month: row}
     for r in rows:
-        a = acc.setdefault(r["barcode"], {"ordered": 0.0, "sold": 0.0, "cur": None})
-        a["ordered"] += r["ordered_cs"] or 0; a["sold"] += r["sold_cs"] or 0
-        if r["month"] == month:
-            a["cur"] = r
+        per[r["barcode"]][r["month"]] = r
+    want = set(barcodes) if barcodes else None
+    for (bc, m) in sys_ordered:                           # 只有訂單、沒有月統計列的商品也要算到下單
+        if (want is None or bc in want) and m not in per[bc]:
+            per[bc][m] = {}
     out = {}
-    for bc, a in acc.items():
-        cur = a["cur"] or {}
-        remaining = round(a["ordered"] - a["sold"], 2)
+    for bc, by_month in per.items():
+        ordered_all = sold_all = 0.0; has_sold = False
+        for m, r in by_month.items():
+            # 這個商品這個月：系統有訂單就用訂單明細，沒有就用庫存銷售表的（系統還沒匯到的單不會被當成 0）
+            ordered_all += sys_ordered[(bc, m)] if (bc, m) in sys_ordered else (r.get("ordered_cs") or 0)
+            if r.get("sold_cs") is not None:
+                has_sold = True
+            sold_all += r.get("sold_cs") or 0
+        cur = by_month.get(month) or {}
+        from_orders = (bc, month) in sys_ordered
+        month_ordered = round(sys_ordered[(bc, month)], 2) if from_orders else cur.get("ordered_cs")
+        remaining = round(ordered_all - sold_all, 2)                                   # AK
         sold, days = cur.get("sold_cs"), cur.get("sold_days")
-        daily = (sold / days) if sold and days else None
-        month_sales = round(daily * dim, 2) if daily else None
-        remaining_eom = round(remaining - daily * (dim - days), 2) if daily and days else None
-        eom_days = None
+        daily = (sold / days) if sold and days else None                               # AC ÷ 20
+        month_sales = round(daily * dim, 2) if daily else None                         # AN
+        remaining_eom = round(remaining - daily * (dim - days), 2) if daily and days else None   # AO
+        eom_days = None                                                                # AP
         if month_sales:
-            eom_days = round((a["ordered"] - ((a["sold"] - (sold or 0)) + month_sales)) / month_sales * dim, 1)
+            eom_days = round((ordered_all - ((sold_all - (sold or 0)) + month_sales)) / month_sales * dim, 1)
         out[bc] = {"supply_cs": cur.get("supply_cs"), "demand_cs": cur.get("demand_cs"),
-                   "ordered_cs": cur.get("ordered_cs"), "sold_cs": sold, "sold_days": days,
-                   "has_stock_data": bool(a["ordered"] or a["sold"]),
+                   "ordered_cs": month_ordered, "ordered_from_orders": from_orders,
+                   "sold_cs": sold, "sold_days": days,
+                   "has_stock_data": has_sold, "ordered_total": round(ordered_all, 2), "sold_total": round(sold_all, 2),
                    "remaining_cs": remaining, "stock_days": round(remaining / daily, 1) if daily else None,
                    "month_sales_proj": month_sales, "remaining_eom": remaining_eom, "stock_days_eom": eom_days}
     return out
@@ -455,6 +558,7 @@ def api_month_stats():
       預計到月底剩餘(箱)  AO = AK − 日均實銷 × 剩下的天數             → remaining_eom
       預計到月底庫存天數  AP = (Σ下單 − (Σ過去月實銷 + AN)) ÷ AN × 30 → stock_days_eom
       剩餘庫金            AL = AK × GIV                             → remaining_giv
+    Σ下單：一個商品一個月看，系統有訂單就用訂單明細，沒有就用庫存銷售表帶進來的（見 stock_by_barcode）。
     另外總表的：PG 最大剩餘可供貨量 BE = Supply − 該月下單；最低應打完 BF = 綜合CS − 該月下單（綜合CS 目前就等於 Supply）。"""
     month = request.args.get("month") or _this_month()
     if not _valid_month(month):
@@ -462,48 +566,31 @@ def api_month_stats():
     barcode = norm_key(request.args.get("barcode"))
     conn = get_conn()
     try:
-        where, params = ["s.month <= ?"], [month]
-        if barcode:
-            where.append("s.barcode = ?"); params.append(barcode)
-        rows = _rows(conn.execute(
-            f"""SELECT s.*, p.product_name, p.brand, p.category, p.giv, p.niv, p.box_size
-                FROM mst_month_stats s LEFT JOIN mst_products p ON p.barcode = s.barcode
-                WHERE {' AND '.join(where)} ORDER BY s.barcode, s.month""", params))
+        stock = stock_by_barcode(conn, month, [barcode] if barcode else None)
+        basis = stock_basis(conn, month)
+        prods = {p["barcode"]: p for p in _rows(conn.execute(
+            "SELECT barcode, product_name, brand, category, giv, niv FROM mst_products"))}
     finally:
         conn.close()
-    acc = {}
-    for r in rows:
-        a = acc.setdefault(r["barcode"], {"ordered": 0.0, "sold": 0.0, "cur": None, "product_name": r["product_name"],
-                                          "brand": r["brand"], "category": r["category"], "giv": r["giv"], "niv": r["niv"]})
-        a["ordered"] += r["ordered_cs"] or 0; a["sold"] += r["sold_cs"] or 0
-        if r["month"] == month:
-            a["cur"] = r
-    dim = _days_in_month(month)
     out = []
-    for bc, a in acc.items():
-        cur = a["cur"] or {}
-        ordered_all, sold_all = a["ordered"], a["sold"]
-        remaining = round(ordered_all - sold_all, 2)                      # AK
-        sold, days = cur.get("sold_cs"), cur.get("sold_days")
-        daily = (sold / days) if sold and days else None                   # AC ÷ 20
-        month_sales = round(daily * dim, 2) if daily else None             # AN
-        remaining_eom = round(remaining - daily * (dim - days), 2) if daily and days else None   # AO
-        eom_days = None                                                    # AP
-        if month_sales:
-            eom_days = round((ordered_all - ((sold_all - (sold or 0)) + month_sales)) / month_sales * dim, 1)
-        supply, ordered = cur.get("supply_cs"), cur.get("ordered_cs")
-        out.append({"barcode": bc, "product_name": a["product_name"], "brand": a["brand"], "category": a["category"],
-                    "giv": a["giv"], "niv": a["niv"], "month": month,
-                    "supply_cs": supply, "demand_cs": cur.get("demand_cs"),
-                    "ordered_cs": ordered, "sold_cs": sold, "sold_days": days,
-                    "remaining_cs": remaining, "stock_days": round(remaining / daily, 1) if daily else None,
-                    "month_sales_proj": month_sales, "remaining_eom": remaining_eom, "stock_days_eom": eom_days,
-                    "remaining_giv": round(remaining * a["giv"], 2) if a["giv"] is not None else None,
+    for bc, st in stock.items():
+        p = prods.get(bc) or {}
+        remaining = st["remaining_cs"] if st["has_stock_data"] else None
+        supply, ordered = st["supply_cs"], st["ordered_cs"]
+        out.append({"barcode": bc, "product_name": p.get("product_name"), "brand": p.get("brand"), "category": p.get("category"),
+                    "giv": p.get("giv"), "niv": p.get("niv"), "month": month,
+                    "supply_cs": supply, "demand_cs": st["demand_cs"],
+                    "ordered_cs": ordered, "ordered_from_orders": st["ordered_from_orders"], "sold_cs": st["sold_cs"], "sold_days": st["sold_days"],
+                    "has_stock_data": st["has_stock_data"],
+                    "remaining_cs": remaining, "stock_days": st["stock_days"] if remaining is not None else None,
+                    "month_sales_proj": st["month_sales_proj"], "remaining_eom": st["remaining_eom"] if remaining is not None else None,
+                    "stock_days_eom": st["stock_days_eom"] if remaining is not None else None,
+                    "remaining_giv": round(remaining * p["giv"], 2) if remaining is not None and p.get("giv") is not None else None,
                     "pg_remaining_supply": round(supply - (ordered or 0), 2) if supply is not None else None})
-    out.sort(key=lambda x: (x["brand"] or "", x["product_name"] or ""))
-    return jsonify({"month": month, "rows": out, "count": len(out)})
+    out.sort(key=lambda x: (x["brand"] or "", x["product_name"] or "", x["barcode"]))
+    return jsonify({"month": month, "rows": out, "count": len(out), "basis": basis})
 
 
 __all__ = ["KIND_LABEL", "detect_kind", "find_source_sheet", "import_supply", "import_master_price", "import_stock",
            "absorb_sheet_extras", "api_sources", "api_month_stats", "stock_by_barcode",
-           "set_brand_target", "brand_block_cols", "sheet_quarter"]
+           "set_brand_target", "brand_block_cols", "sheet_quarter", "set_product_value", "set_month_value", "stock_basis"]

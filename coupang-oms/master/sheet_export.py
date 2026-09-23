@@ -191,14 +191,14 @@ def _board_sheet(wb, board, operator):
     group_row(r, [("商品", 7, _G["prod"]), ("單價", 3, _G["price"]), (f"{mm} 月供需（箱）", 4, _G["supply"]), ("庫存（箱）", 3, _G["stock"]), (f"{mm} 月金額", 4, _G["money"]), ("", 1, _G["prod"])]); r += 1
     head_row(r, ["品名", "條碼", "SKU ID", "品類", "品牌", "Note", "箱入數", "COGS", "GIV", "NIV",
                  "Supply", "demand", "下單", "剩餘可供貨", "剩餘", "天數", "到月底天數", "Supply GIV", "下單 GIV", "COGS 含稅", "永豐成本未稅", "注意"]); r += 1
-    FLAG = {"over": "超打", "no_over": "不可超打卻超打", "low_stock": "庫存低", "no_box": "算不出箱數", "no_price": "缺 GIV"}
+    FLAG = {"over": "超打", "no_over": "不可超打卻超打", "low_stock": "庫存低", "neg_stock": "庫存算出負的", "no_box": "算不出箱數", "no_price": "缺 GIV"}
     for x in board["rows"]:
         put(r, 1, x["product_name"]); put(r, 2, x["barcode"]).number_format = "@"; put(r, 3, x["sku_id"]).number_format = "@"
         put(r, 4, x["category"]); put(r, 5, x["brand"]); put(r, 6, x["note"]); put(r, 7, x["box_size"], font=red if not x["box_size"] else None)
         put(r, 8, x["cost"], _FMT_CASES); put(r, 9, x["giv"], _FMT_CASES); put(r, 10, x["niv"], _FMT_CASES)
         put(r, 11, x["supply"], _FMT_CASES); put(r, 12, x["demand"], _FMT_CASES); put(r, 13, x["ttl"], _FMT_CASES, font=bold)
         put(r, 14, x["remaining_supply"], _FMT_CASES, font=red if (x["remaining_supply"] or 0) < 0 else None)
-        put(r, 15, x["stock_remaining"], _FMT_CASES); put(r, 16, x["stock_days"], _FMT_DAYS, font=red if "low_stock" in x["flags"] else None); put(r, 17, x["stock_days_eom"], _FMT_DAYS)
+        put(r, 15, x["stock_remaining"], _FMT_CASES); put(r, 16, x["stock_days"], _FMT_DAYS, font=red if ("low_stock" in x["flags"] or "neg_stock" in x["flags"]) else None); put(r, 17, x["stock_days_eom"], _FMT_DAYS)
         put(r, 18, x["supply_giv"], _FMT_MONEY); put(r, 19, x["ttl_giv"], _FMT_MONEY); put(r, 20, x["cogs_tax"], _FMT_MONEY); put(r, 21, x["yf_cost"], _FMT_MONEY)
         put(r, 22, "、".join(FLAG[f] for f in x["flags"]) or None, font=red if x["flags"] else None)
         r += 1

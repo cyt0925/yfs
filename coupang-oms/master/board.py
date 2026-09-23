@@ -21,11 +21,11 @@
 列哪些商品：這個線別、這個月「有下單」或「supply 表有給 Supply／demand」或「有庫存資料」的商品。
 主檔裡有但三者皆無的不列（跟 Excel 一樣，沒事的商品不佔位）。
 警示（flags）：over（下單 > Supply）、no_over（Note 是「不可超打」且下單 > Supply）、
-low_stock（庫存天數 < LOW_STOCK_DAYS）、no_box（算不出箱數）、no_price（缺 GIV）。
+low_stock（庫存天數 < LOW_STOCK_DAYS）、neg_stock（剩餘庫存算出負的＝資料對不起來）、no_box（算不出箱數）、no_price（缺 GIV）。
 """
 from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyxl 都從這裡來
 from .summary import _build_summary
-from .sources import stock_by_barcode, set_brand_target
+from .sources import stock_by_barcode, set_brand_target, stock_basis, set_product_value, set_month_value
 
 LOW_STOCK_DAYS = 14
 YF_COST_FACTOR = 1.02        # 總表 BP：永豐成本未稅 = NIV × 1.02 × 下單箱數
@@ -80,6 +80,15 @@ def build_board(conn, group, month, cfg):
     targets = {t["brand"]: t for t in _rows(conn.execute(
         "SELECT * FROM mst_brand_targets WHERE line = ? AND month = ?", (group, qstart)))}
 
+    # 哪些格子是在系統上改過的（畫面上標一個小記號，滑過去看是誰改的）
+    edited = collections.defaultdict(dict)
+    for m in _rows(conn.execute("SELECT * FROM mst_field_src WHERE src = 'manual' AND kind IN ('product', 'month')")):
+        bc, _, mon = m["rkey"].partition("|")
+        if m["kind"] == "product" and m["field"] in ("giv", "niv", "cost_price", "box_size", "note"):
+            edited[bc][m["field"]] = f"{m['operator']} {m['at'][:16]} 在系統上改"
+        elif m["kind"] == "month" and mon == month:
+            edited[bc][m["field"]] = f"{m['operator']} {m['at'][:16]} 在系統上改"
+
     barcodes = set(sum_by_bc) | {bc for bc in stats if bc in products}
     stock = stock_by_barcode(conn, month, sorted(barcodes)) if barcodes else {}
     barcodes |= {bc for bc, st in stock.items() if st["has_stock_data"] and bc in products}
@@ -98,7 +107,9 @@ def build_board(conn, group, month, cfg):
         flags = []
         if supply is not None and ttl > supply:
             flags.append("no_over" if "不可超打" in note else "over")
-        if st.get("stock_days") is not None and st["stock_days"] < LOW_STOCK_DAYS:
+        if st.get("has_stock_data") and st["remaining_cs"] < 0:
+            flags.append("neg_stock")            # 下單比實銷少：資料有缺（例如實銷有、下單沒匯到），不是庫存低
+        elif st.get("stock_days") is not None and st["stock_days"] < LOW_STOCK_DAYS:
             flags.append("low_stock")
         if s.get("missing_box"):
             flags.append("no_box")
@@ -117,7 +128,7 @@ def build_board(conn, group, month, cfg):
             "stock_giv": _mul(st.get("remaining_cs") if st.get("has_stock_data") else None, giv),
             "supply_giv": _mul(supply, giv), "ttl_giv": _mul(ttl, giv),
             "cogs_tax": _mul(ttl, cost, box), "yf_cost": _mul(ttl, niv, YF_COST_FACTOR),
-            "flags": flags,
+            "flags": flags, "edited": edited.get(bc, {}),
         })
     rows.sort(key=lambda r: (r["brand"] or "", r["product_name"] or "", r["barcode"]))
 
@@ -160,6 +171,7 @@ def build_board(conn, group, month, cfg):
     totals["alerts"] = sum(1 for r in rows if r["flags"])
     totals["over"] = sum(1 for r in rows if "over" in r["flags"] or "no_over" in r["flags"])
     totals["low_stock"] = sum(1 for r in rows if "low_stock" in r["flags"])
+    totals["neg_stock"] = sum(1 for r in rows if "neg_stock" in r["flags"])
     totals["no_box"] = sum(1 for r in rows if "no_box" in r["flags"])
     totals["has_supply"] = any(r["supply"] is not None for r in rows)
     totals["has_stock"] = any(r["stock_remaining"] is not None for r in rows)
@@ -169,6 +181,7 @@ def build_board(conn, group, month, cfg):
         totals[k] = round(sum(b[k] for b in brand_rows), 2)
     return {"line": group, "month": month, "dates": summary["dates"], "totals_by_date": summary["totals_by_date"],
             "quarter": {"start": qstart, "months": _quarter_months(month), "label": _quarter_label(month)},
+            "stock_basis": stock_basis(conn, month),
             "rows": rows, "brands": brand_rows, "totals": totals, "low_stock_days": LOW_STOCK_DAYS}
 
 
@@ -183,6 +196,41 @@ def api_board():
     conn = get_conn()
     try:
         return jsonify(build_board(conn, group, month, cfg))
+    finally:
+        conn.close()
+
+
+@master_bp.route("/api/master/board/value", methods=["PUT"])
+def api_board_value():
+    """看板上直接改一格：GIV／NIV（主檔，跟月份無關）、Supply／demand（這個月）。空字串 = 清掉。
+    改過的格子記成「在系統上改」，之後重匯舊總表要蓋它時會先問。"""
+    payload = request.get_json(silent=True) or {}
+    barcode, month, field = norm_key(payload.get("barcode")), norm_text(payload.get("month")), norm_text(payload.get("field"))
+    if not barcode or field not in ("giv", "niv", "supply_cs", "demand_cs"):
+        return jsonify({"error": "缺國條，或這一欄不能在這裡改。"}), 400
+    if field in ("supply_cs", "demand_cs") and not _valid_month(month):
+        return jsonify({"error": "月份格式要像 2026-09。"}), 400
+    v = payload.get("value")
+    if v in (None, ""):
+        value = None
+    else:
+        n = norm_decimal(v)
+        if n is None:
+            return jsonify({"error": "要是數字。"}), 400
+        value = float(n)
+        if value < 0:
+            return jsonify({"error": "不能是負數。"}), 400
+    conn = get_conn()
+    try:
+        try:
+            if field in ("giv", "niv"):
+                changed = set_product_value(conn, barcode, field, value, _operator())
+            else:
+                changed = set_month_value(conn, barcode, month, field, value, _operator())
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        conn.commit()
+        return jsonify({"ok": True, "changed": changed, "value": value})
     finally:
         conn.close()
 
@@ -216,4 +264,4 @@ def api_set_brand_target():
         conn.close()
 
 
-__all__ = ["build_board", "api_board", "api_set_brand_target", "set_brand_target", "LOW_STOCK_DAYS"]
+__all__ = ["build_board", "api_board", "api_board_value", "api_set_brand_target", "LOW_STOCK_DAYS"]

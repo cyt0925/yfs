@@ -129,6 +129,48 @@ def _quarter_label(month):
     return f"{m}～{m + 2} 月"
 
 
+# ── 某一格的值是誰給的（mst_field_src）───────────────────────────────────────────
+# 用來擋「舊的總表重匯，偷偷蓋掉系統上改過、或 supply 表／Coupang Master 更新過的數字」。
+SRC_LABEL = {"manual": "在系統上改", "supply": "寶僑 supply 表", "master_price": "Coupang Master"}
+FIELD_LABEL = {"sku_id": "SKU ID", "yf_sku": "永豐料號", "brand": "品牌", "product_name": "品名", "category": "品類",
+               "pgcode": "PG code", "note": "Note", "cost_price": "COGS", "box_size": "箱入數", "giv": "GIV", "niv": "NIV",
+               "supply_cs": "Supply", "demand_cs": "demand", "target_giv": "品牌目標", "rebate_target": "REBATE目標"}
+
+
+def _mark_src(conn, kind, rkey, field, src, operator):
+    """記下這一格現在的值是 src 給的（manual／supply／master_price）。"""
+    conn.execute("INSERT INTO mst_field_src (kind, rkey, field, src, operator, at) VALUES (?,?,?,?,?,?) "
+                 "ON CONFLICT (kind, rkey, field) DO UPDATE SET src = EXCLUDED.src, operator = EXCLUDED.operator, at = EXCLUDED.at",
+                 (kind, rkey, field, src, operator or "", now()))
+
+
+def _clear_src(conn, kind, rkey, field):
+    """這一格被總表／酷澎主檔這種「底稿」蓋過了，不再受保護。"""
+    conn.execute("DELETE FROM mst_field_src WHERE kind = ? AND rkey = ? AND field = ?", (kind, rkey, field))
+
+
+class SheetGuard:
+    """重匯總表時，每一格要寫之前先問它：這格是系統上改過或來源檔更新過的，而且總表的數字不一樣 → 記成衝突。
+    mode：""（只找衝突、都不寫，外面找到衝突就整批 rollback 回給畫面問人）、
+          "keep"（衝突的格子保留系統的，其他照寫）、"overwrite"（全部用總表的，蓋掉的格子不再受保護）。"""
+
+    def __init__(self, conn, mode=""):
+        self.conn, self.mode, self.conflicts = conn, mode, []
+        self.marks = {(r["kind"], r["rkey"], r["field"]): r for r in _rows(conn.execute("SELECT * FROM mst_field_src"))}
+
+    def allow(self, kind, rkey, field, current, incoming):
+        m = self.marks.get((kind, rkey, field))
+        if m is None or _same(current, incoming):
+            return True
+        self.conflicts.append({"kind": kind, "rkey": rkey, "field": field, "field_label": FIELD_LABEL.get(field, field),
+                               "current": current, "incoming": incoming, "src": m["src"],
+                               "src_label": SRC_LABEL.get(m["src"], m["src"]), "operator": m["operator"], "at": m["at"]})
+        if self.mode == "overwrite":
+            _clear_src(self.conn, kind, rkey, field)
+            return True
+        return False
+
+
 def _cases(qty, box):
     """出貨數量 ÷ 箱入數。箱入數缺或 0 回 None（畫面標紅），不硬塞 0——
     0 是「這天沒出貨」，跟「算不出來」是兩回事。"""
@@ -324,6 +366,11 @@ __all__ = [
     "_quarter_start",
     "_quarter_months",
     "_quarter_label",
+    "SRC_LABEL",
+    "FIELD_LABEL",
+    "_mark_src",
+    "_clear_src",
+    "SheetGuard",
     "_cases",
     "_same",
     "_split_lines",

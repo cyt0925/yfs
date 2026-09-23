@@ -761,7 +761,7 @@ CREATE TABLE IF NOT EXISTS mst_month_stats (
     UNIQUE(barcode, month)
 );
 
--- 品牌目標（總表 CI「目標」、CS「REBATE目標」那幾格，人填的）：一個線別、一個月、一個品牌一筆
+-- 品牌目標（總表 CI「目標」、CS「REBATE目標」那幾格，人填的）：一個線別、一季、一個品牌一筆（month 存季首月）
 CREATE TABLE IF NOT EXISTS mst_brand_targets (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     line          TEXT NOT NULL,
@@ -772,6 +772,20 @@ CREATE TABLE IF NOT EXISTS mst_brand_targets (
     updated_by    TEXT DEFAULT '',
     updated_at    TEXT DEFAULT '',
     UNIQUE(line, month, brand)
+);
+
+-- 某一格的值是誰給的（不是總表給的才記）：人在系統上改、寶僑 supply 表、Coupang Master。
+-- 重匯總表時，總表要蓋掉這種格子而且數字不一樣 → 先列出來讓人決定（保留系統的／用總表蓋），不偷偷蓋掉。
+-- kind = product（rkey = 國條）／month（國條|YYYY-MM）／brand（線別|季首月|品牌）
+CREATE TABLE IF NOT EXISTS mst_field_src (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind      TEXT NOT NULL,
+    rkey      TEXT NOT NULL,
+    field     TEXT NOT NULL,
+    src       TEXT NOT NULL,             -- manual／supply／master_price
+    operator  TEXT DEFAULT '',
+    at        TEXT DEFAULT '',
+    UNIQUE(kind, rkey, field)
 );
 
 -- 外部來源檔每次上傳的紀錄（畫面上「上次上傳」用）：kind = supply／master_price／stock／sheet
@@ -1084,6 +1098,24 @@ def _migrate_master_columns(conn):
                 conn.execute("DELETE FROM mst_brand_targets WHERE id = ?", (r["id"],))
             else:
                 conn.execute("UPDATE mst_brand_targets SET month = ? WHERE id = ?", (q, r["id"]))
+
+    # 2026-09-23：mst_field_src 第一次建起來時，把以前在系統上手改過、而且之後沒被匯入蓋掉的 Note／箱入數補記進去，
+    # 重匯總表才擋得到。只跑一次（mst_meta 記 field_src_backfill）。
+    if _table_exists(conn, "mst_field_src") and _table_exists(conn, "mst_logs"):
+        done = conn.execute("SELECT value FROM mst_meta WHERE key = 'field_src_backfill'").fetchone()
+        if not done:
+            latest = {}
+            for r in conn.execute(
+                    "SELECT barcode, field, source, operator, changed_at FROM mst_logs "
+                    "WHERE field IN ('note', 'box_size') AND barcode != '' ORDER BY id").fetchall():
+                latest[(r["barcode"], r["field"])] = r
+            for (bc, field), r in latest.items():
+                if r["source"] == "manual":
+                    conn.execute("INSERT INTO mst_field_src (kind, rkey, field, src, operator, at) VALUES (?,?,?,?,?,?) "
+                                 "ON CONFLICT (kind, rkey, field) DO NOTHING",
+                                 ("product", bc, field, "manual", r["operator"] or "", r["changed_at"] or ""))
+            conn.execute("INSERT INTO mst_meta (key, value) VALUES ('field_src_backfill', '1') "
+                         "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
 
     # 舊版把「由匯入自動建立，箱入數請核對」寫在 Note 裡，一次性搬成旗標並清空。
     if _table_exists(conn, "mst_products"):

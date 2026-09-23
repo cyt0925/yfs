@@ -4,6 +4,7 @@
 執行：python test_master.py
 """
 import io
+import json
 import re
 import os
 import sys
@@ -672,8 +673,28 @@ def main():
     check("Supply GIV = Supply × GIV（總表 BK）、剩餘可供貨 = Supply − 下單（總表 BE）",
           rs["supply_giv"] == round(rs["supply"] * rs["giv"], 2) and rs["remaining_supply"] == round(rs["supply"] - rs["ttl"], 2), str(rs))
     check("每一列的超打旗標跟數字一致", all((("over" in r["flags"]) or ("no_over" in r["flags"])) == (r["supply"] is not None and r["ttl"] > r["supply"]) for r in bd["rows"]))
-    check("庫存跟月統計 API 算的是同一個數", rows[bc1]["stock_remaining"] == ms9[bc1]["remaining_cs"] and rows[bc1]["stock_days"] == ms9[bc1]["stock_days"], str((rows[bc1]["stock_remaining"], ms9[bc1]["remaining_cs"])))
-    check("庫存天數低於 14 天的都標 low_stock", all(("low_stock" in r["flags"]) == (r["stock_days"] is not None and r["stock_days"] < bd["low_stock_days"]) for r in bd["rows"]))
+    ms9b = {r["barcode"]: r for r in client.get("/api/master/month_stats?month=2026-09").get_json()["rows"]}
+    check("庫存跟月統計 API 算的是同一個數", rows[bc1]["stock_remaining"] == ms9b[bc1]["remaining_cs"] and rows[bc1]["stock_days"] == ms9b[bc1]["stock_days"], str((rows[bc1]["stock_remaining"], ms9b[bc1]["remaining_cs"])))
+    file_sep = r1["Y26 9月目前下單總箱數(在途)"]
+    check("匯了 9 月訂單之後：這個商品 9 月的下單改用訂單明細 → 剩餘庫存 = 原本 − 庫存銷售表的 9 月 + 訂單明細的 9 月",
+          ms9b[bc1]["ordered_from_orders"] and ms9b[bc1]["ordered_cs"] == rows[bc1]["ttl"]
+          and abs(ms9b[bc1]["remaining_cs"] - (ms9[bc1]["remaining_cs"] - file_sep + rows[bc1]["ttl"])) < 0.01,
+          f"{ms9[bc1]['remaining_cs']} − {file_sep} + {rows[bc1]['ttl']} vs {ms9b[bc1]['remaining_cs']}")
+    no_ord = next(bc for bc, r in rows.items() if r["ttl"] == 0 and r["stock_remaining"] is not None)
+    check("9 月系統沒有這個商品的單 → 9 月下單還是用庫存銷售表的，不會被當成 0", not ms9b[no_ord]["ordered_from_orders"] and ms9b[no_ord]["remaining_cs"] == ms9[no_ord]["remaining_cs"], no_ord)
+    basis = bd["stock_basis"]
+    check("看板寫出下單從哪來：訂單明細有 9 月、庫存銷售表有 4～9 月；兩邊不一樣的有列出來", "2026-09" in basis["system_months"] and basis["file_months"][0] == "2026-04"
+          and basis["diff_count"] >= 1 and any(d["barcode"] == bc1 and d["month"] == "2026-09" for d in basis["diffs"]), str(basis)[:300])
+    conn = db.get_conn()
+    conn.execute("INSERT INTO mst_products (barcode, product_name, brand, box_size, lines_seen) VALUES (?,?,?,?,?)", ("9990000000001", "只有訂單沒有實銷的測試品", "測試", 1, "寶僑"))
+    conn.commit(); conn.close()
+    import master as _m
+    conn = db.get_conn(); st_x = _m.stock_by_barcode(conn, "2026-09", ["9990000000001", bc1]); conn.close()
+    check("沒有任何實銷資料的商品不算庫存（只加不減會越算越多）", "9990000000001" not in st_x or not st_x["9990000000001"]["has_stock_data"])
+    conn = db.get_conn(); conn.execute("DELETE FROM mst_products WHERE barcode = ?", ("9990000000001",)); conn.commit(); conn.close()
+    check("庫存算出負的標 neg_stock（資料對不起來），其他庫存天數低於 14 天的標 low_stock", all(
+        ("neg_stock" in r["flags"]) == (r["stock_remaining"] is not None and r["stock_remaining"] < 0)
+        and ("low_stock" in r["flags"]) == (r["stock_remaining"] is not None and r["stock_remaining"] >= 0 and r["stock_days"] is not None and r["stock_days"] < bd["low_stock_days"]) for r in bd["rows"]))
     t = bd["totals"]
     check("合計 = 各列加總（下單、下單 GIV、COGS 含稅）", t["ttl"] == round(sum(r["ttl"] for r in bd["rows"]), 2) and t["ttl_giv"] == round(sum(r["ttl_giv"] or 0 for r in bd["rows"]), 2)
           and t["cogs_tax"] == round(sum(r["cogs_tax"] or 0 for r in bd["rows"]), 2), str(t))
@@ -728,7 +749,7 @@ def main():
     check("Supply_CS (Sep) 填成 supply 資料的值", wse.cell(row=r1, column=col("Supply_CS (Sep)")).value == x1["supply"], str((wse.cell(row=r1, column=col("Supply_CS (Sep)")).value, x1["supply"])))
     fk_r1 = next(r for r in range(2, fk.max_row + 1) if str(fk.cell(row=r, column=5).value) == bc1)
     check("Supply_CS (Oct) 不是這個月的，不動", wse.cell(row=r1, column=col("Supply_CS (Oct)")).value == fk.cell(row=fk_r1, column=19).value)
-    check("目前庫存數量 填成系統算的剩餘庫存（不是底稿的舊數字）", wse.cell(row=r1, column=col("目前庫存數量")).value == x1["stock_remaining"] == ms9[bc1]["remaining_cs"], str((wse.cell(row=r1, column=col("目前庫存數量")).value, x1["stock_remaining"])))
+    check("目前庫存數量 填成系統算的剩餘庫存（不是底稿的舊數字）", wse.cell(row=r1, column=col("目前庫存數量")).value == x1["stock_remaining"] == ms9b[bc1]["remaining_cs"], str((wse.cell(row=r1, column=col("目前庫存數量")).value, x1["stock_remaining"])))
     check("每一個對得到的商品：GIV、Supply、庫存都跟看板一樣", all(
         (x["giv"] is None or wse.cell(row=rowe[bc], column=col("GIV")).value == x["giv"]) and (x["supply"] is None or wse.cell(row=rowe[bc], column=col("Supply_CS (Sep)")).value == x["supply"])
         and (x["stock_remaining"] is None or wse.cell(row=rowe[bc], column=col("目前庫存數量")).value == x["stock_remaining"]) for bc, x in rows.items() if bc in rowe))
@@ -744,6 +765,51 @@ def main():
     check("填入說明寫了 GIV／NIV、供需、庫存三欄各填幾格；品牌區底稿沒有就說跳過", "GIV／NIV|填了" in info_txt and "Supply_CS／demand_CS (9月)|填了" in info_txt and "到月底庫存天數|填了" in info_txt and "底稿沒有品牌區" in info_txt, info_txt[:400])
     wbn = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/export?line=紙潔&month=2026-09").data))
     check("沒底稿的線別（紙潔）系統格式也附系統看板", wbn.sheetnames == ["總表", "系統看板", "每日合計"], str(wbn.sheetnames))
+
+    print("\n【12g】在系統上直接改 GIV／NIV／Supply／demand；重匯舊總表不偷偷蓋掉")
+    fake_total = os.path.join(FAKE, "假_寶僑總表.xlsx")
+    bc_g = bc3
+    giv_old = client.get("/api/master/board?line=寶僑&month=2026-09").get_json()
+    rg = next(r for r in giv_old["rows"] if r["barcode"] == bc_g)
+    res = jput(client, "/api/master/board/value", {"barcode": bc_g, "month": "2026-09", "field": "giv", "value": "1111.5"})
+    res2 = jput(client, "/api/master/board/value", {"barcode": bc_g, "month": "2026-09", "field": "supply_cs", "value": "77"})
+    bdg = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); rg2 = next(r for r in bdg["rows"] if r["barcode"] == bc_g)
+    check("看板直接改 GIV、9 月 Supply：存進去、下單 GIV 與剩餘可供貨跟著重算", res.status_code == 200 and res2.status_code == 200 and rg2["giv"] == 1111.5 and rg2["supply"] == 77
+          and rg2["ttl_giv"] == round(rg2["ttl"] * 1111.5, 2) and rg2["remaining_supply"] == round(77 - rg2["ttl"], 2), str((rg2["giv"], rg2["supply"], rg2["ttl_giv"])))
+    check("改過的格子有標記（誰在系統上改）", "giv" in rg2["edited"] and "supply_cs" in rg2["edited"] and "在系統上改" in rg2["edited"]["giv"], str(rg2["edited"]))
+    check("10 月的 Supply 沒被 9 月的改動影響", next((r["supply"] for r in client.get("/api/master/board?line=寶僑&month=2026-10").get_json()["rows"] if r["barcode"] == bc_g), None) == ms10[bc_g]["supply_cs"])
+    check("改了有記歷程（GIV、Supply（9 月））", {"GIV", "Supply（9 月）"} <= {l["field_label"] for l in client.get(f"/api/master/logs?q={bc_g}&limit=1000").get_json()["logs"] if l["source"] == "manual"})
+    check("不是數字 → 400；負數 → 400；不能改的欄位 → 400", jput(client, "/api/master/board/value", {"barcode": bc_g, "month": "2026-09", "field": "giv", "value": "abc"}).status_code == 400
+          and jput(client, "/api/master/board/value", {"barcode": bc_g, "month": "2026-09", "field": "giv", "value": "-1"}).status_code == 400
+          and jput(client, "/api/master/board/value", {"barcode": bc_g, "month": "2026-09", "field": "cost_price", "value": "1"}).status_code == 400)
+    check("主檔沒有的國條 → 400", jput(client, "/api/master/board/value", {"barcode": "0000", "month": "2026-09", "field": "giv", "value": "1"}).status_code == 400)
+    res = client.post("/api/master/products", json={"barcode": bc1, "box_size": prods[bc1]["box_size"], "product_name": prods[bc1]["product_name"], "brand": prods[bc1]["brand"],
+                                                    "category": prods[bc1]["category"], "cost_price": prods[bc1]["cost_price"], "note": "手改的 Note", "giv": "2222", "niv": ""})
+    p1 = next(p for p in client.get("/api/master/products").get_json()["products"] if p["barcode"] == bc1)
+    check("商品視窗也能改 GIV、清掉 NIV", res.status_code == 200 and p1["giv"] == 2222 and p1["niv"] is None and p1["note"] == "手改的 Note", str((p1["giv"], p1["niv"])))
+
+    before = client.get("/api/master/board?line=寶僑&month=2026-09").get_json()
+    res = upload(client, "/api/master/products/import", fake_total); d = res.get_json()
+    items = {(c["item"].split()[-1], c["field"]) for c in d.get("conflicts", [])}
+    check("重匯舊總表：會蓋到系統上改過的格子 → 先不寫，回衝突清單", res.status_code == 200 and d.get("needs_confirm") and d["count"] >= 4, str(d)[:300])
+    check("衝突清單有：手改的 GIV、手改的 9 月 Supply、商品視窗改的 Note、Coupang Master 更新過的 GIV", {(bc_g, "GIV"), (bc_g, "Supply（9 月）"), (bc1, "Note")} <= items
+          and any(c["from"] == "Coupang Master" for c in d["conflicts"]), str(sorted(items))[:300])
+    after = client.get("/api/master/board?line=寶僑&month=2026-09").get_json()
+    check("回衝突清單的那次什麼都沒寫（整批取消）", json.dumps(before["rows"], sort_keys=True) == json.dumps(after["rows"], sort_keys=True))
+    res = upload(client, "/api/master/products/import", fake_total, on_conflict="keep"); d = res.get_json()
+    bdk = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); rk = next(r for r in bdk["rows"] if r["barcode"] == bc_g)
+    p1k = next(p for p in client.get("/api/master/products").get_json()["products"] if p["barcode"] == bc1)
+    check("選「保留系統的」：手改的 GIV、Supply、Note 都還在，其他照匯", res.status_code == 200 and d["ok"] and d["kept"] >= 4 and rk["giv"] == 1111.5 and rk["supply"] == 77 and p1k["note"] == "手改的 Note", str((rk["giv"], rk["supply"], p1k["note"], d.get("kept"))))
+    res = upload(client, "/api/master/products/import", fake_total); d2 = res.get_json()
+    check("保留之後再匯同一份：還是會問（保護還在）", d2.get("needs_confirm") and d2["count"] == d["kept"], str((d2.get("count"), d.get("kept"))))
+    res = upload(client, "/api/master/products/import", fake_total, on_conflict="overwrite"); d = res.get_json()
+    bdo = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); ro = next(r for r in bdo["rows"] if r["barcode"] == bc_g)
+    fk_g = next(r for r in frows if str(r["Barcode"]) == bc_g)
+    check("選「用總表的蓋過去」：GIV、Supply 變回總表的數字，標記拿掉", d["ok"] and d["overwritten"] >= 4 and ro["giv"] == float(fk_g["GIV"]) and ro["supply"] == float(fk_g["Supply_CS (Sep)"]) and not ro["edited"], str((ro["giv"], fk_g["GIV"], ro["supply"], ro["edited"])))
+    res = upload(client, "/api/master/products/import", fake_total); d = res.get_json()
+    check("蓋過之後再匯同一份：沒有衝突，直接匯", d.get("ok") and not d.get("needs_confirm"), str(d)[:200])
+    res = upload(client, "/api/master/products/import", os.path.join(FAKE, "假_CoupangMaster.xlsx"))
+    check("Coupang Master 再傳一次：GIV 更新成 Master 的，不用問（來源檔本來就比總表新）", res.status_code == 200 and res.get_json()["kind"] == "master_price")
 
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")

@@ -176,7 +176,7 @@
   .bd .dim { color:#94a3b8; } .bd .neg { color:var(--bad); font-weight:700; } .bd .low { color:var(--bad); font-weight:700; }
   .bd .bar { height:6px; border-radius:3px; background:#e2e8f0; overflow:hidden; min-width:70px; } .bd .bar i { display:block; height:100%; background:var(--b600); }
   .bd .bar.over i { background:var(--bad); }
-  .bd td.ed { cursor:text; } .bd td.ed:hover { background:#fffbeb; outline:1px dashed #fcd34d; } .bd td.ed input { width:110px; text-align:right; padding:2px 6px; border:1px solid var(--b500); border-radius:6px; font-size:13px; }
+  .bd td.ed { cursor:text; position:relative; } .bd .ed-mark { position:absolute; top:3px; right:3px; width:6px; height:6px; border-radius:50%; background:#f59e0b; } .bd td.ed:hover { background:#fffbeb; outline:1px dashed #fcd34d; } .bd td.ed input { width:110px; text-align:right; padding:2px 6px; border:1px solid var(--b500); border-radius:6px; font-size:13px; }
   .bd tfoot td { font-weight:700; background:#f8fafc; }
   .bd-note { font-size:10.5px; padding:0 6px; border-radius:5px; white-space:nowrap; font-weight:600; }
   .nt-new { background:#dbeafe; color:#1e40af; } .nt-noover { background:#fee2e2; color:#991b1b; } .nt-over { background:#dcfce7; color:#166534; }
@@ -362,8 +362,9 @@
     <details class="card p-4 text-sm mt-3"><summary class="cursor-pointer font-semibold">這些數字怎麼來的</summary>
       <div class="mt-2 space-y-1 muted">
         <div>COGS、GIV、NIV 來自商品主檔；GIV、NIV 由 Coupang Master 更新。Supply、demand 來自寶僑 supply 表。下單是這個月訂單明細的出貨箱數加總。</div>
+        <div>GIV、NIV、Supply、demand 也可以直接點格子改，改過的格子右上角有個橘色小點，滑過去看是誰改的。重匯舊的總表時，如果會蓋到這些格子，系統會先列出來問你。</div>
         <div>剩餘可供貨 = Supply − 下單。下單超過 Supply 就標「超打」，Note 寫「不可超打」的會標紅。</div>
-        <div>剩餘庫存 = 累計下單 − 累計實銷（從庫存銷售表帶進來的期初，之後由訂單與酷澎銷售報表更新）。庫存天數 = 剩餘 ÷ 本月日均實銷，低於 14 天標紅。到月底天數是用日均實銷往後推。</div>
+        <div>剩餘庫存 = 累計下單 − 累計實銷。下單一個商品一個月看：系統有這個商品這個月的訂單就用訂單明細，沒有就用庫存銷售表帶進來的數字（卡片上會寫哪幾個月用哪個，兩邊不一樣的也會標出來）。實銷目前只有庫存銷售表，要更新就再傳一次，之後接酷澎銷售報表。庫存天數 = 剩餘 ÷ 本月日均實銷，低於 14 天標紅。剩餘算出負的代表下單比實銷少、資料有缺（例如某張單還沒匯進來），會另外標「庫存算出負的」。到月底天數是用日均實銷往後推。</div>
         <div>下單 GIV = 下單 × GIV。COGS 含稅 = 下單 × COGS × 箱入數。永豐成本未稅 = 下單 × NIV × 1.02。品牌那頁是同品牌加總。</div>
         <div>目標和 REBATE 目標跟總表一樣是<b>一季一個數字</b>（10～12 月算一季）：達成 = 這季三個月的下單 GIV 合計 ÷ 目標；DIFF = REBATE 目標 − 這季 COGS 含稅合計。點格子就能填，匯總表進來時裡面的目標也會帶進來。</div>
         <div>匯出總表：照業務的底稿填各交貨日箱數、GIV／NIV、這個月的 Supply／demand、庫存三欄、品牌目標（系統有值的才填），其他格不動；另附「系統看板」（畫面原樣）和「系統填入說明」兩個分頁。</div>
@@ -480,6 +481,16 @@
 </dialog>
 
 <!-- 商品編輯 -->
+<dialog id="dlg-sheet-conf" style="max-width:860px;width:92vw">
+  <div class="dlg-h"><b><i class="bi bi-shield-exclamation"></i> 總表的數字比系統舊</b></div>
+  <div class="dlg-b text-sm">
+    <p id="sc-head" class="mb-3"></p>
+    <div id="sc-list" class="tbl-wrap" style="max-height:48vh"></div>
+    <p class="kbd mt-2">其他沒衝突的格子（新商品、系統沒改過的欄位）兩種選法都會照總表匯進去。</p>
+  </div>
+  <div class="dlg-f"><button id="sc-cancel" class="btn btn-g">取消，這份先不匯</button><button id="sc-over" class="btn btn-o">用總表的蓋過去</button><button id="sc-keep" class="btn btn-p"><i class="bi bi-shield-check"></i> 保留系統的，其他照匯</button></div>
+</dialog>
+
 <dialog id="dlg-prod" style="max-width:620px">
   <div class="dlg-h"><b id="prod-dlg-title"><i class="bi bi-box-seam"></i> 新增商品</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b grid grid-cols-2 gap-3 text-sm">
@@ -497,6 +508,8 @@
     <label>總效期天數 <input id="p-shelf" type="number" min="0" class="txt"></label>
     <label>啟用 <select id="p-active" class="sel" style="width:100%"><option value="Y">Y（啟用）</option><option value="N">N（停用）</option></select></label>
     <label class="col-span-2">Note／報價備註（會放進專案報價檔的備註） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
+    <label>GIV（每箱進價） <input id="p-giv" type="number" step="any" min="0" class="txt"></label>
+    <label>NIV（每箱進價扣折讓） <input id="p-niv" type="number" step="any" min="0" class="txt"></label>
   </div>
   <div class="dlg-f"><button data-close class="btn btn-g">取消</button><button id="btn-prod-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div>
 </dialog>

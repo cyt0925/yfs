@@ -887,7 +887,10 @@ let BOARD = null; let bdView = localStorage.getItem("mst_bd_view") || "products"
 const money = n => n == null ? "" : Math.round(n).toLocaleString("en-US");
 const NOTE_CLASS = [["不可超打", "nt-noover"], ["可以超打", "nt-over"], ["新品", "nt-new"], ["停產", "nt-stop"], ["停?", "nt-maybe"], ["有放單直接給貨", "nt-direct"]];
 const noteBadge = n => { if (!n) return ""; const hit = NOTE_CLASS.find(([k]) => n.includes(k)); return `<span class="bd-note ${hit ? hit[1] : "nt-other"}" title="${esc(n)}">${esc(n.length > 8 ? n.slice(0, 8) + "…" : n)}</span>`; };
-const FLAG_LABEL = { over: ["超打", "bd-warn"], no_over: ["不可超打卻超打", "bd-bad"], low_stock: ["庫存低", "bd-bad"], no_box: ["算不出箱數", "bd-warn"], no_price: ["缺 GIV", "bd-gray"] };
+const FLAG_LABEL = { over: ["超打", "bd-warn"], no_over: ["不可超打卻超打", "bd-bad"], low_stock: ["庫存低", "bd-bad"], neg_stock: ["庫存算出負的", "bd-bad"], no_box: ["算不出箱數", "bd-warn"], no_price: ["缺 GIV", "bd-gray"] };
+const monList = ms => { if (!ms.length) return ""; const n = ms.map(m => Number(m.slice(5))); return n.length > 2 && n[n.length - 1] - n[0] === n.length - 1 ? `${n[0]}～${n[n.length - 1]} 月` : n.map(x => x + " 月").join("、"); };
+const basisText = bs => !bs ? "" : "下單：" + [bs.system_months.length ? `訂單明細 ${monList(bs.system_months)}` : "", bs.file_months.length ? `庫存銷售表 ${monList(bs.file_months)}（系統沒這張單的商品）` : ""].filter(Boolean).join("、")
+  + (bs.diff_count ? ` · <span class="neg" title="${esc(bs.diffs.map(x => `${x.barcode} ${Number(x.month.slice(5))} 月：庫存銷售表 ${fmt(x.file)}、訂單明細 ${fmt(x.orders)}`).join("\n"))}">${bs.diff_count} 個商品的下單兩邊不一樣，用的是訂單明細</span>` : "");
 const flagBadges = fl => fl.map(f => `<span class="badge ${FLAG_LABEL[f][1]}">${FLAG_LABEL[f][0]}</span>`).join(" ");
 async function loadSummary() {
   if (!state.sumLine) { $("#bd-kpi").innerHTML = `<div class="muted p-4">還沒有訂單，先到訂單明細上傳。</div>`; $("#bd-prod-table").innerHTML = ""; $("#bd-brand-table").innerHTML = ""; $("#sum-table").innerHTML = ""; return; }
@@ -918,8 +921,8 @@ function renderBoard() {
   $("#bd-kpi").innerHTML =
     card(`${mm} 月下單`, fmt(t.ttl), "箱", t.has_supply ? `Supply ${fmt(t.supply)} 箱 · 已下 ${pct}%${t.over ? ` · <span class="neg">${t.over} 個商品超打</span>` : ""}` : `${t.with_orders} 個商品有出貨 · supply 表還沒上傳`)
     + card("下單金額 GIV", money(t.ttl_giv), "", `COGS 含稅 ${money(t.cogs_tax)} · 永豐成本未稅 ${money(t.yf_cost)}${t.target_giv ? ` · ${b.quarter.label}累計 ${money(t.q_ttl_giv)}／目標 ${money(t.target_giv)}` : ""}`)
-    + (t.has_stock ? card("剩餘庫存", fmt(t.stock_remaining), "箱", `庫金 ${money(t.stock_giv)}${t.low_stock ? ` · <span class="neg">${t.low_stock} 個商品不到 ${b.low_stock_days} 天</span>` : ""}`) : card("剩餘庫存", "—", "", "庫存銷售表還沒上傳"))
-    + card("需要注意", fmt(t.alerts), "個商品", t.alerts ? [t.over ? `超打 ${t.over}` : "", t.low_stock ? `庫存低 ${t.low_stock}` : "", t.no_box ? `算不出箱數 ${t.no_box}` : ""].filter(Boolean).join(" · ") : "沒有超打、庫存低、算不出箱數的", t.alerts > 0);
+    + (t.has_stock ? card("剩餘庫存", fmt(t.stock_remaining), "箱", `庫金 ${money(t.stock_giv)}${t.low_stock ? ` · <span class="neg">${t.low_stock} 個商品不到 ${b.low_stock_days} 天</span>` : ""}<br><span class="kbd" title="剩餘 = 累計下單 − 累計實銷。下單一個商品一個月看：系統有這張單就用訂單明細，沒有就用庫存銷售表。實銷目前只有庫存銷售表。">${basisText(b.stock_basis)}</span>`) : card("剩餘庫存", "—", "", "庫存銷售表還沒上傳"))
+    + card("需要注意", fmt(t.alerts), "個商品", t.alerts ? [t.over ? `超打 ${t.over}` : "", t.low_stock ? `庫存低 ${t.low_stock}` : "", t.neg_stock ? `庫存算出負的 ${t.neg_stock}` : "", t.no_box ? `算不出箱數 ${t.no_box}` : ""].filter(Boolean).join(" · ") : "沒有超打、庫存低、算不出箱數的", t.alerts > 0);
 
   // ── 商品 ──
   const rows = bdFilter(b.rows);
@@ -930,15 +933,17 @@ function renderBoard() {
       <th class="num sec">Supply</th><th class="num">demand</th><th class="num">下單</th><th class="num">剩餘可供貨</th>
       <th class="num sec">剩餘</th><th class="num">天數</th><th class="num">到月底</th>
       <th class="num sec">下單 GIV</th><th class="num">COGS 含稅</th><th class="num">永豐成本</th></tr></thead><tbody>`;
+  const edCell = (r, f, v, d = 0, extra = "") => { const who = r.edited && r.edited[f];
+    return `<td class="num ed ${extra}" data-f="${f}" title="${who ? esc(who) + "，" : ""}點一下改">${n(v, "", d)}${who ? `<i class="ed-mark" title="${esc(who)}"></i>` : ""}</td>`; };
   for (const r of rows) {
     const overCls = r.remaining_supply != null && r.remaining_supply < 0 ? "neg" : "";
-    const lowCls = r.stock_days != null && r.stock_days < b.low_stock_days ? "low" : "";
-    h += `<tr>
+    const lowCls = (r.stock_days != null && r.stock_days < b.low_stock_days) || (r.stock_remaining != null && r.stock_remaining < 0) ? "low" : "";
+    h += `<tr data-bc="${esc(r.barcode)}">
       <td><div class="pn" title="${esc(r.product_name)}">${esc(r.product_name)}</div><div class="sub">${esc(r.brand)}${r.category ? ` · ${esc(r.category)}` : ""} ${noteBadge(r.note)} ${flagBadges(r.flags)}${r.in_master ? "" : `<span class="badge bd-warn">未建檔</span>`}</div></td>
       <td class="mono kbd">${esc(r.barcode)}<br>箱入 ${r.box_size ? fmt(r.box_size) : `<span class="neg">缺</span>`}</td>
-      <td class="num sec">${n(r.cost)}</td><td class="num">${n(r.giv, "", 2)}</td><td class="num">${n(r.niv, "", 2)}</td>
-      <td class="num sec">${n(r.supply)}</td><td class="num">${n(r.demand)}</td><td class="num"><b>${fmt(r.ttl)}</b></td><td class="num">${n(r.remaining_supply, overCls)}</td>
-      <td class="num sec">${n(r.stock_remaining)}</td><td class="num">${n(r.stock_days, lowCls, 1)}</td><td class="num">${n(r.stock_days_eom, "", 1)}</td>
+      <td class="num sec">${n(r.cost)}</td>${r.in_master ? edCell(r, "giv", r.giv, 2) + edCell(r, "niv", r.niv, 2) : `<td class="num">${n(r.giv, "", 2)}</td><td class="num">${n(r.niv, "", 2)}</td>`}
+      ${r.in_master ? edCell(r, "supply_cs", r.supply, 2, "sec") + edCell(r, "demand_cs", r.demand, 2) : `<td class="num sec">${n(r.supply)}</td><td class="num">${n(r.demand)}</td>`}<td class="num"><b>${fmt(r.ttl)}</b></td><td class="num">${n(r.remaining_supply, overCls)}</td>
+      <td class="num sec">${n(r.stock_remaining, r.stock_remaining != null && r.stock_remaining < 0 ? "neg" : "")}</td><td class="num">${n(r.stock_days, lowCls, 1)}</td><td class="num">${n(r.stock_days_eom, "", 1)}</td>
       <td class="num sec">${r.ttl_giv == null ? `<span class="dim">—</span>` : money(r.ttl_giv)}</td><td class="num">${r.cogs_tax == null ? `<span class="dim">—</span>` : money(r.cogs_tax)}</td><td class="num">${r.yf_cost == null ? `<span class="dim">—</span>` : money(r.yf_cost)}</td></tr>`;
   }
   if (!rows.length) h += `<tr><td colspan="15" class="muted p-6 text-center">${b.rows.length ? "沒有符合搜尋的商品" : `${mm} 月這個線別沒有下單、沒有 Supply、也沒有庫存資料`}</td></tr>`;
@@ -947,6 +952,7 @@ function renderBoard() {
       <td class="num sec">${t.has_stock ? fmt(t.stock_remaining) : ""}</td><td></td><td></td>
       <td class="num sec">${money(t.ttl_giv)}</td><td class="num">${money(t.cogs_tax)}</td><td class="num">${money(t.yf_cost)}</td></tr></tfoot>`;
   $("#bd-prod-table").innerHTML = h;
+  $("#bd-prod-table").querySelectorAll("td.ed").forEach(td => td.addEventListener("click", () => editBoardValue(td)));
 
   // ── 品牌 ──（目標是一季一個數字，跟總表一樣：diff = 目標 − 該季三個月下單 GIV）
   const ql = b.quarter.label;
@@ -988,6 +994,21 @@ function renderBoard() {
   dh += `</tbody><tfoot><tr style="font-weight:700;background:var(--b100)"><td class="sticky-l" style="background:var(--b100)">合計</td><td></td><td></td><td></td><td></td>${b.dates.map(d => `<td class="num">${fmt(b.totals_by_date[d])}</td>`).join("")}<td class="num">${fmt(t.ttl)}</td><td></td></tr></tfoot>`;
   $("#sum-table").innerHTML = dh;
 }
+/* 看板上直接改 GIV／NIV（主檔）、Supply／demand（這個月）。改過的格子右上角有小記號，重匯舊總表要蓋它時會先問 */
+const BD_FIELD = { giv: ["giv", "GIV"], niv: ["niv", "NIV"], supply_cs: ["supply", "Supply"], demand_cs: ["demand", "demand"] };
+function editBoardValue(td) {
+  if (td.querySelector("input")) return;
+  const bc = td.closest("tr").dataset.bc, f = td.dataset.f, row = BOARD.rows.find(x => x.barcode === bc) || {}, cur = row[BD_FIELD[f][0]];
+  const keep = td.innerHTML; td.innerHTML = `<input type="number" step="any" min="0" value="${cur ?? ""}">`; const inp = td.querySelector("input"); inp.focus(); inp.select();
+  let done = false;
+  const save = async () => { if (done) return; done = true;
+    if (String(inp.value) === String(cur ?? "")) { td.innerHTML = keep; return; }
+    try { await api("/api/master/board/value", J({ barcode: bc, month: state.sumMonth, field: f, value: inp.value }));
+      toast(`${row.product_name || bc} 的 ${BD_FIELD[f][1]}${f.endsWith("_cs") ? `（${Number(state.sumMonth.slice(5))} 月）` : ""}已存`); loadSummary(); }
+    catch (e) { toast(e.message, "err"); td.innerHTML = keep; } };
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { done = true; td.innerHTML = keep; } });
+  inp.addEventListener("blur", () => setTimeout(save, 0));
+}
 function editTarget(td) {
   if (td.querySelector("input")) return;
   const brand = td.closest("tr").dataset.brand, k = td.dataset.k, cur = (BOARD.brands.find(x => x.brand === brand) || {})[k];
@@ -1023,7 +1044,13 @@ $("#prod-files-go").addEventListener("click", async () => {
   const out = []; $("#prod-imp-msg").innerHTML = `<span class="muted">匯入中…</span>`;
   for (const file of files) {
     const fd = new FormData(); fd.append("file", file);
-    try { const d = await api("/api/master/products/import", { method: "POST", body: fd });
+    try { let d = await api("/api/master/products/import", { method: "POST", body: fd });
+      if (d.needs_confirm) {
+        const choice = await askSheetConflicts(d);
+        if (choice === "cancel") { out.push(`<span class="muted"><i class="bi bi-x-circle"></i> ${esc(file.name)}：沒匯（你按了取消，系統裡的數字都沒動）</span>`); continue; }
+        const fd2 = new FormData(); fd2.append("file", file); fd2.append("on_conflict", choice);
+        d = await api("/api/master/products/import", { method: "POST", body: fd2 });
+      }
       const fname = files.length > 1 ? esc(file.name) + " " : "";
       if (d.kind === "supply" || d.kind === "master_price" || d.kind === "stock") {
         // 外部來源檔：只更新它負責的欄位（supply／demand、GIV／NIV、下單／實銷）
@@ -1031,7 +1058,8 @@ $("#prod-files-go").addEventListener("click", async () => {
         toast(`${d.label}匯入完成：對到 ${d.matched}、更新 ${d.updated}`);
       } else {
         const ex = d.extras && (d.extras.price_updated || d.extras.month_updated) ? `<br><i class="bi bi-plus-circle"></i> 順便帶進 GIV／NIV ${d.extras.price_updated} 筆、每月供需 ${d.extras.month_updated} 筆${d.extras.months.length ? `（${d.extras.months.map(m => Number(m.slice(5)) + " 月").join("、")}）` : ""}。` : "";
-        out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${fname}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。抓到的欄位：${d.columns_found.join("、")}${d.template_line ? `<br><i class="bi bi-file-earmark-check"></i> 這是${esc(d.template_line)}的總表，已記住它的樣子：之後「匯出總表」會長得跟這份一模一樣（含順序），只填箱數。` : ""}${ex}</span>`);
+        const kept = d.kept ? `<br><i class="bi bi-shield-check"></i> 系統上改過、來源檔更新過的 ${d.kept} 格保留系統的數字，沒被總表蓋掉。` : d.overwritten ? `<br><i class="bi bi-exclamation-circle"></i> ${d.overwritten} 格照你選的用總表的數字蓋過去了（修改歷程查得到原本的值）。` : "";
+        out.push(`<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${fname}工作表「${esc(d.sheet)}」：新增 ${d.added}、更新 ${d.updated}、沒變 ${d.unchanged}。${kept}抓到的欄位：${d.columns_found.join("、")}${d.template_line ? `<br><i class="bi bi-file-earmark-check"></i> 這是${esc(d.template_line)}的總表，已記住它的樣子：之後「匯出總表」會長得跟這份一模一樣（含順序），只填箱數。` : ""}${ex}</span>`);
         toast(`主檔匯入完成：新增 ${d.added}、更新 ${d.updated}`);
       } }
     catch (e) { out.push(`<span class="neg">${files.length > 1 ? esc(file.name) + "：" : ""}${esc(e.message)}</span>`); }
@@ -1039,6 +1067,19 @@ $("#prod-files-go").addEventListener("click", async () => {
   $("#prod-files-go").disabled = false; stagedProd = []; renderStagedProd();
   $("#prod-imp-msg").innerHTML = out.join("<br>"); loadProducts(); loadSources();
 });
+/* 重匯總表時，總表的數字跟系統上改過（或 supply 表／Coupang Master 更新過）的不一樣：列出來讓人選 */
+function askSheetConflicts(d) {
+  return new Promise(resolve => {
+    const dlg = $("#dlg-sheet-conf"); const v = x => x == null || x === "" ? `<span class="muted">（空白）</span>` : esc(typeof x === "number" ? x.toLocaleString("en-US", { maximumFractionDigits: 5 }) : x);
+    $("#sc-head").innerHTML = `「${esc(d.filename)}」裡有 <b>${d.count}</b> 格跟系統現在的數字不一樣，而且系統的數字是比較新的（有人在系統上改過，或是 supply 表、Coupang Master 更新過）。要用哪一邊？`;
+    $("#sc-list").innerHTML = `<table class="m"><thead><tr><th>商品／品牌</th><th>欄位</th><th class="num">系統現在</th><th class="num">總表裡</th><th>系統的數字是誰給的</th></tr></thead><tbody>${d.conflicts.map(c => `<tr><td>${esc(c.item)}</td><td>${esc(c.field)}</td><td class="num"><b>${v(c.current)}</b></td><td class="num">${v(c.incoming)}</td><td class="kbd">${esc(c.from)} ${esc(c.at)}</td></tr>`).join("")}${d.count > d.conflicts.length ? `<tr><td colspan="5" class="muted">還有 ${d.count - d.conflicts.length} 格沒列出來</td></tr>` : ""}</tbody></table>`;
+    let picked = "cancel";
+    const pick = c => () => { picked = c; dlg.close(); };
+    $("#sc-keep").onclick = pick("keep"); $("#sc-over").onclick = pick("overwrite"); $("#sc-cancel").onclick = pick("cancel");
+    dlg.onclose = () => resolve(picked);
+    dlg.showModal();
+  });
+}
 /* 來源檔上次上傳：supply 表／Coupang Master／庫存銷售表／總表 各一格，一眼看出哪個該補了 */
 async function loadSources() {
   let d; try { d = await api("/api/master/sources"); } catch (e) { return; }
@@ -1083,11 +1124,12 @@ function openProductDialog(p) {
   $("#p-cat").value = p?.category || ""; $("#p-cost").value = p?.cost_price ?? ""; $("#p-pg").value = p?.pgcode || "";
   $("#p-brand").value = p?.brand || ""; $("#p-name").value = p?.product_name || ""; $("#p-note").value = p?.note || "";
   $("#p-line").value = p?.master_line || ""; $("#p-unit").value = p?.unit || ""; $("#p-shelf").value = p?.shelf_days ?? ""; $("#p-active").value = p?.active === "N" ? "N" : "Y";
+  $("#p-giv").value = p?.giv ?? ""; $("#p-niv").value = p?.niv ?? "";
   $("#dlg-prod").showModal();
 }
 $("#btn-prod-add").addEventListener("click", () => openProductDialog(null));
 $("#btn-prod-save").addEventListener("click", async () => {
-  try { await api("/api/master/products", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ barcode: $("#p-barcode").value, box_size: $("#p-box").value, sku_id: $("#p-sku").value, yf_sku: $("#p-yf").value, brand: $("#p-brand").value, product_name: $("#p-name").value, note: $("#p-note").value, category: $("#p-cat").value, cost_price: $("#p-cost").value, pgcode: $("#p-pg").value, master_line: $("#p-line").value, unit: $("#p-unit").value, shelf_days: $("#p-shelf").value, active: $("#p-active").value }) });
+  try { await api("/api/master/products", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ barcode: $("#p-barcode").value, box_size: $("#p-box").value, sku_id: $("#p-sku").value, yf_sku: $("#p-yf").value, brand: $("#p-brand").value, product_name: $("#p-name").value, note: $("#p-note").value, category: $("#p-cat").value, cost_price: $("#p-cost").value, pgcode: $("#p-pg").value, master_line: $("#p-line").value, unit: $("#p-unit").value, shelf_days: $("#p-shelf").value, active: $("#p-active").value, giv: $("#p-giv").value, niv: $("#p-niv").value }) });
     toast("主檔已儲存"); $("#dlg-prod").close(); loadProducts(); } catch (e) { toast(e.message, "err"); }
 });
 
