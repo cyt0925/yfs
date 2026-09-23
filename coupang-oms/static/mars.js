@@ -19,6 +19,8 @@ async function loadStatus() {
   const u = d.last_upload;
   $("#mp-status").innerHTML = u ? `上次上傳 ${esc(u.uploaded_at.slice(0, 16))} · ${esc(u.operator)} · ${esc(u.filename)} · <b style="color:var(--m8)">${d.codes}</b> 個料號`
     : `<span class="neg">還沒上傳</span>：拆單要靠它分品類、中標，先把 Alice 的「自動化_Mars整合商品資料」傳上來`;
+  $("#od-status").innerHTML = d.dates.length ? `② 裡有瑪氏訂單的到貨日：${d.dates.slice(-6).map(md).join("、")}${d.dates.length > 6 ? " …" : ""}${d.last_order_import ? `<br>最近一次匯入 ${esc(d.last_order_import.committed_at.slice(0, 16))} · ${esc(d.last_order_import.operator)} · ${esc(d.last_order_import.filename)}` : ""}`
+    : `<span class="neg">還沒有瑪氏的訂單</span>：把 Kate 系統匯出的出貨彙總表傳上來`;
   const up = d.dates.filter(x => x >= today()).slice(0, 8), recent = d.dates.filter(x => x < today()).slice(-3);
   const chips = [...recent, ...up];
   $("#d-chips").innerHTML = chips.map(x => `<span class="chip" data-d="${x}" title="只看這天到貨的">${md(x)}</span>`).join("") || `<span class="kbd">② 訂單明細裡還沒有瑪氏的訂單</span>`;
@@ -35,6 +37,36 @@ $("#mp-file").addEventListener("change", async e => {
       + (d.warnings.length ? `<details class="kbd"><summary>${d.warnings.length} 列有問題（跳過或標出來）</summary>${d.warnings.map(esc).join("<br>")}</details>` : "");
     toast("商品總表已更新"); await loadStatus(); loadSplits();
   } catch (err) { $("#mp-msg").innerHTML = `<span class="neg">${esc(err.message)}</span>`; }
+});
+
+/* ── 出貨彙總表：走 ② 訂單明細同一套匯入（預覽 → 確認），只是從這頁傳 ── */
+let ODP = null;
+$("#od-file").addEventListener("change", async e => {
+  const files = [...e.target.files]; e.target.value = ""; if (!files.length) return;
+  const fd = new FormData(); files.forEach(f => fd.append("file", f));
+  $("#od-msg").innerHTML = `<span class="muted">讀檔中…</span>`; $("#od-preview").classList.add("hidden");
+  try { ODP = await api("/api/master/import/preview", { method: "POST", body: fd }); } catch (err) { $("#od-msg").innerHTML = `<span class="neg">${esc(err.message)}</span>`; return; }
+  $("#od-msg").innerHTML = "";
+  const mars = ODP.lines["瑪氏"] || 0, others = Object.entries(ODP.lines).filter(([k]) => k !== "瑪氏");
+  if (!mars) {
+    $("#od-preview").innerHTML = `<div class="alert al-bad"><b>這份檔裡沒有瑪氏的單</b>（${others.map(([k, v]) => `${esc(k)} ${v} 列`).join("、") || "0 列"}），這頁只收瑪氏的出貨彙總表，沒有匯入。寶僑的單請到商品主檔自動化 ② 傳。</div>`;
+    $("#od-preview").classList.remove("hidden"); ODP = null; return;
+  }
+  $("#od-preview").innerHTML = `<div style="border:1px solid var(--m2);border-radius:10px;padding:10px 12px;background:var(--m0)">
+    <div><b>${esc(ODP.filename)}</b>：${ODP.rows_total} 列、${ODP.po_count} 張 PO，瑪氏 <b style="color:var(--m8)">${mars}</b> 列${others.length ? `，另有 ${others.map(([k, v]) => `${esc(k)} ${v} 列`).join("、")}（會一起進 ②，那邊的人也看得到）` : ""}。</div>
+    <div class="mt-1">新增 <b>${ODP.new_count}</b> 筆、有變 <b>${ODP.updated_count}</b> 筆、沒變 ${ODP.identical_count} 筆${ODP.removed_count ? `、檔案裡消失 <span class="neg">${ODP.removed_count}</span> 筆（出貨會歸 0）` : ""}；到貨日 ${ODP.dates.map(md).join("、")}。</div>
+    ${ODP.warnings.length ? `<div class="mt-1" style="color:var(--warn)">${ODP.warnings.map(esc).join("<br>")}</div>` : ""}
+    <div class="kbd mt-1">在 ② 人工改過的出貨數量、交貨日不會被蓋掉；只動檔案裡有的 PO。</div>
+    <div class="flex gap-2 mt-2"><button id="od-commit" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 確認匯入</button><button id="od-cancel" class="btn btn-o btn-sm">取消</button></div></div>`;
+  $("#od-preview").classList.remove("hidden");
+  $("#od-cancel").onclick = () => { $("#od-preview").classList.add("hidden"); ODP = null; };
+  $("#od-commit").onclick = async () => {
+    $("#od-commit").disabled = true;
+    try { const d = await api("/api/master/import/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batch_id: ODP.batch_id, add_missing_products: true }) });
+      $("#od-preview").classList.add("hidden"); $("#od-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.removed ? `、消失歸 0 ${d.removed}` : ""}。</span>`;
+      toast("出貨彙總表匯入完成"); ODP = null; await loadStatus(); loadSplits();
+    } catch (err) { toast(err.message, "err"); $("#od-commit").disabled = false; }
+  };
 });
 
 /* ── 拆單 ── */

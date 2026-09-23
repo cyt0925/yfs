@@ -133,9 +133,19 @@ def api_mars_status():
         dates = [r["d"] for r in _rows(conn.execute(
             "SELECT DISTINCT delivery_date AS d, line FROM mst_orders WHERE delivery_date != '' ORDER BY delivery_date"))
             if _group_of(r["line"], _line_groups()) == LINE]
+        # 最近一次有瑪氏單的匯入（不管是從這頁還是 ② 傳的）
+        last_imp = None
+        cfg = _line_groups()
+        for b in _rows(conn.execute("SELECT id, filename, operator, committed_at, payload_json FROM mst_import_batches WHERE committed = 1 ORDER BY id DESC LIMIT 20")):
+            try:
+                rows_b = json.loads(b["payload_json"] or "{}").get("rows", [])
+            except ValueError:
+                rows_b = []
+            if any(_group_of(r.get("line"), cfg) == LINE for r in rows_b):
+                last_imp = {k: b[k] for k in ("id", "filename", "operator", "committed_at")}; break
     finally:
         conn.close()
-    return jsonify({"last_upload": last, "codes": n, "dates": sorted(set(dates)),
+    return jsonify({"last_upload": last, "codes": n, "dates": sorted(set(dates)), "last_order_import": last_imp,
                     "split_by_unit": SPLIT_BY_UNIT})
 
 

@@ -75,16 +75,33 @@
 </header>
 
 <main class="max-w-[1560px] mx-auto px-5 py-5 space-y-4">
-  <!-- 商品總表 -->
-  <section class="card p-4 flex items-center gap-4 flex-wrap">
-    <div>
-      <b>瑪氏商品總表</b>
-      <div id="mp-status" class="text-sm muted mt-1">讀取中…</div>
+  <!-- 兩份要傳的檔：出貨彙總表（訂單）、瑪氏商品總表 -->
+  <section class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
+    <div class="card p-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div>
+          <b>出貨彙總表（訂單）</b>
+          <div id="od-status" class="text-sm muted mt-1">讀取中…</div>
+        </div>
+        <div class="flex-1"></div>
+        <label class="btn btn-o" title="Kate 系統匯出的整合表（Coupang_PO_Integration 或出貨彙總表）。只會動到檔案裡有的 PO，寶僑的單不會被碰到"><i class="bi bi-upload"></i> 上傳出貨彙總表
+          <input type="file" id="od-file" accept=".xlsx" class="hidden" multiple></label>
+      </div>
+      <div id="od-preview" class="hidden mt-3 text-sm"></div>
+      <div id="od-msg" class="text-sm mt-2"></div>
     </div>
-    <div class="flex-1"></div>
-    <div id="mp-msg" class="text-sm" style="max-width:640px"></div>
-    <label class="btn btn-o" title="Alice 的「自動化_Mars整合商品資料」，有更新就再傳一次，整份覆蓋"><i class="bi bi-upload"></i> 上傳商品總表
-      <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
+    <div class="card p-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div>
+          <b>瑪氏商品總表</b>
+          <div id="mp-status" class="text-sm muted mt-1">讀取中…</div>
+        </div>
+        <div class="flex-1"></div>
+        <label class="btn btn-o" title="Alice 的「自動化_Mars整合商品資料」，有更新就再傳一次，整份覆蓋"><i class="bi bi-upload"></i> 上傳商品總表
+          <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
+      </div>
+      <div id="mp-msg" class="text-sm mt-2"></div>
+    </div>
   </section>
 
   <!-- ① 拆單 ＋ ② 回填 -->
@@ -104,7 +121,7 @@
     <div class="tbl-wrap"><table class="t" id="sp-table"></table></div>
     <details class="text-sm mt-3"><summary class="cursor-pointer font-semibold">怎麼拆的、要怎麼用</summary>
       <div class="mt-2 space-y-1 muted">
-        <div>訂單用「商品主檔自動化 ② 訂單明細」裡線別是瑪氏的單，出貨數量照那邊現在的數字（人改過的照改過的），不用再傳出貨彙總表。</div>
+        <div>訂單在這頁上傳出貨彙總表，或在「商品主檔自動化 ② 訂單明細」上傳，兩邊進的是同一份訂單（照每列的線別分開）。這頁只拆線別是瑪氏的單；出貨數量照 ② 現在的數字（人改過的照改過的）。</div>
         <div>同一張酷澎 PO、同一天、同一個倉，再依品類（CHO／GUM／PET）、單位（箱／盒／包）、要不要貼中標拆成一份一份。一份拆單表對一張 EIP 採購單。</div>
         <div>對商品總表先用永豐料號＋單位；組出商品對不到時改用整合表的「報價備註」。下採料號用對到的那個。</div>
         <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>

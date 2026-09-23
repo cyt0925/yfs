@@ -87,7 +87,7 @@ def main():
     check("上傳：7 個料號、21 列（箱盒包各一）、品類分得出來", r.status_code == 200 and d["codes"] == 7 and d["rows"] == 21
           and d["by_category"] == {"CHO": 2, "GUM": 2, "PET": 3} and not d["warnings"], str(d)[:200])
     st = c.get("/api/mars/status").get_json()
-    check("狀態：上次上傳、料號數、② 裡有瑪氏訂單的日子", st["last_upload"]["filename"] == "假_瑪氏商品總表.xlsx" and st["codes"] == 7)
+    check("狀態：上次上傳、料號數、② 裡有瑪氏訂單的日子", st["last_upload"]["filename"] == "假_瑪氏商品總表.xlsx" and st["codes"] == 7 and st["last_order_import"] is None)
     check("不是商品總表的檔 → 400 講清楚要哪幾欄", up(c, "/api/mars/products/import", os.path.join(FAKE_M, "假_酷澎主檔_瑪氏.xlsx")).status_code == 400)
     check("壞掉的檔 → 400", up(c, "/api/mars/products/import", b"not excel", "x.xlsx").status_code == 400)
     wb = openpyxl.load_workbook(MASTER); ws = wb["商品表"]
@@ -105,6 +105,8 @@ def main():
     conn = db.get_conn()
     o = dict(conn.execute("SELECT * FROM mst_orders WHERE po_number = '13000000600028' AND yf_sku = 'M36752197'").fetchone()); conn.close()
     check("mst_orders 有存地址", o["address"] != "", o["address"])
+    st = c.get("/api/mars/status").get_json()
+    check("狀態：最近一次有瑪氏單的匯入是第二次那份", st["last_order_import"]["filename"] == "假_訂單彙總表_9月_第二次.xlsx" and "2026-09-18" in st["dates"], str(st["last_order_import"]))
 
     print("\n【3】拆單：9/18 那張 PO 拆成 5 份")
     v = splits(c, "2026-09-18")
