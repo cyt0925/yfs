@@ -179,13 +179,13 @@ def _commit_insert_row(conn, r, batch_id, stamp):
             order_type, unit, unit_price, qty_coupang, qty_file_ship, qty_ship,
             box_size_file, delivery_date_file, delivery_date, remarks_file, remarks,
             source_file, first_seen_at, last_seen_at, updated_at, version,
-            first_batch_id, last_batch_id, last_batch_changes)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,'新增')""",
+            first_batch_id, last_batch_id, last_batch_changes, address, quote_note)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,'新增',?,?)""",
         (r["po_number"], r["sku_id"], r["line"] or "", r["barcode"], r["yf_sku"], r["brand"],
          r["product_name"], r["warehouse"], r["order_type"], r["unit"], r["unit_price"],
          r["qty_coupang"], r["qty_file_ship"], ship, r["box_size"], r["delivery_date"],
          r["delivery_date"], r["remarks_file"], "", r["source_file"], stamp, stamp, stamp,
-         batch_id, batch_id))
+         batch_id, batch_id, r.get("address") or "", r.get("quote_note") or ""))
 
 
 def _commit_update_row(conn, existing, r, batch_id, operator, stamp, fname):
@@ -233,6 +233,10 @@ def _commit_update_row(conn, existing, r, batch_id, operator, stamp, fname):
              "品項重新出現", 1, 0, operator, "import", "整合表裡又有這個品項了")
     sets.append("last_seen_at = ?"); vals.append(stamp)
     sets.append("source_file = ?"); vals.append(r["source_file"])
+    # 地址、報價備註：瑪氏拆單要用，靜靜跟著整合表更新，不算「有變」、不記歷程（跟出貨無關）
+    for field in ("address", "quote_note"):
+        if field in r and not _same(existing.get(field) or "", r.get(field) or ""):
+            sets.append(f"{field} = ?"); vals.append(r.get(field) or "")
     if changed:
         sets.append("updated_at = ?"); vals.append(stamp)
         sets.append("last_batch_id = ?"); vals.append(batch_id)

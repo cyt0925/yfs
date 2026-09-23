@@ -48,7 +48,8 @@ Flask 應用。把酷澎整合表整份上傳，自動去重、抓出酷澎偷�
   每個決定的原因、做過又拆掉的東西（別做回來）、擱著的事（公槽同步：同事說等他開口，不要主動提）。
 - 套件拆法見 `master/__init__.py` 檔頭；其他檔一律 `from .common import *`。
 - 改了 `templates/master.html` 或 `static/master.js` 一樣要升 `BUILD_VERSION`（JS 網址帶 ?v= 才會換新）。
-- 推之前跑：`python test_master.py`（SQLite）＋ 有 PostgreSQL 就再跑一次 ＋ `python test_master_ui.py`（Playwright）。
+- 推之前跑：`python test_master.py`、`python test_mars.py`（SQLite）＋ 有 PostgreSQL 就再跑一次 ＋ `python test_master_ui.py`（Playwright）。
+- 瑪氏出貨（`coupang-oms/mars/`，網址 `/mars`）：先讀 [`coupang-oms/docs/瑪氏出貨_設計筆記.md`](coupang-oms/docs/瑪氏出貨_設計筆記.md)。訂單共用 ② 的 mst_orders，不另外上傳。
   CI（`.github/workflows/tests.yml`）會自動跑這三組；紅燈不要推正式站。
 - 跟使用者講話用口語，不要術語。中文怪字：「匯」「驟」曾被打成 Big5 裡沒有的罕見字，`python coupang-oms/check_chinese.py` 會掃 repo（CI 跑）；對話訊息沒有工具擋，送出前自己再看一次，能換詞就換詞（例如用「做法」代替「步驟」）。
 

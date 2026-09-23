@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>瑪氏出貨</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='line_mars.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  /* 瑪氏：logo 的深藍＋青色。樣式全部寫在這裡，不加新的 Tailwind class（static/tailwind.css 是預編譯的） */
+  :root {
+    --m9:#000a7a; --m8:#000fb7; --m7:#1a2bd0; --m2:#c7ccff; --m1:#e6e8ff; --m0:#f4f5ff; --teal:#06d9be; --teal2:#d6faf4;
+    --ink:#0f172a; --ink2:#334155; --muted:#64748b; --line:#cbd5e1; --line2:#e2e8f0;
+    --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7; --bad:#b91c1c; --badbg:#fee2e2;
+  }
+  body { font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#f6f7fd; color:var(--ink); }
+  .hidden { display:none !important; }
+  .mh { background:linear-gradient(100deg,var(--m9) 0%,var(--m8) 55%,#0a3fd6 100%); color:#fff; border-bottom:3px solid var(--teal); }
+  .card { background:#fff; border:1px solid var(--line2); border-radius:12px; box-shadow:0 1px 2px rgba(0,15,183,.05); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid transparent; white-space:nowrap; text-decoration:none; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-p { background:var(--m8); color:#fff; } .btn-p:hover:not(:disabled) { background:var(--m9); }
+  .btn-o { background:#fff; color:var(--m8); border-color:var(--m2); } .btn-o:hover { background:var(--m0); }
+  .btn-sm { padding:4px 10px; font-size:12.5px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:6px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+  .st-new { background:#f1f5f9; color:var(--muted); } .st-generated { background:var(--m1); color:var(--m8); }
+  .st-filled { background:var(--okbg); color:var(--ok); } .st-changed { background:var(--warnbg); color:var(--warn); }
+  .st-changed_after_eip, .st-gone { background:var(--badbg); color:var(--bad); }
+  .cat { font-weight:700; font-size:12px; padding:1px 7px; border-radius:6px; white-space:nowrap; }
+  .cat-CHO { background:#fde7d9; color:#9a3412; } .cat-GUM { background:#dcfce7; color:#166534; } .cat-PET { background:#e0e7ff; color:#3730a3; }
+  .lbl-V { background:var(--teal2); color:#0f766e; } .lbl- { background:#f1f5f9; color:var(--muted); }
+  table.t { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  table.t th { background:#f3f4fb; color:var(--ink2); font-weight:600; font-size:12px; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:1px solid var(--line); }
+  table.t td { padding:7px 10px; border-bottom:1px solid var(--line2); vertical-align:middle; }
+  table.t tr.sp:hover td { background:var(--m0); cursor:pointer; }
+  table.t td.num, table.t th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .fn { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; color:var(--ink2); }
+  .fname { display:inline-block; max-width:330px; word-break:break-all; font-size:11px; vertical-align:middle; }
+  .inp { border:1px solid var(--line); border-radius:7px; padding:4px 8px; font-size:13px; width:100%; background:#fff; }
+  .inp:focus { outline:none; border-color:var(--m7); box-shadow:0 0 0 2px var(--m1); }
+  .inp:disabled { background:#f8fafc; color:#94a3b8; }
+  .inp.bad { border-color:var(--bad); background:#fff5f5; }
+  .tbl-wrap { overflow:auto; max-height:68vh; border:1px solid var(--line2); border-radius:10px; background:#fff; }
+  .sub td { background:#fbfbff; } .sub table { font-size:12px; } .sub table td, .sub table th { padding:4px 8px; }
+  .muted { color:var(--muted); } .neg { color:var(--bad); font-weight:700; } .kbd { font-size:11.5px; color:var(--muted); }
+  .alert { border-radius:10px; padding:10px 14px; font-size:13px; }
+  .al-bad { background:var(--badbg); color:#7f1d1d; border:1px solid #fecaca; } .al-warn { background:var(--warnbg); color:#78350f; border:1px solid #fde68a; }
+  .chip { display:inline-flex; align-items:center; padding:3px 10px; border-radius:999px; font-size:12.5px; border:1px solid var(--m2); background:var(--m0); color:var(--m8); cursor:pointer; }
+  .chip.on { background:var(--m8); color:#fff; border-color:var(--m8); }
+  .sum { display:flex; flex-wrap:wrap; gap:8px 22px; align-items:baseline; } .sum span { white-space:nowrap; } .sum b { font-size:18px; color:var(--m8); margin-right:3px; }
+  .steps { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; }
+  .steps span { padding:2px 9px; border-radius:999px; background:rgba(255,255,255,.14); } .steps span.on { background:var(--teal); color:var(--m9); font-weight:700; }
+  #toasts { position:fixed; right:18px; top:78px; z-index:99; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .toast { background:#0f172a; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.25); max-width:520px; }
+  .toast.err { background:var(--bad); }
+  .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header class="mh shadow-lg">
+  <div class="max-w-[1560px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-3">
+      <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_mars.png') }}" style="height:30px;width:auto" alt="瑪氏"></div>
+      <div>
+        <h1 class="text-lg font-bold leading-tight">瑪氏出貨</h1>
+        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span>③ 瑪氏採購單</span><span>④ EMMA 匯入檔</span><span>⑤ 勇信缺貨</span></div>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <span class="text-xs" style="color:var(--m2)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
+    {% set lm_current = 'mars' %}{% include '_line_menu.html' %}
+    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--m2)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+  </div>
+</header>
+
+<main class="max-w-[1560px] mx-auto px-5 py-5 space-y-4">
+  <!-- 商品總表 -->
+  <section class="card p-4 flex items-center gap-4 flex-wrap">
+    <div>
+      <b>瑪氏商品總表</b>
+      <div id="mp-status" class="text-sm muted mt-1">讀取中…</div>
+    </div>
+    <div class="flex-1"></div>
+    <div id="mp-msg" class="text-sm" style="max-width:640px"></div>
+    <label class="btn btn-o" title="Alice 的「自動化_Mars整合商品資料」，有更新就再傳一次，整份覆蓋"><i class="bi bi-upload"></i> 上傳商品總表
+      <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
+  </section>
+
+  <!-- ① 拆單 ＋ ② 回填 -->
+  <section class="card p-4">
+    <div class="flex items-center gap-2 flex-wrap mb-3">
+      <b class="mr-2">拆單</b>
+      <label class="text-sm muted">到貨日</label>
+      <input type="date" id="d-from" class="inp" style="width:150px">
+      <span class="muted">～</span>
+      <input type="date" id="d-to" class="inp" style="width:150px">
+      <span id="d-chips" class="flex gap-1 flex-wrap ml-2"></span>
+      <div class="flex-1"></div>
+      <button id="btn-gen" class="btn btn-p"><i class="bi bi-scissors"></i> 產出拆單表（下載）</button>
+    </div>
+    <div id="sum" class="sum text-sm mb-3"></div>
+    <div id="alerts" class="space-y-2 mb-3"></div>
+    <div class="tbl-wrap"><table class="t" id="sp-table"></table></div>
+    <details class="text-sm mt-3"><summary class="cursor-pointer font-semibold">怎麼拆的、要怎麼用</summary>
+      <div class="mt-2 space-y-1 muted">
+        <div>訂單用「商品主檔自動化 ② 訂單明細」裡線別是瑪氏的單，出貨數量照那邊現在的數字（人改過的照改過的），不用再傳出貨彙總表。</div>
+        <div>同一張酷澎 PO、同一天、同一個倉，再依品類（CHO／GUM／PET）、單位（箱／盒／包）、要不要貼中標拆成一份一份。一份拆單表對一張 EIP 採購單。</div>
+        <div>對商品總表先用永豐料號＋單位；組出商品對不到時改用整合表的「報價備註」。下採料號用對到的那個。</div>
+        <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>
+        <div>下載的 zip 裡每份兩個檔：拆單表（.xlsx）、EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。</div>
+        <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
+      </div>
+    </details>
+  </section>
+</main>
+<div id="toasts"></div>
+<div class="ver">版本 {{ build_version }}</div>
+<script src="{{ url_for('static', filename='mars.js') }}?v={{ build_version }}"></script>
+</body>
+</html>

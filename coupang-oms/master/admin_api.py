@@ -33,6 +33,7 @@ def api_reset():
         if clear_orders:
             conn.execute("DELETE FROM mst_orders")
             conn.execute("DELETE FROM mst_import_batches")
+            conn.execute("DELETE FROM mst_mars_splits")      # 瑪氏拆單是從訂單拆出來的，訂單清了一起清
             parts.append(f"訂單明細 {counts['orders']} 筆")
         if clear_products:
             conn.execute("DELETE FROM mst_quotas")
@@ -40,6 +41,8 @@ def api_reset():
             conn.execute("DELETE FROM mst_brand_targets")
             conn.execute("DELETE FROM mst_source_uploads")
             conn.execute("DELETE FROM mst_field_src")
+            conn.execute("DELETE FROM mst_mars_products")
+            conn.execute("DELETE FROM mst_mars_uploads")
             conn.execute("DELETE FROM mst_products")
             parts.append(f"商品主檔 {counts['products']} 筆")
         if keep_logs:

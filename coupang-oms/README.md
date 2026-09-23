@@ -182,6 +182,9 @@ coupang-oms/
 │   ├── board.py             ③ 總表看板：商品／品牌／每日出貨三個視圖，公式照總表算；品牌目標人填
 │   ├── sheet_export.py      ③ 匯出總表：箱數、GIV／NIV、供需、庫存、品牌目標填回底稿；附「系統看板」「系統填入說明」
 │   └── stats.py             ④ 改單統計（每月幾張 PO、改幾次、原因、匯出）
+├── mars/                    瑪氏出貨（/mars）：拆單、回填 EIP 採購單號／約倉時間；訂單共用 ② 的 mst_orders
+│   ├── products.py          瑪氏商品總表上傳（整份覆蓋）
+│   └── split.py             拆單、產出拆單表＋EIP 上傳用採購表、回填
 ├── templates/_line_menu.html 三頁共用的「線別工具」選單（寶僑／瑪氏／紙潔）
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔
 ├── defaults/                設定檔出廠預設值，只在第一次啟動、還沒有這份

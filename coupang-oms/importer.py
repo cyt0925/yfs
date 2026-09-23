@@ -40,6 +40,7 @@ COLUMN_ALIASES = {
     "expiry_note":  ["允收效期"],
     "seq_no":       ["NO", "No.", "項次"],
     "remarks_file": ["備註"],
+    "quote_note":   ["報價備註"],     # 瑪氏組出商品的真正料號在這欄（商品主檔自動化的瑪氏拆單用）
 }
 
 # 酷澎擁有的欄位：只有匯入能改。任一變動都要記歷程並亮燈。
@@ -179,6 +180,7 @@ def parse_workbook(file_stream, filename=""):
             "expiry_note": norm_text(cell(raw, "expiry_note")),
             "seq_no": norm_int(cell(raw, "seq_no")),
             "remarks_file": norm_text(cell(raw, "remarks_file")),
+            "quote_note": norm_key(cell(raw, "quote_note")),
             "source_file": filename,
         })
 

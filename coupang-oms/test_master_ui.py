@@ -346,6 +346,32 @@ def main():
             req = urllib.request.Request(base + href, headers={"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())})
             with urllib.request.urlopen(req) as resp:
                 check(f"{sel} 下載 200 且是 Excel", resp.status == 200 and "spreadsheet" in resp.headers.get("Content-Type", ""))
+        print("\n【6b】瑪氏出貨：拆單、產出、回填 EIP 採購單號")
+        mars_master = os.path.join(BASE, "samples", "mars", "fake", "假_瑪氏商品總表.xlsx")
+        assert tc.post("/api/mars/products/import", data={"file": (io.BytesIO(open(mars_master, "rb").read()), "假_瑪氏商品總表.xlsx")},
+                       content_type="multipart/form-data").status_code == 200
+        pg.goto(f"{base}/mars"); pg.wait_for_selector("#sp-table thead"); pg.wait_for_timeout(500)
+        check("瑪氏出貨頁打得開、商品總表狀態寫出 7 個料號", "7" in pg.inner_text("#mp-status") and "假_瑪氏商品總表" in pg.inner_text("#mp-status"), pg.inner_text("#mp-status")[:120])
+        pg.click("#lm-btn"); pg.wait_for_timeout(200)
+        check("線別工具：瑪氏那欄有「瑪氏出貨」而且標目前在這", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("瑪氏出貨"))
+        pg.keyboard.press("Escape")
+        pg.fill("#d-from", "2026-09-18"); pg.fill("#d-to", "2026-09-18"); pg.dispatch_event("#d-to", "change"); pg.wait_for_timeout(800)
+        check("9/18：5 份拆單表、都是「還沒產出」、單號格子鎖住", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
+              and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and pg.is_disabled("#sp-table input.eip"))
+        pg.click("#sp-table tr.sp >> nth=0"); pg.wait_for_timeout(300)
+        check("點一列展開看品項（下採料號、箱數）", pg.eval_on_selector_all("#sp-table tr.sub", "els => els.length") == 1 and "下採料號" in pg.inner_text("#sp-table tr.sub"))
+        with pg.expect_download() as dl:
+            pg.click("#btn-gen")
+        check("按「產出拆單表」下載 zip", dl.value.suggested_filename == "瑪氏拆單_20260918.zip", dl.value.suggested_filename)
+        pg.wait_for_timeout(900)
+        check("產出後狀態變「已產出」、單號格子可以填", pg.eval_on_selector_all("#sp-table .st-generated", "els => els.length") == 5 and not pg.is_disabled("#sp-table input.eip"))
+        pg.fill("#sp-table input.eip >> nth=0", "PO123"); pg.keyboard.press("Enter"); pg.wait_for_timeout(700)
+        check("單號格式不對 → 格子變紅、不存", pg.eval_on_selector("#sp-table input.eip", "e => e.classList.contains('bad')"))
+        pg.fill("#sp-table input.eip >> nth=0", "PO202609901"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
+        check("填對 → 狀態「已回填」", pg.eval_on_selector_all("#sp-table .st-filled", "els => els.length") == 1)
+        pg.fill("#sp-table input.slot >> nth=0", "12:30~15:30（1台車）"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
+        check("約倉時間存進去、重新整理還在", pg.eval_on_selector("#sp-table input.slot", "e => e.value") == "12:30~15:30（1台車）")
+        bad = [x for x in bad if "/api/mars/splits/" not in x[1] or x[0] != 400]   # 故意填錯的那次 400 不算
         b.close()
 
     print("\n【7】整體")

@@ -774,6 +774,67 @@ CREATE TABLE IF NOT EXISTS mst_brand_targets (
     UNIQUE(line, month, brand)
 );
 
+-- ── 瑪氏出貨（mars/）──────────────────────────────────────────────
+-- 瑪氏商品總表（Alice 的「自動化_Mars整合商品資料」）：一個永豐料號分箱／盒／包三列。每次上傳整份覆蓋。
+CREATE TABLE IF NOT EXISTS mst_mars_products (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    yf_sku          TEXT NOT NULL,           -- D 永豐料號
+    unit            TEXT NOT NULL,           -- L 單位類別：箱／盒／包
+    mars_code       TEXT DEFAULT '',         -- A 瑪氏貨號（勇信的產品編號是 58880＋這個）
+    category        TEXT DEFAULT '',         -- B Chocolate／Gum／Petcare
+    brand           TEXT DEFAULT '',
+    name            TEXT DEFAULT '',         -- E 品名(永豐建檔)
+    price           REAL,                    -- F 系統價格(未稅)
+    per_inner       REAL,                    -- G 每中盒包數
+    inner_per_case  REAL,                    -- H 每箱中盒數
+    pcs_per_case    REAL,                    -- I 每箱產品數(最小單位)
+    item_code       TEXT DEFAULT '',         -- J 料號
+    item_code2      TEXT DEFAULT '',         -- K 料號2
+    unit_code       TEXT DEFAULT '',         -- M 單位代碼 R／Q／C（C 是包，跟勇信的 C＝箱不一樣）
+    box_qty         REAL,                    -- N 箱入數
+    inner_label     TEXT DEFAULT '',         -- O 中盒貼標（V＝要貼）
+    shelf_days      INTEGER,                 -- P 效期天
+    note            TEXT DEFAULT '',         -- Q 備註（有換號紀錄 10254053>60019810>60023881）
+    po_case_note    TEXT DEFAULT '',         -- R 採購單箱備註（小白標等）
+    UNIQUE(yf_sku, unit)
+);
+
+-- 瑪氏商品總表每次上傳一筆（畫面「上次上傳」）
+CREATE TABLE IF NOT EXISTS mst_mars_uploads (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename    TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    uploaded_at TEXT NOT NULL,
+    rows_total  INTEGER DEFAULT 0,
+    codes       INTEGER DEFAULT 0
+);
+
+-- 拆單表：一份檔一筆，一份檔對一張 EIP 採購單。split_key＝PO|到貨日|倉|品類|單位|中標。
+-- 按「產出拆單表」時存下當時的品項（items_json）；回填 EIP 採購單號之後就不再改它，
+-- 訂單之後有變只標出來，不偷偷改掉已經送去 EIP 的內容。
+CREATE TABLE IF NOT EXISTS mst_mars_splits (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    split_key     TEXT NOT NULL,
+    po_number     TEXT NOT NULL,
+    delivery_date TEXT DEFAULT '',
+    warehouse     TEXT DEFAULT '',
+    category      TEXT DEFAULT '',           -- CHO／GUM／PET
+    unit          TEXT DEFAULT '',
+    label         TEXT DEFAULT '',           -- V＝需貼中標
+    seq           INTEGER NOT NULL DEFAULT 1,
+    filename      TEXT DEFAULT '',
+    items_json    TEXT DEFAULT '[]',
+    item_count    INTEGER DEFAULT 0,
+    cases_total   REAL DEFAULT 0,
+    eip_po        TEXT DEFAULT '',           -- EIP 採購單號 PO202609004
+    slot_time     TEXT DEFAULT '',           -- 約倉時間（採購單特殊需求用）
+    created_by    TEXT DEFAULT '',
+    created_at    TEXT DEFAULT '',
+    updated_by    TEXT DEFAULT '',
+    updated_at    TEXT DEFAULT '',
+    UNIQUE(split_key)
+);
+
 -- 某一格的值是誰給的（不是總表給的才記）：人在系統上改、寶僑 supply 表、Coupang Master。
 -- 重匯總表時，總表要蓋掉這種格子而且數字不一樣 → 先列出來讓人決定（保留系統的／用總表蓋），不偷偷蓋掉。
 -- kind = product（rkey = 國條）／month（國條|YYYY-MM）／brand（線別|季首月|品牌）
@@ -836,6 +897,8 @@ CREATE TABLE IF NOT EXISTS mst_orders (
     first_batch_id          INTEGER,               -- 第一次是哪一批匯入帶進來的（匯出時分得出「這批新增」）
     last_batch_id           INTEGER,               -- 最後一次被哪一批匯入改到
     last_batch_changes      TEXT DEFAULT '',       -- 那一批改了什麼（出貨數量 20→0；交貨日 9/4→9/8），匯出「本次變動」欄用
+    address                 TEXT DEFAULT '',       -- 整合表 E 欄地址（瑪氏採購單的送貨地址）
+    quote_note              TEXT DEFAULT '',       -- 整合表「報價備註」：瑪氏組出商品的真正料號在這
     first_seen_at           TEXT DEFAULT '',
     last_seen_at            TEXT DEFAULT '',
     updated_at              TEXT DEFAULT '',
@@ -1061,6 +1124,12 @@ def _migrate_master_columns(conn):
     # 酷澎要求／其他），之後統計「一年改了幾次單、為什麼」才有東西可算。舊紀錄留空。
     if _table_exists(conn, "mst_logs") and "reason" not in _cols(conn, "mst_logs"):
         conn.execute("ALTER TABLE mst_logs ADD COLUMN reason TEXT DEFAULT ''")
+    # 2026-09-23：瑪氏拆單要用整合表的地址與報價備註（組出商品的真正料號），缺欄就補。
+    if _table_exists(conn, "mst_orders"):
+        have = _cols(conn, "mst_orders")
+        for col in ("address", "quote_note"):
+            if col not in have:
+                conn.execute(f"ALTER TABLE mst_orders ADD COLUMN {col} TEXT DEFAULT ''")
     # v3 → v4：訂單列記住「哪一批匯入帶進來／最後改到」。用批次 id 而不是時間戳，因為同一秒
     # 內連按兩次確認匯入時間戳會撞在一起。舊資料用時間戳盡量回填。
     if _table_exists(conn, "mst_orders"):
