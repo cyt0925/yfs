@@ -328,6 +328,49 @@ def api_sources():
     return jsonify({"sources": out, "recent": rows[:30]})
 
 
+def stock_by_barcode(conn, month, barcodes=None):
+    """到 month 為止每個商品的庫存現算（公式見 api_month_stats）。回傳 {barcode: {...}}。
+    barcodes 給了就只算那些；None 算全部有月統計的商品。"""
+    if barcodes is None:
+        return _stock_chunk(conn, month, None)
+    out_all = {}
+    for i in range(0, len(barcodes), 400):          # IN (...) 一次最多 400 個，PostgreSQL／SQLite 都安全
+        out_all.update(_stock_chunk(conn, month, barcodes[i:i + 400]))
+    return out_all
+
+
+def _stock_chunk(conn, month, barcodes):
+    where, params = ["s.month <= ?"], [month]
+    if barcodes:
+        where.append(f"s.barcode IN ({','.join('?' * len(barcodes))})"); params += barcodes
+    rows = _rows(conn.execute(
+        f"SELECT s.* FROM mst_month_stats s WHERE {' AND '.join(where)} ORDER BY s.barcode, s.month", params))
+    dim = _days_in_month(month)
+    acc = {}
+    for r in rows:
+        a = acc.setdefault(r["barcode"], {"ordered": 0.0, "sold": 0.0, "cur": None})
+        a["ordered"] += r["ordered_cs"] or 0; a["sold"] += r["sold_cs"] or 0
+        if r["month"] == month:
+            a["cur"] = r
+    out = {}
+    for bc, a in acc.items():
+        cur = a["cur"] or {}
+        remaining = round(a["ordered"] - a["sold"], 2)
+        sold, days = cur.get("sold_cs"), cur.get("sold_days")
+        daily = (sold / days) if sold and days else None
+        month_sales = round(daily * dim, 2) if daily else None
+        remaining_eom = round(remaining - daily * (dim - days), 2) if daily and days else None
+        eom_days = None
+        if month_sales:
+            eom_days = round((a["ordered"] - ((a["sold"] - (sold or 0)) + month_sales)) / month_sales * dim, 1)
+        out[bc] = {"supply_cs": cur.get("supply_cs"), "demand_cs": cur.get("demand_cs"),
+                   "ordered_cs": cur.get("ordered_cs"), "sold_cs": sold, "sold_days": days,
+                   "has_stock_data": bool(a["ordered"] or a["sold"]),
+                   "remaining_cs": remaining, "stock_days": round(remaining / daily, 1) if daily else None,
+                   "month_sales_proj": month_sales, "remaining_eom": remaining_eom, "stock_days_eom": eom_days}
+    return out
+
+
 @master_bp.route("/api/master/month_stats")
 def api_month_stats():
     """某個月每個商品的供需與進銷，加上現算的庫存數字。公式照庫存銷售表原樣（欄位代號是那份表的）：
@@ -388,4 +431,4 @@ def api_month_stats():
 
 
 __all__ = ["KIND_LABEL", "detect_kind", "find_source_sheet", "import_supply", "import_master_price", "import_stock",
-           "absorb_sheet_extras", "api_sources", "api_month_stats"]
+           "absorb_sheet_extras", "api_sources", "api_month_stats", "stock_by_barcode"]

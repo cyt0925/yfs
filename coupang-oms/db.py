@@ -761,6 +761,19 @@ CREATE TABLE IF NOT EXISTS mst_month_stats (
     UNIQUE(barcode, month)
 );
 
+-- 品牌目標（總表 CI「目標」、CS「REBATE目標」那幾格，人填的）：一個線別、一個月、一個品牌一筆
+CREATE TABLE IF NOT EXISTS mst_brand_targets (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    line          TEXT NOT NULL,
+    month         TEXT NOT NULL,             -- YYYY-MM
+    brand         TEXT NOT NULL,
+    target_giv    REAL,                      -- 下單 GIV 目標
+    rebate_target REAL,                      -- REBATE 目標（對 COGS 含稅）
+    updated_by    TEXT DEFAULT '',
+    updated_at    TEXT DEFAULT '',
+    UNIQUE(line, month, brand)
+);
+
 -- 外部來源檔每次上傳的紀錄（畫面上「上次上傳」用）：kind = supply／master_price／stock／sheet
 CREATE TABLE IF NOT EXISTS mst_source_uploads (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

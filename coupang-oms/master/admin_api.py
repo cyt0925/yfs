@@ -37,6 +37,7 @@ def api_reset():
         if clear_products:
             conn.execute("DELETE FROM mst_quotas")
             conn.execute("DELETE FROM mst_month_stats")
+            conn.execute("DELETE FROM mst_brand_targets")
             conn.execute("DELETE FROM mst_source_uploads")
             conn.execute("DELETE FROM mst_products")
             parts.append(f"商品主檔 {counts['products']} 筆")

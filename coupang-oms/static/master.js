@@ -882,27 +882,117 @@ async function loadTemplateInfo() {
 $("#sum-line").addEventListener("change", e => { state.sumLine = e.target.value; localStorage.setItem("mst_sum_line", state.sumLine); loadSummary(); });
 $("#sum-month").addEventListener("change", e => { if (e.target.value) { state.sumMonth = e.target.value; $("#sum-exp-to").value = e.target.value; loadSummary(); } });
 $("#sum-exp-to").addEventListener("change", loadSummary);
+/* ③ 總表看板：一次撈 /api/master/board，三個視圖（商品／品牌／每日出貨）都從同一份資料畫 */
+let BOARD = null; let bdView = localStorage.getItem("mst_bd_view") || "products";
+const money = n => n == null ? "" : Math.round(n).toLocaleString("en-US");
+const NOTE_CLASS = [["不可超打", "nt-noover"], ["可以超打", "nt-over"], ["新品", "nt-new"], ["停產", "nt-stop"], ["停?", "nt-maybe"], ["有放單直接給貨", "nt-direct"]];
+const noteBadge = n => { if (!n) return ""; const hit = NOTE_CLASS.find(([k]) => n.includes(k)); return `<span class="bd-note ${hit ? hit[1] : "nt-other"}" title="${esc(n)}">${esc(n.length > 8 ? n.slice(0, 8) + "…" : n)}</span>`; };
+const FLAG_LABEL = { over: ["超打", "bd-warn"], no_over: ["不可超打卻超打", "bd-bad"], low_stock: ["庫存低", "bd-bad"], no_box: ["算不出箱數", "bd-warn"], no_price: ["缺 GIV", "bd-gray"] };
+const flagBadges = fl => fl.map(f => `<span class="badge ${FLAG_LABEL[f][1]}">${FLAG_LABEL[f][0]}</span>`).join(" ");
 async function loadSummary() {
-  if (!state.sumLine) { $("#sum-table").innerHTML = ""; $("#sum-stats").innerHTML = `<div class="muted p-4">還沒有訂單，先到訂單明細上傳。</div>`; return; }
+  if (!state.sumLine) { $("#bd-kpi").innerHTML = `<div class="muted p-4">還沒有訂單，先到訂單明細上傳。</div>`; $("#bd-prod-table").innerHTML = ""; $("#bd-brand-table").innerHTML = ""; $("#sum-table").innerHTML = ""; return; }
   $("#btn-export-2").href = `/api/master/export?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`;
   loadTemplateInfo();
   const sto = $("#sum-exp-to").value; const sumTo = (sto && sto > state.sumMonth) ? sto : state.sumMonth;
   $("#btn-export-daily-2").href = `/api/master/export/daily?month=${state.sumMonth}&month_to=${sumTo}&lines=${encodeURIComponent(state.sumLine)}`;
-  let s; try { s = await api(`/api/master/summary?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`); } catch (e) { toast(e.message, "err"); return; }
-  const mm = Number(state.sumMonth.slice(5));
-  $("#sum-stats").innerHTML = `<div class="stat"><b>${fmt(s.month_total)}</b><span>${mm} 月出貨總箱數</span></div><div class="stat"><b>${s.dates.length}</b><span>有出貨的交貨日</span></div><div class="stat"><b>${s.rows.length}</b><span>商品數</span></div>
-    ${s.missing_box_rows ? `<div class="stat" style="border-color:#fcd34d;background:var(--warnbg)"><b style="color:var(--warn)">${s.missing_box_rows}</b><span>筆算不出箱數（缺箱入數）</span></div>` : ""}
-    ${s.not_in_master ? `<div class="stat" style="border-color:#fcd34d;background:var(--warnbg)"><b style="color:var(--warn)">${s.not_in_master}</b><span>個國條不在主檔</span></div>` : ""}`;
+  try { BOARD = await api(`/api/master/board?line=${encodeURIComponent(state.sumLine)}&month=${state.sumMonth}`); } catch (e) { toast(e.message, "err"); return; }
+  renderBoard();
+}
+function setBdView(v) {
+  bdView = v; localStorage.setItem("mst_bd_view", v);
+  $("#bd-view").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  $("#bd-products").classList.toggle("hidden", v !== "products"); $("#bd-brands").classList.toggle("hidden", v !== "brands"); $("#bd-daily").classList.toggle("hidden", v !== "daily");
+  $("#bd-q").classList.toggle("hidden", v === "brands");
+}
+$("#bd-view").querySelectorAll("button").forEach(b => b.addEventListener("click", () => setBdView(b.dataset.v)));
+$("#bd-q").addEventListener("input", () => { clearTimeout(window._bdq); window._bdq = setTimeout(renderBoard, 150); });
+function bdFilter(rows) {
+  const q = $("#bd-q").value.trim().toLowerCase(); if (!q) return rows;
+  return rows.filter(r => `${r.product_name} ${r.brand} ${r.barcode} ${r.sku_id} ${r.category} ${r.note}`.toLowerCase().includes(q));
+}
+function renderBoard() {
+  const b = BOARD; if (!b) return; const t = b.totals; const mm = Number(b.month.slice(5));
+  setBdView(bdView);
+  const card = (title, num, unit, sub, warn) => `<div class="kpi" style="cursor:default${warn ? ";border-color:#fca5a5" : ""}"><div class="kt"><span>${title}</span></div><div class="kn" ${warn ? 'style="color:var(--bad)"' : ""}>${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
+  const pct = t.supply ? Math.round(t.ttl / t.supply * 100) : null;
+  $("#bd-kpi").innerHTML =
+    card(`${mm} 月下單`, fmt(t.ttl), "箱", t.has_supply ? `Supply ${fmt(t.supply)} 箱 · 已下 ${pct}%${t.over ? ` · <span class="neg">${t.over} 個商品超打</span>` : ""}` : `${t.with_orders} 個商品有出貨 · supply 表還沒上傳`)
+    + card("下單金額 GIV", money(t.ttl_giv), "", `COGS 含稅 ${money(t.cogs_tax)} · 永豐成本未稅 ${money(t.yf_cost)}${t.target_giv ? ` · 目標 ${money(t.target_giv)}` : ""}`)
+    + (t.has_stock ? card("剩餘庫存", fmt(t.stock_remaining), "箱", `庫金 ${money(t.stock_giv)}${t.low_stock ? ` · <span class="neg">${t.low_stock} 個商品不到 ${b.low_stock_days} 天</span>` : ""}`) : card("剩餘庫存", "—", "", "庫存銷售表還沒上傳"))
+    + card("需要注意", fmt(t.alerts), "個商品", t.alerts ? [t.over ? `超打 ${t.over}` : "", t.low_stock ? `庫存低 ${t.low_stock}` : "", t.no_box ? `算不出箱數 ${t.no_box}` : ""].filter(Boolean).join(" · ") : "沒有超打、庫存低、算不出箱數的", t.alerts > 0);
+
+  // ── 商品 ──
+  const rows = bdFilter(b.rows);
+  const n = (v, cls = "", d = 0) => v == null ? `<span class="dim">—</span>` : `<span class="${cls}">${d ? Number(v).toLocaleString("en-US", { maximumFractionDigits: d }) : fmt(v)}</span>`;
+  let h = `<thead><tr>
+      <th class="g" colspan="2">商品</th><th class="g b1 sec" colspan="3">單價</th><th class="g b2 sec" colspan="4">${mm} 月供需（箱）</th><th class="g b3 sec" colspan="3">庫存（箱）</th><th class="g b4 sec" colspan="3">${mm} 月金額</th></tr>
+    <tr><th>品名</th><th>條碼</th><th class="num sec">COGS</th><th class="num">GIV</th><th class="num">NIV</th>
+      <th class="num sec">Supply</th><th class="num">demand</th><th class="num">下單</th><th class="num">剩餘可供貨</th>
+      <th class="num sec">剩餘</th><th class="num">天數</th><th class="num">到月底</th>
+      <th class="num sec">下單 GIV</th><th class="num">COGS 含稅</th><th class="num">永豐成本</th></tr></thead><tbody>`;
+  for (const r of rows) {
+    const overCls = r.remaining_supply != null && r.remaining_supply < 0 ? "neg" : "";
+    const lowCls = r.stock_days != null && r.stock_days < b.low_stock_days ? "low" : "";
+    h += `<tr>
+      <td><div class="pn" title="${esc(r.product_name)}">${esc(r.product_name)}</div><div class="sub">${esc(r.brand)}${r.category ? ` · ${esc(r.category)}` : ""} ${noteBadge(r.note)} ${flagBadges(r.flags)}${r.in_master ? "" : `<span class="badge bd-warn">未建檔</span>`}</div></td>
+      <td class="mono kbd">${esc(r.barcode)}<br>箱入 ${r.box_size ? fmt(r.box_size) : `<span class="neg">缺</span>`}</td>
+      <td class="num sec">${n(r.cost)}</td><td class="num">${n(r.giv, "", 2)}</td><td class="num">${n(r.niv, "", 2)}</td>
+      <td class="num sec">${n(r.supply)}</td><td class="num">${n(r.demand)}</td><td class="num"><b>${fmt(r.ttl)}</b></td><td class="num">${n(r.remaining_supply, overCls)}</td>
+      <td class="num sec">${n(r.stock_remaining)}</td><td class="num">${n(r.stock_days, lowCls, 1)}</td><td class="num">${n(r.stock_days_eom, "", 1)}</td>
+      <td class="num sec">${r.ttl_giv == null ? `<span class="dim">—</span>` : money(r.ttl_giv)}</td><td class="num">${r.cogs_tax == null ? `<span class="dim">—</span>` : money(r.cogs_tax)}</td><td class="num">${r.yf_cost == null ? `<span class="dim">—</span>` : money(r.yf_cost)}</td></tr>`;
+  }
+  if (!rows.length) h += `<tr><td colspan="15" class="muted p-6 text-center">${b.rows.length ? "沒有符合搜尋的商品" : `${mm} 月這個線別沒有下單、沒有 Supply、也沒有庫存資料`}</td></tr>`;
+  h += `</tbody><tfoot><tr><td>合計 ${rows.length} 個商品</td><td></td><td class="sec"></td><td></td><td></td>
+      <td class="num sec">${fmt(t.supply)}</td><td></td><td class="num">${fmt(t.ttl)}</td><td class="num">${t.has_supply ? fmt(Math.round((t.supply - t.ttl) * 100) / 100) : ""}</td>
+      <td class="num sec">${t.has_stock ? fmt(t.stock_remaining) : ""}</td><td></td><td></td>
+      <td class="num sec">${money(t.ttl_giv)}</td><td class="num">${money(t.cogs_tax)}</td><td class="num">${money(t.yf_cost)}</td></tr></tfoot>`;
+  $("#bd-prod-table").innerHTML = h;
+
+  // ── 品牌 ──
+  let bh = `<thead><tr><th class="g" colspan="3">品牌</th><th class="g b4 sec" colspan="4">下單 GIV</th><th class="g b1 sec" colspan="3">成本</th><th class="g b3 sec" colspan="2">庫存</th></tr>
+    <tr><th>品牌</th><th>品類</th><th class="num">商品</th>
+      <th class="num sec">Supply GIV</th><th class="num">下單 GIV</th><th class="num" title="點一下填">目標</th><th class="num">達成</th>
+      <th class="num sec">COGS 含稅</th><th class="num" title="點一下填">REBATE 目標</th><th class="num">差距</th>
+      <th class="num sec">剩餘箱</th><th class="num">庫金</th></tr></thead><tbody>`;
+  for (const r of b.brands) {
+    const p = r.target_pct; const over = p != null && p > 100;
+    bh += `<tr data-brand="${esc(r.brand)}"><td><b>${esc(r.brand)}</b>${r.flags ? ` <span class="badge bd-warn" title="這個品牌有 ${r.flags} 個要注意的商品">${r.flags}</span>` : ""}</td><td>${esc(r.category || "")}</td><td class="num">${r.products}</td>
+      <td class="num sec">${money(r.supply_giv)}</td><td class="num"><b>${money(r.ttl_giv)}</b></td>
+      <td class="num ed" data-k="target_giv" title="下單 GIV 目標，點一下填">${r.target_giv == null ? `<span class="dim">填目標</span>` : money(r.target_giv)}</td>
+      <td class="num">${p == null ? `<span class="dim">—</span>` : `<div class="flex items-center gap-2 justify-end"><div class="bar ${over ? "over" : ""}"><i style="width:${Math.min(100, p)}%"></i></div><span class="${over ? "neg" : ""}">${p}%</span></div><div class="kbd">差 ${money(r.target_diff)}</div>`}</td>
+      <td class="num sec">${money(r.cogs_tax)}</td>
+      <td class="num ed" data-k="rebate_target" title="REBATE 目標，點一下填">${r.rebate_target == null ? `<span class="dim">填目標</span>` : money(r.rebate_target)}</td>
+      <td class="num">${r.rebate_diff == null ? `<span class="dim">—</span>` : `<span class="${r.rebate_diff < 0 ? "neg" : ""}">${money(r.rebate_diff)}</span>`}</td>
+      <td class="num sec">${r.stock_remaining ? fmt(r.stock_remaining) : `<span class="dim">—</span>`}</td><td class="num">${r.stock_giv ? money(r.stock_giv) : `<span class="dim">—</span>`}</td></tr>`;
+  }
+  bh += `</tbody><tfoot><tr><td>合計</td><td></td><td class="num">${t.products}</td><td class="num sec">${money(t.supply_giv)}</td><td class="num">${money(t.ttl_giv)}</td><td class="num">${t.target_giv ? money(t.target_giv) : ""}</td><td class="num">${t.target_giv ? Math.round(t.ttl_giv / t.target_giv * 100) + "%" : ""}</td><td class="num sec">${money(t.cogs_tax)}</td><td></td><td></td><td class="num sec">${t.has_stock ? fmt(t.stock_remaining) : ""}</td><td class="num">${t.has_stock ? money(t.stock_giv) : ""}</td></tr></tfoot>`;
+  $("#bd-brand-table").innerHTML = bh;
+  $("#bd-brand-table").querySelectorAll("td.ed").forEach(td => td.addEventListener("click", () => editTarget(td)));
+
+  // ── 每日出貨（原本的寬表）──
   const md = d => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(dd)}`; };
-  let html = `<thead><tr><th class="sticky-l" style="z-index:3">國條</th><th>線別</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">箱入數</th>${s.dates.map(d => `<th class="num">${md(d)}<br><span style="font-weight:400;font-size:11px">交貨</span></th>`).join("")}<th class="num" style="background:var(--b100);color:var(--b900);font-weight:700">${mm}月TTL</th><th>備註</th></tr></thead><tbody>`;
-  for (const r of s.rows) html += `<tr><td class="mono sticky-l">${esc(r.barcode)} ${r.in_master ? "" : `<span class="badge bd-warn">未建檔</span>`}</td><td>${r.lines_raw.map(l => `<span class="line-tag">${esc(l) || "空白"}</span>`).join(" ")}</td><td>${esc(r.category || "")}</td>
+  const drows = rows.filter(r => r.order_rows);
+  let dh = `<thead><tr><th class="sticky-l" style="z-index:3">國條</th><th>品類</th><th>品名</th><th>品牌</th><th class="num">箱入數</th>${b.dates.map(d => `<th class="num">${md(d)}<br><span style="font-weight:400;font-size:11px">交貨</span></th>`).join("")}<th class="num" style="background:var(--b100);color:var(--b900);font-weight:700">${mm}月TTL</th><th>備註</th></tr></thead><tbody>`;
+  for (const r of drows) dh += `<tr><td class="mono sticky-l">${esc(r.barcode)} ${r.in_master ? "" : `<span class="badge bd-warn">未建檔</span>`}</td><td>${esc(r.category || "")}</td>
       <td style="max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(r.product_name)}">${esc(r.product_name)}</td><td>${esc(r.brand)}</td>
       <td class="num">${r.box_size ? fmt(r.box_size) : `<span class="neg">缺</span>`}</td>
-      ${s.dates.map(d => `<td class="num">${r.by_date[d] != null ? fmt(r.by_date[d]) : `<span class="muted">·</span>`}</td>`).join("")}
-      <td class="num" style="background:var(--b50)"><b>${fmt(r.month_total)}</b>${r.missing_box ? ` <span class="badge bd-warn" title="${r.missing_box} 筆沒算進去">!</span>` : ""}</td>
+      ${b.dates.map(d => `<td class="num">${r.by_date[d] != null ? fmt(r.by_date[d]) : `<span class="muted">·</span>`}</td>`).join("")}
+      <td class="num" style="background:var(--b50)"><b>${fmt(r.ttl)}</b>${r.missing_box ? ` <span class="badge bd-warn" title="${r.missing_box} 筆沒算進去">!</span>` : ""}</td>
       <td class="muted" style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.note)}</td></tr>`;
-  html += `</tbody><tfoot><tr style="font-weight:700;background:var(--b100)"><td class="sticky-l" style="background:var(--b100)">合計</td><td></td><td></td><td></td><td></td><td></td>${s.dates.map(d => `<td class="num">${fmt(s.totals_by_date[d])}</td>`).join("")}<td class="num">${fmt(s.month_total)}</td><td></td></tr></tfoot>`;
-  $("#sum-table").innerHTML = html;
+  dh += `</tbody><tfoot><tr style="font-weight:700;background:var(--b100)"><td class="sticky-l" style="background:var(--b100)">合計</td><td></td><td></td><td></td><td></td>${b.dates.map(d => `<td class="num">${fmt(b.totals_by_date[d])}</td>`).join("")}<td class="num">${fmt(t.ttl)}</td><td></td></tr></tfoot>`;
+  $("#sum-table").innerHTML = dh;
+}
+function editTarget(td) {
+  if (td.querySelector("input")) return;
+  const brand = td.closest("tr").dataset.brand, k = td.dataset.k, cur = (BOARD.brands.find(x => x.brand === brand) || {})[k];
+  const keep = td.innerHTML; td.innerHTML = `<input type="number" step="1000" value="${cur ?? ""}">`; const inp = td.querySelector("input"); inp.focus(); inp.select();
+  let done = false;
+  const save = async () => { if (done) return; done = true;
+    if (String(inp.value) === String(cur ?? "")) { td.innerHTML = keep; return; }
+    try { await api("/api/master/brand_targets", J({ line: state.sumLine, month: state.sumMonth, brand, [k]: inp.value })); toast(`${brand} 的${k === "target_giv" ? "目標" : "REBATE 目標"}已存`); loadSummary(); }
+    catch (e) { toast(e.message, "err"); td.innerHTML = keep; } };
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } if (e.key === "Escape") { done = true; td.innerHTML = keep; } });
+  inp.addEventListener("blur", () => setTimeout(save, 0));
 }
 
 /* ════════════ ① 商品主檔 ════════════ */

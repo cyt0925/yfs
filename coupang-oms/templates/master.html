@@ -166,6 +166,21 @@
   .rsn-opts button:hover { background:var(--b50, #f8fafc); }
   .rsn-opts button.on { background:var(--b700); color:#fff; border-color:var(--b700); }
   .bd-reason { background:#fff7ed; color:#9a3412; } .bd-test { background:#f1f5f9; color:#64748b; }
+  /* 總表看板（第三個分頁） */
+  .bd th.g { background:#eef2f7; color:var(--ink2); font-weight:700; text-align:center; border-bottom:0; font-size:11.5px; letter-spacing:.3px; }
+  .bd th.g.b1 { background:#e8eefb; } .bd th.g.b2 { background:#eef7ee; } .bd th.g.b3 { background:#fbf3e6; } .bd th.g.b4 { background:#f3eefb; }
+  .bd td.sec, .bd th.sec { border-left:2px solid #e2e8f0; }
+  .bd .pn { font-weight:600; color:var(--ink); max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bd .sub { font-size:11px; color:var(--muted); display:flex; gap:6px; align-items:center; margin-top:1px; }
+  .bd td.num { font-variant-numeric:tabular-nums; }
+  .bd .dim { color:#94a3b8; } .bd .neg { color:var(--bad); font-weight:700; } .bd .low { color:var(--bad); font-weight:700; }
+  .bd .bar { height:6px; border-radius:3px; background:#e2e8f0; overflow:hidden; min-width:70px; } .bd .bar i { display:block; height:100%; background:var(--b600); }
+  .bd .bar.over i { background:var(--bad); }
+  .bd td.ed { cursor:text; } .bd td.ed:hover { background:#fffbeb; outline:1px dashed #fcd34d; } .bd td.ed input { width:110px; text-align:right; padding:2px 6px; border:1px solid var(--b500); border-radius:6px; font-size:13px; }
+  .bd tfoot td { font-weight:700; background:#f8fafc; }
+  .bd-note { font-size:10.5px; padding:0 6px; border-radius:5px; white-space:nowrap; font-weight:600; }
+  .nt-new { background:#dbeafe; color:#1e40af; } .nt-noover { background:#fee2e2; color:#991b1b; } .nt-over { background:#dcfce7; color:#166534; }
+  .nt-stop { background:#e2e8f0; color:#475569; } .nt-maybe { background:#fef3c7; color:#92400e; } .nt-direct { background:#ede9fe; color:#5b21b6; } .nt-other { background:#f1f5f9; color:#64748b; }
   .src-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:8px; }
   .src { border:1px solid var(--line2); border-radius:10px; padding:8px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:2px; background:#fff; }
   .src b { font-size:13px; color:var(--ink); } .src span { color:var(--b800); font-weight:600; } .src small { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -325,18 +340,33 @@
 
   <!-- ══════════ ③ 總表 ══════════ -->
   <section id="tab-summary" class="hidden">
-    <div class="flex items-center gap-2 flex-wrap mb-4">
+    <div class="flex items-center gap-2 flex-wrap mb-2">
       <label class="text-sm muted">線別</label><select id="sum-line" class="sel"></select>
       <label class="text-sm muted ml-2">月份</label><input type="month" id="sum-month" class="sel" style="padding:4px 8px">
-      <span class="kbd ml-2">一列一個國條，往右是各交貨日出貨箱數，最右邊是這個月的加總。改了訂單明細這裡自己跟著變。</span>
+      <div class="seg ml-2" id="bd-view"><button data-v="products" class="on">商品</button><button data-v="brands">品牌</button><button data-v="daily">每日出貨</button></div>
+      <input id="bd-q" class="txt ml-2" style="width:220px" placeholder="搜品名、品牌、條碼">
       <div class="flex-1"></div>
-      <span id="tpl-info" class="text-sm"></span>
-      <label class="text-sm muted" title="專案報價檔要一次匯好幾個月，把這裡往後拉">匯到</label><input type="month" id="sum-exp-to" class="sel" style="padding:4px 8px">
-      <a id="btn-export-daily-2" class="btn btn-o" title="這個線別的專案報價檔：一個交貨日一個分頁，「匯到」往後拉可以跨月"><i class="bi bi-calendar-week"></i> 匯出這線別的專案報價檔</a>
-      <a id="btn-export-2" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
+      <a id="btn-export-2" class="btn btn-p" title="照業務的總表底稿填這個月的數字"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
     </div>
-    <div class="flex gap-3 flex-wrap mb-4" id="sum-stats"></div>
-    <div class="tbl-wrap"><table class="m" id="sum-table"></table></div>
+    <div class="flex items-center gap-2 flex-wrap mb-3 text-sm" style="justify-content:flex-end">
+      <span id="tpl-info" class="text-sm"></span>
+      <div class="flex-1"></div>
+      <label class="muted" title="專案報價檔要一次匯好幾個月，把這裡往後拉">匯到</label><input type="month" id="sum-exp-to" class="sel" style="padding:3px 8px">
+      <a id="btn-export-daily-2" class="btn btn-o" style="padding:4px 10px" title="這個線別的專案報價檔：一個交貨日一個分頁，「匯到」往後拉可以跨月"><i class="bi bi-calendar-week"></i> 匯出這線別的專案報價檔</a>
+    </div>
+    <div class="grid gap-3 mb-3" id="bd-kpi" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))"></div>
+    <div id="sum-stats" class="hidden"></div>
+    <div id="bd-products" class="tbl-wrap"><table class="m bd" id="bd-prod-table"></table></div>
+    <div id="bd-brands" class="tbl-wrap hidden"><table class="m bd" id="bd-brand-table"></table></div>
+    <div id="bd-daily" class="tbl-wrap hidden"><table class="m" id="sum-table"></table></div>
+    <details class="card p-4 text-sm mt-3"><summary class="cursor-pointer font-semibold">這些數字怎麼來的</summary>
+      <div class="mt-2 space-y-1 muted">
+        <div>COGS、GIV、NIV 來自商品主檔；GIV、NIV 由 Coupang Master 更新。Supply、demand 來自寶僑 supply 表。下單是這個月訂單明細的出貨箱數加總。</div>
+        <div>剩餘可供貨 = Supply − 下單。下單超過 Supply 就標「超打」，Note 寫「不可超打」的會標紅。</div>
+        <div>剩餘庫存 = 累計下單 − 累計實銷（從庫存銷售表帶進來的期初，之後由訂單與酷澎銷售報表更新）。庫存天數 = 剩餘 ÷ 本月日均實銷，低於 14 天標紅。到月底天數是用日均實銷往後推。</div>
+        <div>下單 GIV = 下單 × GIV。COGS 含稅 = 下單 × COGS × 箱入數。永豐成本未稅 = 下單 × NIV × 1.02。品牌那頁是同品牌加總；目標和 REBATE 目標點一下就能填。</div>
+      </div>
+    </details>
   </section>
 
   <!-- ④ 改單統計：主管要看「一段期間幾張 PO、幾張被改過、改幾次、為什麼」 -->

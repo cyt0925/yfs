@@ -629,6 +629,57 @@ def main():
     res = client.post("/api/master/products/import", data={"file": (io.BytesIO(b"PK\x03\x04junk"), "怪檔.xlsx")}, content_type="multipart/form-data")
     check("認不出來的檔一樣回 400", res.status_code == 400)
 
+    print("\n【12e】③ 總表看板：一列一商品，數字照總表公式算；品牌層目標可填")
+    pv = upload(client, "/api/master/import/preview", os.path.join(FAKE, "假_訂單彙總表_9月_第一次.xlsx")).get_json()
+    check("假 9 月訂單匯進去", client.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True}).status_code == 200)
+    check("沒給線別 → 400", client.get("/api/master/board?month=2026-09").status_code == 400)
+    check("月份格式錯 → 400", client.get("/api/master/board?line=寶僑&month=2026/9").status_code == 400)
+    bd = client.get("/api/master/board?line=寶僑&month=2026-09").get_json()
+    rows = {r["barcode"]: r for r in bd["rows"]}
+    ordered_rows = [r for r in bd["rows"] if r["ttl"]]
+    check("9 月看板有列、有下單的商品不只一個", len(bd["rows"]) >= 10 and len(ordered_rows) >= 5, f"{len(bd['rows'])} rows, {len(ordered_rows)} ordered")
+    bd10 = client.get("/api/master/board?line=寶僑&month=2026-10").get_json()
+    check("10 月還沒下單：supply 表有 Supply 的商品照樣列出來（ttl=0、剩餘可供貨 = Supply）", len(bd10["rows"]) >= 10 and all(r["ttl"] == 0 for r in bd10["rows"])
+          and all(r["remaining_supply"] == r["supply"] for r in bd10["rows"] if r["supply"] is not None), f"{len(bd10['rows'])} rows")
+    r = next(r for r in ordered_rows if r["giv"] and r["cost"] and r["box_size"] and r["niv"])
+    check("下單 GIV = 下單 × GIV（總表 BN）", r["ttl_giv"] == round(r["ttl"] * r["giv"], 2), str((r["ttl"], r["giv"], r["ttl_giv"])))
+    check("COGS 含稅 = 下單 × COGS × 箱入數（總表 BO）", r["cogs_tax"] == round(r["ttl"] * r["cost"] * r["box_size"], 2), str((r["ttl"], r["cost"], r["box_size"], r["cogs_tax"])))
+    check("永豐成本未稅 = 下單 × NIV × 1.02（總表 BP）", r["yf_cost"] == round(r["ttl"] * r["niv"] * 1.02, 2), str((r["ttl"], r["niv"], r["yf_cost"])))
+    rs = next(r for r in bd["rows"] if r["supply"] is not None and r["giv"])
+    check("Supply GIV = Supply × GIV（總表 BK）、剩餘可供貨 = Supply − 下單（總表 BE）",
+          rs["supply_giv"] == round(rs["supply"] * rs["giv"], 2) and rs["remaining_supply"] == round(rs["supply"] - rs["ttl"], 2), str(rs))
+    check("每一列的超打旗標跟數字一致", all((("over" in r["flags"]) or ("no_over" in r["flags"])) == (r["supply"] is not None and r["ttl"] > r["supply"]) for r in bd["rows"]))
+    check("庫存跟月統計 API 算的是同一個數", rows[bc1]["stock_remaining"] == ms9[bc1]["remaining_cs"] and rows[bc1]["stock_days"] == ms9[bc1]["stock_days"], str((rows[bc1]["stock_remaining"], ms9[bc1]["remaining_cs"])))
+    check("庫存天數低於 14 天的都標 low_stock", all(("low_stock" in r["flags"]) == (r["stock_days"] is not None and r["stock_days"] < bd["low_stock_days"]) for r in bd["rows"]))
+    t = bd["totals"]
+    check("合計 = 各列加總（下單、下單 GIV、COGS 含稅）", t["ttl"] == round(sum(r["ttl"] for r in bd["rows"]), 2) and t["ttl_giv"] == round(sum(r["ttl_giv"] or 0 for r in bd["rows"]), 2)
+          and t["cogs_tax"] == round(sum(r["cogs_tax"] or 0 for r in bd["rows"]), 2), str(t))
+    check("合計有 supply、有庫存、有幾個商品要注意", t["has_supply"] and t["has_stock"] and t["alerts"] == sum(1 for r in bd["rows"] if r["flags"]))
+    check("每日出貨的日期與各日合計還在（原本的寬表）", bd["dates"] and all(d in bd["totals_by_date"] for d in bd["dates"]))
+    brands = {b["brand"]: b for b in bd["brands"]}
+    b0 = max(bd["brands"], key=lambda b: b["ttl_giv"])
+    check("品牌層 = 同品牌商品加總（SUMIF）", b0["ttl_giv"] == round(sum(r["ttl_giv"] or 0 for r in bd["rows"] if r["brand"] == b0["brand"]), 2)
+          and b0["products"] == sum(1 for r in bd["rows"] if r["brand"] == b0["brand"]), str(b0))
+    check("還沒填目標 → 達成、diff 都空", b0["target_giv"] is None and b0["target_pct"] is None and b0["target_diff"] is None)
+    res = jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": "50000"})
+    check("填品牌目標 200", res.status_code == 200 and res.get_json()["target"]["target_giv"] == 50000.0, res.get_data(as_text=True)[:120])
+    b1 = next(b for b in client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["brands"] if b["brand"] == b0["brand"])
+    check("達成 = 下單 GIV ÷ 目標、diff = 目標 − 下單 GIV", b1["target_pct"] == round(b0["ttl_giv"] / 50000 * 100) and b1["target_diff"] == round(50000 - b0["ttl_giv"], 2), str(b1))
+    res = jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "rebate_target": 1234.5})
+    b2 = next(b for b in client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["brands"] if b["brand"] == b0["brand"])
+    check("REBATE 目標另外填、原本的目標不動、REBATE DIFF = 目標 − COGS 含稅", res.status_code == 200 and b2["target_giv"] == 50000.0 and b2["rebate_target"] == 1234.5
+          and b2["rebate_diff"] == round(1234.5 - b2["cogs_tax"], 2), str(b2))
+    check("目標是別的月份的事：10 月那個品牌沒目標", next(b for b in client.get("/api/master/board?line=寶僑&month=2026-10").get_json()["brands"] if b["brand"] == b0["brand"])["target_giv"] is None)
+    check("看板合計的目標 = 各品牌目標加總", client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["totals"]["target_giv"] == 50000.0)
+    res = jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": ""})
+    b3 = next(b for b in client.get("/api/master/board?line=寶僑&month=2026-09").get_json()["brands"] if b["brand"] == b0["brand"])
+    check("空字串 = 清掉目標", res.status_code == 200 and b3["target_giv"] is None and b3["target_pct"] is None and b3["rebate_target"] == 1234.5)
+    check("目標不是數字 → 400", jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"], "target_giv": "五萬"}).status_code == 400)
+    check("缺品牌 → 400；沒有要改的欄位 → 400", jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "target_giv": 1}).status_code == 400
+          and jput(client, "/api/master/brand_targets", {"line": "寶僑", "month": "2026-09", "brand": b0["brand"]}).status_code == 400)
+    tl = [l for l in client.get("/api/master/logs?q=" + b0["brand"] + "&limit=1000").get_json()["logs"] if l["field"] in ("brand_target_giv", "brand_rebate_target")]
+    check("填目標有記歷程（填、改 REBATE、清掉各一筆）", len(tl) >= 3, str([(l["field"], l["old_value"], l["new_value"]) for l in tl][:4]))
+
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")
         print(f"\n通過 {len(PASS)} 項，失敗 {len(FAIL)} 項")
