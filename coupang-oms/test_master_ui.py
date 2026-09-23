@@ -346,7 +346,7 @@ def main():
             req = urllib.request.Request(base + href, headers={"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())})
             with urllib.request.urlopen(req) as resp:
                 check(f"{sel} 下載 200 且是 Excel", resp.status == 200 and "spreadsheet" in resp.headers.get("Content-Type", ""))
-        print("\n【6b】瑪氏出貨：拆單、產出、回填 EIP 採購單號")
+        print("\n【6b】瑪氏出貨：拆單、產出、回填 EIP 採購單號、瑪氏採購單")
         mars_master = os.path.join(BASE, "samples", "mars", "fake", "假_瑪氏商品總表.xlsx")
         assert tc.post("/api/mars/products/import", data={"file": (io.BytesIO(open(mars_master, "rb").read()), "假_瑪氏商品總表.xlsx")},
                        content_type="multipart/form-data").status_code == 200
@@ -380,6 +380,25 @@ def main():
         check("填對 → 狀態「已回填」", pg.eval_on_selector_all("#sp-table .st-filled", "els => els.length") == 1)
         pg.fill("#sp-table input.slot >> nth=0", "12:30~15:30（1台車）"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
         check("約倉時間存進去、重新整理還在", pg.eval_on_selector("#sp-table input.slot", "e => e.value") == "12:30~15:30（1台車）")
+        # ③ 瑪氏採購單：倉庫資料沒填 → 按鈕鎖住、提示寫差什麼；到採購單設定填 TAO1 → 解鎖 → 下載
+        check("採購單按鈕：單號約倉都填了但 TAO1 倉庫資料還缺 → 鎖住、提示寫差什麼、上面有提醒", pg.is_disabled("#sp-table button.po >> nth=0")
+              and "TAO1" in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "TAO1" in pg.inner_text("#alerts"), pg.get_attribute("#sp-table button.po >> nth=0", "title"))
+        check("其他沒填單號的那幾份：按鈕鎖住、提示寫還沒填 EIP 採購單號", "EIP" in pg.get_attribute("#sp-table button.po >> nth=1", "title"))
+        pg.click("#ps-details summary"); pg.wait_for_selector("#wh-table input.wh"); pg.wait_for_timeout(200)
+        check("採購單設定：倉庫清單有 TAO1、地址已從訂單帶入、標缺電話與 ship-to", "缺 電話、ship-to" in pg.inner_text("#wh-table tr[data-code='TAO1']")
+              and pg.input_value("#wh-table tr[data-code='TAO1'] input[data-f='address']") != "", pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
+        pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='phone']", "02-5592-7598"); pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='ship_to']", "17617037"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
+        check("填電話與 ship-to 離開格子就存 → 那倉變「齊了」、提醒消失", "齊了" in pg.inner_text("#wh-table tr[data-code='TAO1']") and "TAO1" not in pg.inner_text("#alerts"), pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
+        check("採購單按鈕解鎖、統計寫 1／5 可產瑪氏採購單", not pg.is_disabled("#sp-table button.po >> nth=0") and "1／5 可產瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
+        with pg.expect_download() as dl:
+            pg.click("#sp-table button.po >> nth=0")
+        check("按採購單 → 下載 永豐Mars採購單_…_TAO1_PO.xlsx", dl.value.suggested_filename.startswith("永豐Mars採購單_") and dl.value.suggested_filename.endswith("_TAO1_13000000600028.xlsx"), dl.value.suggested_filename)
+        with pg.expect_download() as dl:
+            pg.click("#btn-po")
+        check("「下載瑪氏採購單（全部）」→ zip", dl.value.suggested_filename == "瑪氏採購單_20260918.zip", dl.value.suggested_filename)
+        pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.click("#ps-save"); pg.wait_for_timeout(900)
+        pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
+        check("假日存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17", pg.input_value("#ps-holidays"))
         bad = [x for x in bad if "/api/mars/splits/" not in x[1] or x[0] != 400]   # 故意填錯的那次 400 不算
         b.close()
 

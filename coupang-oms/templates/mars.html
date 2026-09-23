@@ -72,7 +72,7 @@
       <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_mars.png') }}" style="height:30px;width:auto" alt="瑪氏"></div>
       <div>
         <h1 class="text-lg font-bold leading-tight">瑪氏出貨</h1>
-        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span>③ 瑪氏採購單</span><span>④ EMMA 匯入檔</span><span>⑤ 勇信缺貨</span></div>
+        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span class="on">③ 瑪氏採購單</span><span>④ EMMA 匯入檔</span><span>⑤ 勇信缺貨</span></div>
       </div>
     </div>
     <div class="flex-1"></div>
@@ -112,7 +112,7 @@
     </div>
   </section>
 
-  <!-- ① 拆單 ＋ ② 回填 -->
+  <!-- ① 拆單 ＋ ② 回填 ＋ ③ 每份的瑪氏採購單 -->
   <section class="card p-4">
     <div class="flex items-center gap-2 flex-wrap mb-3">
       <b class="mr-2">拆單</b>
@@ -123,6 +123,7 @@
       <span id="d-chips" class="flex gap-1 flex-wrap ml-2"></span>
       <div class="flex-1"></div>
       <button id="btn-gen" class="btn btn-p"><i class="bi bi-scissors"></i> 產出拆單表（下載）</button>
+      <button id="btn-po" class="btn btn-o" title="這段期間裡已填 EIP 單號與約倉時間的，全部套進瑪氏採購單範本打包下載"><i class="bi bi-file-earmark-text"></i> 下載瑪氏採購單（全部）</button>
     </div>
     <div id="sum" class="sum text-sm mb-3"></div>
     <div id="alerts" class="space-y-2 mb-3"></div>
@@ -135,6 +136,31 @@
         <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>
         <div>下載的 zip 裡每份兩個檔：拆單表（.xlsx）、EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。</div>
         <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
+        <div>③ 瑪氏採購單：單號跟約倉時間都填了，每列最右邊的「採購單」就能按，套的是 V2 範本。下單日＝到貨日往前推 2 個工作天（扣週末和下面設定的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ③ 採購單設定：各倉資料、特殊需求文字、假日 -->
+  <section class="card p-4" id="po-settings">
+    <details id="ps-details">
+      <summary class="cursor-pointer flex items-center gap-2 flex-wrap"><b>採購單設定</b><span class="kbd">各倉的地址、電話、ship-to；特殊需求文字；下單日要扣的假日</span><span id="ps-warn" class="badge st-changed hidden"></span></summary>
+      <div class="mt-3 grid gap-4" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
+        <div>
+          <div class="text-sm font-semibold mb-1">倉庫資料 <span class="kbd">訂單裡出現過的倉會自動列出來；地址沒填時用訂單上的地址。填完直接離開格子就存</span></div>
+          <div class="tbl-wrap" style="max-height:none"><table class="t" id="wh-table"></table></div>
+        </div>
+        <div class="text-sm space-y-2">
+          <div class="font-semibold">採購單其他固定文字</div>
+          <label class="block">下單日提前幾個工作天 <input id="ps-lead" class="inp" type="number" min="0" max="10" style="width:80px"></label>
+          <label class="block">效期要求（F6） <input id="ps-shelf" class="inp"></label>
+          <label class="block">送貨聯絡人（F8，倉庫沒填時） <input id="ps-contact" class="inp"></label>
+          <label class="block">要貼中標時，特殊需求第一行 <input id="ps-label" class="inp"></label>
+          <label class="block">有採購單箱備註時，特殊需求最後一行 <input id="ps-white" class="inp"></label>
+          <label class="block">特殊需求固定文字（一行一條；<code>{約倉時間}</code> 會換成那份填的約倉時間，<code>{約倉開始}</code> 換成裡面第一個時間）<textarea id="ps-special" class="inp" rows="5"></textarea></label>
+          <label class="block">假日（下單日往前推時跳過；一行一個，像 2026-09-25 或 9/25）<textarea id="ps-holidays" class="inp" rows="3"></textarea></label>
+          <div class="flex items-center gap-2"><button id="ps-save" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 存設定</button><span id="ps-msg" class="kbd"></span></div>
+        </div>
       </div>
     </details>
   </section>

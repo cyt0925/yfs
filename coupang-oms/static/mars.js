@@ -1,4 +1,4 @@
-/* 瑪氏出貨：商品總表上傳、拆單、回填 EIP 採購單號／約倉時間。後端在 mars/。 */
+/* 瑪氏出貨：商品總表上傳、拆單、回填 EIP 採購單號／約倉時間、產瑪氏採購單、採購單設定。後端在 mars/。 */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = n => n == null ? "" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 4 });
@@ -89,15 +89,18 @@ async function loadSplits() {
 }
 function render() {
   const v = VIEW, s = v.summary;
-  $("#sum").innerHTML = `<span><b>${s.pos}</b> 張 PO</span><span><b>${s.files}</b> 份拆單表</span><span><b>${fmt(s.cases)}</b> 箱</span><span><b>${s.items}</b> 個品項</span><span><b>${s.filled}</b>／${s.files} 已回填 EIP 單號</span>`;
+  $("#sum").innerHTML = `<span><b>${s.pos}</b> 張 PO</span><span><b>${s.files}</b> 份拆單表</span><span><b>${fmt(s.cases)}</b> 箱</span><span><b>${s.items}</b> 個品項</span><span><b>${s.filled}</b>／${s.files} 已回填 EIP 單號</span><span><b>${s.po_ready}</b>／${s.files} 可產瑪氏採購單</span>`;
   const al = [];
   if (!v.has_products) al.push(`<div class="alert al-bad"><i class="bi bi-exclamation-octagon-fill"></i> 還沒上傳瑪氏商品總表，分不出品類和中標，拆不了。</div>`);
   if (v.unmatched.length) al.push(`<div class="alert al-bad"><b><i class="bi bi-exclamation-octagon-fill"></i> ${v.unmatched.length} 個品項對不到瑪氏商品總表</b>，這些不會進拆單表，請更新商品總表再重拆：<br>${v.unmatched.map(u => `${esc(u.po_number)} · ${esc(u.yf_sku)}${u.quote_note && u.quote_note !== u.yf_sku ? `（報價備註 ${esc(u.quote_note)}）` : ""} · ${esc(u.product_name)} · ${esc(u.unit)} ${fmt(u.qty_ship)}`).join("<br>")}</div>`);
   const blocking = v.splits.flatMap(r => r.blocking || []);
   if (blocking.length) al.push(`<div class="alert al-bad"><b><i class="bi bi-slash-circle"></i> 這幾個品項要先處理才能產出</b>（EIP 採購表只能填整數箱）：<br>${blocking.map(esc).join("<br>")}</div>`);
   if (v.zero_rows) al.push(`<div class="kbd">出貨數量是 0 的 ${v.zero_rows} 個品項沒有拆進來。</div>`);
+  if (v.wh_missing && v.wh_missing.length) al.push(`<div class="alert al-warn"><i class="bi bi-geo-alt"></i> 瑪氏採購單要用的倉庫資料還沒填齊：<b>${v.wh_missing.map(esc).join("、")}</b>。到下面「採購單設定」把地址、電話、ship-to 填好，採購單才產得出來。</div>`);
+  $("#ps-warn").classList.toggle("hidden", !(v.wh_missing && v.wh_missing.length)); $("#ps-warn").textContent = v.wh_missing && v.wh_missing.length ? `${v.wh_missing.join("、")} 還沒填齊` : "";
   $("#alerts").innerHTML = al.join("");
   $("#btn-gen").disabled = !v.splits.length || !v.has_products || blocking.length > 0;
+  $("#btn-po").disabled = !s.po_ready;
 
   let h = `<thead><tr><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
   const ncol = v.split_by_unit ? 13 : 12;
@@ -120,7 +123,7 @@ function render() {
       <td class="num">${r.item_count}${warn ? ` <i class="bi bi-exclamation-triangle-fill" style="color:var(--warn)" title="有品項要注意，點開看"></i>` : ""}</td><td class="num"><b>${fmt(r.cases_total)}</b></td>
       <td><input class="inp eip" data-id="${r.id || ""}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}></td>
       <td><input class="inp slot" data-id="${r.id || ""}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
-      <td class="whitespace-nowrap">${r.id ? `<a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=split" title="拆單表"><i class="bi bi-file-earmark-excel"></i></a> <a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=eip" title="EIP 上傳用採購表">EIP</a>` : `<span class="kbd">—</span>`}</td></tr>`;
+      <td class="whitespace-nowrap">${r.id ? `<a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=split" title="拆單表"><i class="bi bi-file-earmark-excel"></i></a> <a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=eip" title="EIP 上傳用採購表">EIP</a> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-id="${r.id}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc(r.po_filename)}"`}>採購單</button>` : `<span class="kbd">—</span>`}</td></tr>`;
     if (OPEN.has(key)) {
       h += `<tr class="sub"><td></td><td colspan="${v.split_by_unit ? 12 : 11}"><table class="t"><thead><tr><th>永豐料號</th><th>下採料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th>瑪氏貨號</th><th>採購單箱備註</th><th>要注意</th></tr></thead><tbody>
         ${r.items.map(i => `<tr><td class="fn">${esc(i.yf_sku)}</td><td class="fn">${esc(i.purchase_code)}${i.via === "報價備註" ? ` <span class="badge st-changed">報價備註</span>` : ""}</td><td>${esc(i.product_name)}</td><td class="num">${fmt(i.qty_ship)}${i.qty_overridden ? ` <span class="badge st-generated" title="在 ② 訂單明細人工改過">改過</span>` : ""}</td><td>${esc(i.unit)}</td><td class="num">${fmt(i.box_file)}</td><td class="num"><b>${fmt(i.cases)}</b></td><td class="fn">${esc(i.mars_code)}</td><td>${esc(i.po_case_note)}</td><td style="color:var(--warn)">${(i.issues || []).map(esc).join("<br>")}</td></tr>`).join("")}
@@ -133,6 +136,7 @@ function render() {
     if (e.target.closest("input, a, button")) return;
     const k = tr.dataset.k; OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k); render();
   }));
+  $("#sp-table").querySelectorAll("button.po").forEach(b => b.addEventListener("click", () => downloadBlob(`/api/mars/splits/${b.dataset.id}/po`, {}, "瑪氏採購單.xlsx", "瑪氏採購單已下載")));
   $("#sp-table").querySelectorAll(".cp").forEach(b => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.t); toast("檔名已複製"); } catch (e) { toast("瀏覽器不讓複製，請手動選取", "err"); } }));
   $("#sp-table").querySelectorAll("input.eip, input.slot").forEach(inp => {
     inp.dataset.orig = inp.value;
@@ -169,4 +173,63 @@ async function generate(ack) {
 }
 $("#btn-gen").addEventListener("click", () => generate(false));
 
+/* ── ③ 瑪氏採購單：單份下載、整段期間打包 ── */
+async function downloadBlob(url, opts, fallback, okMsg) {
+  try {
+    const res = await fetch(url, opts);
+    if (!res.ok) { const d = await res.json().catch(() => ({})); toast([d.error || `伺服器錯誤 (${res.status})`, ...(d.details || []).slice(0, 5)].join("\n"), "err"); return null; }
+    const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : fallback;
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    if (okMsg) toast(okMsg);
+    return res;
+  } catch (e) { toast(e.message, "err"); return null; }
+}
+$("#btn-po").addEventListener("click", async () => {
+  $("#btn-po").disabled = true;
+  try {
+    const res = await downloadBlob("/api/mars/po/zip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: $("#d-from").value, to: $("#d-to").value }) }, "瑪氏採購單.zip");
+    if (res) { const n = res.headers.get("X-Mars-Po-Count"), sk = Number(res.headers.get("X-Mars-Po-Skipped") || 0); toast(`產出 ${n} 張瑪氏採購單` + (sk ? `，另外 ${sk} 份還差東西沒產（zip 裡有說明）` : "")); }
+  } finally { $("#btn-po").disabled = false; }
+});
+
+/* ── 採購單設定：倉庫資料、固定文字、假日 ── */
+let PS = null;
+async function loadPoSettings() {
+  PS = await api("/api/mars/po/settings");
+  const st = PS.settings;
+  $("#ps-lead").value = st.lead_days; $("#ps-shelf").value = st.shelf_req; $("#ps-contact").value = st.contact_default;
+  $("#ps-label").value = st.label_line; $("#ps-white").value = st.white_line; $("#ps-special").value = st.special_text; $("#ps-holidays").value = st.holidays.join("\n");
+  renderWarehouses(PS.warehouses);
+}
+function renderWarehouses(list) {
+  if (!list.length) { $("#wh-table").innerHTML = `<tr><td class="muted" style="padding:16px">還沒有瑪氏訂單，倉會在匯入出貨彙總表後自動列出來。</td></tr>`; return; }
+  const F = [["name", "入倉倉別（C6）", 170], ["address", "地址（C7）", 240], ["phone", "電話（C8）", 120], ["ship_to", "ship-to（F7）", 100], ["contact", "聯絡人（F8）", 90]];
+  let h = `<thead><tr><th>倉</th>${F.map(f => `<th style="min-width:${f[2]}px">${f[1]}</th>`).join("")}</tr></thead><tbody>`;
+  for (const w of list) {
+    h += `<tr data-code="${esc(w.code)}"><td class="whitespace-nowrap"><b>${esc(w.code)}</b><br>${w.missing.length ? `<span class="badge st-changed" title="缺 ${esc(w.missing.join("、"))}">缺 ${esc(w.missing.join("、"))}</span>` : `<span class="badge st-filled" title="${esc(w.updated_by)} ${esc((w.updated_at || "").slice(5, 16))}">齊了</span>`}</td>${F.map(f => `<td><input class="inp wh ${w.missing.includes(f[1].split("（")[0]) ? "bad" : ""}" data-f="${f[0]}" value="${esc(w[f[0]])}" ${f[0] === "address" && w.address_from_orders ? 'title="這是訂單上的地址，沒另外填就用它"' : ""}></td>`).join("")}</tr>`;
+  }
+  $("#wh-table").innerHTML = h + "</tbody>";
+  $("#wh-table").querySelectorAll("tr[data-code]").forEach(tr => {
+    const inputs = [...tr.querySelectorAll("input.wh")]; inputs.forEach(i => i.dataset.orig = i.value);
+    const save = async () => {
+      if (!inputs.some(i => i.value !== i.dataset.orig)) return;
+      const body = {}; inputs.forEach(i => body[i.dataset.f] = i.value);
+      try { const d = await api(`/api/mars/warehouses/${encodeURIComponent(tr.dataset.code)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        toast(`${tr.dataset.code} 的倉庫資料已存`); renderWarehouses(d.warehouses); loadSplits();
+      } catch (e) { toast(e.message, "err"); }
+    };
+    tr.addEventListener("focusout", e => { if (!tr.contains(e.relatedTarget)) save(); });   // 一列填完、離開這列才存一次
+    inputs.forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } }));
+  });
+}
+$("#ps-save").addEventListener("click", async () => {
+  const body = { lead_days: $("#ps-lead").value, shelf_req: $("#ps-shelf").value, contact_default: $("#ps-contact").value, label_line: $("#ps-label").value,
+    white_line: $("#ps-white").value, special_text: $("#ps-special").value, holidays: $("#ps-holidays").value };
+  $("#ps-msg").textContent = "存檔中…";
+  try { await api("/api/mars/po/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); $("#ps-msg").textContent = ""; toast("採購單設定已存"); await loadPoSettings(); loadSplits(); }
+  catch (e) { $("#ps-msg").textContent = ""; toast(e.message, "err"); }
+});
+
 loadStatus().then(loadSplits).catch(e => toast(e.message, "err"));
+loadPoSettings().catch(e => toast(e.message, "err"));

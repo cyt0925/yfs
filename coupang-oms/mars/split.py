@@ -24,6 +24,7 @@ import purchase as _purchase  # 採購表轉換：瑪氏的 EIP 採購表範本�
 
 from .common import *  # noqa: F401,F403
 from .products import load_products
+from .po import load_settings, po_filename, po_missing, warehouse_rows
 
 ITEM_KEYS = ("po_number", "sku_id", "yf_sku", "purchase_code", "unit", "qty_ship", "box_file", "cases")
 
@@ -159,6 +160,8 @@ def _view(date_from, date_to):
         groups = group_items(items)
         saved = _saved(conn, date_from, date_to)
         n_products = conn.execute("SELECT COUNT(*) AS n FROM mst_mars_products").fetchone()["n"]
+        po_settings = load_settings(conn)
+        whs = {w["code"]: w for w in warehouse_rows(conn, po_settings)}
     finally:
         conn.close()
     out = []
@@ -189,12 +192,18 @@ def _view(date_from, date_to):
                     "item_count": s["item_count"], "cases_total": s["cases_total"], "blocking": [], "items": snap,
                     "status": "gone", "filename": s["filename"], "eip_po": s["eip_po"], "slot_time": s["slot_time"],
                     "diff": "現在的訂單已經沒有這份（品項被拿掉、改期或改倉）"})
+    for r in out:                     # ③ 瑪氏採購單：這份差什麼才產得出來（空＝可以按）
+        wh = whs.get(r["warehouse"]) or {"missing": ["地址", "電話", "ship-to"]}
+        r["po_missing"] = po_missing(r, r["items"], wh, po_settings) if r["id"] else ["先按「產出拆單表」"]
+        r["po_filename"] = po_filename(r)
     out.sort(key=lambda r: (r["delivery_date"], r["po_number"], r["warehouse"], r["category"], r["unit"], r["label"]))
-    return {"splits": out, "unmatched": unmatched, "zero_rows": zero, "has_products": n_products > 0,
+    wh_missing = sorted(code for code, w in whs.items() if w["missing"] and any(r["warehouse"] == code for r in out))
+    return {"splits": out, "unmatched": unmatched, "zero_rows": zero, "has_products": n_products > 0, "wh_missing": wh_missing,
             "summary": {"pos": len({r["po_number"] for r in out}), "files": len(out),
                         "cases": round(sum(r["cases_total"] or 0 for r in out), 4),
                         "items": sum(r["item_count"] for r in out), "unmatched": len(unmatched),
                         "filled": sum(1 for r in out if r["eip_po"]),
+                        "po_ready": sum(1 for r in out if not r["po_missing"]),
                         "warnings": sum(1 for r in out for i in r["items"] if i.get("issues"))}}
 
 

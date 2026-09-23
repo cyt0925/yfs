@@ -1,5 +1,6 @@
 """瑪氏出貨（mars/）的端到端驗證：假的瑪氏商品總表＋假訂單彙總表裡線別是瑪氏的單，
-走「商品總表上傳 → ② 匯訂單 → 拆單 → 產出 zip（拆單表＋EIP 採購表）→ 回填 EIP 採購單號／約倉時間 → 訂單改了之後」。
+走「商品總表上傳 → ② 匯訂單 → 拆單 → 產出 zip（拆單表＋EIP 採購表）→ 回填 EIP 採購單號／約倉時間 → 訂單改了之後
+→ 採購單設定（倉庫資料、固定文字、假日）→ 產出瑪氏採購單（V2 範本）」。
 
 執行：python test_mars.py（設了 DATABASE_URL 就跑 PostgreSQL）
 """
@@ -253,12 +254,86 @@ def main():
     check("兩天一起產出：9/30 沒回填的舊拆單刪掉，只剩已回填的那份", r.status_code == 200 and [s["id"] for s in v["splits"] if s["delivery_date"] == "2026-09-30"] == [s2["id"]]
           and all(s["status"] == "generated" for s in v["splits"] if s["delivery_date"] == "2026-09-29"), str([(s["delivery_date"], s["status"]) for s in v["splits"]]))
 
+    print("\n【8b】採購單設定：倉庫資料、固定文字、假日")
+    ps = c.get("/api/mars/po/settings").get_json()
+    codes = [w["code"] for w in ps["warehouses"]]
+    check("倉庫清單從瑪氏訂單自動列出來（TAO1、TAO3、TAO5…），預設名稱是 永豐商店酷澎-倉", "TAO3" in codes and "TAO1" in codes
+          and next(w for w in ps["warehouses"] if w["code"] == "TAO3")["name"] == "永豐商店酷澎-TAO3", str(codes))
+    w3 = next(w for w in ps["warehouses"] if w["code"] == "TAO3")
+    check("地址沒填時用訂單上的地址、標出電話與 ship-to 還缺", w3["address"] == "桃園市大園區中山南路472號" and w3["address_from_orders"] and w3["missing"] == ["電話", "ship-to"], str(w3))
+    check("預設設定：提前 2 個工作天、效期 1/2 以上、特殊需求有進倉時間那行", ps["settings"]["lead_days"] == 2 and ps["settings"]["shelf_req"] == "1/2效期以上"
+          and "{約倉時間}" in ps["settings"]["special_text"] and ps["template"] == "mars_po_v2.xlsx")
+    r = c.put("/api/mars/warehouses/TAO3", json={"phone": "03-1234567", "ship_to": "17600001", "contact": "王小姐"})
+    w3 = next(w for w in r.get_json()["warehouses"] if w["code"] == "TAO3")
+    check("填 TAO3 的電話、ship-to、聯絡人 → 存起來、不再缺", r.status_code == 200 and w3["saved"] and w3["missing"] == [] and w3["contact"] == "王小姐" and w3["address"] == "桃園市大園區中山南路472號", str(w3))
+    logs = c.get("/api/master/logs?q=TAO3&limit=1000").get_json()["logs"]
+    check("倉庫資料有記修改歷程", any(l["field"] == "mars_warehouse" for l in logs))
+    check("提前天數亂填 → 400", c.put("/api/mars/po/settings", json={"lead_days": 20}).status_code == 400)
+    r = c.put("/api/mars/po/settings", json={"holidays": "2026-09-28\n9/29x"})
+    check("假日看不懂 → 400 點名是哪個", r.status_code == 400 and "9/29x" in r.get_json()["error"], str(r.get_json()))
+    r = c.put("/api/mars/po/settings", json={"holidays": "2026-09-28, 2026/10/9", "lead_days": "2"})
+    check("假日接受幾種寫法、存成 ISO 且排序", r.status_code == 200 and r.get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"], str(r.get_json()))
+    check("再讀一次還在", c.get("/api/mars/po/settings").get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"])
+
+    print("\n【8c】產出瑪氏採購單（V2 範本）")
+    v = splits(c, "2026-09-29", "2026-09-30")
+    f2 = next(x for x in v["splits"] if x["id"] == s2["id"])          # 9/30、已填 PO202609301、還沒填約倉時間
+    check("清單帶每份差什麼才能產採購單：這份只差約倉時間", f2["po_missing"] == ["還沒填約倉時間"], str(f2["po_missing"]))
+    check("9/29 那幾份：沒填 EIP 單號、沒填約倉時間", all("還沒填 EIP 採購單號" in x["po_missing"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"))
+    check("檔名照 Alice 的規則：永豐Mars採購單_單位_品類_中標_倉_酷澎PO", f2["po_filename"] == f"永豐Mars採購單_{f2['unit']}_{f2['category']}_{'需貼中標' if f2['label'] == 'V' else '不貼中標'}_TAO3_13000000699901.xlsx", f2["po_filename"])
+    r = c.get(f"/api/mars/splits/{s2['id']}/po")
+    check("差東西時下載 → 400 講清楚差什麼", r.status_code == 400 and "約倉時間" in r.get_json()["error"], str(r.get_json()))
+    put(s2["id"], {"slot_time": "12:30~15:30（1台車）"})
+    r = c.get(f"/api/mars/splits/{s2['id']}/po")
+    check("填齊了 → 下載 .xlsx、檔名對", r.status_code == 200 and f2["po_filename"] in unquote(r.headers.get("Content-Disposition", "")), unquote(r.headers.get("Content-Disposition", "")))
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).active
+    check("C3 下單日＝到貨日 9/30 往前 2 個工作天、跳過假日 9/28 → 9/25；F3 配送日＝9/30",
+          ws["C3"].value == datetime.datetime(2026, 9, 25) and ws["F3"].value == datetime.datetime(2026, 9, 30), f"{ws['C3'].value} / {ws['F3'].value}")
+    check("C5 永豐PO單號＝EIP 採購單號", ws["C5"].value == "PO202609301")
+    check("C6～F8 倉庫資料：入倉倉別、地址（訂單的）、電話、ship-to（數字）、聯絡人", ws["C6"].value == "永豐商店酷澎-TAO3" and ws["C7"].value == "桃園市大園區中山南路472號"
+          and ws["C8"].value == "03-1234567" and ws["F7"].value == 17600001 and ws["F8"].value == "王小姐", str([ws[x].value for x in ("C6", "C7", "C8", "F7", "F8")]))
+    check("F6 效期要求、B9 品類全名", ws["F6"].value == "1/2效期以上" and ws["B9"].value == mc.CAT_FULL[f2["category"]], f"{ws['F6'].value} / {ws['B9'].value}")
+    f5 = ws["F5"].value.split("\n")
+    exp_first = ["需貼中盒標"] if f2["label"] == "V" else []
+    check("F5 特殊需求：（要貼中標才有）需貼中盒標 → 固定文字 → 進倉時間＝約倉時間 → 請在 12:30 前抵達",
+          f5[:len(exp_first)] == exp_first and f5[len(exp_first):len(exp_first) + 2] == ["箱嘜，需當面對點數量", "酷澎嘜頭+驗收單"]
+          and f5[len(exp_first) + 2] == "進倉時間12:30~15:30（1台車）" and f5[len(exp_first) + 3] == "*請在12:30前抵達，以免被算遲到，謝謝", str(f5))
+    rows = [[ws.cell(rr, cc).value for cc in range(1, 14)] for rr in range(12, 12 + len(f2["items"]))]
+    codes_in = {r_[0] for r_ in rows}
+    check("第 12 列起每列一個下採料號：A 料號、B 瑪氏貨號、D 單位需求＝出貨數量、E 箱數、F 價格、J 每箱產品數、K 每箱中盒數",
+          codes_in == {i["purchase_code"] for i in f2["items"]} and all(r_[3] == sum(i["qty_ship"] for i in f2["items"] if i["purchase_code"] == r_[0])
+          and r_[4] == sum(i["cases"] for i in f2["items"] if i["purchase_code"] == r_[0]) and r_[1] and r_[5] and r_[9] and r_[10] for r_ in rows), str(rows))
+    check("H 中盒需貼標照這份的中標；I 指定效期留空", all((r_[7] == "V") == (f2["label"] == "V") and r_[8] is None for r_ in rows))
+    last = 12 + len(f2["items"]) - 1
+    check("E10／F10 加總公式蓋到最後一列（範本原本只到 28）", ws["E10"].value == f"=SUM(E12:E{last})" and ws["F10"].value == f"=SUM(G12:G{last})", f"{ws['E10'].value} {ws['F10'].value}")
+    check("G 欄小計公式還在", ws["G12"].value == "=IFERROR(E12*F12,0)")
+    r = c.post("/api/mars/po/zip", json={"from": "2026-09-29", "to": "2026-09-30"})
+    z = zipfile.ZipFile(io.BytesIO(r.data)); names = z.namelist()
+    check("整段期間打包：只有填齊的那 1 份進 zip，其他列在說明檔，標頭寫幾份產了幾份沒", r.status_code == 200 and f2["po_filename"] in names and "沒產出的.txt" in names
+          and r.headers.get("X-Mars-Po-Count") == "1" and int(r.headers.get("X-Mars-Po-Skipped")) == len(v["splits"]) - 1
+          and "還沒填 EIP 採購單號" in z.read("沒產出的.txt").decode("utf-8"), str(names))
+    check("zip 檔名帶到貨日區間", "瑪氏採購單_20260929-20260930.zip" in unquote(r.headers.get("Content-Disposition", "")))
+    check("沒有一份能產 → 400", c.post("/api/mars/po/zip", json={"from": "2026-09-01", "to": "2026-09-02"}).status_code == 400)
+    # 特殊需求：有採購單箱備註的品項 → 最後多一行；組出商品備註寫訂單料號；同料號合併
+    import mars.po as mp
+    fake_s = {"delivery_date": "2026-09-30", "eip_po": "PO202609999", "slot_time": "下午2點", "label": "", "category": "PET", "unit": "箱", "warehouse": "TAO3", "po_number": "1"}
+    fake_items = [{"purchase_code": "M1", "yf_sku": "M1", "unit": "箱", "qty_ship": 10, "cases": 1, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "", "po_case_note": "小白標"},
+                  {"purchase_code": "M1", "yf_sku": "M9", "unit": "箱", "qty_ship": 20, "cases": 2, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "舊備註", "po_case_note": ""}]
+    st = c.get("/api/mars/po/settings").get_json()["settings"]
+    txt = mp.special_text(st, fake_s, fake_items)
+    check("有採購單箱備註 → 特殊需求最後一行「指定品需加工貼小白標」；約倉時間裡沒有 HH:MM 就整段代入", txt.endswith("指定品需加工貼小白標") and "進倉時間下午2點" in txt and "*請在下午2點前抵達" in txt, txt)
+    pr = mp.po_rows(fake_items)
+    check("同一個下採料號合成一列：數量、箱數加總，組出的訂單料號寫進備註", len(pr) == 1 and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註；訂單料號 M9", str(pr))
+    check("下單日：9/21（一）往前 2 個工作天 → 9/17（四）", mp.order_date(datetime.date(2026, 9, 21), 2, set()) == datetime.date(2026, 9, 17))
+
     print("\n【9】清除資料")
     app_module._write_users(app_module.get_users(), {"Jerry", "小真"})
     r = c.post("/api/master/reset", json={"confirm": "清空資料", "orders": True, "products": True})
     conn = db.get_conn()
-    left = {t: conn.execute(f"SELECT COUNT(*) AS n FROM {t}").fetchone()["n"] for t in ("mst_mars_splits", "mst_mars_products", "mst_mars_uploads")}; conn.close()
+    left = {t: conn.execute(f"SELECT COUNT(*) AS n FROM {t}").fetchone()["n"] for t in ("mst_mars_splits", "mst_mars_products", "mst_mars_uploads")}
+    wh_left = conn.execute("SELECT COUNT(*) AS n FROM mst_mars_warehouses").fetchone()["n"]; conn.close()
     check("清訂單＋主檔：瑪氏拆單、商品總表一起清", r.status_code == 200 and not any(left.values()), str(left))
+    check("倉庫資料、採購單設定是設定，清資料不清", wh_left == 1 and c.get("/api/mars/po/settings").get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"], str(wh_left))
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-29", "to": "2026-09-30"})
     check("沒有商品總表時產出 → 400 講清楚", r.status_code == 400 and "商品總表" in r.get_json()["error"])
 

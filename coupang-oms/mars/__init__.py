@@ -8,13 +8,14 @@
   products.py   瑪氏商品總表上傳（整份覆蓋）
   split.py      ① 拆單（品類／單位／中標／到貨日／到貨倉）→ 下載拆單表＋EIP 上傳用採購表
                 ② 回填 EIP 採購單號、約倉時間（一份拆單表一張 EIP 採購單）
-之後：③ 瑪氏採購單（V2 範本）④ EMMA 匯入檔 ⑤ 勇信效期表缺貨比對。
+  po.py         ③ 瑪氏採購單（V2 範本）：填了 EIP 採購單號與約倉時間的拆單表 → 訂貨通知單；各倉資料與特殊需求文字在「採購單設定」
+之後：④ EMMA 匯入檔 ⑤ 勇信效期表缺貨比對。
 判讀的依據與還沒問清楚的事，寫在 docs/瑪氏出貨_設計筆記.md。
 """
 from flask import Blueprint
 
 mars_bp = Blueprint("mars", __name__)
 
-from . import products, split  # noqa: E402,F401 — 讓路由生效
+from . import products, split, po  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["mars_bp"]

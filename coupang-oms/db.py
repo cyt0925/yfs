@@ -835,6 +835,22 @@ CREATE TABLE IF NOT EXISTS mst_mars_splits (
     UNIQUE(split_key)
 );
 
+-- 瑪氏採購單（③）表頭要的各倉資料：入倉倉別顯示名、地址、電話、ship-to、聯絡人。
+-- Alice：「倉庫眾多，要想個方式讓他能吃到各倉庫的資料」→ 在瑪氏出貨頁的「採購單設定」裡填，一個倉一列。
+-- 地址沒填時用該倉訂單上的地址（整合表有）。其餘設定（特殊需求文字、效期要求、假日）放 mst_meta 的 mars_po_settings。
+CREATE TABLE IF NOT EXISTS mst_mars_warehouses (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code        TEXT NOT NULL,               -- 整合表的到貨倉別：TAO1、TAO3…
+    name        TEXT DEFAULT '',             -- C6 入倉倉別：永豐商店酷澎-TAO1
+    address     TEXT DEFAULT '',             -- C7
+    phone       TEXT DEFAULT '',             -- C8
+    ship_to     TEXT DEFAULT '',             -- F7
+    contact     TEXT DEFAULT '',             -- F8
+    updated_by  TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT '',
+    UNIQUE(code)
+);
+
 -- 某一格的值是誰給的（不是總表給的才記）：人在系統上改、寶僑 supply 表、Coupang Master。
 -- 重匯總表時，總表要蓋掉這種格子而且數字不一樣 → 先列出來讓人決定（保留系統的／用總表蓋），不偷偷蓋掉。
 -- kind = product（rkey = 國條）／month（國條|YYYY-MM）／brand（線別|季首月|品牌）
