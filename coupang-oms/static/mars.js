@@ -223,6 +223,16 @@ function renderWarehouses(list) {
     inputs.forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); i.blur(); } }));
   });
 }
+async function uploadWarehouses(f) {
+  const fd = new FormData(); fd.append("file", f); $("#wh-msg").textContent = "讀檔中…";
+  try {
+    const d = await api("/api/mars/warehouses/import", { method: "POST", body: fd });
+    $("#wh-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> ${esc(f.name)}：${d.rows} 個倉，新增 ${d.added}、更新 ${d.updated}、沒變 ${d.same}。</span>`;
+    renderWarehouses(d.warehouses); toast("倉庫資料已更新"); loadSplits();
+  } catch (e) { $("#wh-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+}
+$("#wh-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadWarehouses(f); });
+dropzone($("#dz-wh"), fs => uploadWarehouses(fs[0]));
 $("#ps-save").addEventListener("click", async () => {
   const body = { lead_days: $("#ps-lead").value, shelf_req: $("#ps-shelf").value, contact_default: $("#ps-contact").value, label_line: $("#ps-label").value,
     white_line: $("#ps-white").value, special_text: $("#ps-special").value, holidays: $("#ps-holidays").value };

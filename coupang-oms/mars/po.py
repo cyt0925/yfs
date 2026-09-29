@@ -15,7 +15,8 @@
 - 同一個下採料號（同單位）合成一列，箱數、出貨數量加總；組出商品在備註寫「訂單料號 M…」。
 - 只要填了 EIP 採購單號（C5）就能產（Jerry：其他都不擋）。倉庫的電話、ship-to、地址沒填就留空、約倉時間沒填就省略進倉時間那幾行，
   按鈕提示會寫哪些會留空；之後補了重新下載就有。
-- 各倉的地址、電話、ship-to、聯絡人放 mst_mars_warehouses，畫面「採購單設定」裡填；地址沒填就用該倉訂單上的地址。
+- 各倉的地址、電話、ship-to、聯絡人放 mst_mars_warehouses，畫面「採購單設定」裡填，或上傳倉庫資料表（倉別／地址／電話…）一次填；
+  檔案有值就蓋、空白不動；電話統一成 02-5592-7598 這種寫法。地址沒填就用該倉訂單上的地址。
 - 檔名：永豐Mars採購單_箱_品類_中標_倉_酷澎PO(原單位).xlsx（Alice 的規則單位固定箱；盒、包那份在最後加括弧才不會撞名）。
 """
 import copy
@@ -163,6 +164,89 @@ def warehouse_info(conn, code, settings=None):
         if r["code"] == code:
             return r
     return _empty_wh(code, settings)
+
+
+def format_phone(text):
+    """上傳的倉庫資料表電話統一成台灣寫法：+886-02-55927598 → 02-5592-7598、+886-0911556291 → 0911-556-291。
+    看不懂的（有分機、文字）照原樣留。"""
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    t = re.sub(r"[\s\-().／（）]", "", raw).replace("＋", "+")
+    if t.startswith("+886"):
+        t = t[4:]
+    elif t.startswith("886") and len(t) >= 11:
+        t = t[3:]
+    if not t.isdigit():
+        return raw
+    if not t.startswith("0"):
+        t = "0" + t
+    if t.startswith("09") and len(t) == 10:
+        return f"{t[:4]}-{t[4:7]}-{t[7:]}"
+    if t.startswith("02") and len(t) == 10:
+        return f"02-{t[2:6]}-{t[6:]}"
+    if len(t) == 9 and t[1] in "345678":
+        return f"{t[:2]}-{t[2:5]}-{t[5:]}"
+    return raw
+
+
+WH_HEADERS = {"倉別": "code", "倉": "code", "倉庫": "code", "到貨倉別": "code",
+              "地址": "address", "中文地址": "address", "送貨地址": "address",
+              "電話": "phone", "送貨連絡電話": "phone", "送貨聯絡電話": "phone", "聯絡電話": "phone",
+              "ship-to": "ship_to", "shipto": "ship_to", "ship_to": "ship_to",
+              "聯絡人": "contact", "送貨聯絡人": "contact",
+              "倉別名稱": "name", "入倉倉別": "name", "名稱": "name"}
+
+
+def parse_warehouse_sheet(fileobj):
+    """倉庫資料表：一列一個倉，欄位用表頭認（倉別必要；地址、電話、ship-to、聯絡人、倉別名稱有就吃）。"""
+    from .products import _h
+    try:
+        wb = openpyxl.load_workbook(fileobj, data_only=True, read_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"打不開這個 Excel：{exc}") from exc
+    for ws in wb.worksheets:
+        for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
+            cols = {}
+            for i, v in enumerate(row):
+                f = WH_HEADERS.get(_h(v))
+                if f and f not in cols:
+                    cols[f] = i
+            if "code" in cols and len(cols) >= 2:
+                rows = []
+                for raw in ws.iter_rows(min_row=idx + 1, values_only=True):
+                    def get(f):
+                        i = cols.get(f)
+                        return norm_text(raw[i]) if i is not None and i < len(raw) else ""
+                    code = get("code").upper()
+                    if not code:
+                        continue
+                    r = {"code": code}
+                    for f in ("address", "phone", "ship_to", "contact", "name"):
+                        if f in cols:
+                            r[f] = get(f)
+                    if "phone" in r:
+                        r["phone"] = format_phone(r["phone"])
+                    if "ship_to" in r and r["ship_to"].endswith(".0"):
+                        r["ship_to"] = r["ship_to"][:-2]
+                    rows.append(r)
+                return rows
+    raise ValueError("找不到倉庫資料表：第一列要有「倉別」，再加「地址」「電話」「ship-to」「聯絡人」其中至少一欄。")
+
+
+def import_warehouses(conn, rows, operator):
+    """檔案有值就蓋、空白的不動（Jerry 定的）。回 (新增, 更新, 沒變)。"""
+    added = updated = same = 0
+    for r in rows:
+        old = _row(conn.execute("SELECT * FROM mst_mars_warehouses WHERE code = ?", (r["code"],)))
+        vals = {k: v for k, v in r.items() if k != "code" and v}
+        if old is None:
+            save_warehouse(conn, r["code"], vals, operator); added += 1
+        elif any(vals[k] != (old[k] or "") for k in vals):
+            save_warehouse(conn, r["code"], vals, operator); updated += 1
+        else:
+            same += 1
+    return added, updated, same
 
 
 def save_warehouse(conn, code, payload, operator):
@@ -353,6 +437,29 @@ def api_warehouse_save(code):
         conn.close()
 
 
+@mars_bp.route("/api/mars/warehouses/import", methods=["POST"])
+def api_warehouses_import():
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"error": "沒有收到檔案。"}), 400
+    try:
+        rows = parse_warehouse_sheet(f.stream)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not rows:
+        return jsonify({"error": "檔案裡沒有任何倉別。"}), 400
+    operator = _operator()
+    conn = get_conn()
+    try:
+        added, updated, same = import_warehouses(conn, rows, operator)
+        _log(conn, LINE, "", "", "", "mars_warehouse_import", "上傳倉庫資料表", "", f"{len(rows)} 個倉：新增 {added}、更新 {updated}", operator, "manual", f.filename)
+        conn.commit()
+        whs = warehouse_rows(conn)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "rows": len(rows), "added": added, "updated": updated, "same": same, "warehouses": whs})
+
+
 @mars_bp.route("/api/mars/splits/<int:split_id>/po")
 def api_split_po(split_id):
     """一份拆單表 → 一張瑪氏採購單。差什麼就 400 講清楚。"""
@@ -418,5 +525,5 @@ def api_po_zip():
 
 
 __all__ = ["DEFAULT_SETTINGS", "load_settings", "save_settings", "parse_holiday", "order_date", "warehouse_rows", "warehouse_info",
-           "save_warehouse", "special_text", "po_rows", "po_missing", "po_hints", "po_filename", "po_file",
-           "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_split_po", "api_po_zip"]
+           "save_warehouse", "format_phone", "parse_warehouse_sheet", "import_warehouses", "special_text", "po_rows", "po_missing", "po_hints", "po_filename", "po_file",
+           "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_warehouses_import", "api_split_po", "api_po_zip"]

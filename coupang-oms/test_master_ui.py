@@ -11,6 +11,7 @@
 """
 import glob
 import io
+import openpyxl
 import os
 import socket
 import sys
@@ -396,6 +397,11 @@ def main():
         with pg.expect_download() as dl:
             pg.click("#btn-po")
         check("「下載瑪氏採購單（全部）」→ zip", dl.value.suggested_filename == "瑪氏採購單_20260918.zip", dl.value.suggested_filename)
+        wbw = openpyxl.Workbook(); wsw = wbw.active; wsw.append(["倉別", "中文地址", "電話"]); wsw.append(["TAO5", "桃園市觀音區寶倉街108號5樓", "+886-0911556291"]); wsw.append(["TAO9", "桃園市大園區建國路102號3樓", None])
+        whp = os.path.join(tempfile.gettempdir(), "ui_倉庫.xlsx"); wbw.save(whp)
+        pg.set_input_files("#wh-file", whp); pg.wait_for_selector("#wh-msg .bi-check-circle", timeout=15000); pg.wait_for_timeout(500)
+        check("上傳倉庫資料表：寫出幾個倉新增幾個、TAO9 出現在清單、電話轉成 0911-556-291", "2 個倉" in pg.inner_text("#wh-msg") and pg.eval_on_selector_all("#wh-table tr[data-code='TAO9']", "els => els.length") == 1
+              and pg.input_value("#wh-table tr[data-code='TAO5'] input[data-f='phone']") == "0911-556-291", pg.inner_text("#wh-msg"))
         pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.click("#ps-save"); pg.wait_for_timeout(900)
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
         check("假日存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17", pg.input_value("#ps-holidays"))
