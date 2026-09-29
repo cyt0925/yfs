@@ -280,6 +280,13 @@ def main():
     f2 = next(x for x in v["splits"] if x["id"] == s2["id"])          # 9/30、已填 PO202609301、還沒填約倉時間
     check("清單帶每份差什麼才能產採購單：這份填了單號、約倉時間不強制 → 可以產", f2["po_missing"] == [], str(f2["po_missing"]))
     check("9/29 那幾份：沒填 EIP 單號", all("還沒填 EIP 採購單號" in x["po_missing"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"))
+    check("提示（不擋）：約倉時間沒填", any("約倉時間" in h for h in f2["po_hints"]), str(f2["po_hints"]))
+    import mars.po as mp
+    st0 = c.get("/api/mars/po/settings").get_json()["settings"]
+    fake_wh = mp._empty_wh("TAO9", st0)
+    check("倉庫資料沒填：不擋，只提示會留空", mp.po_missing(f2, f2["items"], fake_wh) == [] and any("TAO9" in h and "留空" in h for h in mp.po_hints(dict(f2, warehouse="TAO9"), f2["items"], fake_wh)), str(mp.po_hints(dict(f2, warehouse="TAO9"), f2["items"], fake_wh)))
+    ws9 = openpyxl.load_workbook(io.BytesIO(mp.po_file(dict(f2, warehouse="TAO9"), f2["items"], fake_wh, st0))).active
+    check("倉庫資料沒填時產出的採購單：倉別名還是帶、地址／電話／ship-to 留空", ws9["C6"].value == "永豐商店酷澎-TAO9" and ws9["C7"].value is None and ws9["C8"].value is None and ws9["F7"].value is None, str([ws9[x].value for x in ("C6", "C7", "C8", "F7")]))
     tail = f"({f2['unit']})" if f2["unit"] != "箱" else ""
     check("檔名照 Alice 的規則、單位固定箱：永豐Mars採購單_箱_品類_中標_倉_酷澎PO；盒、包那份最後加(原單位)", f2["po_filename"] == f"永豐Mars採購單_箱_{f2['category']}_{'需貼中標' if f2['label'] == 'V' else '不貼中標'}_TAO3_13000000699901{tail}.xlsx", f2["po_filename"])
     check("本來就是箱的那份不加括弧", all(("(" in x["po_filename"]) == (x["unit"] != "箱") and "_箱_" in x["po_filename"] for x in v["splits"]), str([x["po_filename"] for x in v["splits"]]))
@@ -321,7 +328,6 @@ def main():
     check("zip 檔名帶到貨日區間", "瑪氏採購單_20260929-20260930.zip" in unquote(r.headers.get("Content-Disposition", "")))
     check("沒有一份能產 → 400", c.post("/api/mars/po/zip", json={"from": "2026-09-01", "to": "2026-09-02"}).status_code == 400)
     # 特殊需求：有採購單箱備註的品項 → 最後多一行；組出商品備註寫訂單料號；同料號合併
-    import mars.po as mp
     fake_s = {"delivery_date": "2026-09-30", "eip_po": "PO202609999", "slot_time": "下午2點", "label": "", "category": "PET", "unit": "箱", "warehouse": "TAO3", "po_number": "1"}
     fake_items = [{"purchase_code": "M1", "yf_sku": "M1", "unit": "箱", "qty_ship": 10, "cases": 1, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "", "po_case_note": "小白標"},
                   {"purchase_code": "M1", "yf_sku": "M9", "unit": "箱", "qty_ship": 20, "cases": 2, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "舊備註", "po_case_note": ""}]

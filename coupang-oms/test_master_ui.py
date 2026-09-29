@@ -380,16 +380,16 @@ def main():
         check("填對 → 狀態「已回填」", pg.eval_on_selector_all("#sp-table .st-filled", "els => els.length") == 1)
         pg.fill("#sp-table input.slot >> nth=0", "12:30~15:30（1台車）"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
         check("約倉時間存進去、重新整理還在", pg.eval_on_selector("#sp-table input.slot", "e => e.value") == "12:30~15:30（1台車）")
-        # ③ 瑪氏採購單：倉庫資料沒填 → 按鈕鎖住、提示寫差什麼；到採購單設定填 TAO1 → 解鎖 → 下載
-        check("採購單按鈕：單號填了但 TAO1 倉庫資料還缺 → 鎖住、提示寫差什麼、上面有提醒", pg.is_disabled("#sp-table button.po >> nth=0")
-              and "TAO1" in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "TAO1" in pg.inner_text("#alerts"), pg.get_attribute("#sp-table button.po >> nth=0", "title"))
+        # ③ 瑪氏採購單：有 EIP 單號就能按；倉庫資料沒填只提示會留空；到採購單設定填 TAO1 → 提示消失 → 下載
+        check("採購單按鈕：單號填了就能按，TAO1 倉庫資料還缺只在提示寫會留空、上面有提醒", not pg.is_disabled("#sp-table button.po >> nth=0")
+              and "TAO1" in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "留空" in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "TAO1" in pg.inner_text("#alerts"), pg.get_attribute("#sp-table button.po >> nth=0", "title"))
         check("其他沒填單號的那幾份：按鈕鎖住、提示寫還沒填 EIP 採購單號", "EIP" in pg.get_attribute("#sp-table button.po >> nth=1", "title"))
         pg.click("#ps-details summary"); pg.wait_for_selector("#wh-table input.wh"); pg.wait_for_timeout(200)
         check("採購單設定：倉庫清單有 TAO1、地址已從訂單帶入、標缺電話與 ship-to", "缺 電話、ship-to" in pg.inner_text("#wh-table tr[data-code='TAO1']")
               and pg.input_value("#wh-table tr[data-code='TAO1'] input[data-f='address']") != "", pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
         pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='phone']", "02-5592-7598"); pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='ship_to']", "17617037"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
         check("填電話與 ship-to 離開格子就存 → 那倉變「齊了」、提醒消失", "齊了" in pg.inner_text("#wh-table tr[data-code='TAO1']") and "TAO1" not in pg.inner_text("#alerts"), pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
-        check("採購單按鈕解鎖、統計寫 1／5 可產瑪氏採購單", not pg.is_disabled("#sp-table button.po >> nth=0") and "1／5 可產瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
+        check("按鈕提示不再寫會留空、統計寫 1／5 可產瑪氏採購單", "留空" not in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "1／5 可產瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
         with pg.expect_download() as dl:
             pg.click("#sp-table button.po >> nth=0")
         check("按採購單 → 下載 永豐Mars採購單_箱_…_TAO1_PO(盒).xlsx", dl.value.suggested_filename.startswith("永豐Mars採購單_箱_") and dl.value.suggested_filename.endswith("_TAO1_13000000600028(盒).xlsx"), dl.value.suggested_filename)

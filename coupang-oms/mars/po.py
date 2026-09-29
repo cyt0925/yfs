@@ -13,8 +13,8 @@
 - D「單位需求(for嘜頭)」直接填出貨數量（酷澎下單的單位數）。Alice 的公式（盒＝每箱中盒數×箱數）在整合表箱入數跟
   商品總表不一樣時會算錯（M10403852：36 vs 酷澎要的 432）；嘜頭要寫的就是酷澎下單的數量。
 - 同一個下採料號（同單位）合成一列，箱數、出貨數量加總；組出商品在備註寫「訂單料號 M…」。
-- 一定要先填 EIP 採購單號（C5）才產得出來。約倉時間不強制（Jerry：採購單可能先出）：沒填時特殊需求裡用到約倉時間的那幾行整行省略，
-  之後填了重新下載就有。
+- 只要填了 EIP 採購單號（C5）就能產（Jerry：其他都不擋）。倉庫的電話、ship-to、地址沒填就留空、約倉時間沒填就省略進倉時間那幾行，
+  按鈕提示會寫哪些會留空；之後補了重新下載就有。
 - 各倉的地址、電話、ship-to、聯絡人放 mst_mars_warehouses，畫面「採購單設定」裡填；地址沒填就用該倉訂單上的地址。
 - 檔名：永豐Mars採購單_箱_品類_中標_倉_酷澎PO(原單位).xlsx（Alice 的規則單位固定箱；盒、包那份在最後加括弧才不會撞名）。
 """
@@ -237,17 +237,23 @@ def po_rows(items):
 
 
 def po_missing(s, items, wh, settings=None):
-    """還差什麼才能產採購單；空 list＝可以。"""
-    miss = []
-    if not s.get("eip_po"):
-        miss.append("還沒填 EIP 採購單號")
-    if s.get("category") not in CAT_FULL:
-        miss.append("分不出品類")
-    if not items:
-        miss.append("沒有品項")
+    """擋下來不給產的原因；空 list＝可以按。只擋 EIP 採購單號（Jerry：只要有 EIP 採購單號就能按），
+    其他沒填的格子留空，讓人在 Excel 補，po_hints 只提示。"""
+    return [] if s.get("eip_po") else ["還沒填 EIP 採購單號"]
+
+
+def po_hints(s, items, wh, settings=None):
+    """產得出來、但會留空的地方（按鈕提示用）。"""
+    hints = []
     if wh.get("missing"):
-        miss.append(f"{s.get('warehouse') or '倉'} 的{'、'.join(wh['missing'])}還沒填（採購單設定）")
-    return miss
+        hints.append(f"{s.get('warehouse') or '倉'} 的{'、'.join(wh['missing'])}沒填，會留空（採購單設定）")
+    if not (s.get("slot_time") or "").strip():
+        hints.append("約倉時間沒填，進倉時間那兩行不放")
+    if s.get("category") not in CAT_FULL:
+        hints.append("分不出品類，B9 留空")
+    if not items:
+        hints.append("沒有品項")
+    return hints
 
 
 def po_filename(s):
@@ -272,11 +278,11 @@ def po_file(s, items, wh, settings):
     ws["F5"] = special_text(settings, s, items)
     ws["C6"] = wh["name"]
     ws["F6"] = settings["shelf_req"]
-    ws["C7"] = wh["address"]
-    ws["F7"] = int(wh["ship_to"]) if str(wh["ship_to"]).isdigit() else wh["ship_to"]
-    ws["C8"] = wh["phone"]
+    ws["C7"] = wh["address"] or None
+    ws["F7"] = int(wh["ship_to"]) if str(wh["ship_to"]).isdigit() else (wh["ship_to"] or None)
+    ws["C8"] = wh["phone"] or None
     ws["F8"] = wh["contact"]
-    ws["B9"] = CAT_FULL.get(s["category"], s["category"])
+    ws["B9"] = CAT_FULL.get(s["category"], s["category"]) or None
     rows = po_rows(items)
     last = FIRST_ROW + max(len(rows), 1) - 1
     for r in range(LAST_TEMPLATE_ROW + 1, last + 1):          # 超過範本格式的列：照最後一列補格式與公式
@@ -412,5 +418,5 @@ def api_po_zip():
 
 
 __all__ = ["DEFAULT_SETTINGS", "load_settings", "save_settings", "parse_holiday", "order_date", "warehouse_rows", "warehouse_info",
-           "save_warehouse", "special_text", "po_rows", "po_missing", "po_filename", "po_file",
+           "save_warehouse", "special_text", "po_rows", "po_missing", "po_hints", "po_filename", "po_file",
            "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_split_po", "api_po_zip"]

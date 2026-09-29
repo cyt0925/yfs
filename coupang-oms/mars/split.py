@@ -24,7 +24,7 @@ import purchase as _purchase  # 採購表轉換：瑪氏的 EIP 採購表範本�
 
 from .common import *  # noqa: F401,F403
 from .products import load_products
-from .po import load_settings, po_filename, po_missing, warehouse_rows
+from .po import load_settings, po_filename, po_hints, po_missing, warehouse_rows
 
 ITEM_KEYS = ("po_number", "sku_id", "yf_sku", "purchase_code", "unit", "qty_ship", "box_file", "cases")
 
@@ -195,6 +195,7 @@ def _view(date_from, date_to):
     for r in out:                     # ③ 瑪氏採購單：這份差什麼才產得出來（空＝可以按）
         wh = whs.get(r["warehouse"]) or {"missing": ["地址", "電話", "ship-to"]}
         r["po_missing"] = po_missing(r, r["items"], wh, po_settings) if r["id"] else ["先按「產出拆單表」"]
+        r["po_hints"] = po_hints(r, r["items"], wh, po_settings) if r["id"] else []
         r["po_filename"] = po_filename(r)
     out.sort(key=lambda r: (r["delivery_date"], r["po_number"], r["warehouse"], r["category"], r["unit"], r["label"]))
     wh_missing = sorted(code for code, w in whs.items() if w["missing"] and any(r["warehouse"] == code for r in out))
