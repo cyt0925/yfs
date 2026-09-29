@@ -141,7 +141,7 @@ def warehouse_rows(conn, settings=None):
     out = []
     for code in sorted(set(saved) | set(from_orders)):
         r = saved.get(code) or {}
-        row = {"code": code, "saved": bool(r),
+        row = {"code": code, "saved": bool(r), "in_orders": code in from_orders,
                "name": r.get("name") or f"永豐商店酷澎-{code}",
                "address": r.get("address") or from_orders.get(code, ""),
                "address_from_orders": not r.get("address") and bool(from_orders.get(code)),
@@ -423,6 +423,51 @@ def api_po_settings_save():
         conn.close()
 
 
+WH_CODE_RE = re.compile(r"^[A-Z0-9]{2,12}$")
+
+
+@mars_bp.route("/api/mars/warehouses", methods=["POST"])
+def api_warehouse_add():
+    """在網頁上直接加一個倉（訂單裡還沒出現過的）。倉別大寫英數，已經有的擋下來。"""
+    payload = request.get_json(silent=True) or {}
+    code = norm_text(payload.get("code")).upper().replace(" ", "")
+    if not WH_CODE_RE.match(code):
+        return jsonify({"error": f"倉別要像 TAO8、TXRC29 這樣的英數（2～12 碼），你填的是「{code or '空白'}」。"}), 400
+    conn = get_conn()
+    try:
+        if any(w["code"] == code for w in warehouse_rows(conn)):
+            return jsonify({"error": f"{code} 已經在清單裡了，直接改那列就好。"}), 400
+        vals = {k: payload.get(k) or "" for k in ("name", "address", "phone", "ship_to", "contact")}
+        vals["phone"] = format_phone(vals["phone"]) if vals["phone"].lstrip().startswith("+") else vals["phone"]
+        err = save_warehouse(conn, code, vals, _operator())
+        if err:
+            return jsonify({"error": err}), 400
+        conn.commit()
+        return jsonify({"ok": True, "code": code, "warehouses": warehouse_rows(conn)})
+    finally:
+        conn.close()
+
+
+@mars_bp.route("/api/mars/warehouses/<code>", methods=["DELETE"])
+def api_warehouse_delete(code):
+    """只能刪訂單裡沒出現過的倉（訂單有的刪了也會再列出來，沒意義）。"""
+    code = norm_text(code).upper()
+    operator = _operator()
+    conn = get_conn()
+    try:
+        old = _row(conn.execute("SELECT * FROM mst_mars_warehouses WHERE code = ?", (code,)))
+        if old is None:
+            return jsonify({"error": f"{code} 不是手動加或上傳的倉，沒有東西可以刪。"}), 404
+        if code in _codes_in_orders(conn):
+            return jsonify({"error": f"{code} 在訂單裡出現過，不能刪；要清內容就把格子清空。"}), 400
+        conn.execute("DELETE FROM mst_mars_warehouses WHERE code = ?", (code,))
+        _log(conn, LINE, "", "", "", "mars_warehouse", f"瑪氏採購單倉庫資料 {code}", f"{old['address']}｜{old['phone']}｜{old['ship_to']}", "刪除", operator, "manual")
+        conn.commit()
+        return jsonify({"ok": True, "warehouses": warehouse_rows(conn)})
+    finally:
+        conn.close()
+
+
 @mars_bp.route("/api/mars/warehouses/<code>", methods=["PUT"])
 def api_warehouse_save(code):
     payload = request.get_json(silent=True) or {}
@@ -526,4 +571,5 @@ def api_po_zip():
 
 __all__ = ["DEFAULT_SETTINGS", "load_settings", "save_settings", "parse_holiday", "order_date", "warehouse_rows", "warehouse_info",
            "save_warehouse", "format_phone", "parse_warehouse_sheet", "import_warehouses", "special_text", "po_rows", "po_missing", "po_hints", "po_filename", "po_file",
-           "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_warehouses_import", "api_split_po", "api_po_zip"]
+           "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_warehouse_add", "api_warehouse_delete", "api_warehouses_import",
+           "api_split_po", "api_po_zip"]

@@ -289,6 +289,16 @@ def main():
     check("檔案空白的不動：TAO3 地址還是訂單的、ship-to 還在；倉別小寫轉大寫", whs["TAO3"]["address"] == "桃園市大園區中山南路472號" and whs["TAO3"]["ship_to"] == "17600001" and "TAO9" in whs and whs["TAO9"]["missing"] == ["電話", "ship-to"], str(whs.get("TAO9")))
     check("再傳一次同樣的檔 → 全部沒變", up(c, "/api/mars/warehouses/import", bufw.getvalue(), "倉庫.xlsx").get_json()["same"] == 3)
     check("不是倉庫資料表 → 400 講清楚", up(c, "/api/mars/warehouses/import", MASTER).status_code == 400)
+    # 網頁上直接加一個倉、刪一個倉
+    r = c.post("/api/mars/warehouses", json={"code": " tao8 ", "address": "桃園市某處", "phone": "+886-03-1234567", "ship_to": "17600008"})
+    whs = {w["code"]: w for w in r.get_json()["warehouses"]}
+    check("直接加一個倉：倉別轉大寫、電話 +886 也轉、列在清單裡", r.status_code == 200 and r.get_json()["code"] == "TAO8" and whs["TAO8"]["phone"] == "03-123-4567" and whs["TAO8"]["missing"] == [] and not whs["TAO8"]["in_orders"], str(whs.get("TAO8")))
+    check("倉別已經有 → 400", c.post("/api/mars/warehouses", json={"code": "TAO3"}).status_code == 400)
+    check("倉別亂填 → 400", c.post("/api/mars/warehouses", json={"code": "倉庫 8"}).status_code == 400)
+    check("訂單裡有的倉不能刪", c.delete("/api/mars/warehouses/TAO3").status_code == 400 and whs["TAO3"]["in_orders"])
+    r = c.delete("/api/mars/warehouses/TAO8")
+    check("手動加的倉可以刪、清單裡不見", r.status_code == 200 and all(w["code"] != "TAO8" for w in r.get_json()["warehouses"]))
+    check("刪沒有的倉 → 404", c.delete("/api/mars/warehouses/TAO8").status_code == 404)
 
     print("\n【8c】產出瑪氏採購單（V2 範本）")
     v = splits(c, "2026-09-29", "2026-09-30")

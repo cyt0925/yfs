@@ -203,13 +203,27 @@ async function loadPoSettings() {
   renderWarehouses(PS.warehouses);
 }
 function renderWarehouses(list) {
-  if (!list.length) { $("#wh-table").innerHTML = `<tr><td class="muted" style="padding:16px">還沒有瑪氏訂單，倉會在匯入出貨彙總表後自動列出來。</td></tr>`; return; }
   const F = [["name", "入倉倉別（C6）", 170], ["address", "地址（C7）", 240], ["phone", "電話（C8）", 120], ["ship_to", "ship-to（F7）", 100], ["contact", "聯絡人（F8）", 90]];
-  let h = `<thead><tr><th>倉</th>${F.map(f => `<th style="min-width:${f[2]}px">${f[1]}</th>`).join("")}</tr></thead><tbody>`;
+  let h = `<thead><tr><th>倉</th>${F.map(f => `<th style="min-width:${f[2]}px">${f[1]}</th>`).join("")}<th></th></tr></thead><tbody>`;
   for (const w of list) {
-    h += `<tr data-code="${esc(w.code)}"><td class="whitespace-nowrap"><b>${esc(w.code)}</b><br>${w.missing.length ? `<span class="badge st-changed" title="缺 ${esc(w.missing.join("、"))}">缺 ${esc(w.missing.join("、"))}</span>` : `<span class="badge st-filled" title="${esc(w.updated_by)} ${esc((w.updated_at || "").slice(5, 16))}">齊了</span>`}</td>${F.map(f => `<td><input class="inp wh ${w.missing.includes(f[1].split("（")[0]) ? "bad" : ""}" data-f="${f[0]}" value="${esc(w[f[0]])}" ${f[0] === "address" && w.address_from_orders ? 'title="這是訂單上的地址，沒另外填就用它"' : ""}></td>`).join("")}</tr>`;
+    h += `<tr data-code="${esc(w.code)}"><td class="whitespace-nowrap"><b>${esc(w.code)}</b><br>${w.missing.length ? `<span class="badge st-changed" title="缺 ${esc(w.missing.join("、"))}">缺 ${esc(w.missing.join("、"))}</span>` : `<span class="badge st-filled" title="${esc(w.updated_by)} ${esc((w.updated_at || "").slice(5, 16))}">齊了</span>`}</td>${F.map(f => `<td><input class="inp wh ${w.missing.includes(f[1].split("（")[0]) ? "bad" : ""}" data-f="${f[0]}" value="${esc(w[f[0]])}" ${f[0] === "address" && w.address_from_orders ? 'title="這是訂單上的地址，沒另外填就用它"' : ""}></td>`).join("")}
+      <td>${w.in_orders ? `<span class="kbd" title="訂單裡有這個倉，不能刪">訂單有</span>` : `<button class="btn btn-o btn-sm wh-del" data-code="${esc(w.code)}" title="刪掉這個倉（訂單裡沒出現過的才能刪）" style="padding:2px 7px"><i class="bi bi-trash"></i></button>`}</td></tr>`;
   }
+  if (!list.length) h += `<tr><td colspan="7" class="muted" style="padding:12px">還沒有瑪氏訂單，倉會在匯入出貨彙總表後自動列出來；也可以在下面直接加。</td></tr>`;
+  h += `<tr id="wh-new"><td><input class="inp" id="wh-new-code" placeholder="倉別 TAO8" style="width:90px;text-transform:uppercase"></td>${F.map(f => `<td><input class="inp" data-f="${f[0]}" placeholder="${esc(f[1].split("（")[0])}"></td>`).join("")}<td><button class="btn btn-p btn-sm" id="wh-add"><i class="bi bi-plus-lg"></i> 加入</button></td></tr>`;
   $("#wh-table").innerHTML = h + "</tbody>";
+  $("#wh-add").addEventListener("click", async () => {
+    const body = { code: $("#wh-new-code").value }; $("#wh-new").querySelectorAll("input[data-f]").forEach(i => body[i.dataset.f] = i.value);
+    try { const d = await api("/api/mars/warehouses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      toast(`已加入 ${d.code}`); renderWarehouses(d.warehouses); loadSplits();
+    } catch (e) { toast(e.message, "err"); $("#wh-new-code").classList.add("bad"); }
+  });
+  $("#wh-new").querySelectorAll("input").forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("#wh-add").click(); } }));
+  $("#wh-table").querySelectorAll(".wh-del").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm(`要刪掉 ${b.dataset.code} 的倉庫資料？`)) return;
+    try { const d = await api(`/api/mars/warehouses/${encodeURIComponent(b.dataset.code)}`, { method: "DELETE" }); toast(`${b.dataset.code} 已刪`); renderWarehouses(d.warehouses); loadSplits(); }
+    catch (e) { toast(e.message, "err"); }
+  }));
   $("#wh-table").querySelectorAll("tr[data-code]").forEach(tr => {
     const inputs = [...tr.querySelectorAll("input.wh")]; inputs.forEach(i => i.dataset.orig = i.value);
     const save = async () => {

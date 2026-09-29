@@ -402,6 +402,11 @@ def main():
         pg.set_input_files("#wh-file", whp); pg.wait_for_selector("#wh-msg .bi-check-circle", timeout=15000); pg.wait_for_timeout(500)
         check("上傳倉庫資料表：寫出幾個倉新增幾個、TAO9 出現在清單、電話轉成 0911-556-291", "2 個倉" in pg.inner_text("#wh-msg") and pg.eval_on_selector_all("#wh-table tr[data-code='TAO9']", "els => els.length") == 1
               and pg.input_value("#wh-table tr[data-code='TAO5'] input[data-f='phone']") == "0911-556-291", pg.inner_text("#wh-msg"))
+        pg.fill("#wh-new-code", "tao8"); pg.fill("#wh-new input[data-f='address']", "桃園市某處"); pg.click("#wh-add"); pg.wait_for_timeout(800)
+        check("最下面直接加一個倉 TAO8 → 出現在清單、有刪除鈕；訂單有的倉沒有刪除鈕", pg.eval_on_selector_all("#wh-table tr[data-code='TAO8'] .wh-del", "els => els.length") == 1
+              and pg.eval_on_selector_all("#wh-table tr[data-code='TAO1'] .wh-del", "els => els.length") == 0, pg.inner_text("#wh-table tr[data-code='TAO8']")[:80] if pg.query_selector("#wh-table tr[data-code='TAO8']") else "沒有 TAO8")
+        pg.once("dialog", lambda d: d.accept()); pg.click("#wh-table tr[data-code='TAO8'] .wh-del"); pg.wait_for_timeout(800)
+        check("按刪除、確認 → TAO8 不見", pg.eval_on_selector_all("#wh-table tr[data-code='TAO8']", "els => els.length") == 0)
         pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.click("#ps-save"); pg.wait_for_timeout(900)
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
         check("假日存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17", pg.input_value("#ps-holidays"))
