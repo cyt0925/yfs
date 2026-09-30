@@ -159,7 +159,9 @@ def main():
     check("報價備註存進 mst_orders", q["quote_note"] == "M55500001", str(q))
     v = splits(c, "2026-09-30")
     combo = next(i for s in v["splits"] for i in s["items"] if i["sku_id"] == "900000000000001")
-    check("組出商品：料號對不到 → 用報價備註對到，下採料號用報價備註那個", combo["via"] == "報價備註" and combo["purchase_code"] == "M55500001" and combo["cases"] == 10, str(combo)[:200])
+    check("下採料號＝報價備註：組出商品下採 M55500001（永豐料號 M60055599 只是酷澎編號）", combo["via"] == "下採料號" and combo["purchase_code"] == "M55500001" and combo["yf_sku"] == "M60055599" and combo["cases"] == 10, str(combo)[:200])
+    plain = next(i for s in v["splits"] for i in s["items"] if i["sku_id"] == "900000000000004")
+    check("報價備註空白 → 下採料號退回永豐料號", plain["purchase_code"] == "M69072565" and plain["via"] == "下採料號")
     check("對不到商品總表的列出來、不進任何一份", [u["yf_sku"] for u in v["unmatched"]] == ["M99999999"]
           and all(i["yf_sku"] != "M99999999" for s in v["splits"] for i in s["items"]))
     frac = next(s for s in v["splits"] if any(i["sku_id"] == "900000000000003" for i in s["items"]))

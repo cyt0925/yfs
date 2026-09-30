@@ -6,9 +6,10 @@
   中標（商品總表 O 中盒貼標：V＝需貼中標）
 分成一份一份的拆單表。一份拆單表＝一張 EIP 採購單（一個 EIP 採購單號）。
 
-對商品總表：先用 (永豐料號, 單位)；對不到再用整合表的「報價備註」（組出商品，例如 M60019810 的報價備註是
-M10254053，商品總表裡是後者）；再對不到才退回「同料號別的單位」並標出來。都對不到的品項不進拆單表，畫面列出來。
-下採料號用對到的那個商品總表料號（組出商品就是報價備註那個）。
+下採料號＝整合表的「報價備註」（Jerry 2026-09-30：永豐料號是酷澎那邊的編號，要下採的是報價備註那個；組出商品
+例如 M60019810 的報價備註是 M10254053）。報價備註空白才退回永豐料號。
+對商品總表：先用 (下採料號, 單位)；對不到退回 (永豐料號, 單位) 並標出來；再對不到才用「同料號別的單位」並標出來。
+都對不到的品項不進拆單表，畫面列出來。
 
 箱數＝出貨數量 ÷ 整合表箱入數（Alice：EIP 一律用 Integration 的 Q 欄箱數、單位是箱）。出貨數量用 ② 訂單明細
 現在的數字（人改過的照改過的）。箱數不是整數的不能產 EIP 採購表，擋下來講清楚是哪幾個。
@@ -45,18 +46,23 @@ def _mars_orders(conn, date_from, date_to):
     return [o for o in rows if _group_of(o["line"], cfg) == LINE]
 
 
+def purchase_code_of(o):
+    """下採料號＝報價備註，空白才用永豐料號。"""
+    return norm_key(o.get("quote_note") or "") or (o["yf_sku"] or "")
+
+
 def _match(o, by_key, by_code):
     """(商品總表那列, 怎麼對到的, 提醒) """
-    yf, unit, quote = o["yf_sku"] or "", o["unit"] or "", o.get("quote_note") or ""
-    if (yf, unit) in by_key:
-        return by_key[(yf, unit)], "料號", ""
-    if quote and quote != yf and (quote, unit) in by_key:
-        return by_key[(quote, unit)], "報價備註", f"整合表料號 {yf} 在商品總表找不到，用報價備註 {quote} 對到"
-    for code, how in ((yf, "料號"), (quote, "報價備註")):
-        if code and code in by_code:
-            units = by_code[code]
+    yf, unit, code = o["yf_sku"] or "", o["unit"] or "", purchase_code_of(o)
+    if (code, unit) in by_key:
+        return by_key[(code, unit)], "下採料號", ""
+    if yf and yf != code and (yf, unit) in by_key:
+        return by_key[(yf, unit)], "永豐料號", f"下採料號 {code} 在商品總表找不到，用永豐料號 {yf} 對到"
+    for c, how in ((code, "下採料號"), (yf, "永豐料號")):
+        if c and c in by_code:
+            units = by_code[c]
             p = units.get("箱") or next(iter(units.values()))
-            return p, how, f"商品總表沒有 {code} 的「{unit}」這個單位，用「{p['unit']}」那列的資料"
+            return p, how, f"商品總表沒有 {c} 的「{unit}」這個單位，用「{p['unit']}」那列的資料"
     return None, "", ""
 
 
@@ -90,7 +96,7 @@ def build_items(conn, date_from, date_to):
         if box and p["unit"] == (o["unit"] or "") and p["box_qty"] and abs(p["box_qty"] - box) > 1e-6:
             issues.append(f"箱入數：整合表 {box:g}、商品總表 {p['box_qty']:g}（箱數照整合表）")
         base.update({
-            "purchase_code": p["yf_sku"], "via": via, "mars_code": p["mars_code"], "category_name": p["category"],
+            "purchase_code": purchase_code_of(o), "via": via, "mars_code": p["mars_code"], "category_name": p["category"],
             "category": cat_code(p["category"]), "mars_name": p["name"], "price": p["price"],
             "inner_per_case": p["inner_per_case"], "pcs_per_case": p["pcs_per_case"], "mars_unit": p["unit"],
             "mars_box_qty": p["box_qty"], "label": p["inner_label"], "note": p["note"], "po_case_note": p["po_case_note"],
