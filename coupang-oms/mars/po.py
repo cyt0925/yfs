@@ -12,7 +12,8 @@
 幾個決定（細節在 docs/瑪氏出貨_設計筆記.md）：
 - D「單位需求(for嘜頭)」直接填出貨數量（酷澎下單的單位數）。Alice 的公式（盒＝每箱中盒數×箱數）在整合表箱入數跟
   商品總表不一樣時會算錯（M10403852：36 vs 酷澎要的 432）；嘜頭要寫的就是酷澎下單的數量。
-- 同一個下採料號（同單位）合成一列，箱數、出貨數量加總；組出商品在備註寫「訂單料號 M…」。
+- A 欄放整合表的永豐料號（Jerry 2026-09-30：採購單吃永豐料號，EIP 才吃下採料號＝報價備註）；瑪氏貨號、品名、價格照下採料號對到的商品總表那列。
+  同一個永豐料號（同單位）合成一列，箱數、出貨數量加總。
 - 只要填了 EIP 採購單號（C5）就能產（Jerry：其他都不擋）。倉庫的電話、ship-to、地址沒填就留空、約倉時間沒填就省略進倉時間那幾行，
   按鈕提示會寫哪些會留空；之後補了重新下載就有。
 - 各倉的地址、電話、ship-to、聯絡人放 mst_mars_warehouses，畫面「採購單設定」裡填，或上傳倉庫資料表（倉別／地址／電話…）一次填；
@@ -291,28 +292,23 @@ def special_text(settings, s, items):
 
 
 def po_rows(items):
-    """同一個下採料號（同單位）合成一列；箱數、出貨數量加總。"""
+    """同一個永豐料號（同單位）合成一列；箱數、出貨數量加總。A 欄放永豐料號，不是下採料號。"""
     rows = collections.OrderedDict()
     for it in items:
-        key = (it.get("purchase_code") or it.get("yf_sku") or "", it.get("unit") or "")
+        key = (it.get("yf_sku") or it.get("purchase_code") or "", it.get("unit") or "")
         r = rows.get(key)
         if r is None:
             r = rows[key] = {"code": key[0], "mars_code": it.get("mars_code") or "", "name": it.get("mars_name") or it.get("product_name") or "",
                              "qty": 0, "cases": 0, "price": it.get("price"), "pcs_per_case": it.get("pcs_per_case"),
                              "inner_per_case": it.get("inner_per_case"), "note": it.get("note") or "",
-                             "po_case_note": it.get("po_case_note") or "", "order_codes": []}
+                             "po_case_note": it.get("po_case_note") or ""}
         r["qty"] += it.get("qty_ship") or 0
         r["cases"] += it.get("cases") or 0
         for k, src in (("note", "note"), ("po_case_note", "po_case_note"), ("price", "price")):   # 同料號的商品總表欄一樣；缺的補上
             if not r[k] and it.get(src):
                 r[k] = it[src]
-        if it.get("yf_sku") and it["yf_sku"] != key[0] and it["yf_sku"] not in r["order_codes"]:
-            r["order_codes"].append(it["yf_sku"])
     out = []
     for r in rows.values():
-        if r["order_codes"]:
-            extra = "訂單料號 " + "、".join(r["order_codes"])
-            r["note"] = f"{r['note']}；{extra}" if r["note"] else extra
         r["cases"] = int(round(r["cases"])) if abs(r["cases"] - round(r["cases"])) < 1e-6 else r["cases"]
         if isinstance(r["qty"], float) and r["qty"].is_integer():
             r["qty"] = int(r["qty"])

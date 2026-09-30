@@ -340,9 +340,9 @@ def main():
           and f5[len(exp_first) + 2] == "進倉時間12:30~15:30（1台車）" and f5[len(exp_first) + 3] == "*請在12:30前抵達，以免被算遲到，謝謝", str(f5))
     rows = [[ws.cell(rr, cc).value for cc in range(1, 14)] for rr in range(12, 12 + len(f2["items"]))]
     codes_in = {r_[0] for r_ in rows}
-    check("第 12 列起每列一個下採料號：A 料號、B 瑪氏貨號、D 單位需求＝出貨數量、E 箱數、F 價格、J 每箱產品數、K 每箱中盒數",
-          codes_in == {i["purchase_code"] for i in f2["items"]} and all(r_[3] == sum(i["qty_ship"] for i in f2["items"] if i["purchase_code"] == r_[0])
-          and r_[4] == sum(i["cases"] for i in f2["items"] if i["purchase_code"] == r_[0]) and r_[1] and r_[5] and r_[9] and r_[10] for r_ in rows), str(rows))
+    check("第 12 列起每列一個永豐料號（不是下採料號）：A 料號、B 瑪氏貨號、D 單位需求＝出貨數量、E 箱數、F 價格、J 每箱產品數、K 每箱中盒數",
+          codes_in == {i["yf_sku"] for i in f2["items"]} and all(r_[3] == sum(i["qty_ship"] for i in f2["items"] if i["yf_sku"] == r_[0])
+          and r_[4] == sum(i["cases"] for i in f2["items"] if i["yf_sku"] == r_[0]) and r_[1] and r_[5] and r_[9] and r_[10] for r_ in rows), str(rows))
     check("H 中盒需貼標照這份的中標；I 指定效期留空", all((r_[7] == "V") == (f2["label"] == "V") and r_[8] is None for r_ in rows))
     last = 12 + len(f2["items"]) - 1
     check("E10／F10 加總公式蓋到最後一列（範本原本只到 28）", ws["E10"].value == f"=SUM(E12:E{last})" and ws["F10"].value == f"=SUM(G12:G{last})", f"{ws['E10'].value} {ws['F10'].value}")
@@ -356,13 +356,14 @@ def main():
     check("沒有一份能產 → 400", c.post("/api/mars/po/zip", json={"from": "2026-09-01", "to": "2026-09-02"}).status_code == 400)
     # 特殊需求：有採購單箱備註的品項 → 最後多一行；組出商品備註寫訂單料號；同料號合併
     fake_s = {"delivery_date": "2026-09-30", "eip_po": "PO202609999", "slot_time": "下午2點", "label": "", "category": "PET", "unit": "箱", "warehouse": "TAO3", "po_number": "1"}
-    fake_items = [{"purchase_code": "M1", "yf_sku": "M1", "unit": "箱", "qty_ship": 10, "cases": 1, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "", "po_case_note": "小白標"},
-                  {"purchase_code": "M1", "yf_sku": "M9", "unit": "箱", "qty_ship": 20, "cases": 2, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "舊備註", "po_case_note": ""}]
+    fake_items = [{"purchase_code": "M1", "yf_sku": "M9", "unit": "箱", "qty_ship": 10, "cases": 1, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "", "po_case_note": "小白標"},
+                  {"purchase_code": "M1", "yf_sku": "M9", "unit": "箱", "qty_ship": 20, "cases": 2, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "舊備註", "po_case_note": ""},
+                  {"purchase_code": "M1", "yf_sku": "M8", "unit": "箱", "qty_ship": 5, "cases": 1, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "", "po_case_note": ""}]
     st = c.get("/api/mars/po/settings").get_json()["settings"]
     txt = mp.special_text(st, fake_s, fake_items)
     check("有採購單箱備註 → 特殊需求最後一行「指定品需加工貼小白標」；約倉時間裡沒有 HH:MM 就整段代入", txt.endswith("指定品需加工貼小白標") and "進倉時間下午2點" in txt and "*請在下午2點前抵達" in txt, txt)
     pr = mp.po_rows(fake_items)
-    check("同一個下採料號合成一列：數量、箱數加總，組出的訂單料號寫進備註", len(pr) == 1 and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註；訂單料號 M9", str(pr))
+    check("採購單一列一個永豐料號（組出 M9 就寫 M9，不寫下採的 M1）：同料號合成一列、數量箱數加總、備註照商品總表", [r_["code"] for r_ in pr] == ["M9", "M8"] and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註", str(pr))
     check("下單日：9/21（一）往前 2 個工作天 → 9/17（四）", mp.order_date(datetime.date(2026, 9, 21), 2, set()) == datetime.date(2026, 9, 17))
 
     print("\n【9】清除資料")
