@@ -26,6 +26,7 @@ import purchase as _purchase  # 採購表轉換：瑪氏的 EIP 採購表範本�
 from .common import *  # noqa: F401,F403
 from .products import load_products
 from .po import load_settings, po_filename, po_hints, po_missing, warehouse_rows
+from .emma import emma_file, emma_filename
 
 ITEM_KEYS = ("po_number", "sku_id", "yf_sku", "purchase_code", "unit", "qty_ship", "box_file", "cases")
 
@@ -81,6 +82,7 @@ def build_items(conn, date_from, date_to):
         base = {"po_number": o["po_number"], "sku_id": o["sku_id"], "barcode": o["barcode"], "yf_sku": o["yf_sku"],
                 "quote_note": o.get("quote_note") or "", "product_name": o["product_name"], "brand": o["brand"],
                 "unit": o["unit"], "qty_ship": qty, "qty_coupang": o["qty_coupang"], "box_file": box, "cases": cases,
+                "unit_price": o.get("unit_price"),
                 "delivery_date": o["delivery_date"], "warehouse": o["warehouse"], "address": o.get("address") or "",
                 "order_type": o["order_type"], "line": o["line"], "qty_overridden": bool(o["qty_ship_overridden"])}
         if p is None:
@@ -298,7 +300,8 @@ def _stem(filename):
 
 @mars_bp.route("/api/mars/splits/generate", methods=["POST"])
 def api_mars_generate():
-    """把期間內的拆單存起來、打包下載：每份一個拆單表（.xlsx）＋一個 EIP 上傳用採購表（.xls）。"""
+    """把期間內的拆單存起來、打包下載：每份一個 EMMA 匯入檔（.xlsx）＋一個 EIP 上傳用採購表（.xls）。
+    拆單表本身不再進 zip（Alice：直接拿 EMMA 匯入檔取代），要看的話 /file?kind=split 還在。"""
     payload = request.get_json(silent=True) or {}
     date_from, date_to = _range_args(payload)
     if not date_from:
@@ -348,12 +351,16 @@ def api_mars_generate():
         conn.commit()
     finally:
         conn.close()
+    conn = get_conn()
+    try:
+        emma_files = [(emma_filename([(s, its)]), emma_file(conn, [(s, its)])[0]) for s, its in files]   # 拆單表換成 EMMA 匯入檔（Alice）
+    finally:
+        conn.close()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for s, its in files:
-            stem = _stem(s["filename"])
-            zf.writestr(f"{stem}.xlsx", split_workbook(s, its))
-            zf.writestr(f"{stem}_EIP上傳.xls", eip_file(s, its))
+        for (s, its), (ename, edata) in zip(files, emma_files):
+            zf.writestr(ename, edata)
+            zf.writestr(f"{_stem(s['filename'])}_EIP上傳.xls", eip_file(s, its))
     buf.seek(0)
     name = f"瑪氏拆單_{date_from.replace('-', '')}" + ("" if date_from == date_to else f"-{date_to.replace('-', '')}") + ".zip"
     return send_file(buf, as_attachment=True, download_name=name, mimetype="application/zip")

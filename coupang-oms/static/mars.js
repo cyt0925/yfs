@@ -11,7 +11,7 @@ async function api(url, opts = {}) {
 const md = d => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(dd)}`; };
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const STATUS = { new: "還沒產出", generated: "已產出，等 EIP 單號", filled: "已回填", changed: "訂單有變，重按產出", changed_after_eip: "EIP 送出後訂單有變", gone: "訂單已沒有這份" };
-let VIEW = null, OPEN = new Set();
+let VIEW = null, OPEN = new Set(), CHECKED = new Set();
 
 /* ── 商品總表 ── */
 async function loadStatus() {
@@ -101,9 +101,11 @@ function render() {
   $("#alerts").innerHTML = al.join("");
   $("#btn-gen").disabled = !v.splits.length || !v.has_products || blocking.length > 0;
   $("#btn-po").disabled = !s.po_ready;
+  const saved = v.splits.filter(r => r.id).map(r => r.id); CHECKED = new Set([...CHECKED].filter(id => saved.includes(id)));
+  $("#btn-emma-all").disabled = !saved.length;
 
-  let h = `<thead><tr><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
-  const ncol = v.split_by_unit ? 13 : 12;
+  let h = `<thead><tr><th><input type="checkbox" id="ck-all" title="全選（只選已產出的）"></th><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
+  const ncol = v.split_by_unit ? 14 : 13;
   let lastPo = null, gi = 0;
   for (const r of v.splits) {
     const key = r.split_key, warn = r.items.some(i => i.issues && i.issues.length);
@@ -115,6 +117,7 @@ function render() {
       h += `<tr class="pog"><td colspan="${ncol}"><i class="bi bi-receipt"></i> PO ${esc(r.po_number)}<span class="kbd">${md(r.delivery_date)} 到貨 · ${esc(r.warehouse)} · 拆成 ${same.length} 份 · ${fmt(same.reduce((a, x) => a + (x.cases_total || 0), 0))} 箱 · 已回填 ${filled}／${same.length}</span></td></tr>`;
     }
     h += `<tr class="sp ${gi % 2 ? "g1" : "g0"}" data-k="${esc(key)}">
+      <td>${r.id ? `<input type="checkbox" class="ck" data-id="${r.id}" ${CHECKED.has(r.id) ? "checked" : ""} title="勾起來合併成 EMMA 檔">` : ""}</td>
       <td><span class="badge st-${r.status}">${STATUS[r.status]}</span>${r.diff ? `<div class="kbd" style="max-width:220px;color:var(--bad)">${esc(r.diff)}</div>` : ""}</td>
       <td><span class="fn fname">${esc(r.filename)}</span> <button class="btn btn-o btn-sm cp" title="複製檔名" data-t="${esc(r.filename)}" style="padding:1px 6px"><i class="bi bi-clipboard"></i></button></td>
       <td class="muted">${md(r.delivery_date)}</td><td class="fn muted">${esc(r.po_number)}</td><td class="muted">${esc(r.warehouse)}</td>
@@ -123,9 +126,9 @@ function render() {
       <td class="num">${r.item_count}${warn ? ` <i class="bi bi-exclamation-triangle-fill" style="color:var(--warn)" title="有品項要注意，點開看"></i>` : ""}</td><td class="num"><b>${fmt(r.cases_total)}</b></td>
       <td><input class="inp eip" data-id="${r.id || ""}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}></td>
       <td><input class="inp slot" data-id="${r.id || ""}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
-      <td class="whitespace-nowrap">${r.id ? `<a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=split" title="拆單表"><i class="bi bi-file-earmark-excel"></i></a> <a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=eip" title="EIP 上傳用採購表">EIP</a> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-id="${r.id}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd">—</span>`}</td></tr>`;
+      <td class="whitespace-nowrap">${r.id ? `<button class="btn btn-o btn-sm emma" data-id="${r.id}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "EMMA 匯入檔" : "EMMA 匯入檔（EIP 採購單號還沒填，出貨備註會空著）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=eip" title="EIP 上傳用採購表">EIP</a> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-id="${r.id}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd">—</span>`}</td></tr>`;
     if (OPEN.has(key)) {
-      h += `<tr class="sub"><td></td><td colspan="${v.split_by_unit ? 12 : 11}"><table class="t"><thead><tr><th>永豐料號</th><th>下採料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th>瑪氏貨號</th><th>採購單箱備註</th><th>要注意</th></tr></thead><tbody>
+      h += `<tr class="sub"><td></td><td></td><td colspan="${v.split_by_unit ? 12 : 11}"><table class="t"><thead><tr><th>永豐料號</th><th>下採料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th>瑪氏貨號</th><th>採購單箱備註</th><th>要注意</th></tr></thead><tbody>
         ${r.items.map(i => `<tr><td class="fn">${esc(i.yf_sku)}</td><td class="fn">${esc(i.purchase_code)}${i.purchase_code !== i.yf_sku ? ` <span class="badge st-changed" title="報價備註跟永豐料號不同（組出商品）">組出</span>` : ""}</td><td>${esc(i.product_name)}</td><td class="num">${fmt(i.qty_ship)}${i.qty_overridden ? ` <span class="badge st-generated" title="在 ② 訂單明細人工改過">改過</span>` : ""}</td><td>${esc(i.unit)}</td><td class="num">${fmt(i.box_file)}</td><td class="num"><b>${fmt(i.cases)}</b></td><td class="fn">${esc(i.mars_code)}</td><td>${esc(i.po_case_note)}</td><td style="color:var(--warn)">${(i.issues || []).map(esc).join("<br>")}</td></tr>`).join("")}
       </tbody></table></td></tr>`;
     }
@@ -137,6 +140,14 @@ function render() {
     const k = tr.dataset.k; OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k); render();
   }));
   $("#sp-table").querySelectorAll("button.po").forEach(b => b.addEventListener("click", () => downloadBlob(`/api/mars/splits/${b.dataset.id}/po`, {}, "瑪氏採購單.xlsx", "瑪氏採購單已下載")));
+  $("#sp-table").querySelectorAll("button.emma").forEach(b => b.addEventListener("click", () => {
+    if (b.dataset.eip !== "1" && !confirm("這份還沒填 EIP 採購單號，EMMA 檔的出貨備註會空著。還是要下載？")) return;
+    downloadBlob(`/api/mars/splits/${b.dataset.id}/emma?ack=1`, {}, "酷澎訂單匯入.xlsx", "EMMA 匯入檔已下載");
+  }));
+  const syncSel = () => { $("#btn-emma-sel").disabled = !CHECKED.size; $("#btn-emma-sel").innerHTML = `<i class="bi bi-check2-square"></i> 勾選的合併成 EMMA 檔${CHECKED.size ? `（${CHECKED.size}）` : ""}`; };
+  $("#sp-table").querySelectorAll("input.ck").forEach(c => c.addEventListener("change", () => { const id = Number(c.dataset.id); c.checked ? CHECKED.add(id) : CHECKED.delete(id); syncSel(); }));
+  const all = $("#ck-all"); if (all) all.addEventListener("change", () => { $("#sp-table").querySelectorAll("input.ck").forEach(c => { c.checked = all.checked; const id = Number(c.dataset.id); all.checked ? CHECKED.add(id) : CHECKED.delete(id); }); syncSel(); });
+  syncSel();
   $("#sp-table").querySelectorAll(".cp").forEach(b => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.t); toast("檔名已複製"); } catch (e) { toast("瀏覽器不讓複製，請手動選取", "err"); } }));
   $("#sp-table").querySelectorAll("input.eip, input.slot").forEach(inp => {
     inp.dataset.orig = inp.value;
@@ -193,23 +204,43 @@ $("#btn-po").addEventListener("click", async () => {
   } finally { $("#btn-po").disabled = false; }
 });
 
+/* EMMA 合併：勾選的 / 全部。沒填 EIP 單號的先問一次 */
+async function emmaMerge(body) {
+  const send = async (ack) => {
+    const res = await fetch("/api/mars/emma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, ack_missing_eip: ack }) });
+    if (res.status === 409) { const d = await res.json(); if (confirm(`${d.error}\n\n${(d.details || []).join("\n")}\n\n還是要下載？`)) return send(true); return null; }
+    if (!res.ok) { const d = await res.json().catch(() => ({})); toast(d.error || `伺服器錯誤 (${res.status})`, "err"); return null; }
+    const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : "酷澎訂單匯入.xlsx";
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    const w = Number(res.headers.get("X-Mars-Emma-Warnings") || 0);
+    toast(`EMMA 匯入檔已下載：${res.headers.get("X-Mars-Emma-Rows")} 份合併` + (w ? `，有 ${w} 個地方留空（電話或單號沒填）` : ""));
+    return res;
+  };
+  try { await send(false); } catch (e) { toast(e.message, "err"); }
+}
+$("#btn-emma-sel").addEventListener("click", () => emmaMerge({ ids: [...CHECKED] }));
+$("#btn-emma-all").addEventListener("click", () => emmaMerge({ from: $("#d-from").value, to: $("#d-to").value }));
+
 /* ── 採購單設定：倉庫資料、固定文字、假日 ── */
 let PS = null;
 async function loadPoSettings() {
   PS = await api("/api/mars/po/settings");
   const st = PS.settings;
-  $("#ps-lead").value = st.lead_days; $("#ps-shelf").value = st.shelf_req; $("#ps-contact").value = st.contact_default;
+  $("#ps-lead").value = st.lead_days; $("#ps-contact").value = st.contact_default;
+  ["CHO", "GUM", "PET"].forEach(k => $(`#ps-shelf-${k}`).value = st.shelf_req_cat[k]);
+  $("#ps-em-recipient").value = st.emma_recipient; $("#ps-em-customer").value = st.emma_customer; $("#ps-em-billto").value = st.emma_billto; $("#ps-em-shipto").value = st.emma_shipto; $("#ps-em-payment").value = st.emma_payment;
   $("#ps-label").value = st.label_line; $("#ps-white").value = st.white_line; $("#ps-special").value = st.special_text; $("#ps-holidays").value = st.holidays.join("\n");
   renderWarehouses(PS.warehouses);
 }
 function renderWarehouses(list) {
-  const F = [["name", "入倉倉別（C6）", 170], ["address", "地址（C7）", 240], ["phone", "電話（C8）", 120], ["ship_to", "ship-to（F7）", 100], ["contact", "聯絡人（F8）", 90]];
+  const F = [["name", "入倉倉別（C6）", 160], ["address", "地址（C7）", 220], ["phone", "電話（C8）", 115], ["ship_to", "ship-to（F7）", 95], ["contact", "聯絡人（F8）", 85], ["special_note", "特殊需求加註", 200]];
   let h = `<thead><tr><th>倉</th>${F.map(f => `<th style="min-width:${f[2]}px">${f[1]}</th>`).join("")}<th></th></tr></thead><tbody>`;
   for (const w of list) {
     h += `<tr data-code="${esc(w.code)}"><td class="whitespace-nowrap"><b>${esc(w.code)}</b><br>${w.missing.length ? `<span class="badge st-changed" title="缺 ${esc(w.missing.join("、"))}">缺 ${esc(w.missing.join("、"))}</span>` : `<span class="badge st-filled" title="${esc(w.updated_by)} ${esc((w.updated_at || "").slice(5, 16))}">齊了</span>`}</td>${F.map(f => `<td><input class="inp wh ${w.missing.includes(f[1].split("（")[0]) ? "bad" : ""}" data-f="${f[0]}" value="${esc(w[f[0]])}" ${f[0] === "address" && w.address_from_orders ? 'title="這是訂單上的地址，沒另外填就用它"' : ""}></td>`).join("")}
       <td>${w.in_orders ? `<span class="kbd" title="訂單裡有這個倉，不能刪">訂單有</span>` : `<button class="btn btn-o btn-sm wh-del" data-code="${esc(w.code)}" title="刪掉這個倉（訂單裡沒出現過的才能刪）" style="padding:2px 7px"><i class="bi bi-trash"></i></button>`}</td></tr>`;
   }
-  if (!list.length) h += `<tr><td colspan="7" class="muted" style="padding:12px">還沒有瑪氏訂單，倉會在匯入出貨彙總表後自動列出來；也可以在下面直接加。</td></tr>`;
+  if (!list.length) h += `<tr><td colspan="8" class="muted" style="padding:12px">還沒有瑪氏訂單，倉會在匯入出貨彙總表後自動列出來；也可以在下面直接加。</td></tr>`;
   h += `<tr id="wh-new"><td><input class="inp" id="wh-new-code" placeholder="倉別 TAO8" style="width:90px;text-transform:uppercase"></td>${F.map(f => `<td><input class="inp" data-f="${f[0]}" placeholder="${esc(f[1].split("（")[0])}"></td>`).join("")}<td><button class="btn btn-p btn-sm" id="wh-add"><i class="bi bi-plus-lg"></i> 加入</button></td></tr>`;
   $("#wh-table").innerHTML = h + "</tbody>";
   $("#wh-add").addEventListener("click", async () => {
@@ -248,8 +279,10 @@ async function uploadWarehouses(f) {
 $("#wh-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadWarehouses(f); });
 dropzone($("#dz-wh"), fs => uploadWarehouses(fs[0]));
 $("#ps-save").addEventListener("click", async () => {
-  const body = { lead_days: $("#ps-lead").value, shelf_req: $("#ps-shelf").value, contact_default: $("#ps-contact").value, label_line: $("#ps-label").value,
-    white_line: $("#ps-white").value, special_text: $("#ps-special").value, holidays: $("#ps-holidays").value };
+  const body = { lead_days: $("#ps-lead").value, contact_default: $("#ps-contact").value, label_line: $("#ps-label").value,
+    white_line: $("#ps-white").value, special_text: $("#ps-special").value, holidays: $("#ps-holidays").value,
+    shelf_req_cat: { CHO: $("#ps-shelf-CHO").value, GUM: $("#ps-shelf-GUM").value, PET: $("#ps-shelf-PET").value },
+    emma_recipient: $("#ps-em-recipient").value, emma_customer: $("#ps-em-customer").value, emma_billto: $("#ps-em-billto").value, emma_shipto: $("#ps-em-shipto").value, emma_payment: $("#ps-em-payment").value };
   $("#ps-msg").textContent = "存檔中…";
   try { await api("/api/mars/po/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); $("#ps-msg").textContent = ""; toast("採購單設定已存"); await loadPoSettings(); loadSplits(); }
   catch (e) { $("#ps-msg").textContent = ""; toast(e.message, "err"); }

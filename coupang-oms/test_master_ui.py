@@ -363,7 +363,7 @@ def main():
         pg.click("#od-commit"); pg.wait_for_selector("#od-msg .bi-check-circle", timeout=30000); pg.wait_for_timeout(600)
         check("確認匯入：訂單狀態寫出最近一次匯入", "最近一次匯入" in pg.inner_text("#od-status") and "假_訂單彙總表_9月_第二次" in pg.inner_text("#od-status"), pg.inner_text("#od-status")[:160])
         check("匯完自動跳到這批的到貨日範圍（9/1 開頭那個月）", pg.input_value("#d-from") < pg.input_value("#d-to") and pg.input_value("#d-from").startswith("2026-09"), f"{pg.input_value('#d-from')}～{pg.input_value('#d-to')}")
-        check("同一張 PO 的幾份用 PO 標題列包起來（標題列數＝PO 張數）", pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == len(set(pg.eval_on_selector_all("#sp-table tr.sp td:nth-child(4)", "els => els.map(e => e.innerText)"))) > 3)
+        check("同一張 PO 的幾份用 PO 標題列包起來（標題列數＝PO 張數）", pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == len(set(pg.eval_on_selector_all("#sp-table tr.sp td:nth-child(5)", "els => els.map(e => e.innerText)"))) > 3)
         pg.fill("#d-from", "2026-09-18"); pg.fill("#d-to", "2026-09-18"); pg.dispatch_event("#d-to", "change"); pg.wait_for_timeout(800)
         check("9/18：5 份拆單表、都是「還沒產出」、單號格子鎖住、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
               and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and pg.is_disabled("#sp-table input.eip")
@@ -396,7 +396,24 @@ def main():
         check("按採購單 → 下載 永豐Mars採購單_箱_…_TAO1_PO(盒).xlsx", dl.value.suggested_filename.startswith("永豐Mars採購單_箱_") and dl.value.suggested_filename.endswith("_TAO1_13000000600028(盒).xlsx"), dl.value.suggested_filename)
         with pg.expect_download() as dl:
             pg.click("#btn-po")
-        check("「下載瑪氏採購單（全部）」→ zip", dl.value.suggested_filename == "瑪氏採購單_20260918.zip", dl.value.suggested_filename)
+        check("「瑪氏採購單（全部）」→ zip", dl.value.suggested_filename == "瑪氏採購單_20260918.zip", dl.value.suggested_filename)
+        # ④ EMMA 匯入檔：單份、勾選合併、全部
+        check("每列有 EMMA 鈕；沒填單號的帶驚嘆號、填了的沒有", pg.eval_on_selector_all("#sp-table button.emma", "els => els.length") == 5
+              and pg.eval_on_selector_all("#sp-table button.emma .bi-exclamation-circle", "els => els.length") == 4, str(pg.eval_on_selector_all("#sp-table button.emma", "els => els.map(e => e.innerText)")))
+        with pg.expect_download() as dl:
+            pg.click("#sp-table button.emma >> nth=0")
+        check("按 EMMA（已填單號的）→ 直接下載 酷澎訂單匯入_0918交貨-TAO1_PO_…", dl.value.suggested_filename.startswith("酷澎訂單匯入_0918交貨-TAO1_13000000600028_"), dl.value.suggested_filename)
+        check("沒勾選時「勾選的合併」鎖住", pg.is_disabled("#btn-emma-sel"))
+        pg.check("#sp-table input.ck >> nth=0"); pg.check("#sp-table input.ck >> nth=1"); pg.wait_for_timeout(200)
+        check("勾兩份 → 按鈕解鎖、寫（2）", not pg.is_disabled("#btn-emma-sel") and "（2）" in pg.inner_text("#btn-emma-sel"), pg.inner_text("#btn-emma-sel"))
+        pg.once("dialog", lambda d: d.accept())
+        with pg.expect_download() as dl:
+            pg.click("#btn-emma-sel")
+        check("勾選合併（有一份沒單號會先問，答是）→ 下載 酷澎訂單匯入_0918交貨-TAO1.xlsx", dl.value.suggested_filename == "酷澎訂單匯入_0918交貨-TAO1.xlsx", dl.value.suggested_filename)
+        pg.once("dialog", lambda d: d.accept())
+        with pg.expect_download() as dl:
+            pg.click("#btn-emma-all")
+        check("EMMA 檔（全部）→ 同樣檔名（同一天同一倉）", dl.value.suggested_filename == "酷澎訂單匯入_0918交貨-TAO1.xlsx", dl.value.suggested_filename)
         wbw = openpyxl.Workbook(); wsw = wbw.active; wsw.append(["倉別", "中文地址", "電話"]); wsw.append(["TAO5", "桃園市觀音區寶倉街108號5樓", "+886-0911556291"]); wsw.append(["TAO9", "桃園市大園區建國路102號3樓", None])
         whp = os.path.join(tempfile.gettempdir(), "ui_倉庫.xlsx"); wbw.save(whp)
         pg.set_input_files("#wh-file", whp); pg.wait_for_selector("#wh-msg .bi-check-circle", timeout=15000); pg.wait_for_timeout(500)
@@ -407,10 +424,12 @@ def main():
               and pg.eval_on_selector_all("#wh-table tr[data-code='TAO1'] .wh-del", "els => els.length") == 0, pg.inner_text("#wh-table tr[data-code='TAO8']")[:80] if pg.query_selector("#wh-table tr[data-code='TAO8']") else "沒有 TAO8")
         pg.once("dialog", lambda d: d.accept()); pg.click("#wh-table tr[data-code='TAO8'] .wh-del"); pg.wait_for_timeout(800)
         check("按刪除、確認 → TAO8 不見", pg.eval_on_selector_all("#wh-table tr[data-code='TAO8']", "els => els.length") == 0)
-        pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.click("#ps-save"); pg.wait_for_timeout(900)
+        pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='special_note']", "司機需加入TAO1 line領取排隊號碼"); pg.keyboard.press("Enter"); pg.wait_for_timeout(800)
+        pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.fill("#ps-shelf-GUM", "3/5效期以上"); pg.click("#ps-save"); pg.wait_for_timeout(900)
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
-        check("假日存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17", pg.input_value("#ps-holidays"))
-        bad = [x for x in bad if "/api/mars/splits/" not in x[1] or x[0] != 400]   # 故意填錯的那次 400 不算
+        check("假日、效期（GUM 3/5）、倉庫加註存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17" and pg.input_value("#ps-shelf-GUM") == "3/5效期以上" and pg.input_value("#ps-shelf-CHO") == "1/2效期以上"
+              and pg.input_value("#wh-table tr[data-code='TAO1'] input[data-f='special_note']") == "司機需加入TAO1 line領取排隊號碼", pg.input_value("#ps-holidays"))
+        bad = [x for x in bad if ("/api/mars/splits/" not in x[1] or x[0] != 400) and not (x[1].endswith("/api/mars/emma") and x[0] == 409)]   # 故意填錯的 400、EMMA 先問的 409 不算
         b.close()
 
     print("\n【7】整體")

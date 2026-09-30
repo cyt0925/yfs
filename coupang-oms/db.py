@@ -846,6 +846,7 @@ CREATE TABLE IF NOT EXISTS mst_mars_warehouses (
     phone       TEXT DEFAULT '',             -- C8
     ship_to     TEXT DEFAULT '',             -- F7
     contact     TEXT DEFAULT '',             -- F8
+    special_note TEXT DEFAULT '',            -- 這個倉才有的特殊需求那一行（TAO4：司機需加入TAO4 line領取排隊號碼）
     updated_by  TEXT DEFAULT '',
     updated_at  TEXT DEFAULT '',
     UNIQUE(code)
@@ -1146,6 +1147,9 @@ def _migrate_master_columns(conn):
         for col in ("address", "quote_note"):
             if col not in have:
                 conn.execute(f"ALTER TABLE mst_orders ADD COLUMN {col} TEXT DEFAULT ''")
+    # 2026-09-30：瑪氏採購單各倉的特殊需求加註，缺欄就補。
+    if _table_exists(conn, "mst_mars_warehouses") and "special_note" not in _cols(conn, "mst_mars_warehouses"):
+        conn.execute("ALTER TABLE mst_mars_warehouses ADD COLUMN special_note TEXT DEFAULT ''")
     # v3 → v4：訂單列記住「哪一批匯入帶進來／最後改到」。用批次 id 而不是時間戳，因為同一秒
     # 內連按兩次確認匯入時間戳會撞在一起。舊資料用時間戳盡量回填。
     if _table_exists(conn, "mst_orders"):

@@ -34,15 +34,21 @@ TIME_RE = re.compile(r"\d{1,2}:\d{2}")
 
 DEFAULT_SETTINGS = {
     "lead_days": 2,                       # 下單日＝配送日往前幾個工作天
-    "shelf_req": "1/2效期以上",           # F6
+    "shelf_req": "1/2效期以上",           # F6（舊的單一格，留著相容；現在用 shelf_req_cat）
+    # F6 效期要求依品類（Jerry：糖巧寵規則不同，數字等 Alice；先都放舊採購單上的 1/2）
+    "shelf_req_cat": {"CHO": "1/2效期以上", "GUM": "1/2效期以上", "PET": "1/2效期以上"},
+    # EMMA 匯入檔的固定字（Kate 系統匯出的 Coupang_PO_Order 裡 C、F、G、H、J 欄）
+    "emma_recipient": "酷澎股份有限公司", "emma_customer": "N71178", "emma_billto": "B001", "emma_shipto": "0001", "emma_payment": "貨到不付款",
     "contact_default": "酷澎",            # F8 沒填時
     "label_line": "需貼中盒標",           # 這份要貼中標時，特殊需求第一行
     "white_line": "指定品需加工貼小白標",  # 有品項有採購單箱備註時，特殊需求最後一行
-    # 特殊需求固定文字，一行一條；{約倉時間} 換成那份填的約倉時間，{約倉開始} 換成約倉時間裡第一個 HH:MM
-    "special_text": "箱嘜，需當面對點數量\n酷澎嘜頭+驗收單\n進倉時間{約倉時間}\n*請在{約倉開始}前抵達，以免被算遲到，謝謝",
+    # 特殊需求固定文字，一行一條；{約倉時間} 換成那份填的約倉時間，{約倉開始} 換成約倉時間裡第一個 HH:MM，
+    # {倉庫加註} 換成倉庫資料裡那個倉的特殊需求加註（沒填整行不放）
+    "special_text": "箱嘜，需當面對點數量\n{倉庫加註}\n酷澎嘜頭+驗收單\n進倉時間{約倉時間}\n*請在{約倉開始}前抵達，以免被算遲到，謝謝",
     "holidays": [],                       # 扣掉的假日，YYYY-MM-DD
 }
-TEXT_KEYS = ("shelf_req", "contact_default", "label_line", "white_line", "special_text")
+TEXT_KEYS = ("shelf_req", "contact_default", "label_line", "white_line", "special_text",
+             "emma_recipient", "emma_customer", "emma_billto", "emma_shipto", "emma_payment")
 
 
 # ── 設定 ─────────────────────────────────────────────────────────────────────
@@ -55,6 +61,12 @@ def load_settings(conn):
         except ValueError:
             pass
     s["holidays"] = sorted(set(s.get("holidays") or []))
+    cat = dict(DEFAULT_SETTINGS["shelf_req_cat"])
+    saved_cat = s.get("shelf_req_cat") if isinstance(s.get("shelf_req_cat"), dict) else {}
+    if not saved_cat and s.get("shelf_req"):          # 舊設定只有一格：三個品類都用它
+        cat = {k: s["shelf_req"] for k in cat}
+    cat.update({k: v for k, v in saved_cat.items() if k in cat and isinstance(v, str)})
+    s["shelf_req_cat"] = cat
     return s
 
 
@@ -88,6 +100,9 @@ def save_settings(conn, payload, operator):
     for k in TEXT_KEYS:
         if k in payload:
             new[k] = str(payload.get(k) or "").replace("\r", "").strip()[:600]
+    if isinstance(payload.get("shelf_req_cat"), dict):
+        new["shelf_req_cat"] = dict(cur["shelf_req_cat"])
+        new["shelf_req_cat"].update({k: str(v or "").strip()[:80] for k, v in payload["shelf_req_cat"].items() if k in new["shelf_req_cat"]})
     if "holidays" in payload:
         raw = payload.get("holidays")
         parts = raw if isinstance(raw, list) else re.split(r"[\n,，、;；\s]+", str(raw or ""))
@@ -147,7 +162,7 @@ def warehouse_rows(conn, settings=None):
                "address": r.get("address") or from_orders.get(code, ""),
                "address_from_orders": not r.get("address") and bool(from_orders.get(code)),
                "phone": r.get("phone") or "", "ship_to": r.get("ship_to") or "",
-               "contact": r.get("contact") or settings["contact_default"],
+               "contact": r.get("contact") or settings["contact_default"], "special_note": r.get("special_note") or "",
                "updated_by": r.get("updated_by") or "", "updated_at": r.get("updated_at") or ""}
         row["missing"] = [lbl for k, lbl in (("address", "地址"), ("phone", "電話"), ("ship_to", "ship-to")) if not row[k]]
         out.append(row)
@@ -156,7 +171,7 @@ def warehouse_rows(conn, settings=None):
 
 def _empty_wh(code, settings):
     return {"code": code, "name": f"永豐商店酷澎-{code}", "address": "", "phone": "", "ship_to": "",
-            "contact": settings["contact_default"], "missing": ["地址", "電話", "ship-to"]}
+            "contact": settings["contact_default"], "special_note": "", "missing": ["地址", "電話", "ship-to"]}
 
 
 def warehouse_info(conn, code, settings=None):
@@ -196,7 +211,8 @@ WH_HEADERS = {"倉別": "code", "倉": "code", "倉庫": "code", "到貨倉別":
               "電話": "phone", "送貨連絡電話": "phone", "送貨聯絡電話": "phone", "聯絡電話": "phone",
               "ship-to": "ship_to", "shipto": "ship_to", "ship_to": "ship_to",
               "聯絡人": "contact", "送貨聯絡人": "contact",
-              "倉別名稱": "name", "入倉倉別": "name", "名稱": "name"}
+              "倉別名稱": "name", "入倉倉別": "name", "名稱": "name",
+              "特殊需求加註": "special_note", "特殊需求": "special_note", "加註": "special_note"}
 
 
 def parse_warehouse_sheet(fileobj):
@@ -223,7 +239,7 @@ def parse_warehouse_sheet(fileobj):
                     if not code:
                         continue
                     r = {"code": code}
-                    for f in ("address", "phone", "ship_to", "contact", "name"):
+                    for f in ("address", "phone", "ship_to", "contact", "name", "special_note"):
                         if f in cols:
                             r[f] = get(f)
                     if "phone" in r:
@@ -254,13 +270,13 @@ def save_warehouse(conn, code, payload, operator):
     code = norm_text(code)
     if not code:
         return "倉別不能是空的。"
-    vals = {k: str(payload.get(k) or "").strip()[:200] for k in ("name", "address", "phone", "ship_to", "contact") if k in payload}
+    vals = {k: str(payload.get(k) or "").strip()[:200] for k in ("name", "address", "phone", "ship_to", "contact", "special_note") if k in payload}
     old = _row(conn.execute("SELECT * FROM mst_mars_warehouses WHERE code = ?", (code,)))
     stamp = now()
     if old is None:
-        cols = {"name": "", "address": "", "phone": "", "ship_to": "", "contact": ""}; cols.update(vals)
-        conn.execute("INSERT INTO mst_mars_warehouses (code, name, address, phone, ship_to, contact, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                     (code, cols["name"], cols["address"], cols["phone"], cols["ship_to"], cols["contact"], operator, stamp))
+        cols = {"name": "", "address": "", "phone": "", "ship_to": "", "contact": "", "special_note": ""}; cols.update(vals)
+        conn.execute("INSERT INTO mst_mars_warehouses (code, name, address, phone, ship_to, contact, special_note, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                     (code, cols["name"], cols["address"], cols["phone"], cols["ship_to"], cols["contact"], cols["special_note"], operator, stamp))
         changed = [k for k, v in vals.items() if v]
     else:
         changed = [k for k, v in vals.items() if v != (old[k] or "")]
@@ -274,16 +290,23 @@ def save_warehouse(conn, code, payload, operator):
 
 
 # ── 一份採購單 ───────────────────────────────────────────────────────────────
-def special_text(settings, s, items):
+def special_text(settings, s, items, wh=None):
     slot = (s.get("slot_time") or "").strip()
     m = TIME_RE.search(slot)
+    note = ((wh or {}).get("special_note") or "").strip()
+    text = settings["special_text"]
+    if note and "{倉庫加註}" not in text:            # 自己改過固定文字、沒放這個記號：加註插在第一行後面
+        first, _, rest = text.partition("\n")
+        text = first + "\n{倉庫加註}" + ("\n" + rest if rest else "")
     lines = []
     if s.get("label") == "V" and settings["label_line"]:
         lines.append(settings["label_line"])
-    for ln in settings["special_text"].split("\n"):
+    for ln in text.split("\n"):
         if not slot and ("{約倉時間}" in ln or "{約倉開始}" in ln):
             continue                                  # 約倉時間還沒填：這幾行整行不放，不留「進倉時間」後面空白
-        ln = ln.replace("{約倉時間}", slot).replace("{約倉開始}", m.group(0) if m else slot).strip()
+        if not note and "{倉庫加註}" in ln:
+            continue
+        ln = ln.replace("{約倉時間}", slot).replace("{約倉開始}", m.group(0) if m else slot).replace("{倉庫加註}", note).strip()
         if ln:
             lines.append(ln)
     if settings["white_line"] and any((i.get("po_case_note") or "").strip() for i in items):
@@ -355,9 +378,9 @@ def po_file(s, items, wh, settings):
     ws["C3"] = _dt.datetime.combine(order_date(deliver, settings["lead_days"], set(settings["holidays"])), _dt.time())
     ws["F3"] = _dt.datetime.combine(deliver, _dt.time())
     ws["C5"] = s["eip_po"]
-    ws["F5"] = special_text(settings, s, items)
+    ws["F5"] = special_text(settings, s, items, wh)
     ws["C6"] = wh["name"]
-    ws["F6"] = settings["shelf_req"]
+    ws["F6"] = settings["shelf_req_cat"].get(s["category"]) or settings["shelf_req"]
     ws["C7"] = wh["address"] or None
     ws["F7"] = int(wh["ship_to"]) if str(wh["ship_to"]).isdigit() else (wh["ship_to"] or None)
     ws["C8"] = wh["phone"] or None
@@ -433,7 +456,7 @@ def api_warehouse_add():
     try:
         if any(w["code"] == code for w in warehouse_rows(conn)):
             return jsonify({"error": f"{code} 已經在清單裡了，直接改那列就好。"}), 400
-        vals = {k: payload.get(k) or "" for k in ("name", "address", "phone", "ship_to", "contact")}
+        vals = {k: payload.get(k) or "" for k in ("name", "address", "phone", "ship_to", "contact", "special_note")}
         vals["phone"] = format_phone(vals["phone"]) if vals["phone"].lstrip().startswith("+") else vals["phone"]
         err = save_warehouse(conn, code, vals, _operator())
         if err:

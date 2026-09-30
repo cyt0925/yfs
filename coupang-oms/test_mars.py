@@ -1,5 +1,5 @@
 """瑪氏出貨（mars/）的端到端驗證：假的瑪氏商品總表＋假訂單彙總表裡線別是瑪氏的單，
-走「商品總表上傳 → ② 匯訂單 → 拆單 → 產出 zip（拆單表＋EIP 採購表）→ 回填 EIP 採購單號／約倉時間 → 訂單改了之後
+走「商品總表上傳 → ② 匯訂單 → 拆單 → 產出 zip（EMMA 匯入檔＋EIP 採購表）→ 回填 EIP 採購單號／約倉時間 → 訂單改了之後
 → 採購單設定（倉庫資料、固定文字、假日）→ 產出瑪氏採購單（V2 範本）」。
 
 執行：python test_mars.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -184,10 +184,12 @@ def main():
     check("確認後下載 zip，檔名帶到貨日", r.status_code == 200 and "瑪氏拆單_20260930.zip" in cd, cd)
     z = zipfile.ZipFile(io.BytesIO(r.data)); names = z.namelist()
     v = splits(c, "2026-09-30")
-    check("zip 裡每份兩個檔：拆單表 .xlsx ＋ _EIP上傳.xls", len(names) == 2 * len(v["splits"]) and all(f"{s['filename'][:-5]}_EIP上傳.xls" in names and s["filename"] in names for s in v["splits"]), str(names))
+    check("zip 裡每份兩個檔：EMMA 匯入檔（酷澎訂單匯入_0930交貨-TAO3_PO_品類_中標.xlsx）＋ _EIP上傳.xls，拆單表不再進 zip",
+          len(names) == 2 * len(v["splits"]) and all(f"{s['filename'][:-5]}_EIP上傳.xls" in names for s in v["splits"])
+          and all(n.startswith("酷澎訂單匯入_0930交貨-TAO3_13000000699901_") or n.endswith("_EIP上傳.xls") for n in names) and not any(s["filename"] in names for s in v["splits"]), str(names))
     check("產出後狀態：已產出、等 EIP 單號", all(s["status"] == "generated" and s["id"] for s in v["splits"]))
     gum_combo = next(s for s in v["splits"] if any(i["sku_id"] == "900000000000001" for i in s["items"]))
-    wsx = openpyxl.load_workbook(io.BytesIO(z.read(gum_combo["filename"]))).active
+    wsx = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/mars/splits/{gum_combo['id']}/file?kind=split").data)).active   # 拆單表還能單獨下載
     hdr = [x.value for x in wsx[1]]
     check("拆單表帶了 Alice 指定的商品總表欄（瑪氏貨號、Category、品名、價格、每箱中盒數、每箱產品數、單位類別、中盒貼標、備註、採購單箱備註）",
           all(h in hdr for h in ("瑪氏貨號", "Category", "品名(永豐建檔)", "系統價格(未稅)", "每箱中盒數", "每箱產品數(最小單位)", "單位類別", "中盒貼標", "備註", "採購單箱備註")), str(hdr))
@@ -198,7 +200,7 @@ def main():
     eip = [sh.row_values(i) for i in range(1, sh.nrows) if sh.cell_value(i, 1)]
     check("EIP 採購表：同一個下採料號加總、單位箱、數量是整數、備註照採購表轉換的瑪氏格式",
           {e[1]: e[6] for e in eip} == {"M55500001": 10.0, "M81232885": 2.0} and all(e[3] == "箱" for e in eip) and eip[0][8] == "MARS入倉9/30瑪氏送酷澎-TAO3倉", str(eip))
-    check("對不到的 M99999999 不在任何一個檔", all("M99999999" not in json.dumps([openpyxl.load_workbook(io.BytesIO(z.read(n))).active.cell(2, 7).value]) for n in names if n.endswith(".xlsx")))
+    check("對不到的 M99999999 不在任何一個檔", all("M99999999" not in json.dumps([x.value for row in openpyxl.load_workbook(io.BytesIO(z.read(n))).active.iter_rows() for x in row]) for n in names if n.endswith(".xlsx")))
 
     print("\n【6】回填 EIP 採購單號、約倉時間")
     s1, s2 = v["splits"][0], v["splits"][1]
@@ -263,7 +265,8 @@ def main():
           and next(w for w in ps["warehouses"] if w["code"] == "TAO3")["name"] == "永豐商店酷澎-TAO3", str(codes))
     w3 = next(w for w in ps["warehouses"] if w["code"] == "TAO3")
     check("地址沒填時用訂單上的地址、標出電話與 ship-to 還缺", w3["address"] == "桃園市大園區中山南路472號" and w3["address_from_orders"] and w3["missing"] == ["電話", "ship-to"], str(w3))
-    check("預設設定：提前 2 個工作天、效期 1/2 以上、特殊需求有進倉時間那行", ps["settings"]["lead_days"] == 2 and ps["settings"]["shelf_req"] == "1/2效期以上"
+    check("預設設定：提前 2 個工作天、效期依品類三格都 1/2 以上、EMMA 固定字、特殊需求有進倉時間那行", ps["settings"]["lead_days"] == 2 and ps["settings"]["shelf_req_cat"] == {"CHO": "1/2效期以上", "GUM": "1/2效期以上", "PET": "1/2效期以上"}
+          and ps["settings"]["emma_customer"] == "N71178" and ps["settings"]["emma_payment"] == "貨到不付款"
           and "{約倉時間}" in ps["settings"]["special_text"] and ps["template"] == "mars_po_v2.xlsx")
     r = c.put("/api/mars/warehouses/TAO3", json={"phone": "03-1234567", "ship_to": "17600001", "contact": "王小姐"})
     w3 = next(w for w in r.get_json()["warehouses"] if w["code"] == "TAO3")
@@ -276,6 +279,11 @@ def main():
     r = c.put("/api/mars/po/settings", json={"holidays": "2026-09-28, 2026/10/9", "lead_days": "2"})
     check("假日接受幾種寫法、存成 ISO 且排序", r.status_code == 200 and r.get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"], str(r.get_json()))
     check("再讀一次還在", c.get("/api/mars/po/settings").get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"])
+    r = c.put("/api/mars/po/settings", json={"shelf_req_cat": {"GUM": "3/5效期以上", "XXX": "亂填"}, "emma_shipto": "0002"})
+    check("效期依品類：只改 GUM，其他不動；EMMA 固定字可改", r.status_code == 200 and r.get_json()["settings"]["shelf_req_cat"] == {"CHO": "1/2效期以上", "GUM": "3/5效期以上", "PET": "1/2效期以上"} and r.get_json()["settings"]["emma_shipto"] == "0002", str(r.get_json()["settings"]["shelf_req_cat"]))
+    c.put("/api/mars/po/settings", json={"emma_shipto": "0001"})
+    r = c.put("/api/mars/warehouses/TAO3", json={"special_note": "司機需加入TAO3 line領取排隊號碼"})
+    check("倉庫資料多一格特殊需求加註", r.status_code == 200 and next(w for w in r.get_json()["warehouses"] if w["code"] == "TAO3")["special_note"] == "司機需加入TAO3 line領取排隊號碼")
     # 上傳倉庫資料表（Jerry 給的格式：倉別／中文地址／電話），檔案有值就蓋、空白不動、電話轉成 02-5592-7598
     wbw = openpyxl.Workbook(); wsw = wbw.active
     wsw.append(["倉別", "中文地址", "電話"])
@@ -332,12 +340,12 @@ def main():
     check("C5 永豐PO單號＝EIP 採購單號", ws["C5"].value == "PO202609301")
     check("C6～F8 倉庫資料：入倉倉別、地址（訂單的）、電話、ship-to（數字）、聯絡人", ws["C6"].value == "永豐商店酷澎-TAO3" and ws["C7"].value == "桃園市大園區中山南路472號"
           and ws["C8"].value == "0911-556-291" and ws["F7"].value == 17600001 and ws["F8"].value == "王小姐", str([ws[x].value for x in ("C6", "C7", "C8", "F7", "F8")]))
-    check("F6 效期要求、B9 品類全名", ws["F6"].value == "1/2效期以上" and ws["B9"].value == mc.CAT_FULL[f2["category"]], f"{ws['F6'].value} / {ws['B9'].value}")
+    check("F6 效期要求照這份的品類（GUM 改成 3/5，其他 1/2）、B9 品類全名", ws["F6"].value == ("3/5效期以上" if f2["category"] == "GUM" else "1/2效期以上") and ws["B9"].value == mc.CAT_FULL[f2["category"]], f"{ws['F6'].value} / {ws['B9'].value}")
     f5 = ws["F5"].value.split("\n")
     exp_first = ["需貼中盒標"] if f2["label"] == "V" else []
-    check("F5 特殊需求：（要貼中標才有）需貼中盒標 → 固定文字 → 進倉時間＝約倉時間 → 請在 12:30 前抵達",
-          f5[:len(exp_first)] == exp_first and f5[len(exp_first):len(exp_first) + 2] == ["箱嘜，需當面對點數量", "酷澎嘜頭+驗收單"]
-          and f5[len(exp_first) + 2] == "進倉時間12:30~15:30（1台車）" and f5[len(exp_first) + 3] == "*請在12:30前抵達，以免被算遲到，謝謝", str(f5))
+    check("F5 特殊需求：（要貼中標才有）需貼中盒標 → 固定文字第一行 → 這個倉的加註 → 固定文字 → 進倉時間＝約倉時間 → 請在 12:30 前抵達",
+          f5[:len(exp_first)] == exp_first and f5[len(exp_first):len(exp_first) + 3] == ["箱嘜，需當面對點數量", "司機需加入TAO3 line領取排隊號碼", "酷澎嘜頭+驗收單"]
+          and f5[len(exp_first) + 3] == "進倉時間12:30~15:30（1台車）" and f5[len(exp_first) + 4] == "*請在12:30前抵達，以免被算遲到，謝謝", str(f5))
     rows = [[ws.cell(rr, cc).value for cc in range(1, 14)] for rr in range(12, 12 + len(f2["items"]))]
     codes_in = {r_[0] for r_ in rows}
     check("第 12 列起每列一個永豐料號（不是下採料號）：A 料號、B 瑪氏貨號、D 單位需求＝出貨數量、E 箱數、F 價格、J 每箱產品數、K 每箱中盒數",
@@ -361,7 +369,38 @@ def main():
                   {"purchase_code": "M1", "yf_sku": "M8", "unit": "箱", "qty_ship": 5, "cases": 1, "mars_code": "1", "mars_name": "a", "price": 1, "pcs_per_case": 1, "inner_per_case": 1, "note": "", "po_case_note": ""}]
     st = c.get("/api/mars/po/settings").get_json()["settings"]
     txt = mp.special_text(st, fake_s, fake_items)
-    check("有採購單箱備註 → 特殊需求最後一行「指定品需加工貼小白標」；約倉時間裡沒有 HH:MM 就整段代入", txt.endswith("指定品需加工貼小白標") and "進倉時間下午2點" in txt and "*請在下午2點前抵達" in txt, txt)
+    check("有採購單箱備註 → 特殊需求最後一行「指定品需加工貼小白標」；約倉時間裡沒有 HH:MM 就整段代入；倉庫沒加註那行不放", txt.endswith("指定品需加工貼小白標") and "進倉時間下午2點" in txt and "*請在下午2點前抵達" in txt and "{倉庫加註}" not in txt and "\n\n" not in txt, txt)
+    txt2 = mp.special_text(dict(st, special_text="A\nB"), fake_s, fake_items, {"special_note": "加註"})
+    check("自己改過固定文字沒放記號：加註插在第一行後面", txt2.split("\n")[:3] == ["A", "加註", "B"], txt2)
+
+    print("\n【8d】EMMA 匯入檔（酷澎訂單匯入）")
+    import mars.emma as me
+    check("電話轉 +886：02-5592-7598 → +886-02-55927598、0911-556-291 → +886-0911556291", me.intl_phone("02-5592-7598") == "+886-02-55927598" and me.intl_phone("0911-556-291") == "+886-0911556291" and me.intl_phone("") == "")
+    r = c.get(f"/api/mars/splits/{f2['id']}/emma")
+    check("單份下載，檔名 酷澎訂單匯入_0930交貨-TAO3_PO_品類_中標(單位).xlsx", r.status_code == 200 and unquote(r.headers.get("Content-Disposition", "")).split("''")[-1].startswith(f"酷澎訂單匯入_0930交貨-TAO3_13000000699901_{f2['category']}_"), unquote(r.headers.get("Content-Disposition", "")))
+    we = openpyxl.load_workbook(io.BytesIO(r.data)).active
+    hdr_e = [x.value for x in we[1]]
+    check("表頭照 Kate 系統的 Coupang_PO_Order", hdr_e == ["出貨備註", "訂單編號", "收件人", "收件人手機", "收件地址", "客編", "BillTo", "ShipTo", "倉庫別", "付款方式", "料號", "單位", "數量", "單價", "金額小計"], str(hdr_e))
+    row2 = [x.value for x in we[2]]
+    exp_qty = sum(i["cases"] for i in f2["items"] if i["purchase_code"] == row2[10])
+    exp_price = 100 * next(i["box_file"] for i in f2["items"] if i["purchase_code"] == row2[10])
+    check("A 出貨備註＝EIP 單號、B 酷澎 PO、C 收件人、D 手機 +886（TAO3 的 0911）、E 訂單地址、F～J 固定字、K 下採料號、L 箱、M 箱數、N 單價＝酷澎單價×箱入數、O＝M×N",
+          row2[0] == "PO202609301" and row2[1] == "13000000699901" and row2[2] == "酷澎股份有限公司" and row2[3] == "+886-0911556291" and row2[4] == "桃園市大園區中山南路472號"
+          and row2[5:10] == ["N71178", "B001", "0001", None, "貨到不付款"] and row2[10] in {i["purchase_code"] for i in f2["items"]} and row2[11] == "箱"
+          and row2[12] == exp_qty and row2[13] == exp_price and row2[14] == exp_qty * exp_price, str(row2))
+    check("最後一列 M 欄 SUBTOTAL", we.cell(we.max_row, 13).value == f"=SUBTOTAL(9,M2:M{we.max_row - 1})", str(we.cell(we.max_row, 13).value))
+    others = [x["id"] for x in v["splits"] if x["id"] != f2["id"]]
+    r = c.post("/api/mars/emma", json={"ids": [f2["id"]] + others[:1]})
+    check("合併：有一份沒填 EIP 單號 → 409 先問、列出是哪份", r.status_code == 409 and r.get_json()["needs_ack"] and len(r.get_json()["details"]) == 1, str(r.get_json()))
+    r = c.post("/api/mars/emma", json={"ids": [f2["id"]] + others[:1], "ack_missing_eip": True})
+    cd = unquote(r.headers.get("Content-Disposition", "")).split("''")[-1]
+    we2 = openpyxl.load_workbook(io.BytesIO(r.data)).active
+    check("確認後合併：檔名 酷澎訂單匯入_0929、0930交貨-TAO3.xlsx（兩天、同倉），列數＝兩份的料號數，沒單號那份 A 欄空、標頭寫有幾個留空",
+          r.status_code == 200 and cd == "酷澎訂單匯入_0929、0930交貨-TAO3.xlsx" and we2.max_row - 2 == len({(i["po_number"], i["purchase_code"]) for x in v["splits"] if x["id"] in ([f2["id"]] + others[:1]) for i in x["items"]})
+          and any(we2.cell(rr, 1).value is None for rr in range(2, we2.max_row)) and r.headers.get("X-Mars-Emma-Warnings") == "1", f"{cd} rows={we2.max_row}")
+    r = c.post("/api/mars/emma", json={"from": "2026-09-29", "to": "2026-09-30", "ack_missing_eip": True})
+    check("整段期間全部合併：列數＝所有拆單表的料號數", r.status_code == 200 and r.headers.get("X-Mars-Emma-Rows") == str(len(v["splits"])), str(r.headers.get("X-Mars-Emma-Rows")))
+    check("沒有拆單表的期間 → 400", c.post("/api/mars/emma", json={"from": "2026-09-01", "to": "2026-09-02"}).status_code == 400)
     pr = mp.po_rows(fake_items)
     check("採購單一列一個永豐料號（組出 M9 就寫 M9，不寫下採的 M1）：同料號合成一列、數量箱數加總、備註照商品總表", [r_["code"] for r_ in pr] == ["M9", "M8"] and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註", str(pr))
     check("下單日：9/21（一）往前 2 個工作天 → 9/17（四）", mp.order_date(datetime.date(2026, 9, 21), 2, set()) == datetime.date(2026, 9, 17))
