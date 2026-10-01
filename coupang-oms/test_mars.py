@@ -265,7 +265,7 @@ def main():
           and next(w for w in ps["warehouses"] if w["code"] == "TAO3")["name"] == "永豐商店酷澎-TAO3", str(codes))
     w3 = next(w for w in ps["warehouses"] if w["code"] == "TAO3")
     check("地址沒填時用訂單上的地址、標出電話與 ship-to 還缺", w3["address"] == "桃園市大園區中山南路472號" and w3["address_from_orders"] and w3["missing"] == ["電話", "ship-to"], str(w3))
-    check("預設設定：提前 2 個工作天、效期依品類三格都 1/2 以上、EMMA 固定字、特殊需求有進倉時間那行", ps["settings"]["lead_days"] == 2 and ps["settings"]["shelf_req_cat"] == {"CHO": "1/2效期以上", "GUM": "1/2效期以上", "PET": "1/2效期以上"}
+    check("預設設定：提前 2 個工作天、效期依品類（巧、糖 3/5，寵 1/2）、EMMA 固定字、特殊需求有進倉時間那行", ps["settings"]["lead_days"] == 2 and ps["settings"]["shelf_req_cat"] == {"CHO": "3/5效期以上", "GUM": "3/5效期以上", "PET": "1/2效期以上"}
           and ps["settings"]["emma_customer"] == "N71178" and ps["settings"]["emma_payment"] == "貨到不付款"
           and "{約倉時間}" in ps["settings"]["special_text"] and ps["template"] == "mars_po_v2.xlsx")
     r = c.put("/api/mars/warehouses/TAO3", json={"phone": "03-1234567", "ship_to": "17600001", "contact": "王小姐"})
@@ -279,8 +279,9 @@ def main():
     r = c.put("/api/mars/po/settings", json={"holidays": "2026-09-28, 2026/10/9", "lead_days": "2"})
     check("假日接受幾種寫法、存成 ISO 且排序", r.status_code == 200 and r.get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"], str(r.get_json()))
     check("再讀一次還在", c.get("/api/mars/po/settings").get_json()["settings"]["holidays"] == ["2026-09-28", "2026-10-09"])
-    r = c.put("/api/mars/po/settings", json={"shelf_req_cat": {"GUM": "3/5效期以上", "XXX": "亂填"}, "emma_shipto": "0002"})
-    check("效期依品類：只改 GUM，其他不動；EMMA 固定字可改", r.status_code == 200 and r.get_json()["settings"]["shelf_req_cat"] == {"CHO": "1/2效期以上", "GUM": "3/5效期以上", "PET": "1/2效期以上"} and r.get_json()["settings"]["emma_shipto"] == "0002", str(r.get_json()["settings"]["shelf_req_cat"]))
+    r = c.put("/api/mars/po/settings", json={"shelf_req_cat": {"GUM": "2/3效期以上", "XXX": "亂填"}, "emma_shipto": "0002"})
+    check("效期依品類：只改 GUM，其他不動；EMMA 固定字可改", r.status_code == 200 and r.get_json()["settings"]["shelf_req_cat"] == {"CHO": "3/5效期以上", "GUM": "2/3效期以上", "PET": "1/2效期以上"} and r.get_json()["settings"]["emma_shipto"] == "0002", str(r.get_json()["settings"]["shelf_req_cat"]))
+    c.put("/api/mars/po/settings", json={"shelf_req_cat": {"GUM": "3/5效期以上"}})
     c.put("/api/mars/po/settings", json={"emma_shipto": "0001"})
     r = c.put("/api/mars/warehouses/TAO3", json={"special_note": "司機需加入TAO3 line領取排隊號碼"})
     check("倉庫資料多一格特殊需求加註", r.status_code == 200 and next(w for w in r.get_json()["warehouses"] if w["code"] == "TAO3")["special_note"] == "司機需加入TAO3 line領取排隊號碼")
@@ -340,7 +341,7 @@ def main():
     check("C5 永豐PO單號＝EIP 採購單號", ws["C5"].value == "PO202609301")
     check("C6～F8 倉庫資料：入倉倉別、地址（訂單的）、電話、ship-to（數字）、聯絡人", ws["C6"].value == "永豐商店酷澎-TAO3" and ws["C7"].value == "桃園市大園區中山南路472號"
           and ws["C8"].value == "0911-556-291" and ws["F7"].value == 17600001 and ws["F8"].value == "王小姐", str([ws[x].value for x in ("C6", "C7", "C8", "F7", "F8")]))
-    check("F6 效期要求照這份的品類（GUM 改成 3/5，其他 1/2）、B9 品類全名", ws["F6"].value == ("3/5效期以上" if f2["category"] == "GUM" else "1/2效期以上") and ws["B9"].value == mc.CAT_FULL[f2["category"]], f"{ws['F6'].value} / {ws['B9'].value}")
+    check("F6 效期要求照這份的品類（巧、糖 3/5，寵 1/2）、B9 品類全名", ws["F6"].value == ("1/2效期以上" if f2["category"] == "PET" else "3/5效期以上") and ws["B9"].value == mc.CAT_FULL[f2["category"]], f"{ws['F6'].value} / {ws['B9'].value}")
     f5 = ws["F5"].value.split("\n")
     exp_first = ["需貼中盒標"] if f2["label"] == "V" else []
     check("F5 特殊需求：（要貼中標才有）需貼中盒標 → 固定文字第一行 → 這個倉的加註 → 固定文字 → 進倉時間＝約倉時間 → 請在 12:30 前抵達",

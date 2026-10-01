@@ -35,8 +35,8 @@ TIME_RE = re.compile(r"\d{1,2}:\d{2}")
 DEFAULT_SETTINGS = {
     "lead_days": 2,                       # 下單日＝配送日往前幾個工作天
     "shelf_req": "1/2效期以上",           # F6（舊的單一格，留著相容；現在用 shelf_req_cat）
-    # F6 效期要求依品類（Jerry：糖巧寵規則不同，數字等 Alice；先都放舊採購單上的 1/2）
-    "shelf_req_cat": {"CHO": "1/2效期以上", "GUM": "1/2效期以上", "PET": "1/2效期以上"},
+    # F6 效期要求依品類（Alice 2026-10-01：Chocolate、Gum 3/5，Petcare 1/2）
+    "shelf_req_cat": {"CHO": "3/5效期以上", "GUM": "3/5效期以上", "PET": "1/2效期以上"},
     # EMMA 匯入檔的固定字（Kate 系統匯出的 Coupang_PO_Order 裡 C、F、G、H、J 欄）
     "emma_recipient": "酷澎股份有限公司", "emma_customer": "N71178", "emma_billto": "B001", "emma_shipto": "0001", "emma_payment": "貨到不付款",
     "contact_default": "酷澎",            # F8 沒填時
@@ -63,7 +63,7 @@ def load_settings(conn):
     s["holidays"] = sorted(set(s.get("holidays") or []))
     cat = dict(DEFAULT_SETTINGS["shelf_req_cat"])
     saved_cat = s.get("shelf_req_cat") if isinstance(s.get("shelf_req_cat"), dict) else {}
-    if not saved_cat and s.get("shelf_req"):          # 舊設定只有一格：三個品類都用它
+    if not saved_cat and s.get("shelf_req") and s["shelf_req"] != DEFAULT_SETTINGS["shelf_req"]:   # 舊設定自己改過那一格：三個品類都用它
         cat = {k: s["shelf_req"] for k in cat}
     cat.update({k: v for k, v in saved_cat.items() if k in cat and isinstance(v, str)})
     s["shelf_req_cat"] = cat
