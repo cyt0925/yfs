@@ -64,6 +64,23 @@ def special_sheet(rows):
     return buf.getvalue()
 
 
+def yx_pdf(pages):
+    """假的勇信配送明細表：pages = [(EIP單號, 倉, 指送日期 yyyy/mm/dd, [(瑪氏貨號, 箱數, 效期), ...])]，文字排法照真檔。"""
+    import pymupdf
+    doc = pymupdf.open()
+    for eip, wh, date, items in pages:
+        page = doc.new_page()
+        lines = ["桃園市大園區高鐵北路三段100號", "客戶單號：7816797526", f"BMS100222-永豐商店酷澎-{wh}", "出貨廠商名稱：A5888-台灣瑪氏股份有限公司",
+                 f"指送日期：{date}", "配 送 明 細 表(預排鮮度)", "產品編號", "產品名稱", "入數", "配送數量", f"收貨單號：{eip}-酷澎-T"]
+        for n, (code, qty, exp) in enumerate(items, start=1):
+            lines += [f"58880{code}", str(n), f"假品名 {code} 1:6:10", f"{qty}C  ", "625D1TAP01", exp]
+        lines += ["備註:箱麥/ 對點/酷澎嘜頭+驗收單", "單據金額:", f"合計箱數:{sum(q for _, q, _ in items)}", "客戶簽章:"]
+        y = 40
+        for ln in lines:
+            page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
+    return doc.tobytes()
+
+
 def base_row(**kw):
     r = {"訂單類型": "一般", "線別": "瑪氏", "PO單號": "13000000699901", "到貨倉別": "TAO3", "地址": "桃園市大園區中山南路472號",
          "交付日期": datetime.datetime(2026, 9, 30), "NO": 1, "品牌": "測試", "酷澎下單單價(含稅)": 100}
@@ -405,6 +422,61 @@ def main():
     pr = mp.po_rows(fake_items)
     check("採購單一列一個永豐料號（組出 M9 就寫 M9，不寫下採的 M1）：同料號合成一列、數量箱數加總、備註照商品總表", [r_["code"] for r_ in pr] == ["M9", "M8"] and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註", str(pr))
     check("下單日：9/21（一）往前 2 個工作天 → 9/17（四）", mp.order_date(datetime.date(2026, 9, 21), 2, set()) == datetime.date(2026, 9, 17))
+
+    print("\n【8e】勇信缺貨：PDF 比對、下修檔、改系統數量")
+    import mars.shortage as msx
+    v = splits(c, "2026-09-29", "2026-09-30")
+    tgt = max((x for x in v["splits"] if x["delivery_date"] == "2026-09-29"), key=lambda x: max(i["cases"] for i in x["items"]))
+    put(tgt["id"], {"eip_po": "PO202609305"})
+    v = splits(c, "2026-09-29", "2026-09-30"); tgt = next(x for x in v["splits"] if x["id"] == tgt["id"])
+    it0 = max(tgt["items"], key=lambda i: i["cases"])
+    others = [i for i in tgt["items"] if i is not it0]
+    pdf = yx_pdf([("PO202609305", "TAO3", "2026/09/29", [(it0["mars_code"], int(it0["cases"]) - 1, "2027/06/18")] + [(i["mars_code"], int(i["cases"]), "2027/08/11") for i in others]),
+                  ("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])])
+    pages = msx.parse_yx_pdf(pdf, "假.pdf")
+    check("假 PDF 讀得出：2 頁、收貨單號、倉、日期、箱數、效期", len(pages) == 2 and pages[0]["eip_po"] == "PO202609305" and pages[0]["warehouse"] == "TAO3"
+          and pages[0]["ship_date"] == "2026-09-29" and pages[0]["items"][0]["qty"] == int(it0["cases"]) - 1 and pages[0]["items"][0]["expiry"] == "2027-06-18" and not pages[0]["warnings"], str(pages[0])[:300])
+    check("產品編號 58880＋貨號、配送數量 4C 的讀法", msx.QTY_RE.match("4C  ") and msx._mars_code("060019810") == "60019810" and msx._mars_code("10266398") == "10266398")
+    r = up(c, "/api/mars/shortage/compare", pdf, "假_勇信.pdf"); res = r.get_json()
+    check("比對：對到 1 張 PO，一個品項少 1 箱＝部分缺，其他沒缺；PO202609999 系統沒有 → 列未知", r.status_code == 200 and res["summary"]["pos"] == 1 and res["summary"]["partial"] == 1
+          and res["summary"]["ok"] == len(others) and [u["eip_po"] for u in res["unknown"]] == ["PO202609999"], str(res["summary"]) + str(res["unknown"]))
+    row0 = next(it for it in res["pos"][0]["splits"][0]["items"] if it["sku_id"] == it0["sku_id"])
+    check("部分缺的那筆：缺 1 箱、改成的出貨數量＝勇信箱數×箱入數", row0["status"] == "partial" and row0["short"] == 1 and row0["new_qty"] == (int(it0["cases"]) - 1) * it0["box_file"] and not res["pos"][0]["full"], str(row0))
+    check("這張 PO 還有別份沒在表裡 → 列出來、不算整張不出", len(res["pos"][0]["missing_splits"]) == len(v["splits"]) - 1 and res["downgrade_rows"] == 1, str(res["pos"][0]["missing_splits"]))
+    r = c.post("/api/mars/shortage/apply", json={"result": res, "only_file": True})
+    wd = openpyxl.load_workbook(io.BytesIO(r.data))["issueReport"]
+    check("只下載下修檔：套酷澎範本，第 1 列代碼不動、第 2 列表頭、第 3 列起一列一個缺的品項（SKU、酷澎 PO、變更數量、原因 4）",
+          r.status_code == 200 and str(wd["A1"].value).startswith("oNJf0ob5l") and [x.value for x in wd[2]] == ["SKU ID", "採購訂單ID", "變更數量", "請求原因", "附件", "評論"]
+          and wd.max_row == 3 and wd["A3"].value == it0["sku_id"] and wd["B3"].value == "13000000699901" and wd["C3"].value == str(row0["new_qty"]) and wd["D3"].value == "4. 供應商庫存不足" and wd["F3"].value is None, str([x.value for x in wd[3]]))
+    check("下修檔檔名帶指送日期與倉", "酷澎下修_0929交貨-TAO3.xlsx" in unquote(r.headers.get("Content-Disposition", "")), unquote(r.headers.get("Content-Disposition", "")))
+    before = next(o for o in c.get("/api/master/orders?month=2026-09&q=13000000699901").get_json()["rows"] if o["sku_id"] == it0["sku_id"])["qty_ship"]
+    r = c.post("/api/mars/shortage/apply", json={"result": res})
+    check("確認：改了 1 筆、下修檔一起回來", r.status_code == 200 and r.headers.get("X-Mars-Changed") == "1" and r.headers.get("X-Mars-Rows") == "1", str(r.headers.get("X-Mars-Changed")))
+    after = next(o for o in c.get("/api/master/orders?month=2026-09&q=13000000699901").get_json()["rows"] if o["sku_id"] == it0["sku_id"])
+    check("系統裡那筆訂單的出貨數量改成勇信實際出的、標人改過", after["qty_ship"] == row0["new_qty"] and after["qty_ship"] != before and after["qty_ship_overridden"], f"{before} → {after['qty_ship']}")
+    logs = c.get("/api/master/logs?q=13000000699901&limit=1000").get_json()["logs"]
+    check("有記歷程：出貨數量、原因缺貨、說明寫勇信出幾箱", any(l["field"] == "qty_ship" and "勇信出" in json.dumps(l, ensure_ascii=False) and "缺貨" in json.dumps(l, ensure_ascii=False) for l in logs), str([l for l in logs if l["field"] == "qty_ship"][:1]))
+    v = splits(c, "2026-09-29", "2026-09-30"); tb = next(x for x in v["splits"] if x["id"] == tgt["id"])
+    check("已送 EIP 的那份快照跟著改：狀態還是已回填（不是 EIP 送出後訂單有變）、數量是新的", tb["status"] == "filled" and next(i for i in tb["items"] if i["sku_id"] == it0["sku_id"])["qty_ship"] == row0["new_qty"], f"{tb['status']} {tb.get('diff')}")
+    # 整張不出：勇信表上根本不會有那張，要人勾「勇信沒出這份」
+    for i, x in enumerate([x for x in v["splits"] if not x["eip_po"]]):
+        put(x["id"], {"eip_po": f"PO20260931{i}"})
+    v = splits(c, "2026-09-29", "2026-09-30")
+    ids_all = [x["id"] for x in v["splits"]]
+    pdf2 = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])])
+    r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf"); res2 = r.get_json()
+    check("表裡沒有我們的單：同倉同日有 EIP 單號的幾份列在「沒在表裡」、不判缺貨", res2["summary"]["pos"] == 0 and {x["split_id"] for x in res2["not_in_pdf"]} == {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}, str(res2["not_in_pdf"]))
+    r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf", none_ids=",".join(str(i) for i in ids_all)); res3 = r.get_json()
+    p0 = res3["pos"][0]
+    check("勾「勇信沒出」那張 PO 的每一份 → 整張不出、有訂的品項全缺", res3["summary"]["pos"] == 1 and p0["full"] and all(it["status"] == "none" for y in p0["splits"] for it in y["items"] if it["ordered"]) and not p0["missing_splits"], str(res3["summary"]) + str(p0["missing_splits"]))
+    rows = msx.downgrade_rows(res3)
+    check("整張不出的下修檔：每個品項都列、第一支 1 其他 0、評論寫「PO此單不出，如有不便，請見諒。」", len(rows) == sum(len(y["items"]) for y in p0["splits"]) and rows[0]["qty"] == 1 and all(r_["qty"] == 0 for r_ in rows[1:])
+          and all(r_["comment"] == "13000000699901此單不出，如有不便，請見諒。" for r_ in rows), str(rows[:2]))
+    r = c.post("/api/mars/shortage/apply", json={"result": res3})
+    in_splits = {i["sku_id"] for x in v["splits"] for i in x["items"]}
+    left = [(o["sku_id"], o["qty_ship"]) for o in c.get("/api/master/orders?month=2026-09&q=13000000699901").get_json()["rows"] if o["qty_ship"] and o["sku_id"] in in_splits]
+    check("確認整張不出 → 下修檔回來、系統那張 PO 有拆到的品項出貨數量全部改 0（對不到商品總表、沒拆進來的 M99999999 不動）", r.status_code == 200 and not left, f"{r.status_code} {left}")
+    check("掃描檔／不是勇信表 → 400 講清楚", up(c, "/api/mars/shortage/compare", b"%PDF-1.4 nothing", "x.pdf").status_code == 400)
 
     print("\n【9】清除資料")
     app_module._write_users(app_module.get_users(), {"Jerry", "小真"})

@@ -72,7 +72,7 @@
       <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_mars.png') }}" style="height:30px;width:auto" alt="瑪氏"></div>
       <div>
         <h1 class="text-lg font-bold leading-tight">瑪氏出貨</h1>
-        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span class="on">③ 瑪氏採購單</span><span class="on">④ EMMA 匯入檔</span><span>⑤ 勇信缺貨</span></div>
+        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span class="on">③ 瑪氏採購單</span><span class="on">④ EMMA 匯入檔</span><span class="on">⑤ 勇信缺貨</span></div>
       </div>
     </div>
     <div class="flex-1"></div>
@@ -137,11 +137,26 @@
         <div>下採料號＝整合表的「報價備註」（空白才用永豐料號）。對商品總表先用下採料號＋單位，對不到才退回永豐料號並標出來。</div>
         <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>
         <div>下載的 zip 裡每份兩個檔：EMMA 匯入檔（酷澎訂單匯入_1002交貨-TAO3_PO….xlsx）、EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。</div>
+        <div>⑤ 勇信缺貨：上傳勇信配送明細表 PDF（可多份），收貨單號對回 EIP 單號、料號用 58880＋瑪氏貨號對、箱數相比。相等＝沒缺、少＝部分缺、沒出現＝全缺、多＝異常（不動、要人看）。整張 PO 全缺：系統改 0，下修檔第一支填 1 其他 0、評論寫此單不出。按「確認」才會改系統數量，改完的 EMMA 檔、採購單都跟著變。</div>
         <div>④ EMMA 匯入檔：每列的「EMMA」單份下載；前面打勾再按「勾選的合併成 EMMA 檔」就合成一個檔（檔名寫交貨日和倉別）；「EMMA 檔（全部）」是這段期間全部合成一個。出貨備註放 EIP 採購單號，沒填會先問你、留空；料號是下採料號，單價＝酷澎下單單價×箱入數。</div>
         <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
         <div>③ 瑪氏採購單：填了 EIP 單號，每列最右邊的「採購單」就能按，套的是 V2 範本。倉庫的電話、ship-to 沒填就留空、約倉時間沒填就不放「進倉時間」那兩行，按鈕上有驚嘆號就是有格子會留空，滑上去看是哪些；補了再下載一次就有。下單日＝到貨日往前推 2 個工作天（扣週末和下面設定的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
       </div>
     </details>
+  </section>
+
+  <!-- ⑤ 勇信缺貨：上傳配送明細表 PDF → 比對 → 確認改系統數量＋下修檔 -->
+  <section class="card p-4 dz" id="dz-yx" title="把勇信的 PDF 拖進這裡也可以">
+    <div class="flex items-center gap-3 flex-wrap">
+      <div>
+        <b>勇信缺貨</b> <span class="kbd">把勇信「配送明細表」PDF 拖進來或按右邊，可以一次傳好幾份</span>
+        <div class="text-sm muted mt-1">用收貨單號對回已填 EIP 單號的拆單表，逐料號比箱數。確認後系統裡的出貨數量改成實際出的，並下載酷澎下修上傳檔。</div>
+      </div>
+      <div class="flex-1"></div>
+      <label class="btn btn-o"><i class="bi bi-upload"></i> 上傳勇信 PDF<input type="file" id="yx-file" accept=".pdf" class="hidden" multiple></label>
+    </div>
+    <div id="yx-msg" class="text-sm mt-2"></div>
+    <div id="yx-result" class="hidden mt-3"></div>
   </section>
 
   <!-- ③ 採購單設定：各倉資料、特殊需求文字、假日 -->

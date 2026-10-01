@@ -10,13 +10,14 @@
                 ② 回填 EIP 採購單號、約倉時間（一份拆單表一張 EIP 採購單）
   po.py         ③ 瑪氏採購單（V2 範本）：填了 EIP 採購單號的拆單表 → 訂貨通知單；各倉資料與特殊需求文字在「採購單設定」
   emma.py       ④ EMMA 匯入檔（酷澎訂單匯入）：取代拆單表，一份一檔、勾選合併、整段合併
-之後：⑤ 勇信效期表缺貨比對。
+  shortage.py   ⑤ 勇信缺貨：配送明細表 PDF → 逐料號比箱數 → 確認改出貨數量、產酷澎下修上傳檔
+五步都做了。
 判讀的依據與還沒問清楚的事，寫在 docs/瑪氏出貨_設計筆記.md。
 """
 from flask import Blueprint
 
 mars_bp = Blueprint("mars", __name__)
 
-from . import products, po, emma, split  # noqa: E402,F401 — 讓路由生效
+from . import products, po, emma, split, shortage  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["mars_bp"]

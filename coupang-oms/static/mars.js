@@ -222,6 +222,68 @@ async function emmaMerge(body) {
 $("#btn-emma-sel").addEventListener("click", () => emmaMerge({ ids: [...CHECKED] }));
 $("#btn-emma-all").addEventListener("click", () => emmaMerge({ from: $("#d-from").value, to: $("#d-to").value }));
 
+/* ── ⑤ 勇信缺貨 ── */
+let YX = null, YX_FILES = [], YX_NONE = new Set();
+const YX_ST = { ok: ["沒缺", "st-filled"], partial: ["部分缺", "st-changed"], none: ["全缺", "st-gone"], over: ["出太多，異常", "st-changed_after_eip"] };
+$("#yx-file").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) compareYx(fs); });
+dropzone($("#dz-yx"), fs => compareYx(fs.filter(f => /\.pdf$/i.test(f.name))));
+async function compareYx(files, keepNone) {
+  if (!files.length) { toast("要拖勇信的 PDF 檔", "err"); return; }
+  YX_FILES = files; if (!keepNone) YX_NONE = new Set();
+  const fd = new FormData(); files.forEach(f => fd.append("file", f)); fd.append("none_ids", [...YX_NONE].join(","));
+  $("#yx-msg").innerHTML = `<span class="muted">讀 PDF、比對中…</span>`; $("#yx-result").classList.add("hidden");
+  try { YX = await api("/api/mars/shortage/compare", { method: "POST", body: fd }); } catch (e) { $("#yx-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; return; }
+  $("#yx-msg").innerHTML = ""; renderYx();
+}
+function renderYx() {
+  const r = YX, s = r.summary;
+  let h = `<div class="sum text-sm mb-2"><span><b>${s.pages}</b> 頁</span><span><b>${s.pos}</b> 張 PO 對到</span><span><b>${s.items}</b> 個品項</span><span><b style="color:var(--ok)">${s.ok}</b> 沒缺</span><span><b style="color:var(--warn)">${s.partial}</b> 部分缺</span><span><b style="color:var(--bad)">${s.none}</b> 全缺</span>${s.over ? `<span><b style="color:var(--bad)">${s.over}</b> 出太多</span>` : ""}<span>缺 <b>${fmt(s.short_cases)}</b> 箱</span>${s.full_pos ? `<span><b style="color:var(--bad)">${s.full_pos}</b> 張整張不出</span>` : ""}</div>`;
+  const al = [];
+  if (r.unknown.length) al.push(`<div class="alert al-bad"><b>勇信表裡有 ${r.unknown.length} 張採購單系統裡沒有</b>（EIP 單號沒填回來，或不是這系統拆的）：${r.unknown.map(u => `${esc(u.eip_po)}（第 ${u.pages.join("、")} 頁，${u.cases} 箱）`).join("、")}</div>`);
+  if (r.not_in_pdf.length) al.push(`<div class="alert al-warn"><b>${r.not_in_pdf.length} 份同倉同日的拆單表沒在這次的勇信表裡</b>，先不判缺貨。勇信確定整份沒出的，勾起來就當 0 箱算：<br>${r.not_in_pdf.map(x => `<label class="block"><input type="checkbox" class="yx-none" data-id="${x.split_id}"> ${esc(x.eip_po)} <span class="fn">${esc(x.filename)}</span></label>`).join("")}</div>`);
+  if (r.none_ids && r.none_ids.length) al.push(`<div class="kbd">你勾了 ${r.none_ids.length} 份「勇信沒出」，已當 0 箱算進去（下面標全缺的那些）。</div>`);
+  const extras = r.pos.flatMap(p => p.splits.flatMap(y => y.extra.map(x => `${esc(y.eip_po)}：勇信多了 ${esc(x.mars_code)} ${esc(x.name)} ${x.cases} 箱，我們沒訂`)));
+  if (extras.length) al.push(`<div class="alert al-warn"><b>勇信表裡有我們沒訂的料號</b>（不處理，請人看）：<br>${extras.join("<br>")}</div>`);
+  if (r.page_warnings.length) al.push(`<div class="alert al-warn">${r.page_warnings.map(esc).join("<br>")}</div>`);
+  if (s.full_pos) al.push(`<div class="alert al-bad"><i class="bi bi-exclamation-octagon-fill"></i> 有 <b>${s.full_pos}</b> 張 PO 整張不出：按確認後系統裡那張的出貨數量全部改 <b>0</b>；下修檔照酷澎的規矩第一支填 1、其他 0，評論寫「此單不出」。</div>`);
+  h += al.join("");
+  h += `<div class="tbl-wrap" style="max-height:52vh"><table class="t"><thead><tr><th>酷澎 PO</th><th>EIP 單號</th><th>永豐料號</th><th>品名</th><th class="num">訂（箱）</th><th class="num">勇信出（箱）</th><th class="num">缺（箱）</th><th>狀態</th><th class="num">出貨數量 → 改成</th></tr></thead><tbody>`;
+  for (const p of r.pos) {
+    h += `<tr class="pog"><td colspan="9"><i class="bi bi-receipt"></i> PO ${esc(p.po_number)}<span class="kbd">${md(p.delivery_date)} 到貨 · ${esc(p.warehouse)}${p.full ? ` · <b style="color:var(--bad)">整張不出</b>` : ""}${p.full_note && !p.full ? ` · ${esc(p.full_note)}` : ""}${p.missing_splits.length ? ` · 還有 ${p.missing_splits.length} 份沒在表裡` : ""}</span></td></tr>`;
+    for (const y of p.splits) for (const it of y.items) {
+      const st = YX_ST[it.status]; const target = p.full ? 0 : it.new_qty;
+      h += `<tr><td class="fn muted">${esc(p.po_number)}</td><td class="fn">${esc(y.eip_po)}</td><td class="fn">${esc(it.yf_sku)}</td><td>${esc(it.product_name)}</td><td class="num">${fmt(it.ordered)}</td><td class="num"><b>${fmt(it.shipped)}</b></td><td class="num">${it.short ? `<span class="neg">${fmt(it.short)}</span>` : ""}</td><td><span class="badge ${st[1]}">${st[0]}</span></td><td class="num">${it.status === "over" ? `<span class="kbd">不動</span>` : (it.status === "ok" && !p.full) ? `<span class="kbd">${fmt(it.qty_ship)}</span>` : `${fmt(it.qty_ship)} → <b>${fmt(target)}</b>`}</td></tr>`;
+    }
+  }
+  if (!r.pos.length) h += `<tr><td colspan="9" class="muted" style="padding:16px;text-align:center">這幾份 PDF 裡的採購單都對不到系統的拆單表。</td></tr>`;
+  h += `</tbody></table></div>`;
+  const nChange = r.pos.reduce((a, p) => a + p.splits.reduce((b, y) => b + y.items.filter(it => p.full ? it.status !== "over" : (it.status === "partial" || it.status === "none")).length, 0), 0);
+  h += `<div class="flex items-center gap-2 mt-3 flex-wrap">
+    <button id="yx-apply" class="btn btn-p" ${!r.pos.length ? "disabled" : ""}><i class="bi bi-check2-circle"></i> 確認：系統出貨數量改 ${nChange} 筆，並下載下修檔（${r.downgrade_rows} 列）</button>
+    <button id="yx-file-only" class="btn btn-o" ${!r.downgrade_rows ? "disabled" : ""} title="不改系統，只拿下修檔">只下載下修檔</button>
+    <button id="yx-clear" class="btn btn-o">清掉重傳</button>
+    <span class="kbd">改數量會記修改歷程（原因：缺貨），已送 EIP 的那幾份也會跟著改，之後 EMMA 檔、採購單都是新數字。</span></div>`;
+  $("#yx-result").innerHTML = h; $("#yx-result").classList.remove("hidden");
+  $("#yx-clear").addEventListener("click", () => { YX = null; YX_FILES = []; YX_NONE = new Set(); $("#yx-result").classList.add("hidden"); $("#yx-result").innerHTML = ""; });
+  $("#yx-result").querySelectorAll("input.yx-none").forEach(c => c.addEventListener("change", () => { const id = Number(c.dataset.id); c.checked ? YX_NONE.add(id) : YX_NONE.delete(id); compareYx(YX_FILES, true); }));
+  $("#yx-file-only").addEventListener("click", () => downloadBlob("/api/mars/shortage/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result: YX, only_file: true }) }, "酷澎下修.xlsx", "下修檔已下載（系統沒改）"));
+  $("#yx-apply").addEventListener("click", async () => {
+    if (!confirm(`要把系統裡 ${nChange} 筆訂單的出貨數量改成勇信實際出的？${s.full_pos ? `\n其中 ${s.full_pos} 張 PO 整張不出，會全部改 0。` : ""}\n改了會記歷程，之後 EMMA 檔、採購單都是新數字。`)) return;
+    $("#yx-apply").disabled = true;
+    try {
+      const res = await fetch("/api/mars/shortage/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result: YX }) });
+      const ct = res.headers.get("Content-Type") || "";
+      if (!res.ok || ct.includes("json")) { const d = await res.json().catch(() => ({})); if (!res.ok) { toast(d.error || `伺服器錯誤 (${res.status})`, "err"); $("#yx-apply").disabled = false; return; } toast(`系統出貨數量改了 ${d.changed} 筆。${d.error || ""}`); }
+      else {
+        const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || ""; const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : "酷澎下修.xlsx"; document.body.appendChild(a); a.click(); a.remove();
+        toast(`系統出貨數量改了 ${res.headers.get("X-Mars-Changed")} 筆，下修檔 ${res.headers.get("X-Mars-Rows")} 列已下載`);
+      }
+      YX = null; $("#yx-result").classList.add("hidden"); $("#yx-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 這批比對已確認，系統數量已更新。要看結果到上面拆單表那區。</span>`; loadSplits();
+    } catch (e) { toast(e.message, "err"); $("#yx-apply").disabled = false; }
+  });
+}
+
 /* ── 採購單設定：倉庫資料、固定文字、假日 ── */
 let PS = null;
 async function loadPoSettings() {

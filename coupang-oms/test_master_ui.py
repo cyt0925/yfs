@@ -424,6 +424,27 @@ def main():
               and pg.eval_on_selector_all("#wh-table tr[data-code='TAO1'] .wh-del", "els => els.length") == 0, pg.inner_text("#wh-table tr[data-code='TAO8']")[:80] if pg.query_selector("#wh-table tr[data-code='TAO8']") else "沒有 TAO8")
         pg.once("dialog", lambda d: d.accept()); pg.click("#wh-table tr[data-code='TAO8'] .wh-del"); pg.wait_for_timeout(800)
         check("按刪除、確認 → TAO8 不見", pg.eval_on_selector_all("#wh-table tr[data-code='TAO8']", "els => els.length") == 0)
+        # ⑤ 勇信缺貨：假 PDF（第一份拆單表 PO202609901，一個品項少 1 箱）→ 比對表 → 確認 → 下修檔
+        import pymupdf
+        sp0 = next(x for x in tc.get("/api/mars/splits?from=2026-09-18&to=2026-09-18").get_json()["splits"] if x["eip_po"] == "PO202609901")
+        doc = pymupdf.open(); page = doc.new_page(); y = 40
+        lines = ["BMS100222-永豐商店酷澎-TAO1", "指送日期：2026/09/18", "收貨單號：PO202609901-酷澎-T"]
+        for n, it in enumerate(sp0["items"], start=1):
+            q = max(int(it["cases"]) - (1 if n == 1 else 0), 0)
+            lines += [f"58880{it['mars_code']}", str(n), f"假品名 1:6:10", f"{q}C  ", "625D1TAP01", "2027/06/18"]
+        lines += [f"合計箱數:{sum(max(int(it['cases']) - (1 if n == 1 else 0), 0) for n, it in enumerate(sp0['items'], start=1))}"]
+        for ln in lines:
+            page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
+        yxp = os.path.join(tempfile.gettempdir(), "ui_勇信.pdf"); doc.save(yxp)
+        pg.set_input_files("#yx-file", yxp); pg.wait_for_selector("#yx-result:not(.hidden)", timeout=20000); pg.wait_for_timeout(400)
+        check("上傳勇信 PDF → 比對表：1 張 PO、有一筆部分缺、確認鈕寫改 1 筆", "1 張 PO 對到" in pg.inner_text("#yx-result").replace("\n", "") and pg.eval_on_selector_all("#yx-result .st-changed", "els => els.length") >= 1
+              and "改 1 筆" in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
+        pg.once("dialog", lambda d: d.accept())
+        with pg.expect_download() as dl:
+            pg.click("#yx-apply")
+        check("確認 → 下載 酷澎下修_0918交貨-TAO1.xlsx、比對區收起來、寫已確認", dl.value.suggested_filename == "酷澎下修_0918交貨-TAO1.xlsx", dl.value.suggested_filename)
+        pg.wait_for_timeout(900)
+        check("確認後訊息寫系統數量已更新", "已確認" in pg.inner_text("#yx-msg"), pg.inner_text("#yx-msg"))
         pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='special_note']", "司機需加入TAO1 line領取排隊號碼"); pg.keyboard.press("Enter"); pg.wait_for_timeout(800)
         pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.fill("#ps-shelf-GUM", "2/3效期以上"); pg.click("#ps-save"); pg.wait_for_timeout(900)
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
