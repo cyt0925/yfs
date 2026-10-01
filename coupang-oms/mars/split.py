@@ -223,6 +223,42 @@ def _range_args(src):
     return tuple(sorted([date_from, date_to]))
 
 
+@mars_bp.route("/api/mars/calendar")
+def api_mars_calendar():
+    """月曆：這個月每天有幾張瑪氏 PO、幾箱、拆成幾份、幾份填了 EIP 單號、幾個對不到。"""
+    month = norm_text(request.args.get("month"))
+    if not re.fullmatch(r"\d{4}-\d{2}", month):
+        return jsonify({"error": "月份要像 2026-09。"}), 400
+    y, m = int(month[:4]), int(month[5:])
+    d1 = f"{month}-01"
+    last = (_dt.date(y + (m == 12), (m % 12) + 1, 1) - _dt.timedelta(days=1)).day
+    d2 = f"{month}-{last:02d}"
+    conn = get_conn()
+    try:
+        items, unmatched, _zero = build_items(conn, d1, d2)
+        groups = group_items(items)
+        saved = _saved(conn, d1, d2)
+    finally:
+        conn.close()
+    days = {}
+    for g in groups:
+        d = days.setdefault(g["delivery_date"], {"pos": set(), "cases": 0, "files": 0, "filled": 0, "unmatched": 0, "blocking": 0})
+        d["pos"].add(g["po_number"]); d["cases"] += g["cases_total"] or 0; d["files"] += 1
+        s = saved.get(g["split_key"])
+        if s and s["eip_po"]:
+            d["filled"] += 1
+        if g["blocking"]:
+            d["blocking"] += 1
+    for u in unmatched:
+        days.setdefault(u["delivery_date"], {"pos": set(), "cases": 0, "files": 0, "filled": 0, "unmatched": 0, "blocking": 0})["unmatched"] += 1
+    for s in saved.values():                       # 存過但現在拆不出來的（改期、改倉），也算一天的事
+        if not any(g["split_key"] == s["split_key"] for g in groups):
+            d = days.setdefault(s["delivery_date"], {"pos": set(), "cases": 0, "files": 0, "filled": 0, "unmatched": 0, "blocking": 0})
+            d["pos"].add(s["po_number"]); d["files"] += 1; d["filled"] += 1 if s["eip_po"] else 0; d["gone"] = d.get("gone", 0) + 1
+    out = {k: {**v, "pos": len(v["pos"]), "cases": round(v["cases"], 4)} for k, v in days.items()}
+    return jsonify({"month": month, "days": out})
+
+
 @mars_bp.route("/api/mars/splits")
 def api_mars_splits():
     date_from, date_to = _range_args(request.args)
@@ -423,4 +459,4 @@ def api_mars_split_update(split_id):
 
 
 __all__ = ["build_items", "group_items", "split_key", "make_filename", "split_workbook", "eip_rows",
-           "api_mars_splits", "api_mars_generate", "api_mars_split_file", "api_mars_split_update"]
+           "api_mars_calendar", "api_mars_splits", "api_mars_generate", "api_mars_split_file", "api_mars_split_update"]

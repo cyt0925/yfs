@@ -56,6 +56,25 @@
   .toast.err { background:var(--bad); }
   .dz { border:2px dashed transparent; transition:border-color .15s, background .15s; }
   .dz.over { border-color:var(--m7); background:var(--m0); }
+  /* 看得見的拖曳框：虛線框、點一下也能選檔。拖到卡片任何地方都算，框只是讓人知道可以拖 */
+  .dzbox { display:flex; align-items:center; gap:10px; border:2px dashed var(--m2); border-radius:10px; padding:10px 14px; background:var(--m0); color:var(--m8); cursor:pointer; font-size:13px; transition:border-color .15s, background .15s; }
+  .dzbox:hover, .dz.over .dzbox { border-color:var(--m7); background:var(--m1); }
+  .dzbox i { font-size:20px; } .dzbox b { font-size:13.5px; } .dzbox .kbd { color:var(--m7); }
+  .dzbox.sm { padding:6px 10px; font-size:12.5px; } .dzbox.sm i { font-size:16px; }
+  /* 月曆：有瑪氏訂單的天亮起來，格子裡是箱數、PO 數、填了幾份 EIP 單號 */
+  .cal { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; user-select:none; }
+  .cal .wd { font-size:11px; color:var(--muted); text-align:center; padding:2px 0; font-weight:600; }
+  .cal .day { min-height:58px; border:1px solid var(--line2); border-radius:8px; padding:4px 7px; background:#fff; position:relative; font-size:11.5px; }
+  .cal .day .n { font-weight:700; color:var(--muted); }
+  .cal .day.blank { background:transparent; border-color:transparent; }
+  .cal .day.has { border-color:var(--m2); background:var(--m0); cursor:pointer; } .cal .day.has .n { color:var(--m8); }
+  .cal .day.has:hover { background:var(--m1); }
+  .cal .day.on { background:var(--m8); border-color:var(--m8); color:#fff; } .cal .day.on .n, .cal .day.on .c, .cal .day.on .p { color:#fff; }
+  .cal .day .c { font-size:15px; font-weight:700; color:var(--m9); font-variant-numeric:tabular-nums; } .cal .day .p { color:var(--muted); font-size:10.5px; white-space:nowrap; }
+  .cal .day .eip { position:absolute; top:4px; right:6px; font-size:10.5px; font-weight:700; } .cal .day .eip.ok { color:var(--ok); } .cal .day .eip.part { color:var(--warn); } .cal .day.on .eip { color:#fff; opacity:.9; }
+  .cal .day .warn { position:absolute; right:6px; bottom:4px; color:var(--warn); font-size:11px; }
+  .cal .day.today .n::after { content:"今天"; margin-left:4px; font-size:9.5px; color:var(--teal); font-weight:600; }
+  .cal .day.on.today .n::after { color:#fff; }
   /* 同一張酷澎 PO 會拆成好幾份：一條 PO 標題列包起來，底下幾份同一個底色、左邊一條藍線 */
   table.t tr.pog td { background:var(--m1); color:var(--m9); font-weight:700; border-top:2px solid var(--m2); padding:6px 10px; }
   table.t tr.pog td .kbd { color:var(--m8); font-weight:500; margin-left:10px; }
@@ -88,26 +107,24 @@
     <div class="card p-4 dz" id="dz-od" title="把出貨彙總表拖進這裡也可以">
       <div class="flex items-center gap-3 flex-wrap">
         <div>
-          <b>出貨彙總表（訂單）</b> <span class="kbd">拖進來或按右邊</span>
+          <b>出貨彙總表（訂單）</b>
           <div id="od-status" class="text-sm muted mt-1">讀取中…</div>
         </div>
-        <div class="flex-1"></div>
-        <label class="btn btn-o" title="Kate 系統匯出的整合表（Coupang_PO_Integration 或出貨彙總表）。只會動到檔案裡有的 PO，寶僑的單不會被碰到"><i class="bi bi-upload"></i> 上傳出貨彙總表
-          <input type="file" id="od-file" accept=".xlsx" class="hidden" multiple></label>
       </div>
+      <label class="dzbox mt-3" title="Kate 系統匯出的整合表（Coupang_PO_Integration 或出貨彙總表）。只會動到檔案裡有的 PO，寶僑的單不會被碰到"><i class="bi bi-cloud-arrow-up"></i><div><b>把出貨彙總表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx，可以一次好幾份</div></div>
+        <input type="file" id="od-file" accept=".xlsx" class="hidden" multiple></label>
       <div id="od-preview" class="hidden mt-3 text-sm"></div>
       <div id="od-msg" class="text-sm mt-2"></div>
     </div>
     <div class="card p-4 dz" id="dz-mp" title="把商品總表拖進這裡也可以">
       <div class="flex items-center gap-3 flex-wrap">
         <div>
-          <b>瑪氏商品總表</b> <span class="kbd">拖進來或按右邊</span>
+          <b>瑪氏商品總表</b>
           <div id="mp-status" class="text-sm muted mt-1">讀取中…</div>
         </div>
-        <div class="flex-1"></div>
-        <label class="btn btn-o" title="Alice 的「自動化_Mars整合商品資料」，有更新就再傳一次，整份覆蓋"><i class="bi bi-upload"></i> 上傳商品總表
-          <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
       </div>
+      <label class="dzbox mt-3" title="Alice 的「自動化_Mars整合商品資料」，有更新就再傳一次，整份覆蓋"><i class="bi bi-cloud-arrow-up"></i><div><b>把瑪氏商品總表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx，整份覆蓋</div></div>
+        <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
       <div id="mp-msg" class="text-sm mt-2"></div>
     </div>
   </section>
@@ -120,12 +137,21 @@
       <input type="date" id="d-from" class="inp" style="width:150px">
       <span class="muted">～</span>
       <input type="date" id="d-to" class="inp" style="width:150px">
-      <span id="d-chips" class="flex gap-1 flex-wrap ml-2"></span>
+      <button id="cal-toggle" class="btn btn-o btn-sm ml-1" title="收起／展開月曆"><i class="bi bi-calendar3"></i> 月曆</button>
       <div class="flex-1"></div>
       <button id="btn-gen" class="btn btn-p"><i class="bi bi-scissors"></i> 產出拆單表（下載）</button>
       <button id="btn-emma-sel" class="btn btn-o" disabled title="把勾選的幾份合併成一個 EMMA 匯入檔"><i class="bi bi-check2-square"></i> 勾選的合併成 EMMA 檔</button>
       <button id="btn-emma-all" class="btn btn-o" title="這段期間全部合併成一個 EMMA 匯入檔"><i class="bi bi-file-earmark-spreadsheet"></i> EMMA 檔（全部）</button>
       <button id="btn-po" class="btn btn-o" title="這段期間裡已填 EIP 單號的，全部套進瑪氏採購單範本打包下載"><i class="bi bi-file-earmark-text"></i> 瑪氏採購單（全部）</button>
+    </div>
+    <div id="cal-wrap" class="mb-3">
+      <div class="flex items-center gap-2 mb-1">
+        <button class="btn btn-o btn-sm" id="cal-prev" style="padding:2px 8px"><i class="bi bi-chevron-left"></i></button>
+        <b id="cal-title" class="text-sm" style="color:var(--m9)"></b>
+        <button class="btn btn-o btn-sm" id="cal-next" style="padding:2px 8px"><i class="bi bi-chevron-right"></i></button>
+        <span class="kbd">點一天看那天的拆單；按住 Shift 再點另一天就是一段。格子裡是箱數、PO 數，右上角是填了幾份 EIP 單號。</span>
+      </div>
+      <div id="cal" class="cal"></div>
     </div>
     <div id="sum" class="sum text-sm mb-3"></div>
     <div id="alerts" class="space-y-2 mb-3"></div>
@@ -149,12 +175,12 @@
   <section class="card p-4 dz" id="dz-yx" title="把勇信的 PDF 拖進這裡也可以">
     <div class="flex items-center gap-3 flex-wrap">
       <div>
-        <b>勇信缺貨</b> <span class="kbd">把勇信「配送明細表」PDF 拖進來或按右邊，可以一次傳好幾份</span>
+        <b>勇信缺貨</b>
         <div class="text-sm muted mt-1">用收貨單號對回已填 EIP 單號的拆單表，逐料號比箱數。確認後系統裡的出貨數量改成實際出的，並下載酷澎下修上傳檔。</div>
       </div>
-      <div class="flex-1"></div>
-      <label class="btn btn-o"><i class="bi bi-upload"></i> 上傳勇信 PDF<input type="file" id="yx-file" accept=".pdf" class="hidden" multiple></label>
     </div>
+    <label class="dzbox mt-3"><i class="bi bi-file-earmark-pdf"></i><div><b>把勇信配送明細表 PDF 拖到這裡</b>，或點一下選檔<div class="kbd">可以一次好幾份；掃描的圖檔 PDF 讀不到字</div></div>
+      <input type="file" id="yx-file" accept=".pdf" class="hidden" multiple></label>
     <div id="yx-msg" class="text-sm mt-2"></div>
     <div id="yx-result" class="hidden mt-3"></div>
   </section>
@@ -168,7 +194,7 @@
           <div class="flex items-center gap-2 flex-wrap mb-1 dz" id="dz-wh">
             <span class="text-sm font-semibold">倉庫資料</span><span class="kbd">訂單裡出現過的倉會自動列出來，也可以在最下面直接加；地址沒填時用訂單上的地址。「特殊需求加註」是這個倉才有的那一行。填完直接離開格子就存</span>
             <div class="flex-1"></div>
-            <label class="btn btn-o btn-sm" title="一列一個倉，第一列是表頭：倉別、地址（或中文地址）、電話，有 ship-to、聯絡人也吃。檔案有值就蓋掉、空白的不動；電話會轉成 02-5592-7598 這種寫法。拖進來也可以"><i class="bi bi-upload"></i> 上傳倉庫資料表
+            <label class="dzbox sm" title="一列一個倉，第一列是表頭：倉別、地址（或中文地址）、電話，有 ship-to、聯絡人也吃。檔案有值就蓋掉、空白的不動；電話會轉成 02-5592-7598 這種寫法"><i class="bi bi-cloud-arrow-up"></i><span><b>倉庫資料表拖到這裡</b>或點選檔</span>
               <input type="file" id="wh-file" accept=".xlsx" class="hidden"></label>
           </div>
           <div id="wh-msg" class="kbd mb-1"></div>

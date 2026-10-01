@@ -21,12 +21,45 @@ async function loadStatus() {
     : `<span class="neg">還沒上傳</span>：拆單要靠它分品類、中標，先把 Alice 的「自動化_Mars整合商品資料」傳上來`;
   $("#od-status").innerHTML = d.dates.length ? `② 裡有瑪氏訂單的到貨日：${d.dates.slice(-6).map(md).join("、")}${d.dates.length > 6 ? " …" : ""}${d.last_order_import ? `<br>最近一次匯入 ${esc(d.last_order_import.committed_at.slice(0, 16))} · ${esc(d.last_order_import.operator)} · ${esc(d.last_order_import.filename)}` : ""}`
     : `<span class="neg">還沒有瑪氏的訂單</span>：把 Kate 系統匯出的出貨彙總表傳上來`;
-  const up = d.dates.filter(x => x >= today()).slice(0, 8), recent = d.dates.filter(x => x < today()).slice(-3);
-  const chips = [...recent, ...up];
-  $("#d-chips").innerHTML = chips.map(x => `<span class="chip" data-d="${x}" title="只看這天到貨的">${md(x)}</span>`).join("") || `<span class="kbd">② 訂單明細裡還沒有瑪氏的訂單</span>`;
-  $("#d-chips").querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { $("#d-from").value = $("#d-to").value = c.dataset.d; loadSplits(); }));
+  const up = d.dates.filter(x => x >= today());
   if (!$("#d-from").value) { const first = up[0] || d.dates[d.dates.length - 1] || today(); $("#d-from").value = $("#d-to").value = first; }
+  CAL_MONTH = CAL_MONTH || $("#d-from").value.slice(0, 7);
+  await loadCalendar();
 }
+
+/* ── 月曆：有瑪氏訂單的天亮起來；點一天、Shift 點一段 ── */
+let CAL_MONTH = null, CAL = null;
+async function loadCalendar() {
+  try { CAL = await api(`/api/mars/calendar?month=${CAL_MONTH}`); } catch (e) { toast(e.message, "err"); return; }
+  renderCalendar();
+}
+function renderCalendar() {
+  if (!CAL) return;
+  const [Y, M] = CAL_MONTH.split("-").map(Number); const f = $("#d-from").value, t = $("#d-to").value, tod = today();
+  $("#cal-title").textContent = `${Y} 年 ${M} 月 到貨`;
+  const first = new Date(Y, M - 1, 1), days = new Date(Y, M, 0).getDate();
+  let h = ["日", "一", "二", "三", "四", "五", "六"].map(w => `<div class="wd">${w}</div>`).join("");
+  for (let i = 0; i < first.getDay(); i++) h += `<div class="day blank"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const key = `${Y}-${String(M).padStart(2, "0")}-${String(d).padStart(2, "0")}`, c = CAL.days[key];
+    const on = f && t && key >= f && key <= t;
+    h += `<div class="day ${c ? "has" : ""} ${on ? "on" : ""} ${key === tod ? "today" : ""}" data-date="${key}"><div class="n">${d}</div>` + (c ? `
+      <span class="eip ${c.filled === c.files ? "ok" : c.filled ? "part" : ""}" title="填了 EIP 單號的份數">${c.filled}／${c.files}</span>
+      <div class="c">${fmt(c.cases)} <span style="font-size:10.5px;font-weight:500">箱</span></div><div class="p">${c.pos} 張 PO · ${c.files} 份${c.gone ? ` · ${c.gone} 份舊` : ""}</div>
+      ${c.unmatched || c.blocking ? `<span class="warn" title="${c.unmatched ? `${c.unmatched} 個品項對不到商品總表` : ""}${c.blocking ? ` ${c.blocking} 份箱數不是整數` : ""}"><i class="bi bi-exclamation-triangle-fill"></i></span>` : ""}` : "") + `</div>`;
+  }
+  $("#cal").innerHTML = h;
+  $("#cal").querySelectorAll(".day.has").forEach(el => el.addEventListener("click", e => {
+    const k = el.dataset.date;
+    if (e.shiftKey && $("#d-from").value) { const a = $("#d-from").value; $("#d-from").value = a < k ? a : k; $("#d-to").value = a < k ? k : a; }
+    else { $("#d-from").value = $("#d-to").value = k; }
+    renderCalendar(); loadSplits();
+  }));
+}
+const shiftMonth = n => { const [Y, M] = CAL_MONTH.split("-").map(Number); const dt = new Date(Y, M - 1 + n, 1); CAL_MONTH = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`; loadCalendar(); };
+$("#cal-prev").addEventListener("click", () => shiftMonth(-1)); $("#cal-next").addEventListener("click", () => shiftMonth(1));
+$("#cal-toggle").addEventListener("click", () => { const w = $("#cal-wrap"); w.classList.toggle("hidden"); try { localStorage.setItem("mars_cal", w.classList.contains("hidden") ? "0" : "1"); } catch (e) {} });
+try { if (localStorage.getItem("mars_cal") === "0") $("#cal-wrap").classList.add("hidden"); } catch (e) {}
 $("#mp-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadMaster(f); });
 async function uploadMaster(f) {
   const fd = new FormData(); fd.append("file", f); $("#mp-msg").innerHTML = `<span class="muted">上傳中…</span>`;
@@ -72,7 +105,7 @@ async function previewOrders(files) {
     $("#od-commit").disabled = true;
     try { const d = await api("/api/master/import/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ batch_id: ODP.batch_id, add_missing_products: true }) });
       $("#od-preview").classList.add("hidden"); $("#od-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 匯入完成：新增 ${d.inserted}、更新 ${d.updated}、沒變 ${d.identical}${d.removed ? `、消失歸 0 ${d.removed}` : ""}。</span>`;
-      toast("出貨彙總表匯入完成，已跳到這批的到貨日"); const ds = (ODP.dates || []).slice().sort(); ODP = null; await loadStatus();
+      toast("出貨彙總表匯入完成，已跳到這批的到貨日"); const ds = (ODP.dates || []).slice().sort(); ODP = null; CAL_MONTH = ds.length ? ds[0].slice(0, 7) : CAL_MONTH; await loadStatus();
       if (ds.length) { $("#d-from").value = ds[0]; $("#d-to").value = ds[ds.length - 1]; }     // 匯完直接跳到這批的到貨日
       loadSplits();
     } catch (err) { toast(err.message, "err"); $("#od-commit").disabled = false; }
@@ -83,7 +116,7 @@ async function previewOrders(files) {
 ["#d-from", "#d-to"].forEach(s => $(s).addEventListener("change", loadSplits));
 async function loadSplits() {
   const f = $("#d-from").value, t = $("#d-to").value; if (!f || !t) return;
-  document.querySelectorAll("#d-chips .chip").forEach(c => c.classList.toggle("on", f === t && c.dataset.d === f));
+  if (CAL && f.slice(0, 7) !== CAL_MONTH && f.slice(0, 7) === t.slice(0, 7)) { CAL_MONTH = f.slice(0, 7); loadCalendar(); } else renderCalendar();
   try { VIEW = await api(`/api/mars/splits?from=${f}&to=${t}`); } catch (e) { toast(e.message, "err"); return; }
   render();
 }
@@ -156,7 +189,7 @@ function render() {
       const body = inp.classList.contains("eip") ? { eip_po: inp.value } : { slot_time: inp.value };
       try { const d = await api(`/api/mars/splits/${inp.dataset.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         inp.classList.remove("bad"); inp.dataset.orig = inp.classList.contains("eip") ? d.split.eip_po : d.split.slot_time; inp.value = inp.dataset.orig;
-        toast(inp.classList.contains("eip") ? (inp.value ? `已存 ${inp.value}` : "EIP 採購單號已清掉") : "約倉時間已存"); loadSplits();
+        toast(inp.classList.contains("eip") ? (inp.value ? `已存 ${inp.value}` : "EIP 採購單號已清掉") : "約倉時間已存"); loadSplits(); if (inp.classList.contains("eip")) loadCalendar();
       } catch (e) { inp.classList.add("bad"); toast(e.message, "err"); }
     };
     inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } if (e.key === "Escape") { inp.value = inp.dataset.orig; inp.blur(); } });
@@ -178,7 +211,7 @@ async function generate(ack) {
     const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || "";
     const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : "瑪氏拆單.zip";
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    toast("拆單表已產出，EIP 拿到單號後填回來"); loadSplits();
+    toast("拆單表已產出，EIP 拿到單號後填回來"); loadSplits(); loadCalendar();
   } catch (e) { toast(e.message, "err"); }
   finally { $("#btn-gen").disabled = false; }
 }
@@ -279,7 +312,7 @@ function renderYx() {
         const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : "酷澎下修.xlsx"; document.body.appendChild(a); a.click(); a.remove();
         toast(`系統出貨數量改了 ${res.headers.get("X-Mars-Changed")} 筆，下修檔 ${res.headers.get("X-Mars-Rows")} 列已下載`);
       }
-      YX = null; $("#yx-result").classList.add("hidden"); $("#yx-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 這批比對已確認，系統數量已更新。要看結果到上面拆單表那區。</span>`; loadSplits();
+      YX = null; $("#yx-result").classList.add("hidden"); $("#yx-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 這批比對已確認，系統數量已更新。要看結果到上面拆單表那區。</span>`; loadSplits(); loadCalendar();
     } catch (e) { toast(e.message, "err"); $("#yx-apply").disabled = false; }
   });
 }

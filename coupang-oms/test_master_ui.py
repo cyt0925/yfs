@@ -364,7 +364,10 @@ def main():
         check("確認匯入：訂單狀態寫出最近一次匯入", "最近一次匯入" in pg.inner_text("#od-status") and "假_訂單彙總表_9月_第二次" in pg.inner_text("#od-status"), pg.inner_text("#od-status")[:160])
         check("匯完自動跳到這批的到貨日範圍（9/1 開頭那個月）", pg.input_value("#d-from") < pg.input_value("#d-to") and pg.input_value("#d-from").startswith("2026-09"), f"{pg.input_value('#d-from')}～{pg.input_value('#d-to')}")
         check("同一張 PO 的幾份用 PO 標題列包起來（標題列數＝PO 張數）", pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == len(set(pg.eval_on_selector_all("#sp-table tr.sp td:nth-child(5)", "els => els.map(e => e.innerText)"))) > 3)
-        pg.fill("#d-from", "2026-09-18"); pg.fill("#d-to", "2026-09-18"); pg.dispatch_event("#d-to", "change"); pg.wait_for_timeout(800)
+        check("月曆：9 月有訂單的天亮起來、格子裡有箱數和 PO 數", pg.eval_on_selector_all("#cal .day.has", "els => els.length") >= 2 and "箱" in pg.inner_text("#cal .day.has >> nth=0") and "PO" in pg.inner_text("#cal .day.has >> nth=0"), pg.inner_text("#cal .day.has >> nth=0")[:60])
+        pg.click("#cal .day[data-date='2026-09-18']"); pg.wait_for_timeout(800)
+        check("點月曆 9/18 → 起訖都變 9/18、那格變深色", pg.input_value("#d-from") == "2026-09-18" and pg.input_value("#d-to") == "2026-09-18" and pg.eval_on_selector("#cal .day[data-date='2026-09-18']", "e => e.classList.contains('on')"))
+        check("四個上傳處都有看得見的虛線拖曳框", pg.eval_on_selector_all(".dzbox", "els => els.length") == 4)
         check("9/18：5 份拆單表、都是「還沒產出」、單號格子鎖住、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
               and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and pg.is_disabled("#sp-table input.eip")
               and pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == 1 and "拆成 5 份" in pg.inner_text("#sp-table tr.pog"))

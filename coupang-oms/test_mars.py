@@ -157,6 +157,11 @@ def main():
     vy = splits(c, "2026-09-05")
     check("關掉「依單位拆」：檔名單位那段固定寫箱", all("_箱_" in s["filename"] for s in vn["splits"]) and vn["split_by_unit"] is False)
 
+    cal = c.get("/api/mars/calendar?month=2026-09").get_json()
+    d18 = cal["days"].get("2026-09-18")
+    check("月曆：9 月每天有幾張 PO、幾箱、幾份；9/18 是 1 張 PO、15 箱、5 份、0 份填了單號", d18 and d18["pos"] == 1 and d18["cases"] == 15 and d18["files"] == 5 and d18["filled"] == 0 and "2026-09-11" in cal["days"], str(d18))
+    check("月曆：月份亂填 → 400", c.get("/api/mars/calendar?month=2026-9").status_code == 400)
+
     print("\n【4】特殊狀況：組出商品、對不到、箱數不是整數")
     sheet = special_sheet([
         base_row(**{"SKU ID": "900000000000001", "條碼(國條)": "4700000000001", "永豐料號": "M60055599", "報價備註": "M55500001", "品名": "[組出] 口香糖王 超值包",
