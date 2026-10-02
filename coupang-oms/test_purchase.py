@@ -491,6 +491,13 @@ def main():
     check("市話 02-5592-7598 → 02-55927598（照範例寫法）", zhuyun._phone_compact("02-5592-7598") == "02-55927598" and zhuyun._phone_compact("") == "")
     res = client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx"), "only": "2026-08-23|TAO5"}, content_type="multipart/form-data")
     check("只產一組（only＝日期|倉）", res.status_code == 200 and res.headers.get("X-Zhuyun-Groups") == "1")
+    logs = client.get("/api/master/logs?scope=zhuyun&limit=50").get_json()["logs"]
+    check("竹運匯出有記歷程（每組一筆，檔名在說明裡），用 scope=zhuyun 查得到", len(logs) >= 3 and all(l["field"] == "zhuyun_export" for l in logs) and any("永豐料號對照表_0823交貨(TAO5).xlsx" in l["note"] for l in logs), str(logs[:1]))
+    plogs = client.get("/api/master/logs?scope=purchase&limit=50").get_json()["logs"]
+    check("採購表轉換匯出也有記歷程（前面幾段匯出過），scope=purchase 只看到採購表的", len(plogs) >= 1 and all(l["field"] == "purchase_export" for l in plogs) and "匯出採購表" in plogs[0]["field_label"], str(plogs[:1]))
+    check("scope=mars 看不到採購表的", not any(l["field"] == "purchase_export" for l in client.get("/api/master/logs?scope=mars&limit=500").get_json()["logs"]))
+    check("期間篩選：到昨天為止 → 今天的匯出不在裡面", not client.get("/api/master/logs?scope=zhuyun&to=2000-01-01").get_json()["logs"])
+    check("三頁都有「歷程」鈕", all("hs-open" in client.get(u).get_data(as_text=True) for u in ("/purchase", "/zhuyun", "/mars")))
     check("only 亂填 → 400", client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx"), "only": "2026-01-01|XX"}, content_type="multipart/form-data").status_code == 400)
     res = client.put("/api/zhuyun/settings", json={"recipient": "酷澎股份有限公司", "phone": "02-99999999"})
     check("固定字可以改、存得住", res.status_code == 200 and client.get("/api/zhuyun/settings").get_json()["phone"] == "02-99999999")

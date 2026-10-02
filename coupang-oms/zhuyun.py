@@ -27,6 +27,7 @@ from flask import Blueprint, jsonify, render_template, request, send_file, sessi
 
 import db
 import importer
+from master.common import _log as _mst_log, _operator as _mst_operator
 from normalize import norm_text
 
 zhuyun_bp = Blueprint("zhuyun", __name__)
@@ -273,6 +274,17 @@ def api_zhuyun_export():
         if not groups:
             return jsonify({"error": "找不到這一組到貨日＋倉。"}), 400
     settings = _load_settings(); phones = warehouse_phones()
+    try:
+        conn = db.get_conn()
+        try:
+            for g in groups:
+                _mst_log(conn, LINE, "", "", "", "zhuyun_export", "匯出竹運拋檔", "", f"{g['date']} {g['warehouse']}：{len(g['rows'])} 列、{len({r['po_number'] for r in g['rows']})} 張 PO",
+                         _mst_operator(), "manual", f"{throw_filename(g, all_groups)}；{mapping_filename(g)}")
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        pass
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for g in groups:

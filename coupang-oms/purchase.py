@@ -35,6 +35,7 @@ from xlutils.copy import copy as xl_copy
 from xlwt.Cell import FormulaCell
 
 import db
+from master.common import _log as _mst_log, _operator as _mst_operator
 
 purchase_bp = Blueprint("purchase", __name__)
 
@@ -697,6 +698,22 @@ def api_purchase_parse():
     return jsonify({"line": line_key, "groups": groups})
 
 
+def _log_export(line_key, files):
+    """匯出記一筆到 mst_logs（各頁「歷程」視窗共用）。資料表沒起來就算了，不能讓匯出因此失敗。"""
+    try:
+        conn = db.get_conn()
+        try:
+            pos = sorted({po for _n, _d, po in files if po})
+            _mst_log(conn, LINES[line_key]["label"], pos[0] if len(pos) == 1 else "", "", "", "purchase_export", "匯出採購表",
+                     "", f"{len(files)} 個檔" + (f"、{len(pos)} 張 PO" if pos else ""), _mst_operator(), "manual",
+                     "；".join(n for n, _d, _p in files)[:600])
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @purchase_bp.route("/api/purchase/export", methods=["POST"])
 def api_purchase_export():
     payload = request.get_json(silent=True) or {}
@@ -725,6 +742,7 @@ def api_purchase_export():
 
     if not files:
         return jsonify({"error": "選取的項目裡沒有任何資料列。"}), 400
+    _log_export(line_key, files)
 
     if len(files) == 1:
         name, data, _po = files[0]

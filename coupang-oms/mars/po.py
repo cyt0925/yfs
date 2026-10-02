@@ -387,10 +387,11 @@ def po_hints(s, items, wh, settings=None):
 
 
 def po_filename(s):
-    """單位那段照 Alice 固定寫「箱」（給瑪氏看的就是箱）；依單位拆時同 PO 會有盒、包兩份，
-    原本的單位放最後面括弧裡才不會撞名，也看得出是哪份（Jerry 定的）。本來就是箱的不加。"""
+    """照他們實際在用的格式（Jerry 2026-10-02）：PO202609380永豐Mars採購單(箱單位)-PET貼中標_TAO5_13000000487171.xlsx
+    前面是 EIP 採購單號（沒填就沒有）；單位固定「箱」；貼中標／不貼中標都寫；依單位拆時盒、包那份最後加 (原單位) 才不會撞名。"""
     tail = f"({s['unit']})" if SPLIT_BY_UNIT and s["unit"] and s["unit"] != "箱" else ""
-    return f"永豐Mars採購單_箱_{s['category'] or '品類不明'}_{label_text(s['label'])}_{s['warehouse']}_{s['po_number']}{tail}.xlsx"
+    lab = "貼中標" if s["label"] == "V" else "不貼中標"
+    return f"{s.get('eip_po') or ''}永豐Mars採購單(箱單位)-{s['category'] or '品類不明'}{lab}_{s['warehouse']}_{s['po_number']}{tail}.xlsx"
 
 
 def _copy_style(src, dst):

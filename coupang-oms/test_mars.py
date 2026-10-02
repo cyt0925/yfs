@@ -346,8 +346,9 @@ def main():
     ws9 = openpyxl.load_workbook(io.BytesIO(mp.po_file(dict(f2, warehouse="TAO9"), f2["items"], fake_wh, st0))).active
     check("倉庫資料沒填時產出的採購單：倉別名還是帶、地址／電話／ship-to 留空", ws9["C6"].value == "永豐商店酷澎-TAO9" and ws9["C7"].value is None and ws9["C8"].value is None and ws9["F7"].value is None, str([ws9[x].value for x in ("C6", "C7", "C8", "F7")]))
     tail = f"({f2['unit']})" if f2["unit"] != "箱" else ""
-    check("檔名照 Alice 的規則、單位固定箱：永豐Mars採購單_箱_品類_中標_倉_酷澎PO；盒、包那份最後加(原單位)", f2["po_filename"] == f"永豐Mars採購單_箱_{f2['category']}_{'需貼中標' if f2['label'] == 'V' else '不貼中標'}_TAO3_13000000699901{tail}.xlsx", f2["po_filename"])
-    check("本來就是箱的那份不加括弧", all(("(" in x["po_filename"]) == (x["unit"] != "箱") and "_箱_" in x["po_filename"] for x in v["splits"]), str([x["po_filename"] for x in v["splits"]]))
+    check("檔名照實際在用的格式：EIP單號永豐Mars採購單(箱單位)-品類貼中標_倉_酷澎PO；盒、包那份最後加(原單位)", f2["po_filename"] == f"PO202609301永豐Mars採購單(箱單位)-{f2['category']}{'貼中標' if f2['label'] == 'V' else '不貼中標'}_TAO3_13000000699901{tail}.xlsx", f2["po_filename"])
+    check("本來就是箱的那份不加括弧；沒填 EIP 單號的檔名從「永豐Mars採購單」開始", all(x["po_filename"].endswith(f"({x['unit']}).xlsx") == (x["unit"] != "箱") for x in v["splits"])
+          and all(x["po_filename"].startswith("永豐Mars採購單(箱單位)-") for x in v["splits"] if not x["eip_po"]), str([x["po_filename"] for x in v["splits"]]))
     r = c.get(f"/api/mars/splits/{s2['id']}/po")
     f5_noslot = openpyxl.load_workbook(io.BytesIO(r.data)).active["F5"].value.split("\n")
     check("約倉時間沒填也能下載：特殊需求裡進倉時間、幾點前抵達那兩行整行省略", r.status_code == 200 and not any("進倉時間" in x or "抵達" in x for x in f5_noslot)

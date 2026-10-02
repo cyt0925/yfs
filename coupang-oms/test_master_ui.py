@@ -396,7 +396,7 @@ def main():
         check("按鈕提示不再寫會留空、統計寫 1／5 可產瑪氏採購單", "留空" not in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "1／5 可產瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
         with pg.expect_download() as dl:
             pg.click("#sp-table button.po >> nth=0")
-        check("按採購單 → 下載 永豐Mars採購單_箱_…_TAO1_PO(盒).xlsx", dl.value.suggested_filename.startswith("永豐Mars採購單_箱_") and dl.value.suggested_filename.endswith("_TAO1_13000000600028(盒).xlsx"), dl.value.suggested_filename)
+        check("按採購單 → 下載 PO202609901永豐Mars採購單(箱單位)-…_TAO1_PO(盒).xlsx", dl.value.suggested_filename.startswith("PO202609901永豐Mars採購單(箱單位)-") and dl.value.suggested_filename.endswith("_TAO1_13000000600028(盒).xlsx"), dl.value.suggested_filename)
         with pg.expect_download() as dl:
             pg.click("#btn-po")
         check("「瑪氏採購單（全部）」→ zip", dl.value.suggested_filename == "瑪氏採購單_20260918.zip", dl.value.suggested_filename)
@@ -448,6 +448,11 @@ def main():
         check("確認 → 下載 酷澎下修_0918交貨-TAO1.xlsx、比對區收起來、寫已確認", dl.value.suggested_filename == "酷澎下修_0918交貨-TAO1.xlsx", dl.value.suggested_filename)
         pg.wait_for_timeout(900)
         check("確認後訊息寫系統數量已更新", "已確認" in pg.inner_text("#yx-msg"), pg.inner_text("#yx-msg"))
+        pg.click("#hs-open"); pg.wait_for_selector("#hs-table tbody tr", timeout=10000); pg.wait_for_timeout(300)
+        check("瑪氏頁「歷程」視窗：看得到剛才的 EIP 單號、勇信缺貨改數量", "EIP 採購單號" in pg.inner_text("#hs-table") and "出貨數量" in pg.inner_text("#hs-table") and "勇信出" in pg.inner_text("#hs-table"), pg.inner_text("#hs-count"))
+        pg.fill("#hs-q", "PO202609901"); pg.click("#hs-go"); pg.wait_for_timeout(500)
+        check("歷程搜尋：打單號只剩那幾筆", pg.eval_on_selector_all("#hs-table tbody tr", "els => els.length") >= 1 and "PO202609901" in pg.inner_text("#hs-table") and "出貨數量" not in pg.inner_text("#hs-table").replace("EIP 採購單號", ""), pg.inner_text("#hs-count"))
+        pg.click("#hs-close"); pg.wait_for_timeout(200)
         pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='special_note']", "司機需加入TAO1 line領取排隊號碼"); pg.keyboard.press("Enter"); pg.wait_for_timeout(800)
         pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.fill("#ps-shelf-GUM", "2/3效期以上"); pg.click("#ps-save"); pg.wait_for_timeout(900)
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
@@ -468,6 +473,9 @@ def main():
         pg.click("#lm-btn"); pg.wait_for_timeout(200)
         check("線別工具寶僑欄有「竹運出貨拋檔」而且標目前在這", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("竹運出貨拋檔"))
         pg.keyboard.press("Escape")
+        pg.click("#hs-open"); pg.wait_for_selector("#hs-table tbody tr", timeout=10000); pg.wait_for_timeout(300)
+        check("竹運頁「歷程」視窗：剛才的兩次匯出都在", "匯出竹運拋檔" in pg.inner_text("#hs-table") and "酷澎_PG" in pg.inner_text("#hs-table"), pg.inner_text("#hs-count"))
+        pg.click("#hs-close")
         bad = [x for x in bad if ("/api/mars/splits/" not in x[1] or x[0] != 400) and not (x[1].endswith("/api/mars/emma") and x[0] == 409)]   # 故意填錯的 400、EMMA 先問的 409 不算
         b.close()
 

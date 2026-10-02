@@ -138,15 +138,25 @@ def api_imports_pos():
 def api_logs():
     po = norm_key(request.args.get("po")); barcode = norm_key(request.args.get("barcode"))
     q = norm_text(request.args.get("q")); limit = min(norm_int(request.args.get("limit")) or 200, 1000)
+    scope = norm_text(request.args.get("scope"))      # 各頁的「歷程」視窗用：mars／purchase／zhuyun；空或 all＝全部
+    d_from = norm_text(request.args.get("from")); d_to = norm_text(request.args.get("to"))
     where, params = ["1=1"], []
     if po:
         where.append("po_number = ?"); params.append(po)
     if barcode:
         where.append("barcode = ?"); params.append(barcode)
+    if scope == "mars":       # 瑪氏出貨頁：線別瑪氏的訂單變動＋mars_ 開頭的；採購表轉換、竹運自己的匯出不算
+        where.append("(line = ? OR field LIKE ?) AND field NOT LIKE ? AND field NOT LIKE ?"); params += ["瑪氏", "mars_%", "purchase_%", "zhuyun_%"]
+    elif scope in ("purchase", "zhuyun"):
+        where.append("field LIKE ?"); params.append(f"{scope}_%")
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d_from):
+        where.append("changed_at >= ?"); params.append(d_from)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d_to):
+        where.append("changed_at < ?"); params.append(d_to + "T99")
     if q:
-        where.append("(po_number LIKE ? OR barcode LIKE ? OR operator LIKE ? OR field_label LIKE ? "
+        where.append("(po_number LIKE ? OR barcode LIKE ? OR sku_id LIKE ? OR operator LIKE ? OR field_label LIKE ? "
                      "OR old_value LIKE ? OR new_value LIKE ? OR note LIKE ?)")
-        params += [f"%{q}%"] * 7
+        params += [f"%{q}%"] * 8
     conn = get_conn()
     try:
         rows = _rows(conn.execute(
