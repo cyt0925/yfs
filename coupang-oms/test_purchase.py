@@ -452,6 +452,54 @@ def main():
     res = export(client, "pg", [])
     check("匯出空清單要擋下來", res.status_code == 400)
 
+    print("\n【5】竹運出貨拋檔及料號對照表（/zhuyun，獨立工具）")
+    import openpyxl
+    import zhuyun
+    sample = os.path.join(BASE_DIR, "samples", "整合表範例.xlsx")
+    res = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data")
+    d = res.get_json()
+    pg_groups = [g for g in d.get("groups", [])]
+    check("只抓寶僑：整合表範例 103 列只剩 15 列寶僑，8/23 兩個倉（TAO5 13 列、TXRC29 2 列）兩組，別的線別列在略過", res.status_code == 200 and d["pg_rows"] == 15 and len(pg_groups) == 2
+          and [(x["date"], x["warehouse"], x["rows"]) for x in pg_groups] == [("2026-08-23", "TAO5", 13), ("2026-08-23", "TXRC29", 2)] and "瑪氏" in d["skipped_lines"], str({k: v for k, v in d.items() if k != "groups"}))
+    g = pg_groups[0]
+    check("檔名：同一天兩個倉會撞名，拋檔才加 (倉)：指定到貨日20260823,酷澎_PG(TAO5).xlsx ＋ 永豐料號對照表_0823交貨(TAO5).xlsx", g["throw_file"] == "指定到貨日20260823,酷澎_PG(TAO5).xlsx" and g["mapping_file"] == "永豐料號對照表_0823交貨(TAO5).xlsx", g["throw_file"])
+    check("只有一個倉的那天不加 (倉)", zhuyun.throw_filename({"date": "2026-09-18", "warehouse": "TAO5"}, [{"date": "2026-09-18", "warehouse": "TAO5"}]) == "指定到貨日20260918,酷澎_PG.xlsx")
+    check("手機：倉庫資料表沒填 TAO5 → 用固定字 02-55927598", g["phone"] == "02-55927598" and g["phone_from"] == "固定字" and g["recipient"] == "酷澎股份有限公司")
+    res = client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data")
+    check("匯出 zip，檔名帶交貨日", res.status_code == 200 and "竹運拋檔_0823交貨.zip" in res.headers.get("Content-Disposition", "").replace("%E7%AB%B9%E9%81%8B%E6%8B%8B%E6%AA%94", "竹運拋檔").replace("%E4%BA%A4%E8%B2%A8", "交貨"), res.headers.get("Content-Disposition"))
+    z = zipfile.ZipFile(io.BytesIO(res.data)); names = z.namelist()
+    check("zip 裡每組兩個檔，檔名不撞", len(names) == 4 and len(set(names)) == 4 and g["throw_file"] in names and g["mapping_file"] in names, str(names))
+    wt = openpyxl.load_workbook(io.BytesIO(z.read(g["throw_file"]))).active
+    wm = openpyxl.load_workbook(io.BytesIO(z.read(g["mapping_file"]))).active
+    check("拋檔表頭照範例 10 欄", [c.value for c in wt[1]] == ["訂單編號", "收件人", "收件人手機", "收件地址", "料號", "數量", "單價", "金額小計", "出貨備註", "運費"])
+    r2 = [c.value for c in wt[2]]
+    src = g["preview"][0]
+    check("拋檔第一列：PO、固定收件人、手機、整合表地址、永豐料號、出貨數量、單價、小計＝數量×單價、備註運費空",
+          r2[0] == src["po"] and r2[1] == "酷澎股份有限公司" and r2[2] == "02-55927598" and r2[3] == src["address"] and r2[4] == src["yf_sku"]
+          and r2[5] == src["qty"] and r2[6] == (int(src["price"]) if float(src["price"]).is_integer() else src["price"]) and r2[7] == src["qty"] * src["price"] and r2[8] is None and r2[9] is None, str(r2))
+    check("拋檔列數＝這組的列數＋表頭、照整合表原本的順序", wt.max_row == 14 and [c.value for c in wt["A"]][1:4] == [p_["po"] for p_ in g["preview"][:3]], str(wt.max_row))
+    check("對照表表頭照範例 10 欄", [c.value for c in wm[1]] == ["PO No.", "SKU No.", "條碼", "料號", "品名", "數量", "單位", "轉換率", "箱數", "允收效期"])
+    m2 = [c.value for c in wm[2]]
+    import math
+    check("對照表第一列：PO、SKU、條碼、料號、品名、數量、單位、箱入數、箱數＝數量÷箱入數無條件進位、效期空",
+          m2[0] == src["po"] and m2[1] == src["sku"] and m2[3] == src["yf_sku"] and m2[5] == src["qty"] and m2[7] == src["box"] and m2[8] == math.ceil(src["qty"] / src["box"]) and m2[9] is None, str(m2))
+    check("箱數無條件進位：7÷24 → 1、480÷24 → 20", zhuyun.mapping_workbook and math.ceil(7 / 24) == 1 and math.ceil(480 / 24) == 20)
+    # 倉庫電話共用（瑪氏那邊的倉庫資料表）
+    res = client.post("/api/mars/warehouses", json={"code": "TAO5", "phone": "0911-556-291"})
+    d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
+    check("倉庫資料表填了 TAO5 的電話 → 拋檔手機用它（0911-556-291 → 0911556291）", res.status_code == 200 and d2["groups"][0]["phone"] == "0911556291" and d2["groups"][0]["phone_from"] == "倉庫資料表", str(d2["groups"][0]["phone"]))
+    check("市話 02-5592-7598 → 02-55927598（照範例寫法）", zhuyun._phone_compact("02-5592-7598") == "02-55927598" and zhuyun._phone_compact("") == "")
+    res = client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx"), "only": "2026-08-23|TAO5"}, content_type="multipart/form-data")
+    check("只產一組（only＝日期|倉）", res.status_code == 200 and res.headers.get("X-Zhuyun-Groups") == "1")
+    check("only 亂填 → 400", client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx"), "only": "2026-01-01|XX"}, content_type="multipart/form-data").status_code == 400)
+    res = client.put("/api/zhuyun/settings", json={"recipient": "酷澎股份有限公司", "phone": "02-99999999"})
+    check("固定字可以改、存得住", res.status_code == 200 and client.get("/api/zhuyun/settings").get_json()["phone"] == "02-99999999")
+    check("收件人空白 → 400", client.put("/api/zhuyun/settings", json={"recipient": ""}).status_code == 400)
+    mars_only = os.path.join(SAMPLES, "mars")
+    res = client.post("/api/zhuyun/parse", data={"file": (io.BytesIO(b"not excel"), "x.xlsx")}, content_type="multipart/form-data")
+    check("壞檔 → 400", res.status_code == 400)
+    check("頁面打得開、線別工具寶僑欄有竹運出貨拋檔", client.get("/zhuyun").status_code == 200 and "/zhuyun" in client.get("/master").get_data(as_text=True))
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

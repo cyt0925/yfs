@@ -14,7 +14,9 @@
 {% set LINES = [
   {"key": "pg",   "name": "寶僑", "logo": "line_pg.png",   "color": "#175fab", "accent": "#175fab", "tools": [
       {"id": "master", "label": "商品主檔自動化", "icon": "bi-calendar3", "url": url_for('master.master_page'),
-       "desc": "匯訂單彙總表，自動出總表、專案報價檔、改單統計"} ]},
+       "desc": "匯訂單彙總表，自動出總表、專案報價檔、改單統計"},
+      {"id": "zhuyun", "label": "竹運出貨拋檔", "icon": "bi-box-seam", "url": url_for('zhuyun.zhuyun_page'),
+       "desc": "整合表轉訂單系統拋檔＋永豐料號對照表"} ]},
   {"key": "mars", "name": "瑪氏", "logo": "line_mars.png", "color": "#000fb7", "accent": "#06d9be", "tools": [
       {"id": "mars", "label": "瑪氏出貨", "icon": "bi-truck", "url": url_for('mars.mars_page'),
        "desc": "拆單、EIP 單號、瑪氏採購單、EMMA 匯入檔、勇信缺貨下修"} ]},

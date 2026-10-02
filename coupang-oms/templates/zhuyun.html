@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>竹運出貨拋檔</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='line_pg.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  /* 寶僑藍（line_pg.png 取的 #175fab）。樣式全寫在這裡，不加新的 Tailwind class */
+  :root { --p9:#0b3f78; --p8:#175fab; --p7:#2a74c4; --p2:#bfd6f2; --p1:#e3eefb; --p0:#f3f8fe;
+          --ink:#0f172a; --ink2:#334155; --muted:#64748b; --line:#cbd5e1; --line2:#e2e8f0;
+          --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7; --bad:#b91c1c; --badbg:#fee2e2; }
+  body { font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#f5f8fc; color:var(--ink); }
+  .hidden { display:none !important; }
+  .ph { background:linear-gradient(100deg,var(--p9) 0%,var(--p8) 60%,var(--p7) 100%); color:#fff; border-bottom:3px solid var(--p2); }
+  .card { background:#fff; border:1px solid var(--line2); border-radius:12px; box-shadow:0 1px 2px rgba(23,95,171,.06); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid transparent; white-space:nowrap; text-decoration:none; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-p { background:var(--p8); color:#fff; } .btn-p:hover:not(:disabled) { background:var(--p9); }
+  .btn-o { background:#fff; color:var(--p8); border-color:var(--p2); } .btn-o:hover { background:var(--p0); }
+  .btn-sm { padding:4px 10px; font-size:12.5px; }
+  .inp { border:1px solid var(--line); border-radius:7px; padding:6px 9px; font-size:13px; background:#fff; }
+  .inp:focus { outline:none; border-color:var(--p7); box-shadow:0 0 0 2px var(--p1); }
+  .kbd { font-size:11.5px; color:var(--muted); } .muted { color:var(--muted); } .neg { color:var(--bad); font-weight:700; }
+  .dz { border:2px dashed transparent; transition:border-color .15s, background .15s; } .dz.over { border-color:var(--p7); background:var(--p0); }
+  .dzbox { display:flex; align-items:center; gap:14px; border:2px dashed var(--p2); border-radius:12px; padding:22px 24px; background:var(--p0); color:var(--p8); cursor:pointer; transition:border-color .15s, background .15s; }
+  .dzbox:hover, .dz.over .dzbox { border-color:var(--p7); background:var(--p1); } .dzbox i { font-size:30px; } .dzbox b { font-size:15px; }
+  .fchip { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:12.5px; border:1px solid var(--p2); background:#fff; color:var(--p9); }
+  table.t { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  table.t th { background:var(--p1); color:var(--p9); font-weight:600; font-size:12px; padding:8px 10px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--p2); }
+  table.t td { padding:6px 10px; border-bottom:1px solid var(--line2); vertical-align:middle; }
+  table.t td.num, table.t th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .fn { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; color:var(--ink2); }
+  .tbl-wrap { overflow:auto; max-height:40vh; border:1px solid var(--line2); border-radius:10px; }
+  .alert { border-radius:10px; padding:10px 14px; font-size:13px; }
+  .al-bad { background:var(--badbg); color:#7f1d1d; border:1px solid #fecaca; } .al-warn { background:var(--warnbg); color:#78350f; border:1px solid #fde68a; }
+  .grp { border:1px solid var(--p2); border-radius:12px; overflow:hidden; }
+  .grp .gh { background:var(--p0); padding:10px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--p2); }
+  .grp .gh b.d { font-size:16px; color:var(--p9); }
+  .sum { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:baseline; font-size:13px; } .sum b { font-size:17px; color:var(--p8); margin-right:3px; }
+  .files { display:flex; flex-direction:column; gap:3px; } .files .fn { color:var(--p9); }
+  #toasts { position:fixed; right:18px; top:78px; z-index:99; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .toast { background:#0f172a; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.25); max-width:520px; } .toast.err { background:var(--bad); }
+  .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header class="ph shadow-lg">
+  <div class="max-w-[1400px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-3">
+      <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_pg.png') }}" style="height:30px;width:auto" alt="寶僑"></div>
+      <div>
+        <h1 class="text-lg font-bold leading-tight">竹運出貨拋檔</h1>
+        <div class="text-[11px]" style="color:var(--p2)">整合表 → 訂單系統拋檔 ＋ 永豐料號對照表。獨立工具，不進訂單資料庫</div>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <span class="text-xs" style="color:var(--p2)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
+    {% set lm_current = 'zhuyun' %}{% include '_line_menu.html' %}
+    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--p2)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+  </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-5 py-5 space-y-4">
+  <section class="card p-4 dz" id="dz">
+    <div class="flex items-center gap-3 flex-wrap mb-3">
+      <div><b>1. 傳整合表</b> <span class="kbd">Kate 系統匯出的 Coupang_PO_Integration，可以一次好幾份。只抓線別是寶僑的列。</span></div>
+      <div class="flex-1"></div>
+      <span class="kbd">收件人 <b id="s-recipient">{{ settings.recipient }}</b> · 手機：倉庫資料表有填就用那個倉的，沒填用 <b id="s-phone">{{ settings.phone }}</b></span>
+      <button id="btn-set" class="btn btn-o btn-sm"><i class="bi bi-gear"></i> 改固定字</button>
+    </div>
+    <label class="dzbox"><i class="bi bi-cloud-arrow-up"></i><div><b>把整合表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx；每個到貨日＋倉各產一組：指定到貨日YYYYMMDD,酷澎_PG.xlsx ＋ 永豐料號對照表_MMDD交貨(倉).xlsx</div></div>
+      <input type="file" id="file" accept=".xlsx" class="hidden" multiple></label>
+    <div id="flist" class="flex gap-2 flex-wrap mt-2"></div>
+    <div id="msg" class="text-sm mt-2"></div>
+    <div id="set-box" class="hidden mt-3 flex items-end gap-3 flex-wrap" style="background:var(--p0);border:1px solid var(--p2);border-radius:10px;padding:10px 14px">
+      <label class="text-sm">收件人<br><input id="set-recipient" class="inp" style="width:220px"></label>
+      <label class="text-sm">手機（倉庫沒填電話時）<br><input id="set-phone" class="inp" style="width:160px"></label>
+      <button id="set-save" class="btn btn-p btn-sm">存</button><button id="set-cancel" class="btn btn-o btn-sm">取消</button>
+      <span class="kbd">各倉電話在瑪氏出貨頁最下面「採購單設定」的倉庫資料表填，這裡共用。</span>
+    </div>
+  </section>
+
+  <section class="card p-4 hidden" id="result">
+    <div class="flex items-center gap-3 flex-wrap mb-3">
+      <b>2. 確認、下載</b>
+      <div id="sum" class="sum"></div>
+      <div class="flex-1"></div>
+      <button id="btn-all" class="btn btn-p"><i class="bi bi-download"></i> 全部下載（zip）</button>
+    </div>
+    <div id="alerts" class="space-y-2 mb-3"></div>
+    <div id="groups" class="space-y-3"></div>
+  </section>
+
+  <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">欄位怎麼對的</summary>
+    <div class="mt-2 space-y-1 muted">
+      <div><b>拋檔</b>（指定到貨日YYYYMMDD,酷澎_PG.xlsx）：訂單編號＝酷澎 PO、收件人＝固定字、收件人手機＝倉庫資料表那個倉的電話（沒填用固定字）、收件地址＝整合表地址、料號＝永豐料號、數量＝出貨數量、單價＝酷澎下單單價(含稅)、金額小計＝數量×單價、出貨備註與運費空白。</div>
+      <div><b>料號對照表</b>（永豐料號對照表_MMDD交貨(倉).xlsx）：PO、SKU、條碼、料號＝永豐料號、品名、數量＝出貨數量、單位、轉換率＝箱入數、箱數＝數量÷箱入數無條件進位、允收效期空白。</div>
+      <div>出貨數量用整合表的「出貨數量」欄，空的用下單數量。檔案裡別的線別（瑪氏、紙潔）會略過並告訴你略過幾列。</div>
+    </div>
+  </details>
+</main>
+<div id="toasts"></div>
+<div class="ver">版本 {{ build_version }}</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = n => n == null ? "" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const md = d => d ? `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}` : "日期不明";
+function toast(msg, kind) { const t = document.createElement("div"); t.className = "toast" + (kind === "err" ? " err" : ""); t.textContent = msg; $("#toasts").appendChild(t); setTimeout(() => t.remove(), kind === "err" ? 5000 : 2500); }
+let FILES = [], R = null;
+
+/* 拖檔 */
+["dragenter", "dragover"].forEach(ev => $("#dz").addEventListener(ev, e => { e.preventDefault(); $("#dz").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => $("#dz").addEventListener(ev, e => { e.preventDefault(); $("#dz").classList.remove("over"); }));
+$("#dz").addEventListener("drop", e => { const fs = [...e.dataTransfer.files].filter(f => /\.xlsx$/i.test(f.name)); if (fs.length) parse(fs); else toast("要拖 .xlsx 的整合表", "err"); });
+$("#file").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) parse(fs); });
+
+async function parse(files) {
+  FILES = files; $("#flist").innerHTML = files.map(f => `<span class="fchip"><i class="bi bi-file-earmark-excel"></i>${esc(f.name)}</span>`).join("");
+  $("#msg").innerHTML = `<span class="muted">讀檔中…</span>`; $("#result").classList.add("hidden");
+  const fd = new FormData(); files.forEach(f => fd.append("file", f));
+  const res = await fetch("/api/zhuyun/parse", { method: "POST", body: fd }); const d = await res.json().catch(() => ({}));
+  if (!res.ok) { $("#msg").innerHTML = `<span class="neg">${esc(d.error || `伺服器錯誤 (${res.status})`)}</span>`; return; }
+  R = d; $("#msg").innerHTML = ""; render();
+}
+function render() {
+  const g = R.groups;
+  $("#sum").innerHTML = `<span><b>${g.length}</b> 組（到貨日＋倉）</span><span><b>${R.pg_rows}</b> 列寶僑</span><span><b>${g.reduce((a, x) => a + x.pos, 0)}</b> 張 PO</span><span><b>${fmt(g.reduce((a, x) => a + x.qty, 0))}</b> 件</span><span><b>${fmt(g.reduce((a, x) => a + x.cases, 0))}</b> 箱</span>`;
+  const al = [];
+  const sk = Object.entries(R.skipped_lines || {});
+  if (sk.length) al.push(`<div class="kbd">略過不是寶僑的 ${sk.map(([k, v]) => `${esc(k)} ${v} 列`).join("、")}。</div>`);
+  if (R.warnings.length) al.push(`<div class="alert al-warn">${R.warnings.map(esc).join("<br>")}</div>`);
+  const iss = g.flatMap(x => x.issues.map(i => `${md(x.date)} ${esc(x.warehouse)}：${esc(i)}`));
+  if (iss.length) al.push(`<div class="alert al-warn"><b>要注意</b><br>${iss.join("<br>")}</div>`);
+  $("#alerts").innerHTML = al.join("");
+  $("#groups").innerHTML = g.map(x => `<div class="grp">
+    <div class="gh"><b class="d">${md(x.date)} 到貨 · ${esc(x.warehouse)}</b><span class="kbd">${x.pos} 張 PO · ${x.rows} 品項 · ${fmt(x.qty)} 件 · ${fmt(x.cases)} 箱 · 含稅 ${fmt(x.amount)}</span>
+      <span class="kbd">收件人 ${esc(x.recipient)} · 手機 ${esc(x.phone)}（${esc(x.phone_from)}）</span>
+      <div class="flex-1"></div>
+      <div class="files"><span class="fn">${esc(x.throw_file)}</span><span class="fn">${esc(x.mapping_file)}</span></div>
+      <button class="btn btn-o btn-sm dl" data-k="${esc(x.date)}|${esc(x.warehouse)}"><i class="bi bi-download"></i> 這組兩個檔</button></div>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>酷澎 PO</th><th>SKU</th><th>永豐料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th class="num">單價</th><th>地址</th></tr></thead><tbody>
+      ${x.preview.map(r => `<tr><td class="fn">${esc(r.po)}</td><td class="fn">${esc(r.sku)}</td><td class="fn">${esc(r.yf_sku) || '<span class="neg">空</span>'}</td><td>${esc(r.name)}</td><td class="num">${r.qty ? fmt(r.qty) : `<span class="neg">${fmt(r.qty ?? 0)}</span>`}</td><td>${esc(r.unit)}</td><td class="num">${r.box ? fmt(r.box) : '<span class="neg">空</span>'}</td><td class="num"><b>${r.cases == null ? "" : fmt(r.cases)}</b></td><td class="num">${r.price == null ? '<span class="neg">空</span>' : fmt(r.price)}</td><td class="kbd">${esc(r.address)}</td></tr>`).join("")}
+      ${x.rows > x.preview.length ? `<tr><td colspan="10" class="kbd">…還有 ${x.rows - x.preview.length} 列，檔案裡都有</td></tr>` : ""}
+    </tbody></table></div></div>`).join("");
+  $("#result").classList.remove("hidden");
+  $("#groups").querySelectorAll(".dl").forEach(b => b.addEventListener("click", () => download(b.dataset.k)));
+}
+async function download(only) {
+  const fd = new FormData(); FILES.forEach(f => fd.append("file", f)); if (only) fd.append("only", only);
+  const res = await fetch("/api/zhuyun/export", { method: "POST", body: fd });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); toast(d.error || `伺服器錯誤 (${res.status})`, "err"); return; }
+  const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || ""; const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : "竹運拋檔.zip"; document.body.appendChild(a); a.click(); a.remove();
+  toast(`已下載 ${res.headers.get("X-Zhuyun-Groups")} 組（每組拋檔＋料號對照表）`);
+}
+$("#btn-all").addEventListener("click", () => download(""));
+
+/* 固定字 */
+$("#btn-set").addEventListener("click", () => { $("#set-recipient").value = $("#s-recipient").textContent; $("#set-phone").value = $("#s-phone").textContent; $("#set-box").classList.toggle("hidden"); });
+$("#set-cancel").addEventListener("click", () => $("#set-box").classList.add("hidden"));
+$("#set-save").addEventListener("click", async () => {
+  const res = await fetch("/api/zhuyun/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: $("#set-recipient").value, phone: $("#set-phone").value }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) { toast(d.error || "存不進去", "err"); return; }
+  $("#s-recipient").textContent = d.recipient; $("#s-phone").textContent = d.phone; $("#set-box").classList.add("hidden"); toast("固定字已存");
+  if (FILES.length) parse(FILES);
+});
+</script>
+</body>
+</html>

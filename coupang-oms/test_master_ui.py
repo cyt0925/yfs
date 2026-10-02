@@ -453,6 +453,20 @@ def main():
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
         check("假日、效期（GUM 改 2/3，CHO 維持預設 3/5）、倉庫加註存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17" and pg.input_value("#ps-shelf-GUM") == "2/3效期以上" and pg.input_value("#ps-shelf-CHO") == "3/5效期以上"
               and pg.input_value("#wh-table tr[data-code='TAO1'] input[data-f='special_note']") == "司機需加入TAO1 line領取排隊號碼", pg.input_value("#ps-holidays"))
+        print("\n【6c】竹運出貨拋檔頁")
+        pg.goto(f"{base}/zhuyun"); pg.wait_for_selector("#dz"); pg.wait_for_timeout(300)
+        check("竹運頁打得開、有虛線拖曳框、固定字顯示在上面", pg.eval_on_selector_all(".dzbox", "els => els.length") == 1 and "酷澎股份有限公司" in pg.inner_text("#s-recipient"))
+        pg.set_input_files("#file", os.path.join(BASE, "samples", "整合表範例.xlsx")); pg.wait_for_selector("#result:not(.hidden)", timeout=30000); pg.wait_for_timeout(400)
+        check("傳整合表範例 → 兩組（8/23 TAO5、TXRC29）、每組有兩個檔名和預覽表", pg.eval_on_selector_all("#groups .grp", "els => els.length") == 2 and "指定到貨日20260823,酷澎_PG(TAO5).xlsx" in pg.inner_text("#groups"), pg.inner_text("#sum"))
+        with pg.expect_download() as dl:
+            pg.click("#btn-all")
+        check("全部下載 → 竹運拋檔_0823交貨.zip", dl.value.suggested_filename == "竹運拋檔_0823交貨.zip", dl.value.suggested_filename)
+        with pg.expect_download() as dl:
+            pg.click("#groups .grp .dl >> nth=1")
+        check("單組下載也是 zip", dl.value.suggested_filename.endswith(".zip"), dl.value.suggested_filename)
+        pg.click("#lm-btn"); pg.wait_for_timeout(200)
+        check("線別工具寶僑欄有「竹運出貨拋檔」而且標目前在這", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("竹運出貨拋檔"))
+        pg.keyboard.press("Escape")
         bad = [x for x in bad if ("/api/mars/splits/" not in x[1] or x[0] != 400) and not (x[1].endswith("/api/mars/emma") and x[0] == 409)]   # 故意填錯的 400、EMMA 先問的 409 不算
         b.close()
 

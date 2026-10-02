@@ -188,6 +188,7 @@ coupang-oms/
 │   ├── po.py                瑪氏採購單（V2 範本 purchase_templates/mars_po_v2.xlsx）、採購單設定（各倉資料、特殊需求文字、假日）
 │   ├── emma.py              EMMA 匯入檔（酷澎訂單匯入）：取代拆單表，單份／勾選合併／整段合併
 │   └── shortage.py          勇信缺貨：讀配送明細表 PDF 比箱數，確認後改出貨數量、產酷澎下修檔（purchase_templates/coupang_downgrade.xlsx）
+├── zhuyun.py                竹運出貨拋檔及料號對照表（/zhuyun）：整合表只抓寶僑，依到貨日＋倉產拋檔＋永豐料號對照表；手機共用瑪氏倉庫資料表
 ├── templates/_line_menu.html 三頁共用的「線別工具」選單（寶僑／瑪氏／紙潔）
 ├── purchase_templates/      三個線別各自的公司 .xls 範本檔
 ├── defaults/                設定檔出廠預設值，只在第一次啟動、還沒有這份
