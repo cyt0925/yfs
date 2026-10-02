@@ -326,6 +326,11 @@ async function loadPoSettings() {
   ["CHO", "GUM", "PET"].forEach(k => $(`#ps-shelf-${k}`).value = st.shelf_req_cat[k]);
   $("#ps-em-recipient").value = st.emma_recipient; $("#ps-em-customer").value = st.emma_customer; $("#ps-em-billto").value = st.emma_billto; $("#ps-em-shipto").value = st.emma_shipto; $("#ps-em-payment").value = st.emma_payment;
   $("#ps-label").value = st.label_line; $("#ps-white").value = st.white_line; $("#ps-special").value = st.special_text; $("#ps-holidays").value = st.holidays.join("\n");
+  const yrs = PS.builtin_holiday_years || [], thisY = new Date().getFullYear();
+  $("#ps-builtin-years").textContent = yrs.join("、") + " 年";
+  const missing = [thisY, thisY + 1].filter(y => !yrs.includes(y));
+  $("#ps-builtin-warn").classList.toggle("hidden", !missing.length); $("#ps-builtin-warn").textContent = missing.length ? `${missing.join("、")} 年的還沒加，請跟系統負責人說` : "";
+  $("#ps-builtin-list").innerHTML = Object.entries(PS.builtin_holidays || {}).sort().map(([d, n]) => `${d.slice(5).replace("-", "/")} ${esc(n)}`).join("<br>");
   renderWarehouses(PS.warehouses);
 }
 function renderWarehouses(list) {
@@ -373,6 +378,7 @@ async function uploadWarehouses(f) {
 }
 $("#wh-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) uploadWarehouses(f); });
 dropzone($("#dz-wh"), fs => uploadWarehouses(fs[0]));
+$("#ps-builtin-show").addEventListener("click", e => { e.preventDefault(); $("#ps-builtin-list").classList.toggle("hidden"); });
 $("#ps-save").addEventListener("click", async () => {
   const body = { lead_days: $("#ps-lead").value, contact_default: $("#ps-contact").value, label_line: $("#ps-label").value,
     white_line: $("#ps-white").value, special_text: $("#ps-special").value, holidays: $("#ps-holidays").value,

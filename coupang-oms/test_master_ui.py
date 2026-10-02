@@ -451,6 +451,7 @@ def main():
         pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='special_note']", "司機需加入TAO1 line領取排隊號碼"); pg.keyboard.press("Enter"); pg.wait_for_timeout(800)
         pg.fill("#ps-holidays", "2026-09-17\n9/16"); pg.fill("#ps-shelf-GUM", "2/3效期以上"); pg.click("#ps-save"); pg.wait_for_timeout(900)
         pg.reload(); pg.wait_for_selector("#ps-holidays", state="attached"); pg.wait_for_timeout(800); pg.click("#ps-details summary")
+        check("設定裡寫內建國定假日涵蓋哪幾年", "2026、2027 年" in pg.inner_text("#ps-builtin-years"), pg.inner_text("#ps-builtin-years"))
         check("假日、效期（GUM 改 2/3，CHO 維持預設 3/5）、倉庫加註存了、重新整理還在", pg.input_value("#ps-holidays") == "2026-09-16\n2026-09-17" and pg.input_value("#ps-shelf-GUM") == "2/3效期以上" and pg.input_value("#ps-shelf-CHO") == "3/5效期以上"
               and pg.input_value("#wh-table tr[data-code='TAO1'] input[data-f='special_note']") == "司機需加入TAO1 line領取排隊號碼", pg.input_value("#ps-holidays"))
         print("\n【6c】竹運出貨拋檔頁")

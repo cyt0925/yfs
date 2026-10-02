@@ -47,6 +47,32 @@ DEFAULT_SETTINGS = {
     "special_text": "箱嘜，需當面對點數量\n{倉庫加註}\n酷澎嘜頭+驗收單\n進倉時間{約倉時間}\n*請在{約倉開始}前抵達，以免被算遲到，謝謝",
     "holidays": [],                       # 扣掉的假日，YYYY-MM-DD
 }
+# 台灣國定假日（人事行政總處「政府行政機關辦公日曆表」），下單日往前推時自動跳過；設定裡的「假日」是額外再加的。
+# 2025 下半年起「補假不補班」，所以沒有補班日。週六日本來就不算工作天，這裡只要列到平日的放假就夠，週末的也列著方便看。
+# 每年約 6 月公告隔年，到時把新的一年加進來（test_mars 會檢查涵蓋到今年＋明年）。
+TW_HOLIDAYS = {
+    2026: {  # 115 年
+        "2026-01-01": "元旦", "2026-02-16": "除夕", "2026-02-17": "春節", "2026-02-18": "春節", "2026-02-19": "春節", "2026-02-20": "春節補假",
+        "2026-02-27": "和平紀念日補假", "2026-02-28": "和平紀念日", "2026-04-03": "兒童節補假", "2026-04-04": "兒童節", "2026-04-05": "清明節",
+        "2026-04-06": "清明節補假", "2026-05-01": "勞動節", "2026-06-19": "端午節", "2026-09-25": "中秋節", "2026-09-28": "教師節",
+        "2026-10-09": "國慶日補假", "2026-10-10": "國慶日", "2026-10-25": "光復節", "2026-10-26": "光復節補假", "2026-12-25": "行憲紀念日",
+    },
+    2027: {  # 116 年
+        "2027-01-01": "元旦", "2027-02-04": "春節調整放假", "2027-02-05": "除夕", "2027-02-06": "春節", "2027-02-07": "春節", "2027-02-08": "春節",
+        "2027-02-09": "春節補假", "2027-02-10": "春節補假", "2027-02-28": "和平紀念日", "2027-03-01": "和平紀念日補假", "2027-04-04": "兒童節",
+        "2027-04-05": "清明節", "2027-04-06": "兒童節補假", "2027-04-30": "勞動節補假", "2027-05-01": "勞動節", "2027-06-09": "端午節",
+        "2027-09-15": "中秋節", "2027-09-28": "教師節", "2027-10-10": "國慶日", "2027-10-11": "國慶日補假", "2027-10-25": "光復節",
+        "2027-12-24": "行憲紀念日補假", "2027-12-25": "行憲紀念日",
+    },
+}
+BUILTIN_HOLIDAYS = {d for yr in TW_HOLIDAYS.values() for d in yr}
+
+
+def holiday_name(d):
+    """d 是 ISO 字串；內建國定假日回名字，不是就回空字串。"""
+    return TW_HOLIDAYS.get(int(d[:4]), {}).get(d, "")
+
+
 TEXT_KEYS = ("shelf_req", "contact_default", "label_line", "white_line", "special_text",
              "emma_recipient", "emma_customer", "emma_billto", "emma_shipto", "emma_payment")
 
@@ -123,13 +149,14 @@ def save_settings(conn, payload, operator):
     return new, ""
 
 
-def order_date(delivery, lead_days, holidays):
-    """配送日往前推 lead_days 個工作天（跳過週六日與假日）。"""
+def order_date(delivery, lead_days, holidays=()):
+    """配送日往前推 lead_days 個工作天：跳過週六日、內建的台灣國定假日、設定裡額外填的假日。"""
     d = delivery
     left = lead_days
+    skip = BUILTIN_HOLIDAYS | set(holidays)
     while left > 0:
         d -= _dt.timedelta(days=1)
-        if d.weekday() < 5 and d.isoformat() not in holidays:
+        if d.weekday() < 5 and d.isoformat() not in skip:
             left -= 1
     return d
 
@@ -423,7 +450,8 @@ def api_po_settings():
     try:
         st = load_settings(conn)
         return jsonify({"settings": st, "warehouses": warehouse_rows(conn, st), "defaults": DEFAULT_SETTINGS,
-                        "template": os.path.basename(TEMPLATE)})
+                        "template": os.path.basename(TEMPLATE), "builtin_holiday_years": sorted(TW_HOLIDAYS),
+                        "builtin_holidays": {d: n for yr in TW_HOLIDAYS.values() for d, n in yr.items()}})
     finally:
         conn.close()
 
@@ -588,7 +616,7 @@ def api_po_zip():
     return resp
 
 
-__all__ = ["DEFAULT_SETTINGS", "load_settings", "save_settings", "parse_holiday", "order_date", "warehouse_rows", "warehouse_info",
+__all__ = ["DEFAULT_SETTINGS", "TW_HOLIDAYS", "BUILTIN_HOLIDAYS", "holiday_name", "load_settings", "save_settings", "parse_holiday", "order_date", "warehouse_rows", "warehouse_info",
            "save_warehouse", "format_phone", "parse_warehouse_sheet", "import_warehouses", "special_text", "po_rows", "po_missing", "po_hints", "po_filename", "po_file",
            "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_warehouse_add", "api_warehouse_delete", "api_warehouses_import",
            "api_split_po", "api_po_zip"]

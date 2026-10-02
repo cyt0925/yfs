@@ -166,7 +166,7 @@
         <div>⑤ 勇信缺貨：上傳勇信配送明細表 PDF（可多份），收貨單號對回 EIP 單號、料號用 58880＋瑪氏貨號對、箱數相比。相等＝沒缺、少＝部分缺、沒出現＝全缺、多＝異常（不動、要人看）。整張 PO 全缺：系統改 0，下修檔第一支填 1 其他 0、評論寫此單不出。按「確認」才會改系統數量，改完的 EMMA 檔、採購單都跟著變。</div>
         <div>④ EMMA 匯入檔：每列的「EMMA」單份下載；前面打勾再按「勾選的合併成 EMMA 檔」就合成一個檔（檔名寫交貨日和倉別）；「EMMA 檔（全部）」是這段期間全部合成一個。出貨備註放 EIP 採購單號，沒填會先問你、留空；料號是下採料號，單價＝酷澎下單單價×箱入數。</div>
         <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
-        <div>③ 瑪氏採購單：填了 EIP 單號，每列最右邊的「採購單」就能按，套的是 V2 範本。倉庫的電話、ship-to 沒填就留空、約倉時間沒填就不放「進倉時間」那兩行，按鈕上有驚嘆號就是有格子會留空，滑上去看是哪些；補了再下載一次就有。下單日＝到貨日往前推 2 個工作天（扣週末和下面設定的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
+        <div>③ 瑪氏採購單：填了 EIP 單號，每列最右邊的「採購單」就能按，套的是 V2 範本。倉庫的電話、ship-to 沒填就留空、約倉時間沒填就不放「進倉時間」那兩行，按鈕上有驚嘆號就是有格子會留空，滑上去看是哪些；補了再下載一次就有。下單日＝到貨日往前推 2 個工作天（扣週六日、內建的台灣國定假日、設定裡額外填的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
       </div>
     </details>
   </section>
@@ -188,7 +188,7 @@
   <!-- ③ 採購單設定：各倉資料、特殊需求文字、假日 -->
   <section class="card p-4" id="po-settings">
     <details id="ps-details">
-      <summary class="cursor-pointer flex items-center gap-2 flex-wrap"><b>採購單設定</b><span class="kbd">各倉的地址、電話、ship-to；特殊需求文字；下單日要扣的假日</span><span id="ps-warn" class="badge st-changed hidden"></span></summary>
+      <summary class="cursor-pointer flex items-center gap-2 flex-wrap"><b>採購單設定</b><span class="kbd">各倉的地址、電話、ship-to；特殊需求文字；效期要求；額外的假日</span><span id="ps-warn" class="badge st-changed hidden"></span></summary>
       <div class="mt-3 grid gap-4" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
         <div>
           <div class="flex items-center gap-2 flex-wrap mb-1 dz" id="dz-wh">
@@ -208,7 +208,8 @@
           <label class="block">要貼中標時，特殊需求第一行 <input id="ps-label" class="inp"></label>
           <label class="block">有採購單箱備註時，特殊需求最後一行 <input id="ps-white" class="inp"></label>
           <label class="block">特殊需求固定文字（一行一條；<code>{約倉時間}</code> 換成那份填的約倉時間，<code>{約倉開始}</code> 換成裡面第一個時間，<code>{倉庫加註}</code> 換成那個倉的特殊需求加註）<textarea id="ps-special" class="inp" rows="5"></textarea></label>
-          <label class="block">假日（下單日往前推時跳過；一行一個，像 2026-09-25 或 9/25）<textarea id="ps-holidays" class="inp" rows="3"></textarea></label>
+          <div>台灣國定假日已內建（<span id="ps-builtin-years"></span>），下單日往前推會自動跳過，不用填。<span id="ps-builtin-warn" class="badge st-changed hidden"></span> <a href="#" id="ps-builtin-show" class="kbd" style="text-decoration:underline">看清單</a><div id="ps-builtin-list" class="kbd hidden mt-1" style="columns:3;font-size:11px"></div></div>
+          <label class="block">額外的假日（公司自己放的、國定假日以外的；一行一個，像 2026-09-25 或 9/25）<textarea id="ps-holidays" class="inp" rows="2"></textarea></label>
           <div>EMMA 匯入檔固定字<div class="grid gap-2 mt-1" style="grid-template-columns:2fr 1fr 1fr 1fr 1.4fr"><label class="kbd">收件人<input id="ps-em-recipient" class="inp"></label><label class="kbd">客編<input id="ps-em-customer" class="inp"></label><label class="kbd">BillTo<input id="ps-em-billto" class="inp"></label><label class="kbd">ShipTo<input id="ps-em-shipto" class="inp"></label><label class="kbd">付款方式<input id="ps-em-payment" class="inp"></label></div></div>
           <div class="flex items-center gap-2"><button id="ps-save" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 存設定</button><span id="ps-msg" class="kbd"></span></div>
         </div>

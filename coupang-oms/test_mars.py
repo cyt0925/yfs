@@ -358,8 +358,8 @@ def main():
     r = c.get(f"/api/mars/splits/{s2['id']}/po")
     check("填齊了 → 下載 .xlsx、檔名對", r.status_code == 200 and f2["po_filename"] in unquote(r.headers.get("Content-Disposition", "")), unquote(r.headers.get("Content-Disposition", "")))
     ws = openpyxl.load_workbook(io.BytesIO(r.data)).active
-    check("C3 下單日＝到貨日 9/30 往前 2 個工作天、跳過假日 9/28 → 9/25；F3 配送日＝9/30",
-          ws["C3"].value == datetime.datetime(2026, 9, 25) and ws["F3"].value == datetime.datetime(2026, 9, 30), f"{ws['C3'].value} / {ws['F3'].value}")
+    check("C3 下單日＝到貨日 9/30 往前 2 個工作天、跳過 9/28 教師節、9/26～27 週末、9/25 中秋 → 9/24；F3 配送日＝9/30",
+          ws["C3"].value == datetime.datetime(2026, 9, 24) and ws["F3"].value == datetime.datetime(2026, 9, 30), f"{ws['C3'].value} / {ws['F3'].value}")
     check("C5 永豐PO單號＝EIP 採購單號", ws["C5"].value == "PO202609301")
     check("C6～F8 倉庫資料：入倉倉別、地址（訂單的）、電話、ship-to（數字）、聯絡人", ws["C6"].value == "永豐商店酷澎-TAO3" and ws["C7"].value == "桃園市大園區中山南路472號"
           and ws["C8"].value == "0911-556-291" and ws["F7"].value == 17600001 and ws["F8"].value == "王小姐", str([ws[x].value for x in ("C6", "C7", "C8", "F7", "F8")]))
@@ -427,6 +427,15 @@ def main():
     pr = mp.po_rows(fake_items)
     check("採購單一列一個永豐料號（組出 M9 就寫 M9，不寫下採的 M1）：同料號合成一列、數量箱數加總、備註照商品總表", [r_["code"] for r_ in pr] == ["M9", "M8"] and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註", str(pr))
     check("下單日：9/21（一）往前 2 個工作天 → 9/17（四）", mp.order_date(datetime.date(2026, 9, 21), 2, set()) == datetime.date(2026, 9, 17))
+    check("內建國定假日自動跳過：9/29（二）到貨，9/28 教師節、9/25 中秋、週末都跳 → 下單日 9/23（三）", mp.order_date(datetime.date(2026, 9, 29), 2) == datetime.date(2026, 9, 23))
+    check("春節：2026-02-23（一）到貨，2/16～2/20 全放、2/14～15 週末 → 下單日 2/12（四）", mp.order_date(datetime.date(2026, 2, 23), 2) == datetime.date(2026, 2, 12))
+    check("2027 也有：2027-02-11（四）到貨，2/4～2/10 春節 → 下單日 2/2（二）", mp.order_date(datetime.date(2027, 2, 11), 2) == datetime.date(2027, 2, 2))
+    check("額外假日還是會加上去", mp.order_date(datetime.date(2026, 9, 21), 2, {"2026-09-18"}) == datetime.date(2026, 9, 16))
+    ty = datetime.date.today().year
+    check(f"內建假日涵蓋今年＋明年（{ty}、{ty + 1}）；不夠了就去人事行政總處抄新的一年進 TW_HOLIDAYS", ty in mp.TW_HOLIDAYS and (ty + 1) in mp.TW_HOLIDAYS, str(sorted(mp.TW_HOLIDAYS)))
+    check("假日名字查得到", mp.holiday_name("2026-10-09") == "國慶日補假" and mp.holiday_name("2026-10-08") == "")
+    ps2 = c.get("/api/mars/po/settings").get_json()
+    check("設定 API 回內建假日的年份與清單", ps2["builtin_holiday_years"] == sorted(mp.TW_HOLIDAYS) and "2026-09-28" in ps2["builtin_holidays"])
 
     print("\n【8e】勇信缺貨：PDF 比對、下修檔、改系統數量")
     import mars.shortage as msx
