@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>商品主檔自動化</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename=logo_file) }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='line_pg.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
-  /* ── 藍白主題：藍底白字、白底藍字，跟訂單管理（紅）、採購表轉換（綠金）分開 ── */
+  /* ── 寶僑藍（line_pg.png 取的 #175fab），跟竹運出貨拋檔同一套；跟訂單管理（紅）、採購表轉換（綠金）分開 ── */
   :root {
-    --b900:#1e3a8a; --b800:#1e40af; --b700:#1d4ed8; --b600:#2563eb; --b500:#3b82f6;
-    --b200:#bfdbfe; --b100:#dbeafe; --b50:#eff6ff;
+    --b900:#0b3f78; --b800:#175fab; --b700:#175fab; --b600:#2a74c4; --b500:#2a74c4;
+    --b200:#bfd6f2; --b100:#e3eefb; --b50:#f3f8fe;
     --ink:#0f172a; --ink2:#334155; --muted:#64748b; --line:#cbd5e1; --line2:#e2e8f0;
     --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7; --bad:#b91c1c; --badbg:#fee2e2;
   }
-  body { font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#f5f8ff; color:var(--ink); }
+  body { font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#f5f8fc; color:var(--ink); }
   .hidden { display:none !important; }
-  .m-head { background:linear-gradient(100deg,var(--b900) 0%,var(--b800) 50%,var(--b600) 100%); color:#fff; border-bottom:3px solid var(--b200); }
+  .m-head { background:linear-gradient(100deg,var(--b900) 0%,var(--b800) 60%,var(--b600) 100%); color:#fff; border-bottom:3px solid var(--b200); }
   .m-tabs { display:flex; gap:4px; border-bottom:2px solid var(--b200); align-items:flex-end; }
   .m-tab { padding:10px 18px; font-weight:600; color:var(--muted); border:none; border-bottom:3px solid transparent; margin-bottom:-2px; cursor:pointer; background:none; font-size:14px; }
   .m-tab.active { color:var(--b800); border-bottom-color:var(--b700); }
@@ -219,7 +219,7 @@
 <header class="m-head shadow-lg">
   <div class="max-w-[1560px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
     <div class="flex items-center gap-3">
-      <img src="{{ url_for('static', filename=logo_file) }}" class="h-10 w-auto flex-none" alt="logo">
+      <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_pg.png') }}" style="height:30px;width:auto" alt="寶僑"></div>
       <div>
         <h1 class="text-lg font-bold leading-tight tracking-tight">商品主檔自動化</h1>
         <p class="text-[11px] leading-tight" style="color:var(--b200)">① 匯酷澎主檔與總表 → ② 匯訂單彙總表 → ③ 專案報價檔、總表自動產出，不用再手動貼、做樞紐、VLOOKUP</p>
