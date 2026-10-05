@@ -32,21 +32,21 @@
   .hs-new { font-weight:700; } .hs-old { color:#94a3b8; text-decoration:line-through; }
   .hs-empty { padding:28px; text-align:center; color:#64748b; }
 </style>
-<button type="button" class="hs-btn" id="hs-open" title="這一頁相關的操作與修改紀錄"><i class="bi bi-clock-history"></i> 歷程</button>
+<button type="button" class="hs-btn" id="hs-open" title="本頁相關的操作與修改紀錄"><i class="bi bi-clock-history"></i> 歷程紀錄</button>
 <dialog id="hs-dlg">
   <div class="hs-h"><i class="bi bi-clock-history"></i><b>歷程紀錄</b><span class="hs-cnt" id="hs-title"></span><button type="button" class="x" id="hs-close" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="hs-b">
     <div class="hs-f">
-      <input id="hs-q" placeholder="搜尋：PO、料號、檔名、誰改的…" style="width:260px">
+      <input id="hs-q" placeholder="搜尋 PO 單號、料號、檔名、操作人員" style="width:260px">
       <select id="hs-scope">
-        <option value="{{ _scope }}">這一頁的</option>
-        <option value="all">全部（含寶僑主檔、訂單）</option>
+        <option value="{{ _scope }}">本頁相關紀錄</option>
+        <option value="all">全部紀錄</option>
       </select>
-      <input id="hs-from" type="date" title="從"><span class="hs-cnt">～</span><input id="hs-to" type="date" title="到">
-      <button type="button" class="hs-go" id="hs-go"><i class="bi bi-search"></i> 查</button>
+      <input id="hs-from" type="date" title="起始日期"><span class="hs-cnt">～</span><input id="hs-to" type="date" title="結束日期">
+      <button type="button" class="hs-go" id="hs-go"><i class="bi bi-search"></i> 查詢</button>
       <span class="hs-cnt" id="hs-count"></span>
       <span style="flex:1"></span>
-      <button type="button" class="hs-go" id="hs-csv" style="background:#fff;color:#0f172a;border:1px solid #cbd5e1"><i class="bi bi-download"></i> 匯出成 Excel</button>
+      <button type="button" class="hs-go" id="hs-csv" style="background:#fff;color:#0f172a;border:1px solid #cbd5e1"><i class="bi bi-download"></i> 匯出 CSV</button>
     </div>
     <div class="hs-wrap"><table class="hs" id="hs-table"></table></div>
   </div>
@@ -64,17 +64,17 @@
     return p;
   }
   async function load() {
-    $("#hs-table").innerHTML = `<tr><td class="hs-empty">讀取中…</td></tr>`;
+    $("#hs-table").innerHTML = `<tr><td class="hs-empty">載入中</td></tr>`;
     const res = await fetch(`/api/master/logs?${params()}`); const d = await res.json().catch(() => ({}));
-    if (!res.ok) { $("#hs-table").innerHTML = `<tr><td class="hs-empty">${esc(d.error || "讀不到歷程")}</td></tr>`; return; }
+    if (!res.ok) { $("#hs-table").innerHTML = `<tr><td class="hs-empty">${esc(d.error || "無法載入歷程紀錄")}</td></tr>`; return; }
     LAST = d.logs || [];
-    $("#hs-count").textContent = LAST.length ? `${LAST.length} 筆${LAST.length >= 500 ? "（只顯示最近 500 筆，縮小期間或搜尋）" : ""}` : "";
+    $("#hs-count").textContent = LAST.length ? `共 ${LAST.length} 筆${LAST.length >= 500 ? "（僅顯示最近 500 筆，請縮小期間或輸入關鍵字）" : ""}` : "";
     const fmt = v => v == null || v === "" ? "" : esc(v);
-    $("#hs-table").innerHTML = `<thead><tr><th>時間</th><th>誰</th><th>來源</th><th>線別</th><th>PO</th><th>料號／國條</th><th>做了什麼</th><th>改前 → 改後</th><th>原因</th><th>說明</th></tr></thead><tbody>` +
-      (LAST.map(l => `<tr><td class="k">${esc((l.changed_at || "").slice(0, 16))}</td><td>${esc(l.operator)}</td><td><span class="hs-src ${esc(l.source)}">${SRC[l.source] || esc(l.source)}</span></td><td class="k">${esc(l.line)}</td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode || l.sku_id)}</td><td>${esc(l.field_label)}</td><td>${l.old_value || l.new_value ? `<span class="hs-old">${fmt(l.old_value)}</span>${l.old_value ? " → " : ""}<span class="hs-new">${fmt(l.new_value)}</span>` : ""}</td><td class="k">${esc(l.reason)}</td><td class="k">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="10" class="hs-empty">這個範圍沒有紀錄</td></tr>`) + `</tbody>`;
+    $("#hs-table").innerHTML = `<thead><tr><th>時間</th><th>操作人員</th><th>來源</th><th>線別</th><th>PO 單號</th><th>料號／國條</th><th>項目</th><th>修改前 → 修改後</th><th>原因</th><th>備註</th></tr></thead><tbody>` +
+      (LAST.map(l => `<tr><td class="k">${esc((l.changed_at || "").slice(0, 16))}</td><td>${esc(l.operator)}</td><td><span class="hs-src ${esc(l.source)}">${SRC[l.source] || esc(l.source)}</span></td><td class="k">${esc(l.line)}</td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode || l.sku_id)}</td><td>${esc(l.field_label)}</td><td>${l.old_value || l.new_value ? `<span class="hs-old">${fmt(l.old_value)}</span>${l.old_value ? " → " : ""}<span class="hs-new">${fmt(l.new_value)}</span>` : ""}</td><td class="k">${esc(l.reason)}</td><td class="k">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="10" class="hs-empty">查無紀錄</td></tr>`) + `</tbody>`;
   }
   function csv() {
-    const head = ["時間", "誰", "來源", "線別", "PO", "SKU", "國條", "欄位", "改前", "改後", "原因", "說明"];
+    const head = ["時間", "操作人員", "來源", "線別", "PO 單號", "SKU ID", "國條", "項目", "修改前", "修改後", "原因", "備註"];
     const rows = LAST.map(l => [l.changed_at, l.operator, SRC[l.source] || l.source, l.line, l.po_number, l.sku_id, l.barcode, l.field_label, l.old_value, l.new_value, l.reason, l.note]);
     const text = "﻿" + [head, ...rows].map(r => r.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
     const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })); a.download = `歷程_${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove();
