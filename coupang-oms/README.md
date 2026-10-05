@@ -54,8 +54,8 @@ python app.py                     # 或 Windows 上雙擊 START.bat
 驗證系統邏輯是否正常（用真實資料跑完整流程）：
 
 ```bash
-python test_flow.py      # 訂單管理主流程，184 項檢查
-python test_purchase.py  # 採購表轉換（跟訂單管理完全獨立），60 項檢查
+python test_flow.py      # 訂單管理主流程
+python test_purchase.py  # 採購表轉換（跟訂單管理完全獨立），也包含竹運出貨拋檔
 python test_master.py    # 商品主檔自動化（獨立模組；有 PostgreSQL 就設 DATABASE_URL 再跑一次）
 python test_master_ui.py # 商品主檔自動化 前端煙霧測試（Playwright 開真瀏覽器；pip install playwright && playwright install chromium）
 ```
