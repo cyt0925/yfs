@@ -484,15 +484,35 @@ def main():
     check("對照表第一列：PO、SKU、條碼、料號、品名、數量、單位、箱入數、箱數＝數量÷箱入數無條件進位、效期空",
           m2[0] == src["po"] and m2[1] == src["sku"] and m2[3] == src["yf_sku"] and m2[5] == src["qty"] and m2[7] == src["box"] and m2[8] == math.ceil(src["qty"] / src["box"]) and m2[9] is None, str(m2))
     check("箱數無條件進位：7÷24 → 1、480÷24 → 20", zhuyun.mapping_workbook and math.ceil(7 / 24) == 1 and math.ceil(480 / 24) == 20)
-    # 倉庫電話共用（瑪氏那邊的倉庫資料表）
+    # 倉別手機表：寶僑自己一張（Jerry 2026-10-05：瑪氏跟寶僑能去的倉不同，不共用）
     res = client.post("/api/mars/warehouses", json={"code": "TAO5", "phone": "0911-556-291"})
     d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
-    check("倉庫資料表填了 TAO5 的電話 → 拋檔手機用它（0911-556-291 → 0911556291）", res.status_code == 200 and d2["groups"][0]["phone"] == "0911556291" and d2["groups"][0]["phone_from"] == "倉庫資料表", str(d2["groups"][0]["phone"]))
-    check("市話 02-5592-7598 → 02-55927598（照範例寫法）", zhuyun._phone_compact("02-5592-7598") == "02-55927598" and zhuyun._phone_compact("") == "")
+    check("瑪氏倉庫資料表填了 TAO5 電話，竹運不理它（還是固定字）", res.status_code == 200 and d2["groups"][0]["phone"] == "02-55927598" and d2["groups"][0]["phone_from"] == "固定字", str(d2["groups"][0]["phone"]))
+    check("手機寫法統一：+886-02-55927598 → 02-55927598、+886-986368794 → 0986368794、886-988705486 → 0988705486、+886-03-2711288 → 03-2711288、0911-556-291 → 0911556291、空白 → 空白",
+          zhuyun.pg_phone("+886-02-55927598") == "02-55927598" and zhuyun.pg_phone("+886-986368794") == "0986368794" and zhuyun.pg_phone("886-988705486") == "0988705486"
+          and zhuyun.pg_phone("+886-03-2711288") == "03-2711288" and zhuyun.pg_phone("0911-556-291") == "0911556291" and zhuyun.pg_phone("") == "")
+    res = client.put("/api/zhuyun/phones", json={"code": "tao5", "phone": "+886-0911556291"})
+    d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
+    check("頁面上直接填 TAO5（小寫也行）→ 拋檔手機用它 0911556291，來源寫「倉別手機表」", res.status_code == 200 and res.get_json()["code"] == "TAO5" and d2["groups"][0]["phone"] == "0911556291" and d2["groups"][0]["phone_from"] == "倉別手機表"
+          and d2["groups"][1]["phone_from"] == "固定字", str(d2["groups"][0]["phone"]))
+    check("倉別亂填 → 400", client.put("/api/zhuyun/phones", json={"code": "台北倉", "phone": "0911"}).status_code == 400)
+    wb = openpyxl.Workbook(); ws = wb.active; ws.append(["FC", "TEL"]); ws.append(["TXRC29", "+886-986368794"]); ws.append(["TAO5", "+886-02-55927598"]); ws.append(["TAO4", "+886-03-2711288"])
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    res = client.post("/api/zhuyun/phones/import", data={"file": (bio, "PG_Ship-to.xlsx")}, content_type="multipart/form-data")
+    dd = res.get_json()
+    check("上傳 PG_Ship-to（FC／TEL）→ 3 個倉：新增 2、更新 1（TAO5 被蓋成 02-55927598）", res.status_code == 200 and dd["rows"] == 3 and dd["added"] == 2 and dd["updated"] == 1 and dd["phones"]["TAO5"] == "02-55927598" and dd["phones"]["TXRC29"] == "0986368794", str(dd))
+    d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
+    check("匯入後 TXRC29 那組手機變 0986368794", d2["groups"][1]["phone"] == "0986368794" and d2["groups"][1]["phone_from"] == "倉別手機表", str(d2["groups"][1]["phone"]))
+    check("表頭不對 → 400", client.post("/api/zhuyun/phones/import", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").status_code == 400)
+    res = client.put("/api/zhuyun/phones", json={"code": "TAO4", "phone": ""})
+    check("手機填空白＝刪掉那個倉", res.status_code == 200 and "TAO4" not in client.get("/api/zhuyun/phones").get_json()["phones"] and client.get("/api/zhuyun/phones").get_json()["phones"]["TAO5"] == "02-55927598")
+    ph_logs = [l for l in client.get("/api/master/logs?scope=zhuyun&limit=50").get_json()["logs"] if l["field"] == "zhuyun_phone"]
+    check("倉別手機的新增／匯入／刪除都有記歷程", len(ph_logs) >= 3 and any("PG_Ship-to.xlsx" in (l["new_value"] or "") for l in ph_logs) and any(l["old_value"] == "03-2711288" and l["new_value"] == "" for l in ph_logs), str([(l["old_value"], l["new_value"]) for l in ph_logs]))
+    client.put("/api/zhuyun/phones", json={"code": "TAO5", "phone": "0911556291"})   # 後面匯出的測試要用
     res = client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx"), "only": "2026-08-23|TAO5"}, content_type="multipart/form-data")
     check("只產一組（only＝日期|倉）", res.status_code == 200 and res.headers.get("X-Zhuyun-Groups") == "1")
     logs = client.get("/api/master/logs?scope=zhuyun&limit=50").get_json()["logs"]
-    check("竹運匯出有記歷程（每組一筆，檔名在說明裡），用 scope=zhuyun 查得到", len(logs) >= 3 and all(l["field"] == "zhuyun_export" for l in logs) and any("永豐料號對照表_0823交貨(TAO5).xlsx" in l["note"] for l in logs), str(logs[:1]))
+    check("竹運匯出有記歷程（每組一筆，檔名在說明裡），用 scope=zhuyun 查得到（倉別手機的也在同一頁）", len([l for l in logs if l["field"] == "zhuyun_export"]) >= 3 and all(l["field"] in ("zhuyun_export", "zhuyun_phone") for l in logs) and any("永豐料號對照表_0823交貨(TAO5).xlsx" in l["note"] for l in logs), str(logs[:1]))
     plogs = client.get("/api/master/logs?scope=purchase&limit=50").get_json()["logs"]
     check("採購表轉換匯出也有記歷程（前面幾段匯出過），scope=purchase 只看到採購表的", len(plogs) >= 1 and all(l["field"] == "purchase_export" for l in plogs) and "匯出採購表" in plogs[0]["field_label"], str(plogs[:1]))
     check("scope=mars 看不到採購表的", not any(l["field"] == "purchase_export" for l in client.get("/api/master/logs?scope=mars&limit=500").get_json()["logs"]))

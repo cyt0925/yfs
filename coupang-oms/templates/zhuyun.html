@@ -69,8 +69,9 @@
     <div class="flex items-center gap-3 flex-wrap mb-3">
       <div><b>1. 傳整合表</b> <span class="kbd">Kate 系統匯出的 Coupang_PO_Integration，可以一次好幾份。只抓線別是寶僑的列。</span></div>
       <div class="flex-1"></div>
-      <span class="kbd">收件人 <b id="s-recipient">{{ settings.recipient }}</b> · 手機：倉庫資料表有填就用那個倉的，沒填用 <b id="s-phone">{{ settings.phone }}</b></span>
+      <span class="kbd">收件人 <b id="s-recipient">{{ settings.recipient }}</b> · 手機：倉別手機表有填就用那個倉的，沒填用 <b id="s-phone">{{ settings.phone }}</b></span>
       <button id="btn-set" class="btn btn-o btn-sm"><i class="bi bi-gear"></i> 改固定字</button>
+      <button id="btn-ph" class="btn btn-o btn-sm"><i class="bi bi-telephone"></i> 倉別手機表 <span id="ph-n" class="kbd"></span></button>
     </div>
     <label class="dzbox"><i class="bi bi-cloud-arrow-up"></i><div><b>把整合表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx；每個到貨日＋倉各產一組：指定到貨日YYYYMMDD,酷澎_PG.xlsx ＋ 永豐料號對照表_MMDD交貨(倉).xlsx</div></div>
       <input type="file" id="file" accept=".xlsx" class="hidden" multiple></label>
@@ -78,9 +79,21 @@
     <div id="msg" class="text-sm mt-2"></div>
     <div id="set-box" class="hidden mt-3 flex items-end gap-3 flex-wrap" style="background:var(--p0);border:1px solid var(--p2);border-radius:10px;padding:10px 14px">
       <label class="text-sm">收件人<br><input id="set-recipient" class="inp" style="width:220px"></label>
-      <label class="text-sm">手機（倉庫沒填電話時）<br><input id="set-phone" class="inp" style="width:160px"></label>
-      <button id="set-save" class="btn btn-p btn-sm">存</button><button id="set-cancel" class="btn btn-o btn-sm">取消</button>
-      <span class="kbd">各倉電話在瑪氏出貨頁最下面「採購單設定」的倉庫資料表填，這裡共用。</span>
+      <label class="text-sm">手機（倉別手機表沒填那個倉時）<br><input id="set-phone" class="inp" style="width:160px"></label>
+      <button id="set-save" class="btn btn-p btn-sm">儲存</button><button id="set-cancel" class="btn btn-o btn-sm">取消</button>
+    </div>
+    <div id="ph-box" class="hidden mt-3" style="background:var(--p0);border:1px solid var(--p2);border-radius:10px;padding:12px 14px">
+      <div class="flex items-center gap-3 flex-wrap mb-2">
+        <b class="text-sm">寶僑各倉收件人手機</b>
+        <span class="kbd">拋檔「收件人手機」欄用這張表；寶僑能到的倉跟瑪氏不同，所以這裡自己一張，不跟瑪氏出貨頁的倉庫資料表共用。寫法會統一成 02-55927598、0911556291。</span>
+        <div class="flex-1"></div>
+        <button id="ph-close" class="btn btn-o btn-sm">收合</button>
+      </div>
+      <div class="dz" id="dz-ph"><label class="dzbox" style="padding:12px 18px"><i class="bi bi-file-earmark-arrow-up" style="font-size:22px"></i><div><b style="font-size:13.5px">把倉別手機表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx，第一列表頭 FC／TEL（或 倉別／電話），一列一個倉；已經有的倉會用檔案裡的蓋掉</div></div>
+        <input type="file" id="ph-file" accept=".xlsx" class="hidden"></label></div>
+      <div class="tbl-wrap mt-2" style="max-height:50vh"><table class="t" id="ph-table"><thead><tr><th style="width:140px">倉別</th><th style="width:220px">收件人手機</th><th></th></tr></thead><tbody id="ph-rows"></tbody>
+        <tfoot><tr><td><input id="ph-new-code" class="inp" placeholder="例如 TAO5" style="width:120px;text-transform:uppercase"></td><td><input id="ph-new-phone" class="inp" placeholder="例如 0911556291" style="width:180px"></td><td><button id="ph-add" class="btn btn-p btn-sm"><i class="bi bi-plus-lg"></i> 新增</button></td></tr></tfoot></table></div>
+      <div id="ph-msg" class="text-sm mt-2 kbd"></div>
     </div>
   </section>
 
@@ -97,7 +110,7 @@
 
   <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">欄位怎麼對的</summary>
     <div class="mt-2 space-y-1 muted">
-      <div><b>拋檔</b>（指定到貨日YYYYMMDD,酷澎_PG.xlsx）：訂單編號＝酷澎 PO、收件人＝固定字、收件人手機＝倉庫資料表那個倉的電話（沒填用固定字）、收件地址＝整合表地址、料號＝永豐料號、數量＝出貨數量、單價＝酷澎下單單價(含稅)、金額小計＝數量×單價、出貨備註與運費空白。</div>
+      <div><b>拋檔</b>（指定到貨日YYYYMMDD,酷澎_PG.xlsx）：訂單編號＝酷澎 PO、收件人＝固定字、收件人手機＝這頁「倉別手機表」那個倉的手機（沒填用固定字）、收件地址＝整合表地址、料號＝永豐料號、數量＝出貨數量、單價＝酷澎下單單價(含稅)、金額小計＝數量×單價、出貨備註與運費空白。</div>
       <div><b>料號對照表</b>（永豐料號對照表_MMDD交貨(倉).xlsx）：PO、SKU、條碼、料號＝永豐料號、品名、數量＝出貨數量、單位、轉換率＝箱入數、箱數＝數量÷箱入數無條件進位、允收效期空白。</div>
       <div>出貨數量用整合表的「出貨數量」欄，空的用下單數量。檔案裡別的線別（瑪氏、紙潔）會略過並告訴你略過幾列。</div>
     </div>
@@ -170,6 +183,49 @@ $("#set-save").addEventListener("click", async () => {
   $("#s-recipient").textContent = d.recipient; $("#s-phone").textContent = d.phone; $("#set-box").classList.add("hidden"); toast("固定字已存");
   if (FILES.length) parse(FILES);
 });
+
+/* 倉別手機表（寶僑自己的，不跟瑪氏共用） */
+let PH = {{ phones | tojson }};
+function phRender() {
+  const codes = Object.keys(PH).sort();
+  $("#ph-n").textContent = codes.length ? `${codes.length} 個倉` : "";
+  $("#ph-rows").innerHTML = codes.map(c => `<tr data-code="${esc(c)}"><td class="fn"><b>${esc(c)}</b></td><td><input class="inp ph-in" value="${esc(PH[c])}" style="width:180px"></td><td class="kbd"><button class="btn btn-o btn-sm ph-del" title="刪除這個倉"><i class="bi bi-trash"></i> 刪除</button></td></tr>`).join("")
+    || `<tr><td colspan="3" class="kbd">還沒有任何倉別手機。可以上傳表，或在下面一列直接新增。</td></tr>`;
+  $("#ph-rows").querySelectorAll("tr[data-code]").forEach(tr => {
+    const code = tr.dataset.code, inp = tr.querySelector(".ph-in");
+    inp.addEventListener("change", () => phSet(code, inp.value));
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+    tr.querySelector(".ph-del").addEventListener("click", () => { if (confirm(`刪除 ${code} 的手機？之後這個倉會用固定字。`)) phSet(code, ""); });
+  });
+}
+async function phSet(code, phone) {
+  const res = await fetch("/api/zhuyun/phones", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, phone }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) { toast(d.error || "存不進去", "err"); phRender(); return; }
+  PH = d.phones; phRender(); toast(d.phone ? `${d.code} 已存：${d.phone}` : `${d.code} 已刪除`);
+  if (FILES.length) parse(FILES);
+}
+$("#btn-ph").addEventListener("click", () => { $("#ph-box").classList.toggle("hidden"); $("#set-box").classList.add("hidden"); });
+$("#ph-close").addEventListener("click", () => $("#ph-box").classList.add("hidden"));
+$("#ph-add").addEventListener("click", async () => {
+  const code = $("#ph-new-code").value.trim().toUpperCase(), phone = $("#ph-new-phone").value.trim();
+  if (!code || !phone) { toast("倉別和手機都要填", "err"); return; }
+  await phSet(code, phone); $("#ph-new-code").value = ""; $("#ph-new-phone").value = "";
+});
+$("#ph-new-phone").addEventListener("keydown", e => { if (e.key === "Enter") $("#ph-add").click(); });
+async function phImport(f) {
+  $("#ph-msg").textContent = "讀檔中…";
+  const fd = new FormData(); fd.append("file", f);
+  const res = await fetch("/api/zhuyun/phones/import", { method: "POST", body: fd }); const d = await res.json().catch(() => ({}));
+  if (!res.ok) { $("#ph-msg").innerHTML = `<span class="neg">${esc(d.error || `伺服器錯誤 (${res.status})`)}</span>`; return; }
+  PH = d.phones; phRender(); $("#ph-msg").textContent = `已匯入 ${esc(f.name)}：${d.rows} 個倉（新增 ${d.added}、更新 ${d.updated}、沒變 ${d.same}）`; toast("倉別手機表已更新");
+  if (FILES.length) parse(FILES);
+}
+["dragenter", "dragover"].forEach(ev => $("#dz-ph").addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); $("#dz-ph").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => $("#dz-ph").addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); $("#dz-ph").classList.remove("over"); }));
+$("#dz-ph").addEventListener("drop", e => { const f = [...e.dataTransfer.files].find(f => /\.xlsx$/i.test(f.name)); if (f) phImport(f); else toast("要拖 .xlsx 的倉別手機表", "err"); });
+$("#ph-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) phImport(f); });
+phRender();
 </script>
 </body>
 </html>
