@@ -1282,8 +1282,8 @@ def main():
           and all(os.path.exists(os.path.join(BASE_DIR, "static", c["logo"])) for c in portal.CHANNELS))
     idx = client.get("/").get_data(as_text=True)
     check("酷澎訂單管理系統：logo 換成酷澎配送與購物清單圖示、有回 YFS 訂單系統的鈕", "logo_coupang.png" in idx and 'id="btn-yfs"' in idx and 'href="/portal"' in idx)
-    check("其他工具頁（商品主檔、瑪氏、竹運、採購表）也都有回 YFS 訂單系統的鈕",
-          all('class="btn btn-o btn-sm yfs-home"' in client.get(u).get_data(as_text=True) or 'class="yfs-home' in client.get(u).get_data(as_text=True) for u in ("/master", "/mars", "/zhuyun", "/purchase")))
+    check("五頁（酷澎、商品主檔、瑪氏、竹運、採購表）都有回 YFS 訂單系統的連結，一律小字加底線",
+          all('class="yfs-home"' in client.get(u).get_data(as_text=True) and "text-decoration:underline" in client.get(u).get_data(as_text=True) for u in ("/", "/master", "/mars", "/zhuyun", "/purchase")))
     sop = client.get("/portal/sop").get_data(as_text=True)
     check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
     res = client.get("/api/portal/summary"); d = res.get_json()
