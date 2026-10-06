@@ -464,8 +464,8 @@ table.st tr.sub td { color: var(--muted); }
 
   function renderLog() {
     const cut = v => { v = String(v ?? ""); return v.length > 40 ? v.slice(0, 40) + "…" : v; };
-    $("#log").innerHTML = D.recent.length ? `<thead><tr><th>時間</th><th>操作人員</th><th>做了什麼</th></tr></thead><tbody>` +
-      D.recent.map(r => `<tr><td class="k num">${esc((r.at || "").slice(5, 16))}</td><td>${esc(r.who)}</td>
+    $("#log").innerHTML = D.recent.length ? `<thead><tr><th>時間</th><th>操作人員</th><th>系統</th><th>做了什麼</th></tr></thead><tbody>` +
+      D.recent.map(r => `<tr><td class="k num">${esc((r.at || "").slice(5, 16))}</td><td>${esc(r.who)}</td><td><span class="badge">${esc(r.system)}</span></td>
         <td>${esc(r.what)}${r.po ? ` <span class="num" style="color:var(--muted)">${esc(r.po)}</span>` : ""}${r.old || r.new ? `：${r.old ? `<span class="old">${esc(cut(r.old))}</span> → ` : ""}${esc(cut(r.new))}` : ""}</td></tr>`).join("") + `</tbody>`
       : `<tbody><tr><td class="k" style="padding:18px">還沒有紀錄。</td></tr></tbody>`;
   }

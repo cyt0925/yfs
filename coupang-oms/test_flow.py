@@ -1357,6 +1357,11 @@ def main():
 
     cs = portal.change_stats(conn, day); ra = portal.recent_actions(conn)
     conn.close()
+    check("最近的動作標出是哪個系統改的",
+          portal.system_of("edit_logs", "qty_ship") == "酷澎訂單管理" and portal.system_of("mst_logs", "mars_eip_po") == "瑪氏出貨"
+          and portal.system_of("mst_logs", "zhuyun_export") == "竹運出貨拋檔" and portal.system_of("mst_logs", "purchase_export") == "採購表轉換"
+          and portal.system_of("mst_logs", "qty_ship", "勇信出 3 箱，訂 5 箱") == "瑪氏出貨" and portal.system_of("mst_logs", "qty_ship", "") == "商品主檔自動化"
+          and all(x.get("system") for x in ra))
     check("改單統計用同一套算法（這個月合計）、最近的動作新的在上面",
           isinstance(cs["events"], int) and cs["month"] == "2026-08" and ra == sorted(ra, key=lambda x: x["at"], reverse=True) and len(ra) <= 6)
     check("沒登入打不開入口頁的資料", app_module.app.test_client().get("/api/portal/summary").status_code == 401)

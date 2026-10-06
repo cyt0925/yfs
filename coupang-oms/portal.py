@@ -162,16 +162,33 @@ def change_stats(conn, today):
             "pos": tot["pos"], "changed_pos": tot["changed_pos"], "changed_pct": tot["changed_pct"], "reasons": reasons}
 
 
+# 最近的動作「系統」欄（Jerry 2026-10-06：「是否可以增加是從哪個系統上做修改的」）。
+# 訂單管理的紀錄在 edit_logs；其他工具都寫 mst_logs，看紀錄種類（field）的開頭分。
+_SYSTEM_BY_PREFIX = (("mars_", "瑪氏出貨"), ("zhuyun_", "竹運出貨拋檔"), ("purchase_", "採購表轉換"))
+
+
+def system_of(table, field, note=""):
+    if table == "edit_logs":
+        return "酷澎訂單管理"
+    for prefix, name in _SYSTEM_BY_PREFIX:
+        if (field or "").startswith(prefix):
+            return name
+    if (note or "").startswith("勇信"):          # 瑪氏出貨的勇信缺貨：改出貨數量走商品主檔那套，備註寫「勇信出 N 箱…」
+        return "瑪氏出貨"
+    return "商品主檔自動化"
+
+
 def recent_actions(conn, limit=6):
     """最近的動作：人手改的訂單（edit_logs 的 manual）＋商品主檔、瑪氏、竹運、採購表的紀錄（mst_logs）。"""
     rows = []
-    cols = "changed_at, operator, field_label, old_value, new_value, po_number"
-    pick = lambda r: {"at": r["changed_at"], "who": r["operator"], "what": r["field_label"],  # noqa: E731
-                      "old": r["old_value"] or "", "new": r["new_value"] or "", "po": r["po_number"] or ""}
+    cols = "changed_at, operator, field, field_label, old_value, new_value, po_number, note"
+    pick = lambda r, table: {"at": r["changed_at"], "who": r["operator"], "what": r["field_label"],  # noqa: E731
+                             "old": r["old_value"] or "", "new": r["new_value"] or "", "po": r["po_number"] or "",
+                             "system": system_of(table, r["field"], r["note"])}
     for r in conn.execute(f"SELECT {cols} FROM edit_logs WHERE source = ? ORDER BY id DESC LIMIT ?", ("manual", limit)).fetchall():
-        rows.append(pick(r))
+        rows.append(pick(r, "edit_logs"))
     for r in conn.execute(f"SELECT {cols} FROM mst_logs ORDER BY id DESC LIMIT ?", (limit,)).fetchall():
-        rows.append(pick(r))
+        rows.append(pick(r, "mst_logs"))
     rows.sort(key=lambda x: x["at"] or "", reverse=True)
     return rows[:limit]
 
