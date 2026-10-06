@@ -33,7 +33,7 @@ a { color: inherit; }
 .app { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); min-height: 100%;
        background: linear-gradient(90deg, var(--chrome-deep) 0 var(--side), var(--bg) var(--side)); }
 /* 左側直條跟上方橫條一樣漸層：上面深紫接標題列左端，往下到酒紅（Jerry 2026-10-06：「橫條右邊有紅色，左邊直條也要有」） */
-.side { background: linear-gradient(180deg, var(--chrome-deep) 0%, var(--chrome-deep) 18%, var(--chrome-end) 100%); color: var(--chrome-ink); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; scrollbar-width: none; }
+.side { background: linear-gradient(180deg, var(--chrome-deep) 0%, var(--chrome-deep) 55%, #4f0a2c 100%);   /* 只在下半段帶一點暗酒紅（Jerry：「紅色有點太多了」） */ color: var(--chrome-ink); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; scrollbar-width: none; }
 .side::-webkit-scrollbar { display: none; }   /* 選單太長時一樣能用滾輪捲，只是不畫捲軸（Jerry：「這條也太醜了」） */
 .brand { height: 60px; display: flex; align-items: center; gap: 10px; padding-inline: 18px; border-bottom: 1px solid rgba(255,255,255,.08); flex: none; text-decoration: none; }
 .brand b { font-size: 17px; font-weight: 900; letter-spacing: .06em; }
