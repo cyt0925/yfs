@@ -60,6 +60,7 @@
     <span class="text-xs" style="color:var(--p2)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
     {% set hist_scope = 'zhuyun' %}{% set hist_color = '#fff' %}{% include '_history.html' %}
     {% set lm_current = 'zhuyun' %}{% include '_line_menu.html' %}
+    <a href="{{ url_for('portal.portal_page') }}" class="btn btn-o btn-sm yfs-home" style="background:linear-gradient(90deg,#171028,#96002a);color:#fff;border-color:#96002a" title="回 YFS 訂單系統首頁"><i class="bi bi-grid-1x2"></i> YFS 訂單系統</a>
     <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--p2)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
   </div>
 </header>

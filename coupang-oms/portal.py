@@ -13,7 +13,7 @@ Alice 2026-10-06：「各通路可以分開……最外層我們做一個訂單�
 - 今日新進：po_headers.filed_date＝今天（系統第一次看到這張單的日子）。
 - 待出貨：交貨日今天以後、品項沒被酷澎拿掉、PO 狀態不是「已完成／已取消」的 PO 張數。
 - 本月出貨箱數：交貨日在這個月的品項，出貨數量（沒有就用下單數量）÷ 箱入數，不湊整；箱入數空白的不算。
-- 今天要處理的事：只列數量大於 0 的。
+- 今日事項（原名「今天要處理的事」）：只列數量大於 0 的。
   1. 酷澎改了單要確認：orders.needs_review＝1 的 PO。
   2. 瑪氏拆單還沒填 EIP 單號：交貨日今天以後、eip_po 空白的拆單。
   3. 寶僑竹運拋檔還沒產：今天以後最近一個有寶僑訂單的交貨日，每個倉查竹運匯出紀錄有沒有那天那倉。
@@ -34,9 +34,10 @@ PG_LINE = "寶僑"
 DONE_STATUSES = ("已完成", "已取消")
 
 CHANNELS = [
-    {"key": "coupang", "name": "酷澎", "live": True, "status": ""},
-    {"key": "shopee", "name": "蝦皮特選", "live": False, "status": "建置中"},
-    {"key": "pchome", "name": "PChome", "live": False, "status": "規劃中"},
+    # title／logo：首頁「各通路系統」卡片的標題與圖示（Jerry 2026-10-06 給的三個圖檔，縮成 160px 高放 static/）
+    {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": ""},
+    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮訂單管理系統", "logo": "logo_shopee.png", "live": False, "status": "建置中"},
+    {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中"},
 ]
 
 
@@ -100,7 +101,7 @@ def coupang_summary(conn, today):
 
 
 def tasks(conn, today):
-    """今天要處理的事，只回數量大於 0 的。"""
+    """今日事項，只回數量大於 0 的。"""
     t = _iso(today)
     out = []
 

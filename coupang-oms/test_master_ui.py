@@ -500,11 +500,20 @@ def main():
         nav = pg.inner_text("#nav")
         check("左側選單：酷澎底下有訂單管理、驗收單簽名、採購表轉換、商品主檔、竹運、瑪氏，還有 SOP 與歷程", all(k in nav for k in ("訂單管理", "驗收單簽名", "採購表轉換", "商品主檔自動化", "竹運出貨拋檔", "瑪氏出貨", "營運 SOP 檢索", "歷程紀錄")))
         check("沒有寫買斷、寄倉", "買斷" not in pg.inner_text("body") and "寄倉" not in pg.inner_text("body"))
+        check("左上角是文字「YFS 訂單系統」、選單不畫捲軸", pg.inner_text(".brand").strip() == "YFS 訂單系統" and pg.eval_on_selector(".side", "e => getComputedStyle(e).scrollbarWidth") == "none")
+        check("各通路系統卡片：logo 圖都載得出來、標題是 XX 訂單管理系統、酷澎線紅色、PChome 線藍色",
+              pg.eval_on_selector_all("#chs .ch-h img", "els => els.length === 3 && els.every(i => i.complete && i.naturalWidth > 0)")
+              and "酷澎訂單管理系統" in pg.inner_text("#ch-coupang") and "蝦皮訂單管理系統" in pg.inner_text("#ch-shopee") and "PChome 訂單管理系統" in pg.inner_text("#ch-pchome")
+              and pg.eval_on_selector("#ch-coupang", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(224, 20, 34)"
+              and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)")
         check("蝦皮特選、PChome 卡片不放數字", "—" in pg.inner_text("#ch-shopee") and "建置中" in pg.inner_text("#ch-shopee") and "規劃中" in pg.inner_text("#ch-pchome"))
         pg.click("#nav-hist"); pg.wait_for_selector("#hs-dlg[open]", timeout=5000)
         check("左側「歷程紀錄」打開歷程視窗", pg.is_visible("#hs-dlg")); pg.click("#hs-close")
         pg.click("#nav a.sub:has-text('驗收單簽名')"); pg.wait_for_selector("#dlg-sign[open]", timeout=15000)
         check("點「驗收單簽名」捷徑 → 到訂單管理並直接打開簽名視窗", pg.is_visible("#dlg-sign") and not pg.evaluate("location.hash"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)   # 先關掉簽名視窗
+        pg.click("#btn-yfs"); pg.wait_for_selector("#chs .ch", timeout=15000)
+        check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁", pg.url.endswith("/portal"))
         pg.goto(f"{base}/master#stats"); pg.wait_for_selector("#tab-stats:not(.hidden)", timeout=15000)
         check("首頁「看改單統計」連到商品主檔的改單統計分頁", pg.is_visible("#tab-stats"))
         pg.set_viewport_size({"width": 390, "height": 844}); pg.goto(f"{base}/portal"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)

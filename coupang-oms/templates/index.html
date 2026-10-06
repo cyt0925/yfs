@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>酷澎訂單管理系統</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo_coupang.png') }}">
 <!-- Tailwind 跟圖示字型都改成本機檔案，不再連國外 CDN——這個系統本來就
      要求完全不碰雲端，之前每次開頁面都連去抓樣式表，違反了這個前提，
      公司網路一擋或那個服務掛掉，畫面會直接爛掉變純文字。編譯方式見
@@ -122,13 +122,16 @@
 <header class="bg-ink-900 text-white shadow-lg border-b-[3px] border-brand-600">
   <div class="max-w-[1800px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
     <div class="flex items-center gap-2.5">
-      <img src="{{ url_for('static', filename='logo.png') }}" width="40" height="35"
-           class="h-9 w-auto flex-none" alt="永豐商店 logo">
+      <img src="{{ url_for('static', filename='logo_coupang.png') }}" width="43" height="36"
+           class="h-9 w-auto flex-none" alt="酷澎配送與購物清單圖示">
       <div>
         <h1 class="text-lg font-bold leading-tight tracking-tight">酷澎訂單管理系統</h1>
         <p class="text-[11px] text-ink-300 leading-tight">永豐商店 OP 中繼站</p>
       </div>
     </div>
+    <a href="{{ url_for('portal.portal_page') }}" id="btn-yfs" title="回 YFS 訂單系統首頁"
+       class="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border" style="background:linear-gradient(90deg,#171028,#96002a);color:#fff;border-color:#96002a">
+      <i class="bi bi-grid-1x2"></i> YFS 訂單系統</a>
     <div class="flex-1"></div>
     <button id="btn-upload" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
       <i class="bi bi-cloud-arrow-up"></i> 上傳整合表

@@ -14,8 +14,8 @@
   --chrome-hover: rgba(255,255,255,.07); --chrome-on: rgba(255,255,255,.13);
   --bg: #f6f4f8; --surface: #ffffff; --surface-2: #faf8fc; --ink: #1d1626; --ink-2: #4b4257; --muted: #776d84;
   --line: #e7e2ed; --line-2: #f0ecf3; --accent: #8c1436; --accent-wash: #fbeaf0;
-  /* 通路顏色：驗證過的分類色前三格（色盲也分得開），顏色跟著通路走 */
-  --ch-coupang: #2a78d6; --ch-shopee: #eb6834; --ch-pchome: #1baf7a;
+  /* 通路顏色跟著通路走（卡片頂端線、選單小圓點、圖表） */
+  --ch-coupang: #e01422; --ch-shopee: #ee4d2d; --ch-pchome: #0046bf;   /* 照各通路 logo 取的顏色（Jerry 2026-10-06：酷澎紅、PChome 藍） */
   --st-critical: #d03b3b; --st-warning: #b07400; --st-info: #6b6378;
   --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   --f-num: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
@@ -32,10 +32,10 @@ a { color: inherit; }
 
 .app { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); min-height: 100%;
        background: linear-gradient(90deg, var(--chrome-deep) 0 var(--side), var(--bg) var(--side)); }
-.side { background: var(--chrome-deep); color: var(--chrome-ink); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.side { background: var(--chrome-deep); color: var(--chrome-ink); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; scrollbar-width: none; }
+.side::-webkit-scrollbar { display: none; }   /* 選單太長時一樣能用滾輪捲，只是不畫捲軸（Jerry：「這條也太醜了」） */
 .brand { height: 60px; display: flex; align-items: center; gap: 10px; padding-inline: 18px; border-bottom: 1px solid rgba(255,255,255,.08); flex: none; text-decoration: none; }
-.brand .mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, var(--chrome-deep), var(--chrome-end)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-family: var(--f-num); font-weight: 700; font-size: 11px; letter-spacing: .02em; }
-.brand b { font-size: 16px; font-weight: 900; letter-spacing: .04em; }
+.brand b { font-size: 17px; font-weight: 900; letter-spacing: .06em; }
 .nav { padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .nav h6 { margin: 14px 10px 6px; font-size: 11px; font-weight: 500; color: var(--chrome-ink2); letter-spacing: .12em; }
 .nav h6:first-child { margin-top: 2px; }
@@ -92,6 +92,7 @@ a { color: inherit; }
 .ch::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--chc); }
 .ch-h { display: flex; align-items: center; gap: 8px; }
 .ch-h b { font-size: 16px; }
+.ch-h img { height: 34px; width: auto; flex: none; }
 .chip { font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .stat .k { font-size: 12px; color: var(--muted); }
@@ -164,7 +165,7 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
 <body>
 <div class="app" id="app">
   <aside class="side" aria-label="主選單">
-    <a class="brand" href="{{ url_for('portal.portal_page') }}"><span class="mark">YFS</span><b>訂單系統</b></a>
+    <a class="brand" href="{{ url_for('portal.portal_page') }}"><b>YFS 訂單系統</b></a>
     <nav class="nav" id="nav">
       <h6>總覽</h6>
       <a href="{{ url_for('portal.portal_page') }}" class="{{ 'on' if view == 'home' }}"><i class="bi bi-grid-1x2"></i>首頁總覽</a>
@@ -216,12 +217,12 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
       </div>
 
       <section class="card" aria-labelledby="h-tasks">
-        <div class="sec-h"><h2 id="h-tasks">今天要處理的事</h2><span class="hint">點一下直接到那一頁</span><span class="grow"></span><span class="hint num" id="task-count"></span></div>
+        <div class="sec-h"><h2 id="h-tasks">今日事項</h2><span class="hint">點一下直接到那一頁</span><span class="grow"></span><span class="hint num" id="task-count"></span></div>
         <div class="tasks" id="tasks"></div>
       </section>
 
       <section aria-labelledby="h-ch">
-        <div class="head" style="margin-bottom:12px"><h2 id="h-ch">各通路</h2></div>
+        <div class="head" style="margin-bottom:12px"><h2 id="h-ch">各通路系統</h2></div>
         <div class="chs" id="chs"></div>
       </section>
 
@@ -286,6 +287,7 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
   }
   const hideTip = box => { const t = box.querySelector(".tip"); if (t) t.hidden = true; };
 
+  const STATIC = "{{ url_for('static', filename='') }}";
   let D = null;
   const live = () => D.channels.filter(c => c.live);
 
@@ -297,14 +299,14 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
       <span style="min-width:0"><span class="pill ${esc(t.level)}"><i class="bi ${t.level === "crit" ? "bi-exclamation-circle" : t.level === "warn" ? "bi-clock" : "bi-circle"}"></i>${esc(t.level_text)}</span>
         <div class="t">${esc(t.title)}</div><div class="d">${esc(t.detail)}</div></span>
       <i class="bi bi-chevron-right go"></i></a>`).join("")
-      || `<div class="empty"><i class="bi bi-check2-circle" style="color:var(--st-info)"></i>今天沒有待處理的事。</div>`;
+      || `<div class="empty"><i class="bi bi-check2-circle" style="color:var(--st-info)"></i>今日沒有待處理的事項。</div>`;
   }
 
   function renderChannels() {
     $("#chs").innerHTML = D.channels.map(c => {
       const v = (n, unit) => c.live ? `${fmt(n)}<small>${unit}</small>` : `—`;
       return `<div class="card ch ${c.live ? "" : "soon"}" id="ch-${esc(c.key)}" style="--chc:var(--ch-${esc(c.key)})">
-        <div class="ch-h"><b>${esc(c.name)}</b>${c.live ? "" : `<span class="chip">${esc(c.status)}</span>`}</div>
+        <div class="ch-h"><img src="${STATIC}${esc(c.logo)}" alt=""><b>${esc(c.title)}</b>${c.live ? "" : `<span class="chip">${esc(c.status)}</span>`}</div>
         <div class="stats">
           <div class="stat"><div class="k">今日新進</div><div class="v num">${v(c.new_today, "張 PO")}</div></div>
           <div class="stat"><div class="k">待出貨</div><div class="v num">${v(c.pending_pos, "張")}</div></div>
