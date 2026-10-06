@@ -368,11 +368,17 @@ def main():
         pg.click("#cal .day[data-date='2026-09-18']"); pg.wait_for_timeout(800)
         check("點月曆 9/18 → 起訖都變 9/18、那格變深色", pg.input_value("#d-from") == "2026-09-18" and pg.input_value("#d-to") == "2026-09-18" and pg.eval_on_selector("#cal .day[data-date='2026-09-18']", "e => e.classList.contains('on')"))
         check("四個上傳處都有看得見的虛線拖曳框", pg.eval_on_selector_all(".dzbox", "els => els.length") == 4)
-        check("9/18：5 份拆單表、都是「還沒產出」、單號格子鎖住、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
-              and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and pg.is_disabled("#sp-table input.eip")
+        check("9/18：5 份拆單表、都是「還沒產出」，但單號格子和每列按鈕已經能用、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
+              and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and not pg.is_disabled("#sp-table input.eip")
+              and pg.eval_on_selector_all("#sp-table button.eipf", "els => els.length") == 5
               and pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == 1 and "拆成 5 份" in pg.inner_text("#sp-table tr.pog"))
         pg.click("#sp-table tr.sp >> nth=0"); pg.wait_for_timeout(300)
         check("點一列展開看品項（下採料號、箱數）", pg.eval_on_selector_all("#sp-table tr.sub", "els => els.length") == 1 and "下採料號" in pg.inner_text("#sp-table tr.sub"))
+        with pg.expect_download() as dl:
+            pg.click("#sp-table button.eipf >> nth=1")
+        pg.wait_for_timeout(900)
+        check("還沒產出的列直接按 EIP → 先把那一份存起來再下載（只有那一份變已產出）", dl.value.suggested_filename.endswith("_EIP上傳.xls")
+              and pg.eval_on_selector_all("#sp-table .st-generated", "els => els.length") == 1 and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 4, dl.value.suggested_filename)
         with pg.expect_download() as dl:
             pg.click("#btn-gen")
         check("按「產出 EMMA 與 EIP 檔」下載 zip", dl.value.suggested_filename == "瑪氏拆單_20260918.zip", dl.value.suggested_filename)

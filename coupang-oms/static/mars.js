@@ -134,15 +134,18 @@ function render() {
   $("#alerts").innerHTML = al.join("");
   $("#btn-gen").disabled = !v.splits.length || !v.has_products || blocking.length > 0;
   $("#btn-po").disabled = !s.po_ready;
-  const saved = v.splits.filter(r => r.id).map(r => r.id); CHECKED = new Set([...CHECKED].filter(id => saved.includes(id)));
-  $("#btn-emma-all").disabled = !saved.length;
+  const usable = v.splits.filter(r => r.status !== "gone" && !(r.blocking && r.blocking.length)).map(r => r.split_key);
+  CHECKED = new Set([...CHECKED].filter(k => usable.includes(k)));
+  $("#btn-emma-all").disabled = !usable.length;
 
-  let h = `<thead><tr><th><input type="checkbox" id="ck-all" title="全選（只選已產出的）"></th><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th><input type="checkbox" id="ck-all" title="全選"></th><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
   const ncol = v.split_by_unit ? 14 : 13;
   let lastPo = null, gi = 0;
   for (const r of v.splits) {
     const key = r.split_key, warn = r.items.some(i => i.issues && i.issues.length);
-    const dis = r.id ? "" : "disabled title=\"先按「產出 EMMA 與 EIP 檔」才能填\"";
+    // 還沒產出的列也直接能填、能按：第一次動到時先把這一份存起來（ensureSplit）。只有箱數算不出整數的那份不行
+    const blocked = r.blocking && r.blocking.length, ok = !blocked && r.status !== "gone" || r.id;
+    const dis = blocked && !r.id ? "disabled title=\"這份有品項要先處理（看上面紅色提示）\"" : "";
     if (r.po_number !== lastPo) {
       lastPo = r.po_number; gi++;
       const same = v.splits.filter(x => x.po_number === r.po_number);
@@ -150,16 +153,16 @@ function render() {
       h += `<tr class="pog"><td colspan="${ncol}"><i class="bi bi-receipt"></i> PO ${esc(r.po_number)}<span class="kbd">${md(r.delivery_date)} 到貨 · ${esc(r.warehouse)} · 拆成 ${same.length} 份 · ${fmt(same.reduce((a, x) => a + (x.cases_total || 0), 0))} 箱 · 已回填 ${filled}／${same.length}</span></td></tr>`;
     }
     h += `<tr class="sp ${gi % 2 ? "g1" : "g0"}" data-k="${esc(key)}">
-      <td>${r.id ? `<input type="checkbox" class="ck" data-id="${r.id}" ${CHECKED.has(r.id) ? "checked" : ""} title="勾起來合併成 EMMA 檔">` : ""}</td>
+      <td>${ok ? `<input type="checkbox" class="ck" data-k="${esc(key)}" ${CHECKED.has(key) ? "checked" : ""} title="勾起來合併成 EMMA 檔">` : ""}</td>
       <td><span class="badge st-${r.status}">${STATUS[r.status]}</span>${r.diff ? `<div class="kbd" style="max-width:220px;color:var(--bad)">${esc(r.diff)}</div>` : ""}</td>
       <td><span class="fn fname">${esc(r.filename)}</span> <button class="btn btn-o btn-sm cp" title="複製檔名" data-t="${esc(r.filename)}" style="padding:1px 6px"><i class="bi bi-clipboard"></i></button></td>
       <td class="muted">${md(r.delivery_date)}</td><td class="fn muted">${esc(r.po_number)}</td><td class="muted">${esc(r.warehouse)}</td>
       <td><span class="cat cat-${esc(r.category)}">${esc(r.category || "?")}</span></td>${v.split_by_unit ? `<td>${esc(r.unit)}</td>` : ""}
       <td><span class="cat lbl-${r.label}">${r.label === "V" ? "需貼中標" : "不貼中標"}</span></td>
       <td class="num">${r.item_count}${warn ? ` <i class="bi bi-exclamation-triangle-fill" style="color:var(--warn)" title="有品項要注意，點開看"></i>` : ""}</td><td class="num"><b>${fmt(r.cases_total)}</b></td>
-      <td><input class="inp eip" data-id="${r.id || ""}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}></td>
-      <td><input class="inp slot" data-id="${r.id || ""}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
-      <td class="whitespace-nowrap">${r.id ? `<button class="btn btn-o btn-sm emma" data-id="${r.id}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "EMMA 匯入檔" : "EMMA 匯入檔（EIP 採購單號還沒填，出貨備註會空著）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <a class="btn btn-o btn-sm" href="/api/mars/splits/${r.id}/file?kind=eip" title="EIP 上傳用採購表">EIP</a> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-id="${r.id}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd">—</span>`}</td></tr>`;
+      <td><input class="inp eip" data-k="${esc(key)}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}></td>
+      <td><input class="inp slot" data-k="${esc(key)}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
+      <td class="whitespace-nowrap">${ok ? `<button class="btn btn-o btn-sm emma" data-k="${esc(key)}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "EMMA 匯入檔" : "EMMA 匯入檔（EIP 採購單號還沒填，出貨備註會空著）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <button class="btn btn-o btn-sm eipf" data-k="${esc(key)}" title="EIP 上傳用採購表">EIP</button> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-k="${esc(key)}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd" title="這份有品項要先處理（看上面紅色提示）">先處理紅色提示</span>`}</td></tr>`;
     if (OPEN.has(key)) {
       h += `<tr class="sub"><td></td><td></td><td colspan="${v.split_by_unit ? 12 : 11}"><table class="t"><thead><tr><th>永豐料號</th><th>下採料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th>瑪氏貨號</th><th>採購單箱備註</th><th>要注意</th></tr></thead><tbody>
         ${r.items.map(i => `<tr><td class="fn">${esc(i.yf_sku)}</td><td class="fn">${esc(i.purchase_code)}${i.purchase_code !== i.yf_sku ? ` <span class="badge st-changed" title="報價備註跟永豐料號不同（組出商品）">組出</span>` : ""}</td><td>${esc(i.product_name)}</td><td class="num">${fmt(i.qty_ship)}${i.qty_overridden ? ` <span class="badge st-generated" title="在 ② 訂單明細人工改過">改過</span>` : ""}</td><td>${esc(i.unit)}</td><td class="num">${fmt(i.box_file)}</td><td class="num"><b>${fmt(i.cases)}</b></td><td class="fn">${esc(i.mars_code)}</td><td>${esc(i.po_case_note)}</td><td style="color:var(--warn)">${(i.issues || []).map(esc).join("<br>")}</td></tr>`).join("")}
@@ -172,22 +175,31 @@ function render() {
     if (e.target.closest("input, a, button")) return;
     const k = tr.dataset.k; OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k); render();
   }));
-  $("#sp-table").querySelectorAll("button.po").forEach(b => b.addEventListener("click", () => downloadBlob(`/api/mars/splits/${b.dataset.id}/po`, {}, "瑪氏採購單.xlsx", "瑪氏採購單已下載")));
-  $("#sp-table").querySelectorAll("button.emma").forEach(b => b.addEventListener("click", () => {
+  $("#sp-table").querySelectorAll("button.po").forEach(b => b.addEventListener("click", async () => {
+    const id = await ensureSplit(b.dataset.k); if (!id) return;
+    await downloadBlob(`/api/mars/splits/${id}/po`, {}, "瑪氏採購單.xlsx", "瑪氏採購單已下載");
+  }));
+  $("#sp-table").querySelectorAll("button.emma").forEach(b => b.addEventListener("click", async () => {
     if (b.dataset.eip !== "1" && !confirm("這份還沒填 EIP 採購單號，EMMA 檔的出貨備註會空著。還是要下載？")) return;
-    downloadBlob(`/api/mars/splits/${b.dataset.id}/emma?ack=1`, {}, "酷澎訂單匯入.xlsx", "EMMA 匯入檔已下載");
+    const id = await ensureSplit(b.dataset.k); if (!id) return;
+    await downloadBlob(`/api/mars/splits/${id}/emma?ack=1`, {}, "酷澎訂單匯入.xlsx", "EMMA 匯入檔已下載");
+  }));
+  $("#sp-table").querySelectorAll("button.eipf").forEach(b => b.addEventListener("click", async () => {
+    const id = await ensureSplit(b.dataset.k); if (!id) return;
+    await downloadBlob(`/api/mars/splits/${id}/file?kind=eip`, {}, "EIP上傳.xls", "EIP 上傳用採購表已下載");
   }));
   const syncSel = () => { $("#btn-emma-sel").disabled = !CHECKED.size; $("#btn-emma-sel").innerHTML = `<i class="bi bi-check2-square"></i> 勾選的合併成 EMMA 檔${CHECKED.size ? `（${CHECKED.size}）` : ""}`; };
-  $("#sp-table").querySelectorAll("input.ck").forEach(c => c.addEventListener("change", () => { const id = Number(c.dataset.id); c.checked ? CHECKED.add(id) : CHECKED.delete(id); syncSel(); }));
-  const all = $("#ck-all"); if (all) all.addEventListener("change", () => { $("#sp-table").querySelectorAll("input.ck").forEach(c => { c.checked = all.checked; const id = Number(c.dataset.id); all.checked ? CHECKED.add(id) : CHECKED.delete(id); }); syncSel(); });
+  $("#sp-table").querySelectorAll("input.ck").forEach(c => c.addEventListener("change", () => { const k = c.dataset.k; c.checked ? CHECKED.add(k) : CHECKED.delete(k); syncSel(); }));
+  const all = $("#ck-all"); if (all) all.addEventListener("change", () => { $("#sp-table").querySelectorAll("input.ck").forEach(c => { c.checked = all.checked; const k = c.dataset.k; all.checked ? CHECKED.add(k) : CHECKED.delete(k); }); syncSel(); });
   syncSel();
   $("#sp-table").querySelectorAll(".cp").forEach(b => b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(b.dataset.t); toast("檔名已複製"); } catch (e) { toast("瀏覽器不讓複製，請手動選取", "err"); } }));
   $("#sp-table").querySelectorAll("input.eip, input.slot").forEach(inp => {
     inp.dataset.orig = inp.value;
     const save = async () => {
-      if (!inp.dataset.id || inp.value === inp.dataset.orig) return;
+      if (inp.value === inp.dataset.orig) return;
       const body = inp.classList.contains("eip") ? { eip_po: inp.value } : { slot_time: inp.value };
-      try { const d = await api(`/api/mars/splits/${inp.dataset.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const id = await ensureSplit(inp.dataset.k); if (!id) { inp.value = inp.dataset.orig; return; }
+      try { const d = await api(`/api/mars/splits/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         inp.classList.remove("bad"); inp.dataset.orig = inp.classList.contains("eip") ? d.split.eip_po : d.split.slot_time; inp.value = inp.dataset.orig;
         toast(inp.classList.contains("eip") ? (inp.value ? `已存 ${inp.value}` : "EIP 採購單號已清掉") : "約倉時間已存"); loadSplits(); if (inp.classList.contains("eip")) loadCalendar();
       } catch (e) { inp.classList.add("bad"); toast(e.message, "err"); }
@@ -195,6 +207,26 @@ function render() {
     inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } if (e.key === "Escape") { inp.value = inp.dataset.orig; inp.blur(); } });
     inp.addEventListener("blur", save);
   });
+}
+
+/* 還沒產出的那一份，第一次按它的按鈕或填 EIP 單號時先存起來（Jerry 2026-10-06：不用先按上面的大按鈕） */
+async function ensureSplit(key, ack) {
+  const r = VIEW && VIEW.splits.find(x => x.split_key === key);
+  if (r && r.id) return r.id;
+  try {
+    const res = await fetch("/api/mars/splits/ensure", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ split_key: key, ack_unmatched: !!ack }) });
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 409 && d.needs_ack) return confirm(`${d.error}\n\n${(d.details || []).join("\n")}\n\n這份照樣存起來？`) ? ensureSplit(key, true) : null;
+    if (!res.ok) { toast([d.error || `伺服器錯誤 (${res.status})`, ...(d.details || []).slice(0, 5)].join("\n"), "err"); return null; }
+    if (r) r.id = d.id;
+    if (d.created) setTimeout(() => { loadSplits(); loadCalendar(); }, 0);   // 狀態變「已產出」，畫面重抓
+    return d.id;
+  } catch (e) { toast(e.message, "err"); return null; }
+}
+async function ensureMany(keys) {
+  const ids = [];
+  for (const k of keys) { const id = await ensureSplit(k); if (!id) return null; ids.push(id); }
+  return ids;
 }
 
 async function generate(ack) {
@@ -252,8 +284,13 @@ async function emmaMerge(body) {
   };
   try { await send(false); } catch (e) { toast(e.message, "err"); }
 }
-$("#btn-emma-sel").addEventListener("click", () => emmaMerge({ ids: [...CHECKED] }));
-$("#btn-emma-all").addEventListener("click", () => emmaMerge({ from: $("#d-from").value, to: $("#d-to").value }));
+$("#btn-emma-sel").addEventListener("click", async () => { const ids = await ensureMany([...CHECKED]); if (ids) emmaMerge({ ids }); });
+$("#btn-emma-all").addEventListener("click", async () => {
+  // 全部：還沒產出的那幾份先存起來，再照期間合併
+  const keys = (VIEW ? VIEW.splits : []).filter(r => !r.id && r.status !== "gone" && !(r.blocking && r.blocking.length)).map(r => r.split_key);
+  if (keys.length && !(await ensureMany(keys))) return;
+  emmaMerge({ from: $("#d-from").value, to: $("#d-to").value });
+});
 
 /* ── ⑤ 勇信缺貨 ── */
 let YX = null, YX_FILES = [], YX_NONE = new Set();

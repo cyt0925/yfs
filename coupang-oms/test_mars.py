@@ -196,11 +196,29 @@ def main():
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-30", "to": "2026-09-30"})
     check("有箱數不是整數的 → 400、點名是哪個、什麼都沒存", r.status_code == 400 and "M81232885" in json.dumps(r.get_json(), ensure_ascii=False)
           and splits(c, "2026-09-30")["splits"][0]["id"] is None, str(r.get_json())[:200])
+    r = c.post("/api/mars/splits/ensure", json={"split_key": frac["split_key"]})
+    check("單列自動存：箱數不是整數的那份 → 400，不存", r.status_code == 400 and "不是整數" in json.dumps(r.get_json(), ensure_ascii=False))
     orow = c.get("/api/master/orders?month=2026-09&q=900000000000003").get_json()["rows"][0]
     r = c.put(f"/api/master/orders/{orow['id']}", json={"version": orow["version"], "qty_ship": 40, "reason": "缺貨"})
     check("到 ② 把出貨數量改成 40（2 箱）", r.status_code == 200, str(r.get_json())[:120])
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-30", "to": "2026-09-30"})
     check("還有對不到的 → 409 要人確認，列出是哪個", r.status_code == 409 and r.get_json()["needs_ack"] and "M99999999" in r.get_json()["details"][0])
+    # 單列自動存（Jerry 2026-10-06：還沒產出的列也要直接有按鈕，按了先存那一份）
+    one = splits(c, "2026-09-30")["splits"][0]
+    r = c.post("/api/mars/splits/ensure", json={"split_key": one["split_key"]})
+    check("單列自動存：同一張 PO 有對不到商品總表的 → 409 先問", r.status_code == 409 and r.get_json()["needs_ack"] and "M99999999" in r.get_json()["details"][0])
+    r = c.post("/api/mars/splits/ensure", json={"split_key": one["split_key"], "ack_unmatched": True}); d1 = r.get_json()
+    r2 = c.post("/api/mars/splits/ensure", json={"split_key": one["split_key"]}); d2 = r2.get_json()
+    v1 = {x["split_key"]: x for x in splits(c, "2026-09-30")["splits"]}
+    check("確認後只存那一份（狀態變已產出、其他還是還沒產出），再按一次回同一個、不重存",
+          d1["created"] and d1["id"] and d2["id"] == d1["id"] and not d2["created"] and v1[one["split_key"]]["status"] == "generated"
+          and all(x["status"] == "new" for k, x in v1.items() if k != one["split_key"]), str(d1))
+    check("自動存的那份可以直接下載 EIP 上傳用採購表、填 EIP 單號",
+          c.get(f"/api/mars/splits/{d1['id']}/file?kind=eip").status_code == 200 and c.put(f"/api/mars/splits/{d1['id']}", json={"slot_time": "09:00~12:00"}).status_code == 200)
+    check("單列自動存：拆單鍵亂填 → 400；訂單已經沒有的那份 → 404",
+          c.post("/api/mars/splits/ensure", json={"split_key": "亂填"}).status_code == 400
+          and c.post("/api/mars/splits/ensure", json={"split_key": "P-NONE|2026-09-30|TAO3|GUM|箱|"}).status_code == 404)
+    c.put(f"/api/mars/splits/{d1['id']}", json={"slot_time": ""})
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-30", "to": "2026-09-30", "ack_unmatched": True})
     cd = unquote(r.headers.get("Content-Disposition", ""))
     check("確認後下載 zip，檔名帶到貨日", r.status_code == 200 and "瑪氏拆單_20260930.zip" in cd, cd)

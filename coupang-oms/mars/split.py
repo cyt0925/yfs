@@ -202,8 +202,8 @@ def _view(date_from, date_to):
                     "diff": "現在的訂單已經沒有這份（品項被拿掉、改期或改倉）"})
     for r in out:                     # ③ 瑪氏採購單：這份差什麼才產得出來（空＝可以按）
         wh = whs.get(r["warehouse"]) or {"missing": ["地址", "電話", "ship-to"]}
-        r["po_missing"] = po_missing(r, r["items"], wh, po_settings) if r["id"] else ["先按「產出 EMMA 與 EIP 檔」"]
-        r["po_hints"] = po_hints(r, r["items"], wh, po_settings) if r["id"] else []
+        r["po_missing"] = po_missing(r, r["items"], wh, po_settings)
+        r["po_hints"] = po_hints(r, r["items"], wh, po_settings)
         r["po_filename"] = po_filename(r)
     out.sort(key=lambda r: (r["delivery_date"], r["po_number"], r["warehouse"], r["category"], r["unit"], r["label"]))
     wh_missing = sorted(code for code, w in whs.items() if w["missing"] and any(r["warehouse"] == code for r in out))
@@ -334,6 +334,53 @@ def _stem(filename):
     return filename[:-5] if filename.endswith(".xlsx") else filename
 
 
+def _insert_split(conn, g, operator, stamp):
+    """把現算的一份拆單存進系統，回 id。產出鈕（整段）跟單列自動存（ensure）共用。"""
+    cur = conn.execute(
+        """INSERT INTO mst_mars_splits (split_key, po_number, delivery_date, warehouse, category, unit, label, seq,
+           filename, items_json, item_count, cases_total, created_by, created_at, updated_by, updated_at)
+           VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?)""",
+        (g["split_key"], g["po_number"], g["delivery_date"], g["warehouse"], g["category"], g["unit"], g["label"],
+         g["filename"], json.dumps(g["items"], ensure_ascii=False), g["item_count"], g["cases_total"], operator, stamp, operator, stamp))
+    return cur.lastrowid
+
+
+@mars_bp.route("/api/mars/splits/ensure", methods=["POST"])
+def api_mars_split_ensure():
+    """單列自動存（Jerry 2026-10-06：還沒產出的列也要直接有按鈕）：按那一列的 EMMA／EIP／採購單、或填 EIP 單號時，
+    先把「那一份」存起來再做。已經存過就直接回原本的 id，不動內容。
+    跟整段產出一樣：有箱數算不出整數的品項不給存；同一張 PO 有對不到商品總表的品項，先問一次（ack）。"""
+    payload = request.get_json(silent=True) or {}
+    key = norm_text(payload.get("split_key"))
+    parts = key.split("|")
+    if len(parts) != 6 or not _valid_date(parts[1]):
+        return jsonify({"error": "這份拆單的資料不完整，請重新整理頁面。"}), 400
+    day = parts[1]
+    operator = _operator()
+    conn = get_conn()
+    try:
+        old = _row(conn.execute("SELECT id, filename FROM mst_mars_splits WHERE split_key = ?", (key,)))
+        if old:
+            return jsonify({"ok": True, "id": old["id"], "filename": old["filename"], "created": False})
+        items, unmatched, _zero = build_items(conn, day, day)
+        g = next((x for x in group_items(items) if x["split_key"] == key), None)
+        if g is None:
+            return jsonify({"error": "現在的訂單已經沒有這份了（品項被拿掉、改期或改倉），請重新整理。"}), 404
+        if g["blocking"]:
+            return jsonify({"error": "這份有品項的箱數算不出整數或分不出品類，EIP 採購表不能這樣送。先處理這幾個：",
+                            "details": g["blocking"][:30]}), 400
+        miss = [u for u in unmatched if u["po_number"] == g["po_number"]]
+        if miss and not payload.get("ack_unmatched"):
+            return jsonify({"error": f"這張 PO 有 {len(miss)} 個品項對不到瑪氏商品總表，不會進這份。", "needs_ack": True,
+                            "details": [f"{u['po_number']} {u['yf_sku']} {u['product_name']}" for u in miss[:30]]}), 409
+        new_id = _insert_split(conn, g, operator, now())
+        _log(conn, LINE, g["po_number"], "", "", "mars_split", "瑪氏拆單", "", "1 份（單列自動存）", operator, "manual", g["filename"])
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "id": new_id, "filename": g["filename"], "created": True})
+
+
 @mars_bp.route("/api/mars/splits/generate", methods=["POST"])
 def api_mars_generate():
     """把期間內的拆單存起來、打包下載：每份一個 EMMA 匯入檔（.xlsx）＋一個 EIP 上傳用採購表（.xls）。
@@ -364,13 +411,7 @@ def api_mars_generate():
             s = saved.pop(g["split_key"], None)
             snap = json.dumps(g["items"], ensure_ascii=False)
             if s is None:
-                cur = conn.execute(
-                    """INSERT INTO mst_mars_splits (split_key, po_number, delivery_date, warehouse, category, unit, label, seq,
-                       filename, items_json, item_count, cases_total, created_by, created_at, updated_by, updated_at)
-                       VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?)""",
-                    (g["split_key"], g["po_number"], g["delivery_date"], g["warehouse"], g["category"], g["unit"], g["label"],
-                     g["filename"], snap, g["item_count"], g["cases_total"], operator, stamp, operator, stamp))
-                s = {"id": cur.lastrowid, "eip_po": "", "slot_time": "", "filename": g["filename"], **g}
+                s = {"id": _insert_split(conn, g, operator, stamp), "eip_po": "", "slot_time": "", "filename": g["filename"], **g}
                 use_items = g["items"]
             elif s["eip_po"]:
                 use_items = json.loads(s["items_json"] or "[]")      # 已送 EIP：照當時那份
@@ -459,4 +500,4 @@ def api_mars_split_update(split_id):
 
 
 __all__ = ["build_items", "group_items", "split_key", "make_filename", "split_workbook", "eip_rows",
-           "api_mars_calendar", "api_mars_splits", "api_mars_generate", "api_mars_split_file", "api_mars_split_update"]
+           "api_mars_calendar", "api_mars_splits", "api_mars_generate", "api_mars_split_ensure", "api_mars_split_file", "api_mars_split_update"]

@@ -560,7 +560,8 @@ def file_stamp():
 # 出錯，所以只白名單有 id 的這幾張。
 _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "SIGN_BATCHES", "SIGNED_DOCS",
-                     "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES")
+                     "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES",
+                     "MST_MARS_SPLITS")   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
 
 
 def _wants_returning_id(sql):
