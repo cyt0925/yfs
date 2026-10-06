@@ -15,7 +15,7 @@
 現在的數字（人改過的照改過的）。箱數不是整數的不能產 EIP 採購表，擋下來講清楚是哪幾個。
 整合表箱入數跟商品總表同單位的箱入數不一樣時只提醒（例如 M10403852 盒：整合表 48、商品總表 4），箱數照整合表。
 
-存檔：按「產出 EMMA 與 EIP 檔」（原名「產出拆單表」）時把每份的品項存下來（mst_mars_splits.items_json）。還沒填 EIP 採購單號的，下次產出會更新；
+存檔：按「下載 EIP 採購單」（之前叫「產出 EMMA 與 EIP 檔」「產出拆單表」）時把每份的品項存下來（mst_mars_splits.items_json）。還沒填 EIP 採購單號的，下次產出會更新；
 填了之後就不再動它——那份已經送去 EIP 了，訂單之後有變只在畫面上標「EIP 送出後訂單有變」，要重拆就先把單號清掉。
 """
 import datetime as _dt
@@ -26,7 +26,6 @@ import purchase as _purchase  # 採購表轉換：瑪氏的 EIP 採購表範本�
 from .common import *  # noqa: F401,F403
 from .products import load_products
 from .po import load_settings, po_filename, po_hints, po_missing, warehouse_rows
-from .emma import emma_file, emma_filename
 
 ITEM_KEYS = ("po_number", "sku_id", "yf_sku", "purchase_code", "unit", "qty_ship", "box_file", "cases")
 
@@ -383,8 +382,9 @@ def api_mars_split_ensure():
 
 @mars_bp.route("/api/mars/splits/generate", methods=["POST"])
 def api_mars_generate():
-    """把期間內的拆單存起來、打包下載：每份一個 EMMA 匯入檔（.xlsx）＋一個 EIP 上傳用採購表（.xls）。
-    拆單表本身不再進 zip（Alice：直接拿 EMMA 匯入檔取代），要看的話 /file?kind=split 還在。"""
+    """「下載 EIP 採購單」：把期間內的拆單存起來、打包下載每份的 EIP 上傳用採購表（.xls）。
+    Jerry 2026-10-06：只放 EIP 採購單——下載 EIP 採購單的時候還沒有 EIP 單號，這時產 EMMA 也是空的；
+    EMMA 匯入檔等填了單號再用旁邊的「EMMA 檔」按鈕下載。拆單表本身要看的話 /file?kind=split 還在。"""
     payload = request.get_json(silent=True) or {}
     date_from, date_to = _range_args(payload)
     if not date_from:
@@ -428,18 +428,12 @@ def api_mars_generate():
         conn.commit()
     finally:
         conn.close()
-    conn = get_conn()
-    try:
-        emma_files = [(emma_filename([(s, its)]), emma_file(conn, [(s, its)])[0]) for s, its in files]   # 拆單表換成 EMMA 匯入檔（Alice）
-    finally:
-        conn.close()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for (s, its), (ename, edata) in zip(files, emma_files):
-            zf.writestr(ename, edata)
+        for s, its in files:
             zf.writestr(f"{_stem(s['filename'])}_EIP上傳.xls", eip_file(s, its))
     buf.seek(0)
-    name = f"瑪氏拆單_{date_from.replace('-', '')}" + ("" if date_from == date_to else f"-{date_to.replace('-', '')}") + ".zip"
+    name = f"瑪氏EIP採購單_{date_from.replace('-', '')}" + ("" if date_from == date_to else f"-{date_to.replace('-', '')}") + ".zip"
     return send_file(buf, as_attachment=True, download_name=name, mimetype="application/zip")
 
 

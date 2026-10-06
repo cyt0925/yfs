@@ -192,7 +192,7 @@ def main():
     check("同料號、盒跟包：依單位拆成兩份", len(pet) == 2 and {s["unit"] for s in pet} == {"盒", "包"}, str([s["filename"] for s in pet]))
     check("箱那列才有的採購單箱備註，盒的品項不會亂帶", all(not i["po_case_note"] for s in pet for i in s["items"]))
 
-    print("\n【5】產出 EMMA 與 EIP 檔（原名產出拆單表）")
+    print("\n【5】下載 EIP 採購單（之前叫產出 EMMA 與 EIP 檔、產出拆單表）")
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-30", "to": "2026-09-30"})
     check("有箱數不是整數的 → 400、點名是哪個、什麼都沒存", r.status_code == 400 and "M81232885" in json.dumps(r.get_json(), ensure_ascii=False)
           and splits(c, "2026-09-30")["splits"][0]["id"] is None, str(r.get_json())[:200])
@@ -221,12 +221,12 @@ def main():
     c.put(f"/api/mars/splits/{d1['id']}", json={"slot_time": ""})
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-30", "to": "2026-09-30", "ack_unmatched": True})
     cd = unquote(r.headers.get("Content-Disposition", ""))
-    check("確認後下載 zip，檔名帶到貨日", r.status_code == 200 and "瑪氏拆單_20260930.zip" in cd, cd)
+    check("確認後下載 zip，檔名「瑪氏EIP採購單_到貨日」", r.status_code == 200 and "瑪氏EIP採購單_20260930.zip" in cd, cd)
     z = zipfile.ZipFile(io.BytesIO(r.data)); names = z.namelist()
     v = splits(c, "2026-09-30")
-    check("zip 裡每份兩個檔：EMMA 匯入檔（酷澎訂單匯入_0930交貨-TAO3_PO_品類_中標.xlsx）＋ _EIP上傳.xls，拆單表不再進 zip",
-          len(names) == 2 * len(v["splits"]) and all(f"{s['filename'][:-5]}_EIP上傳.xls" in names for s in v["splits"])
-          and all(n.startswith("酷澎訂單匯入_0930交貨-TAO3_13000000699901_") or n.endswith("_EIP上傳.xls") for n in names) and not any(s["filename"] in names for s in v["splits"]), str(names))
+    check("zip 裡只有每份的 EIP 上傳用採購表（_EIP上傳.xls）；EMMA 匯入檔不放（這時還沒有 EIP 單號，Jerry 2026-10-06）",
+          len(names) == len(v["splits"]) and all(f"{s['filename'][:-5]}_EIP上傳.xls" in names for s in v["splits"])
+          and all(n.endswith("_EIP上傳.xls") for n in names) and not any(n.startswith("酷澎訂單匯入") for n in names), str(names))
     check("產出後狀態：已產出、等 EIP 單號", all(s["status"] == "generated" and s["id"] for s in v["splits"]))
     gum_combo = next(s for s in v["splits"] if any(i["sku_id"] == "900000000000001" for i in s["items"]))
     wsx = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/mars/splits/{gum_combo['id']}/file?kind=split").data)).active   # 拆單表還能單獨下載

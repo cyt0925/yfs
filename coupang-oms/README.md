@@ -184,7 +184,7 @@ coupang-oms/
 │   └── stats.py             ④ 改單統計（每月幾張 PO、改幾次、原因、匯出）
 ├── mars/                    瑪氏出貨（/mars）：拆單、回填 EIP 採購單號／約倉時間、產瑪氏採購單；訂單共用 ② 的 mst_orders
 │   ├── products.py          瑪氏商品總表上傳（整份覆蓋）
-│   ├── split.py             拆單、「產出 EMMA 與 EIP 檔」（存下每份拆單、打包 EMMA 匯入檔＋EIP 上傳用採購表）、回填
+│   ├── split.py             拆單、「下載 EIP 採購單」（存下每份拆單、打包 EIP 上傳用採購表）、回填
 │   ├── po.py                瑪氏採購單（V2 範本 purchase_templates/mars_po_v2.xlsx）、採購單設定（各倉資料、特殊需求文字、假日）
 │   ├── emma.py              EMMA 匯入檔（酷澎訂單匯入）：取代拆單表，單份／勾選合併／整段合併
 │   └── shortage.py          勇信缺貨：讀配送明細表 PDF 比箱數，確認後改出貨數量、產酷澎下修檔（purchase_templates/coupang_downgrade.xlsx）

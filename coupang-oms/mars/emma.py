@@ -190,7 +190,7 @@ def api_emma_merge():
             ids = [r["id"] for r in _rows(conn.execute("SELECT id FROM mst_mars_splits WHERE delivery_date >= ? AND delivery_date <= ?", (d1, d2)))]
         splits = _load_splits(conn, ids)
         if not splits:
-            return jsonify({"error": "沒有可以合併的拆單表，先按「產出 EMMA 與 EIP 檔」。"}), 400
+            return jsonify({"error": "沒有可以合併的拆單表，先按「下載 EIP 採購單」，或那一列的按鈕。"}), 400
         return _send_emma(conn, splits, bool(payload.get("ack_missing_eip")))
     finally:
         conn.close()

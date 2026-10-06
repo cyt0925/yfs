@@ -811,7 +811,7 @@ CREATE TABLE IF NOT EXISTS mst_mars_uploads (
 );
 
 -- 拆單表：一份檔一筆，一份檔對一張 EIP 採購單。split_key＝PO|到貨日|倉|品類|單位|中標。
--- 按「產出 EMMA 與 EIP 檔」（原名「產出拆單表」）時存下當時的品項（items_json）；回填 EIP 採購單號之後就不再改它，
+-- 按「下載 EIP 採購單」或單列按鈕時存下當時的品項（items_json）；回填 EIP 採購單號之後就不再改它，
 -- 訂單之後有變只標出來，不偷偷改掉已經送去 EIP 的內容。
 CREATE TABLE IF NOT EXISTS mst_mars_splits (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

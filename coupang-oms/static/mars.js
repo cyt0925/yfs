@@ -241,9 +241,9 @@ async function generate(ack) {
       return;
     }
     const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || "";
-    const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : "瑪氏拆單.zip";
+    const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : "瑪氏EIP採購單.zip";
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    toast("已產出 EMMA 與 EIP 檔，EIP 拿到單號後填回來"); loadSplits(); loadCalendar();
+    toast("EIP 採購單已下載，拿到 EIP 單號後填回來，再下載 EMMA 檔"); loadSplits(); loadCalendar();
   } catch (e) { toast(e.message, "err"); }
   finally { $("#btn-gen").disabled = false; }
 }

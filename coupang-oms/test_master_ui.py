@@ -381,7 +381,7 @@ def main():
               and pg.eval_on_selector_all("#sp-table .st-generated", "els => els.length") == 1 and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 4, dl.value.suggested_filename)
         with pg.expect_download() as dl:
             pg.click("#btn-gen")
-        check("按「產出 EMMA 與 EIP 檔」下載 zip", dl.value.suggested_filename == "瑪氏拆單_20260918.zip", dl.value.suggested_filename)
+        check("按「下載 EIP 採購單」下載 zip（瑪氏EIP採購單_到貨日）", dl.value.suggested_filename == "瑪氏EIP採購單_20260918.zip" and "下載 EIP 採購單" in pg.inner_text("#btn-gen"), dl.value.suggested_filename)
         pg.wait_for_timeout(900)
         check("產出後狀態變「已產出」、單號格子可以填", pg.eval_on_selector_all("#sp-table .st-generated", "els => els.length") == 5 and not pg.is_disabled("#sp-table input.eip"))
         pg.fill("#sp-table input.eip >> nth=0", "PO123"); pg.keyboard.press("Enter"); pg.wait_for_timeout(700)

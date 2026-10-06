@@ -141,7 +141,7 @@
       <input type="date" id="d-to" class="inp" style="width:150px">
       <button id="cal-toggle" class="btn btn-o btn-sm ml-1" title="收起／展開月曆"><i class="bi bi-calendar3"></i> 月曆</button>
       <div class="flex-1"></div>
-      <button id="btn-gen" class="btn btn-p"><i class="bi bi-scissors"></i> 產出 EMMA 與 EIP 檔（下載）</button>
+      <button id="btn-gen" class="btn btn-p"><i class="bi bi-download"></i> 下載 EIP 採購單</button>
       <button id="btn-emma-sel" class="btn btn-o" disabled title="把勾選的幾份合併成一個 EMMA 匯入檔"><i class="bi bi-check2-square"></i> 勾選的合併成 EMMA 檔</button>
       <button id="btn-emma-all" class="btn btn-o" title="這段期間全部合併成一個 EMMA 匯入檔"><i class="bi bi-file-earmark-spreadsheet"></i> EMMA 檔（全部）</button>
       <button id="btn-po" class="btn btn-o" title="這段期間裡已填 EIP 單號的，全部套進瑪氏採購單範本打包下載"><i class="bi bi-file-earmark-text"></i> 瑪氏採購單（全部）</button>
@@ -164,7 +164,7 @@
         <div>同一張酷澎 PO、同一天、同一個倉，再依品類（CHO／GUM／PET）、單位（箱／盒／包）、要不要貼中標拆成一份一份。一份拆單表對一張 EIP 採購單。</div>
         <div>下採料號＝整合表的「報價備註」（空白才用永豐料號）。對商品總表先用下採料號＋單位，對不到才退回永豐料號並標出來。</div>
         <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>
-        <div>下載的 zip 裡每份兩個檔：EMMA 匯入檔（酷澎訂單匯入_1002交貨-TAO3_PO….xlsx）、EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。</div>
+        <div>「下載 EIP 採購單」的 zip 裡每份一個 EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。EMMA 匯入檔等 EIP 單號填回來，再用旁邊的 EMMA 按鈕下載。</div>
         <div>⑤ 勇信缺貨：上傳勇信配送明細表 PDF（可多份），收貨單號對回 EIP 單號、料號用 58880＋瑪氏貨號對、箱數相比。相等＝沒缺、少＝部分缺、沒出現＝全缺、多＝異常（不動、要人看）。整張 PO 全缺：系統改 0，下修檔第一支填 1 其他 0、評論寫此單不出。按「確認」才會改系統數量，改完的 EMMA 檔、採購單都跟著變。</div>
         <div>④ EMMA 匯入檔：每列的「EMMA」單份下載；前面打勾再按「勾選的合併成 EMMA 檔」就合成一個檔（檔名寫交貨日和倉別）；「EMMA 檔（全部）」是這段期間全部合成一個。出貨備註放 EIP 採購單號，沒填會先問你、留空；料號是下採料號，單價＝酷澎下單單價×箱入數。</div>
         <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
