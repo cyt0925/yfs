@@ -73,7 +73,7 @@ def main():
     check("用的是寶僑的 logo（line_pg.png），不是訂單管理的紅色 logo", "line_pg.png" in html and "logo.png\"" not in html, "2026-10-05 Jerry：改成 P&G logo、配色跟竹運出貨拋檔一樣")
     check("分頁順序照流程：① 商品主檔 → ② 訂單明細 → ③ 總表", html.index("① 商品主檔") < html.index("② 訂單明細") < html.index("③ 總表"))
     check("頂端沒有全域的線別選單（線別是篩選，不是模式）", 'id="sel-line"' not in html)
-    check("OMS 首頁有「商品主檔自動化」按鈕", "商品主檔自動化" in client.get("/").get_data(as_text=True))
+    check("酷澎訂單管理頁有「商品主檔自動化」按鈕", "商品主檔自動化" in client.get("/coupang").get_data(as_text=True))
     meta = client.get("/api/master/lines").get_json()
     check("還沒有資料時線別清單是空的（線別是從資料長出來的）", meta["groups"] == [], str(meta["groups"]))
 
@@ -83,7 +83,7 @@ def main():
     try:
         check("API 回 503 並講清楚原因", client.get("/api/master/lines").status_code == 503 and "假裝建表失敗" in client.get("/api/master/lines").get_json()["error"])
         check("頁面也回 503", client.get("/master").status_code == 503)
-        check("訂單管理首頁照常開", client.get("/").status_code == 200)
+        check("訂單管理頁照常開", client.get("/coupang").status_code == 200)
     finally:
         db.MASTER_READY, db.MASTER_ERROR = saved_ready, saved_err
     check("恢復後 API 正常", client.get("/api/master/lines").status_code == 200)

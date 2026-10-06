@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% if view == 'sop' %}營運 SOP 檢索 · {% endif %}YFS 訂單系統</title>
+<title>{% if view == 'sop' %}營運 SOP 檢索 · {% elif view == 'stats' %}改單統計 · {% endif %}YFS 訂單系統</title>
 <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
@@ -142,6 +142,34 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
 .sop-bar { display: flex; align-items: center; gap: 12px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .sop-frame { flex: 1; width: 100%; border: 0; min-height: calc(100vh - 110px); background: var(--surface); }
 
+
+/* 改單統計 */
+.st-filter { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; font-size: 13px; color: var(--ink-2); }
+.st-filter label { display: inline-flex; align-items: center; gap: 6px; }
+.st-filter .grow { flex: 1; }
+.inp { border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); }
+.inp:focus { outline: none; border-color: var(--accent); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+.kpi .k { font-size: 12px; color: var(--muted); }
+.kpi .v { font-size: 28px; font-weight: 700; line-height: 1.2; font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.kpi .v small { font-size: 13px; color: var(--muted); font-weight: 500; margin-left: 3px; font-family: var(--f-body); }
+.kpi .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+table.st td.num, table.st th.num { text-align: right; font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+table.st tr.tot td { font-weight: 700; background: var(--surface-2); }
+table.st tr.sub td { color: var(--muted); }
+.st-n { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.st-n:hover { text-decoration-color: var(--accent); }
+.st-zero { color: var(--muted); }
+.st-how { padding: 14px 18px; font-size: 13px; color: var(--ink-2); display: block; }
+.st-how summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.st-how div { margin-top: 6px; }
+.st-dlg { border: none; border-radius: 14px; padding: 0; width: min(1100px, 96vw); box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+.st-dlg::backdrop { background: rgba(15,10,25,.55); }
+.st-dlg-h { display: flex; align-items: center; gap: 12px; padding: 12px 18px; color: var(--chrome-ink); background: linear-gradient(90deg, var(--chrome-deep), var(--chrome-end)); }
+.st-dlg-h span { font-size: 12.5px; color: var(--chrome-ink2); }
+.st-dlg-h button { margin-left: auto; border: 0; background: none; color: var(--chrome-ink); cursor: pointer; font-size: 16px; }
+.badge { display: inline-block; font-size: 11px; padding: 0 7px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
 .scrim { display: none; }
 @media (max-width: 1100px) {
   .chs { grid-template-columns: minmax(0, 1fr); }
@@ -169,6 +197,7 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
     <nav class="nav" id="nav">
       <h6>總覽</h6>
       <a href="{{ url_for('portal.portal_page') }}" class="{{ 'on' if view == 'home' }}"><i class="bi bi-grid-1x2"></i>首頁總覽</a>
+      <a href="{{ url_for('portal.portal_stats') }}" class="{{ 'on' if view == 'stats' }}"><i class="bi bi-bar-chart-line"></i>改單統計</a>
       <h6>通路後台</h6>
       <a href="{{ url_for('index') }}"><span class="dot" style="background:var(--ch-coupang)"></span>酷澎</a>
       <a class="sub" href="{{ url_for('index') }}">訂單管理</a>
@@ -198,7 +227,7 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
   <div class="main">
     <header class="top">
       <button class="menu" id="menu" type="button" aria-label="打開選單"><i class="bi bi-list"></i></button>
-      <div class="crumb"><span class="path">YFS 訂單系統 ／ </span><b>{{ '營運 SOP 檢索' if view == 'sop' else '首頁總覽' }}</b></div>
+      <div class="crumb"><span class="path">YFS 訂單系統 ／ </span><b>{{ {'sop': '營運 SOP 檢索', 'stats': '改單統計'}.get(view, '首頁總覽') }}</b></div>
       <div class="grow"></div>
       {% set hist_scope = 'all' %}{% set hist_color = '#fff' %}{% include '_history.html' %}
     </header>
@@ -209,6 +238,40 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
         <a class="link" href="{{ sop_url }}" target="_blank" rel="noopener">另開新分頁 <i class="bi bi-box-arrow-up-right"></i></a></div>
       <iframe class="sop-frame" src="{{ sop_url }}" title="營運 SOP 檢索"></iframe>
     </div>
+    {% elif view == 'stats' %}
+    <main class="content">
+      <div class="head">
+        <h1>改單統計</h1>
+        <span class="sub">一段期間幾張 PO、幾張被改過、改了幾次、為什麼。主管要拿這個講「改單都是成本」。</span>
+      </div>
+      <div class="card st-filter">
+        <label>從 <input type="month" id="st-from" class="inp"></label>
+        <label>到 <input type="month" id="st-to" class="inp"></label>
+        <label>線別 <select id="st-line" class="inp"><option value="">全部線別</option></select></label>
+        <label title="這個數字是人估的，系統只是拿來乘。留 0 就不算工時">每次改單約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
+        <label title="同事在正式站試功能時勾了「這是測試」的改單，預設不算"><input type="checkbox" id="st-test"> 含測試</label>
+        <span class="grow"></span>
+        <a id="st-export" class="btn" href="#"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
+      </div>
+      <div class="kpis" id="st-kpi"></div>
+      <section class="card"><div class="sec-h"><h2>每個月</h2><span class="hint">紅色底線的數字可以點，會列出背後是哪幾次改單</span></div><div class="tbl-wrap"><table class="log st" id="st-months"></table></div></section>
+      <div class="bottom">
+        <section class="card"><div class="sec-h"><h2>我們改單的原因</h2><span class="hint">只有我們改的才有原因，酷澎不會講</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
+        <section class="card"><div class="sec-h"><h2>改了什麼</h2><span class="hint">一次改單可能同時改數量和交期，加起來會比改單次數多</span></div><div class="tbl-wrap"><table class="log st" id="st-kinds"></table></div></section>
+      </div>
+      <section class="card"><div class="sec-h"><h2>改最多次的 PO</h2></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
+      <details class="card st-how"><summary>這些數字怎麼算的</summary>
+        <div>PO 歸哪個月看它目前的交貨日。沒排日期的另外列「未排日期」。</div>
+        <div>「被改過」是這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期會一個品項記一筆，一次動作不能算很多次。</div>
+        <div>「酷澎改的」是整合表上的出貨數量或交貨日跟上次不一樣，或品項從檔案裡消失。「我們改的」是人手改出貨數量或交貨日；恢復成整合表的數字不算。</div>
+        <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。改單時勾了「這是測試」的預設不算，上面勾「含測試」才會算進來。</div>
+        <div>估計工時是改單次數乘上你填的分鐘數，分鐘數是人估的，不是系統算的。資料從系統開始用（2026 年 9 月中）才有。</div>
+      </details>
+    </main>
+    <dialog id="st-dlg" class="st-dlg">
+      <div class="st-dlg-h"><b id="st-dlg-title">改單明細</b><span id="st-dlg-sub"></span><button type="button" id="st-dlg-x" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+      <div class="tbl-wrap" style="max-height:62vh"><table class="log" id="st-dlg-table"></table></div>
+    </dialog>
     {% else %}
     <main class="content">
       <div class="head">
@@ -242,7 +305,7 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
 
       <div class="bottom">
         <section class="card" aria-labelledby="h-cost">
-          <div class="sec-h"><h2 id="h-cost">本月改單與多花的時間</h2><span class="grow"></span><a class="link" href="{{ url_for('master.master_page') }}#stats">看改單統計 <i class="bi bi-chevron-right"></i></a></div>
+          <div class="sec-h"><h2 id="h-cost">本月改單與多花的時間</h2><span class="grow"></span><a class="link" href="{{ url_for('portal.portal_stats') }}">看改單統計 <i class="bi bi-chevron-right"></i></a></div>
           <div class="cost" id="cost"></div>
         </section>
         <section class="card" aria-labelledby="h-log">
@@ -313,7 +376,7 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
           <div class="stat"><div class="k">本月出貨</div><div class="v num">${v(c.month_boxes, "箱")}</div></div>
         </div>
         <div class="ch-f">${c.live
-          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "還沒有匯入過整合表"}</span><span class="grow"></span><a class="btn" href="/">進入後台 <i class="bi bi-arrow-right"></i></a>`
+          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "還沒有匯入過整合表"}</span><span class="grow"></span><a class="btn" href="{{ url_for('index') }}">進入後台 <i class="bi bi-arrow-right"></i></a>`
           : `<span>${c.key === "shopee" ? "訂單來源檔確認後開工" : "排在蝦皮特選之後"}</span>`}</div></div>`;
     }).join("");
   }
@@ -421,5 +484,86 @@ table.log .old { color: var(--muted); text-decoration: line-through; }
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawCharts, 120); });
 })();
 </script>
+{% if view == 'stats' %}
+<script>
+/* 改單統計：跟商品主檔那頁同一支 API（/api/master/stats），每次改單幾分鐘也共用同一個記憶（mst_stat_min） */
+(function () {
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmt = n => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
+  const api = async u => { const r = await fetch(u); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `伺服器錯誤 (${r.status})`); return d; };
+  const n = (v, f) => v ? `<span class="st-n" data-f="${esc(JSON.stringify(f))}">${fmt(v)}</span>` : `<span class="st-zero">0</span>`;
+  const mTh = m => m.month === "合計" ? "合計" : (m.month.length === 7 ? `${Number(m.month.slice(5))} 月` : m.month);
+  let EV = null;
+
+  function qs() {
+    let from = $("#st-from").value, to = $("#st-to").value;
+    if (!to || to < from) { to = from; $("#st-to").value = to; }
+    return { from, to, q: `month=${from}&month_to=${to}&line=${encodeURIComponent($("#st-line").value)}&include_test=${$("#st-test").checked ? 1 : 0}` };
+  }
+  async function load() {
+    const { from, q } = qs(); if (!from) return;
+    const minutes = Math.max(0, Number($("#st-min").value) || 0);
+    try { localStorage.setItem("mst_stat_min", String(minutes)); } catch (e) {}
+    $("#st-export").href = `/api/master/stats/export?${q}&minutes=${minutes}`;
+    let d; try { d = await api(`/api/master/stats?${q}`); } catch (e) { $("#st-kpi").innerHTML = `<div class="kpi">${esc(e.message)}</div>`; return; }
+    render(d, minutes);
+  }
+  function render(d, minutes) {
+    const t = d.total, hours = minutes ? Math.round(t.events * minutes / 6) / 10 : null;
+    const card = (k, v, unit, sub) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div><div class="s">${sub || ""}</div></div>`;
+    $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
+      + card("被改過的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
+      + card("改單次數", n(t.events, {}), "次", `酷澎改的 ${n(t.coupang, { source: "import" })} · 我們改的 ${n(t.manual, { source: "manual" })}${d.test_events ? ` · 另有 ${fmt(d.test_events)} 次測試沒算` : ""}`)
+      + card("估計多花", hours == null ? "—" : fmt(hours), hours == null ? "" : "小時", hours == null ? "上面填「每次改單約幾分鐘」就會算" : `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`);
+    const rows = d.months.concat(d.months.length > 1 ? [t] : []);
+    const mf = m => m.month === "合計" ? {} : { month: m.month };
+    const tr = m => m.month === "合計" ? ' class="tot"' : "";
+    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">被改過</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎改</th><th class="num">我們改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+      + (rows.map(m => `<tr${tr(m)}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${fmt(m.items)}</td><td class="num">${fmt(m.skus)}</td><td class="num">${fmt(m.changed_pos)}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td><td class="num">${n(m.events, mf(m))}</td><td class="num">${n(m.coupang, { ...mf(m), source: "import" })}</td><td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td>${minutes ? `<td class="num">${fmt(Math.round(m.events * minutes / 6) / 10)}</td>` : ""}</tr>`).join("")
+        || `<tr><td colspan="10" class="k" style="padding:18px">這段期間沒有訂單</td></tr>`) + `</tbody>`;
+    $("#st-reasons").innerHTML = `<thead><tr><th>原因</th>${rows.map(m => `<th class="num">${esc(mTh(m))}</th>`).join("")}</tr></thead><tbody>`
+      + d.reasons.map(r => `<tr><td>${esc(r)}</td>${rows.map(m => `<td class="num">${n(m.reasons[r], { ...mf(m), source: "manual", reason: r })}</td>`).join("")}</tr>`).join("")
+      + `<tr class="tot"><td>我們改的合計</td>${rows.map(m => `<td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td>`).join("")}</tr></tbody>`;
+    const kinds = [["改數量（酷澎）", "qty_c", { source: "import", kind: "qty" }], ["改數量（我們）", "qty_m", { source: "manual", kind: "qty" }],
+      ["　其中下修", "qty_down", { kind: "qty", dir: "down" }], ["　其中上修", "qty_up", { kind: "qty", dir: "up" }], ["　其中有上有下", "qty_mixed", { kind: "qty", dir: "mixed" }],
+      ["改交期（酷澎）", "date_c", { source: "import", kind: "date" }], ["改交期（我們）", "date_m", { source: "manual", kind: "date" }], ["品項被拿掉（酷澎）", "gone_c", { source: "import", kind: "gone" }]];
+    $("#st-kinds").innerHTML = `<thead><tr><th>類型</th>${rows.map(m => `<th class="num">${esc(mTh(m))}</th>`).join("")}</tr></thead><tbody>`
+      + kinds.filter(([, k]) => !k.startsWith("qty_") || ["qty_c", "qty_m"].includes(k) || rows.some(m => m.kinds[k]))
+        .map(([label, k, f]) => `<tr${label.startsWith("　") ? ' class="sub"' : ""}><td>${esc(label)}</td>${rows.map(m => `<td class="num">${n(m.kinds[k], { ...mf(m), ...f })}</td>`).join("")}</tr>`).join("") + `</tbody>`;
+    $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎改</th><th class="num">我們改</th><th>原因</th></tr></thead><tbody>`
+      + (d.top_pos.map(p => `<tr><td class="num" style="text-align:left">${esc(p.po_number)}</td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${n(p.events, { po: p.po_number })}</td><td class="num">${n(p.coupang, { po: p.po_number, source: "import" })}</td><td class="num">${n(p.manual, { po: p.po_number, source: "manual" })}</td><td>${esc(p.reasons)}</td></tr>`).join("")
+        || `<tr><td colspan="8" class="k" style="padding:18px">這段期間沒有被改過的 PO</td></tr>`) + `</tbody>`;
+    document.querySelectorAll(".st-n").forEach(el => el.addEventListener("click", () => events(JSON.parse(el.dataset.f))));
+  }
+  async function events(f) {
+    const { from, to, q } = qs();
+    if (!EV || EV.q !== q) { try { const d = await api(`/api/master/stats/events?${q}`); EV = { q, list: d.events }; } catch (e) { alert(e.message); return; } }
+    const list = EV.list.filter(e => (!f.month || e.month === f.month) && (!f.source || e.source === f.source) && (!f.reason || e.reason === f.reason)
+      && (!f.kind || e.kinds.includes(f.kind)) && (!f.dir || e.qty_dir === f.dir) && (!f.po || e.po_number === f.po));
+    const desc = [f.month || `${from}${to !== from ? "～" + to : ""}`, $("#st-line").value || "全部線別", f.po ? `PO ${f.po}` : "",
+      f.source === "import" ? "酷澎改的" : f.source === "manual" ? "我們改的" : "", f.kind ? ({ qty: "改數量", date: "改交期", gone: "品項被拿掉" })[f.kind] : "",
+      f.dir ? ({ down: "下修", up: "上修", mixed: "有上有下" })[f.dir] : "", f.reason ? `原因：${f.reason}` : ""].filter(Boolean);
+    $("#st-dlg-title").textContent = `改單明細 · ${list.length} 次`; $("#st-dlg-sub").textContent = desc.join(" · ");
+    $("#st-dlg-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>改了什麼</th><th>原因</th></tr></thead><tbody>`
+      + (list.map(e => `<tr><td class="k">${esc(e.when.slice(0, 16))}</td><td class="num">${esc(e.po_number)}</td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge">${esc(e.source_label)}</span></td><td style="max-width:460px">${esc(e.summary)}</td><td>${e.reason ? `<span class="badge">${esc(e.reason)}</span>` : ""}${e.note ? `<div class="k">${esc(e.note)}</div>` : ""}</td></tr>`).join("")
+        || `<tr><td colspan="7" class="k" style="padding:18px">沒有符合的改單</td></tr>`) + `</tbody>`;
+    $("#st-dlg").showModal();
+  }
+  $("#st-dlg-x").addEventListener("click", () => $("#st-dlg").close());
+  $("#st-dlg").addEventListener("click", e => { if (e.target === $("#st-dlg")) $("#st-dlg").close(); });
+
+  (async () => {
+    try { $("#st-min").value = localStorage.getItem("mst_stat_min") || "0"; } catch (e) {}
+    let meta = {}; try { meta = await api("/api/master/lines"); } catch (e) {}
+    $("#st-line").insertAdjacentHTML("beforeend", (meta.groups || []).map(g => `<option>${esc(g)}</option>`).join(""));
+    const m = meta.this_month || new Date().toISOString().slice(0, 7);
+    $("#st-from").value = m; $("#st-to").value = m;
+    ["#st-from", "#st-to", "#st-line", "#st-min", "#st-test"].forEach(sel => $(sel).addEventListener("change", () => { EV = null; load(); }));
+    load();
+  })();
+})();
+</script>
+{% endif %}
 </body>
 </html>

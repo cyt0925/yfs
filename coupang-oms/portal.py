@@ -14,7 +14,7 @@ Alice 2026-10-06：「各通路可以分開……最外層我們做一個訂單�
 - 待出貨：交貨日今天以後、品項沒被酷澎拿掉、PO 狀態不是「已完成／已取消」的 PO 張數。
 - 本月出貨箱數：交貨日在這個月的品項，出貨數量（沒有就用下單數量）÷ 箱入數，不湊整；箱入數空白的不算。
 - 今日事項（原名「今天要處理的事」）：只列數量大於 0 的。
-  1. 酷澎改了單要確認：orders.needs_review＝1 的 PO。
+  1. 酷澎改了單要確認：orders.needs_review＝1、而且最近 7 天有被整合表改過（edit_logs source＝import）的 PO。
   2. 瑪氏拆單還沒填 EIP 單號：交貨日今天以後、eip_po 空白的拆單。
   3. 寶僑竹運拋檔還沒產：今天以後最近一個有寶僑訂單的交貨日，每個倉查竹運匯出紀錄有沒有那天那倉。
   4. 過了交期還沒驗收：交貨日在過去 14 天、驗收狀態還是「未驗收」、沒取消的 PO。
@@ -22,13 +22,15 @@ Alice 2026-10-06：「各通路可以分開……最外層我們做一個訂單�
 """
 import datetime as _dt
 
-from flask import Blueprint, current_app, jsonify, render_template, session
+from flask import Blueprint, current_app, jsonify, redirect, render_template, session, url_for
 
 import db
 
 portal_bp = Blueprint("portal", __name__)
 
 SOP_URL = "https://cyt0925.github.io/yfs/"
+COUPANG_URL = "/coupang"          # 酷澎訂單管理系統（app.py 的 index）；今日事項的連結在沒有 request 的測試裡也要能算，所以寫死
+REVIEW_DAYS = 7                   # 「酷澎改了單」只算最近幾天被改的（Jerry 2026-10-06 同意：舊的沒人按確認會越積越多，失去提醒的意思）
 WARROOM_URL = "https://yfs-warroom.vercel.app/"
 PG_LINE = "寶僑"
 DONE_STATUSES = ("已完成", "已取消")
@@ -105,12 +107,16 @@ def tasks(conn, today):
     t = _iso(today)
     out = []
 
-    rows = conn.execute("SELECT DISTINCT po_number AS po FROM orders WHERE needs_review = 1 ORDER BY po_number").fetchall()
+    since = f"{_iso(today - _dt.timedelta(days=REVIEW_DAYS - 1))} 00:00:00"
+    rows = conn.execute("""SELECT DISTINCT o.po_number AS po FROM orders o
+                           WHERE o.needs_review = 1
+                             AND o.po_number IN (SELECT l.po_number FROM edit_logs l WHERE l.source = ? AND l.changed_at >= ?)
+                           ORDER BY o.po_number""", ("import", since)).fetchall()
     if rows:
         pos = [r["po"] for r in rows]
         out.append({"key": "review", "level": "crit", "level_text": "要確認", "icon": "bi-pencil-square",
-                    "title": f"酷澎改了 {len(pos)} 張單", "detail": "PO " + "、".join(pos[:2]) + ("…" if len(pos) > 2 else ""),
-                    "url": "/", "count": len(pos)})
+                    "title": f"酷澎最近 {REVIEW_DAYS} 天改了 {len(pos)} 張單", "detail": "PO " + "、".join(pos[:2]) + ("…" if len(pos) > 2 else ""),
+                    "url": COUPANG_URL, "count": len(pos)})
 
     # 商品主檔、瑪氏的表 init_db 一定會建；不包 try：PostgreSQL 一句失敗整個交易就不能再查，包了反而後面全錯
     n = _one(conn, "SELECT COUNT(*) FROM mst_mars_splits WHERE COALESCE(eip_po, '') = '' AND delivery_date >= ?", (t,)) or 0
@@ -141,7 +147,7 @@ def tasks(conn, today):
           AND h.receiving_status = ? AND h.po_status <> ?""", (d14, t, "未驗收", "已取消")) or 0
     if n:
         out.append({"key": "receiving", "level": "info", "level_text": "待辦", "icon": "bi-clipboard-check",
-                    "title": f"過了交期還沒驗收 {n} 張 PO", "detail": "近 14 天到貨的", "url": "/", "count": int(n)})
+                    "title": f"過了交期還沒驗收 {n} 張 PO", "detail": "近 14 天到貨的", "url": COUPANG_URL, "count": int(n)})
     return out
 
 
@@ -189,9 +195,22 @@ def _page(view):
                            sop_url=SOP_URL, warroom_url=WARROOM_URL, channels=CHANNELS)
 
 
-@portal_bp.route("/portal")
+@portal_bp.route("/")
 def portal_page():
+    """網站首頁（2026-10-06 起；之前首頁是酷澎訂單管理，搬到 /coupang）。"""
     return _page("home")
+
+
+@portal_bp.route("/portal")
+def portal_old():
+    """試用期間的網址，留著轉回首頁，免得有人存了書籤打不開。"""
+    return redirect(url_for("portal.portal_page"))
+
+
+@portal_bp.route("/portal/stats")
+def portal_stats():
+    """改單統計（Jerry 2026-10-06：要在 YFS 訂單系統裡看，不要跳到商品主檔）。資料走 /api/master/stats，跟商品主檔那頁同一套算法。"""
+    return _page("stats")
 
 
 @portal_bp.route("/portal/sop")

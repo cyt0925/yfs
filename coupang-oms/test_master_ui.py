@@ -98,7 +98,7 @@ def main():
         check("訂單明細有資料", "筆" in pg.inner_text("#orders-count"))
 
         print("\n【1b】線別工具選單（三頁共用）")
-        pg.goto(f"{base}/"); pg.wait_for_selector("#lm-btn"); pg.wait_for_timeout(400)
+        pg.goto(f"{base}/coupang"); pg.wait_for_selector("#lm-btn"); pg.wait_for_timeout(400)
         check("首頁也是一顆「線別工具」、不放 logo、有三個線別色點", pg.eval_on_selector_all("#lm-btn img", "els => els.length") == 0 and pg.eval_on_selector_all("#lm-btn .lm-dots i", "els => els.length") == 3)
         pg.click("#lm-btn"); pg.wait_for_timeout(200)
         check("首頁點開 → 三欄、寶僑那欄標題是寶僑藍", pg.eval_on_selector_all("#lm-pop .lm-h", "els => els.length") == 3 and pg.eval_on_selector("#lm-pop .lm-h", "e => getComputedStyle(e).color") == "rgb(23, 95, 171)")
@@ -495,7 +495,7 @@ def main():
         pg.click("#hs-close")
         print("\n【6d】YFS 訂單系統入口（/portal）")
         pg.set_viewport_size({"width": 1440, "height": 900})
-        pg.goto(f"{base}/portal"); pg.wait_for_selector("#chs .ch", timeout=15000); pg.wait_for_selector("#c-line svg"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
+        pg.goto(f"{base}/"); pg.wait_for_selector("#chs .ch", timeout=15000); pg.wait_for_selector("#c-line svg"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
         check("入口頁：三個通路卡、兩張圖都畫出來", pg.eval_on_selector_all("#chs .ch", "els => els.length") == 3 and pg.eval_on_selector_all("#c-bar svg .hb", "els => els.length") == 7)
         nav = pg.inner_text("#nav")
         check("左側選單：酷澎底下有訂單管理、驗收單簽名、採購表轉換、商品主檔、竹運、瑪氏，還有 SOP 與歷程", all(k in nav for k in ("訂單管理", "驗收單簽名", "採購表轉換", "商品主檔自動化", "竹運出貨拋檔", "瑪氏出貨", "營運 SOP 檢索", "歷程紀錄")))
@@ -513,10 +513,20 @@ def main():
         check("點「驗收單簽名」捷徑 → 到訂單管理並直接打開簽名視窗", pg.is_visible("#dlg-sign") and not pg.evaluate("location.hash"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)   # 先關掉簽名視窗
         pg.click("#btn-yfs"); pg.wait_for_selector("#chs .ch", timeout=15000)
-        check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁", pg.url.endswith("/portal"))
+        check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁（網站首頁 /）", pg.url.rstrip("/") == base)
+        pg.click("#nav a:has-text('改單統計')"); pg.wait_for_selector("#st-kpi .kpi", timeout=15000); pg.wait_for_timeout(500)
+        check("左側「改單統計」：在 YFS 訂單系統裡看，四張數字卡、每月表、原因、改了什麼、改最多次的 PO 都有",
+              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4
+              and all(pg.query_selector(sel) for sel in ("#st-months thead", "#st-reasons thead", "#st-kinds thead", "#st-top thead")) and "/api/master/stats/export" in pg.get_attribute("#st-export", "href"))
+        pg.fill("#st-from", "2026-09"); pg.dispatch_event("#st-from", "change"); pg.wait_for_timeout(800)
+        if pg.query_selector("#st-months .st-n"):
+            pg.click("#st-months .st-n >> nth=0"); pg.wait_for_selector("#st-dlg[open]", timeout=8000)
+            check("點有底線的數字 → 跳出那幾次改單的明細", "改單明細" in pg.inner_text("#st-dlg-title")); pg.click("#st-dlg-x")
+        else:
+            check("9 月有改單紀錄可以點", False, pg.inner_text("#st-months"))
         pg.goto(f"{base}/master#stats"); pg.wait_for_selector("#tab-stats:not(.hidden)", timeout=15000)
-        check("首頁「看改單統計」連到商品主檔的改單統計分頁", pg.is_visible("#tab-stats"))
-        pg.set_viewport_size({"width": 390, "height": 844}); pg.goto(f"{base}/portal"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
+        check("商品主檔的 /master#stats 還是能直接打開改單統計分頁（原本的分頁先留著）", pg.is_visible("#tab-stats"))
+        pg.set_viewport_size({"width": 390, "height": 844}); pg.goto(f"{base}/"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
         check("手機寬度不會左右捲動", not pg.evaluate("document.documentElement.scrollWidth > innerWidth"))
         pg.click("#menu"); pg.wait_for_timeout(350)
         check("手機上按左上角打開選單", pg.evaluate("document.querySelector('.side').getBoundingClientRect().left") >= 0)

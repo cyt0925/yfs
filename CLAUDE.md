@@ -51,7 +51,7 @@ Flask 應用。把酷澎整合表整份上傳，自動去重、抓出酷澎偷�
 - 推之前跑：`python test_master.py`、`python test_mars.py`（SQLite）＋ 有 PostgreSQL 就再跑一次 ＋ `python test_master_ui.py`（Playwright）。
   CI（`.github/workflows/tests.yml`）會自動跑這幾組；紅燈不要推正式站。
 - 瑪氏出貨（`coupang-oms/mars/`，網址 `/mars`）：先讀 [`coupang-oms/docs/瑪氏出貨_設計筆記.md`](coupang-oms/docs/瑪氏出貨_設計筆記.md)。訂單共用 ② 的 mst_orders，不另外上傳。
-- YFS 訂單系統入口（`coupang-oms/portal.py`，網址 `/portal`）：先讀 [`coupang-oms/docs/YFS訂單系統_設計筆記.md`](coupang-oms/docs/YFS訂單系統_設計筆記.md)。只讀不寫；SQL 一律用欄名取值（正式站 PostgreSQL 回 dict，不能 `row[0]`）。
+- YFS 訂單系統（`coupang-oms/portal.py`，**網站首頁 `/`**；酷澎訂單管理在 `/coupang`，舊的 `/portal` 轉回首頁）：先讀 [`coupang-oms/docs/YFS訂單系統_設計筆記.md`](coupang-oms/docs/YFS訂單系統_設計筆記.md)。只讀不寫；SQL 一律用欄名取值（正式站 PostgreSQL 回 dict，不能 `row[0]`）。
 - 竹運出貨拋檔（`coupang-oms/zhuyun.py`，網址 `/zhuyun`）：先讀 [`coupang-oms/docs/竹運出貨拋檔_設計筆記.md`](coupang-oms/docs/竹運出貨拋檔_設計筆記.md)。
 - 跟使用者講話用口語，不要術語。中文怪字：「匯」「驟」曾被打成 Big5 裡沒有的罕見字，`python coupang-oms/check_chinese.py` 會掃 repo（CI 跑）；對話訊息沒有工具擋，送出前自己再看一次，能換詞就換詞（例如用「做法」代替「步驟」）。
 

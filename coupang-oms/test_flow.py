@@ -1273,17 +1273,22 @@ def main():
     print("\n【37】YFS 訂單系統入口（/portal）：首頁數字跟資料庫對得起來、待辦會出現也會消失")
     import datetime as _dt
     import portal
-    html = client.get("/portal").get_data(as_text=True)
-    check("入口頁打得開，標題是 YFS 訂單系統，左側捷徑連到各工具與 SOP",
-          "YFS 訂單系統" in html and all(u in html for u in ("/master", "/mars", "/zhuyun", "/purchase", "/#sign", "/portal/sop", "/master#stats", portal.WARROOM_URL)))
+    html = client.get("/").get_data(as_text=True)
+    check("網站首頁「/」就是 YFS 訂單系統，左側捷徑連到各工具、SOP、改單統計",
+          "YFS 訂單系統" in html and "今日事項" in html and all(u in html for u in ("/coupang", "/master", "/mars", "/zhuyun", "/purchase", "/coupang#sign", "/portal/sop", "/portal/stats", portal.WARROOM_URL)))
+    r = client.get("/portal")
+    check("舊網址 /portal 轉回首頁（存了書籤的人不會打不開）", r.status_code == 302 and r.headers["Location"].endswith("/"))
+    check("酷澎訂單管理系統搬到 /coupang", "酷澎訂單管理系統" in client.get("/coupang").get_data(as_text=True))
+    st = client.get("/portal/stats").get_data(as_text=True)
+    check("改單統計在 YFS 訂單系統裡有自己一頁（不再跳到商品主檔）", "改單統計" in st and 'id="st-kpi"' in st and "/api/master/stats" in st)
     check("首頁標題：今日事項、各通路系統；卡片用各通路 logo＋訂單管理系統名稱",
           "今日事項" in html and "各通路系統" in html and "今天要處理的事" not in html
           and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理系統", "蝦皮訂單管理系統", "PChome 訂單管理系統"]
           and all(os.path.exists(os.path.join(BASE_DIR, "static", c["logo"])) for c in portal.CHANNELS))
-    idx = client.get("/").get_data(as_text=True)
-    check("酷澎訂單管理系統：logo 換成酷澎配送與購物清單圖示、有回 YFS 訂單系統的鈕", "logo_coupang.png" in idx and 'id="btn-yfs"' in idx and 'href="/portal"' in idx)
+    idx = client.get("/coupang").get_data(as_text=True)
+    check("酷澎訂單管理系統：logo 換成酷澎配送與購物清單圖示、有回 YFS 訂單系統的連結", "logo_coupang.png" in idx and 'id="btn-yfs"' in idx and '<a href="/" id="btn-yfs"' in idx)
     check("五頁（酷澎、商品主檔、瑪氏、竹運、採購表）都有回 YFS 訂單系統的連結，一律小字加底線",
-          all('class="yfs-home"' in client.get(u).get_data(as_text=True) and "text-decoration:underline" in client.get(u).get_data(as_text=True) for u in ("/", "/master", "/mars", "/zhuyun", "/purchase")))
+          all('class="yfs-home"' in client.get(u).get_data(as_text=True) and "text-decoration:underline" in client.get(u).get_data(as_text=True) for u in ("/coupang", "/master", "/mars", "/zhuyun", "/purchase")))
     sop = client.get("/portal/sop").get_data(as_text=True)
     check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
     res = client.get("/api/portal/summary"); d = res.get_json()
@@ -1316,9 +1321,13 @@ def main():
 
     # 待辦：酷澎改了單要確認
     t = {x["key"]: x for x in portal.tasks(conn, day)}
-    exp_review = len({r["po_number"] for r in rows if r["needs_review"]})
-    check("「酷澎改了 N 張單」的張數＝需要確認的 PO 數（沒有就不列）",
-          (t["review"]["count"] == exp_review) if exp_review else ("review" not in t), str(exp_review))
+    since = (day - _dt.timedelta(days=6)).isoformat() + " 00:00:00"
+    recent = {r["po_number"] for r in conn.execute("SELECT po_number FROM edit_logs WHERE source = ? AND changed_at >= ?", ("import", since)).fetchall()}
+    exp_review = len({r["po_number"] for r in rows if r["needs_review"] and r["po_number"] in recent})
+    check("「酷澎最近 7 天改了 N 張單」＝需要確認、而且 7 天內被整合表改過的 PO 數（沒有就不列）",
+          (t["review"]["count"] == exp_review and "最近 7 天" in t["review"]["title"]) if exp_review else ("review" not in t), str(exp_review))
+    t_far = {x["key"]: x for x in portal.tasks(conn, _dt.date.today() + _dt.timedelta(days=30))}
+    check("7 天以前改的不算：拿 30 天後當今天，「酷澎改了單」那條就不列", "review" not in t_far, str(t_far.get("review")))
 
     # 待辦：寶僑竹運拋檔還沒產 → 產了一個倉就少一個
     pg = [r for r in alive if r["line"] == "寶僑" and (r["delivery_date"] or "") > "2026-08-20"]

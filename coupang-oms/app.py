@@ -40,7 +40,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-06.6"
+BUILD_VERSION = "2026-10-06.7"
 
 app = Flask(__name__)
 
@@ -483,7 +483,7 @@ def require_login():
 def login():
     if request.method == "GET":
         if session.get("user"):
-            return redirect(url_for("index"))
+            return redirect(url_for("portal.portal_page"))
         return render_template("login.html", error=None, build_version=BUILD_VERSION)
 
     username = (request.form.get("username") or "").strip()
@@ -1403,7 +1403,9 @@ def log_change(conn, order, field, label, old, new, operator, source, note=""):
 
 # ---------------------------------------------------------------- 頁面
 
-@app.route("/")
+# 酷澎訂單管理系統。2026-10-06 起網站首頁 "/" 是 YFS 訂單系統（portal.py），這頁搬到 /coupang；
+# 程式裡一律用 url_for("index") 取網址，所以只改這一行。
+@app.route("/coupang")
 def index():
     return render_template(
         "index.html", build_version=BUILD_VERSION,
