@@ -38,7 +38,7 @@
 | 左上角只寫字「YFS 訂單系統」，不放 YFS 小方塊 | Jerry 2026-10-06 |
 | 左側選單不畫捲軸（滾輪照樣能捲） | Jerry：「這條也太醜了吧」 |
 | 首頁區塊名稱：「今日事項」「各通路系統」 | Jerry 2026-10-06（原本是「今天要處理的事」「各通路」） |
-| 各通路卡片標題：logo＋「酷澎訂單管理系統／蝦皮訂單管理系統／PChome 訂單管理系統」 | Jerry 給的三個圖檔（酷澎配送與購物清單圖示等），縮成 160px 高放 `static/logo_coupang.png`、`logo_shopee.png`、`logo_pchome.png`。Jerry 寫「PC Home」，照品牌正式寫法用 PChome |
+| 各通路卡片標題：logo＋「酷澎訂單管理系統／蝦皮訂單管理系統／PChome 訂單管理系統」 | Jerry 給的三個圖檔（酷澎配送與購物清單圖示等），縮成 160px 高放 `static/logo_coupang.png`、`logo_shopee.png`、`logo_pchome.png`。Jerry 寫「PC Home」，照品牌正式寫法用 PChome。同一天 Jerry 又給了新版蝦皮、PChome 圖示（房子改成各自的橘、藍，一張圖兩個並排，從中間的透明縫切開）換上去 |
 | 酷澎訂單管理系統的 logo 換成酷澎配送與購物清單圖示 | Jerry 2026-10-06；登入頁還是原本的 `logo.png` |
 | 每個工具頁都有「YFS 訂單系統」連結回入口，一律小字加底線（做過深紫酒紅漸層按鈕，Jerry：「這按鈕太醜」） | Jerry：「介面上之後要有可以回到 YFS 訂單系統的鍵」。酷澎訂單管理放在標題旁（`#btn-yfs`），商品主檔、瑪氏、竹運、採購表放在「回訂單管理系統」旁 |
 
