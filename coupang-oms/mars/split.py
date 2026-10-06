@@ -15,7 +15,7 @@
 現在的數字（人改過的照改過的）。箱數不是整數的不能產 EIP 採購表，擋下來講清楚是哪幾個。
 整合表箱入數跟商品總表同單位的箱入數不一樣時只提醒（例如 M10403852 盒：整合表 48、商品總表 4），箱數照整合表。
 
-存檔：按「產出拆單表」時把每份的品項存下來（mst_mars_splits.items_json）。還沒填 EIP 採購單號的，下次產出會更新；
+存檔：按「產出 EMMA 與 EIP 檔」（原名「產出拆單表」）時把每份的品項存下來（mst_mars_splits.items_json）。還沒填 EIP 採購單號的，下次產出會更新；
 填了之後就不再動它——那份已經送去 EIP 了，訂單之後有變只在畫面上標「EIP 送出後訂單有變」，要重拆就先把單號清掉。
 """
 import datetime as _dt
@@ -202,7 +202,7 @@ def _view(date_from, date_to):
                     "diff": "現在的訂單已經沒有這份（品項被拿掉、改期或改倉）"})
     for r in out:                     # ③ 瑪氏採購單：這份差什麼才產得出來（空＝可以按）
         wh = whs.get(r["warehouse"]) or {"missing": ["地址", "電話", "ship-to"]}
-        r["po_missing"] = po_missing(r, r["items"], wh, po_settings) if r["id"] else ["先按「產出拆單表」"]
+        r["po_missing"] = po_missing(r, r["items"], wh, po_settings) if r["id"] else ["先按「產出 EMMA 與 EIP 檔」"]
         r["po_hints"] = po_hints(r, r["items"], wh, po_settings) if r["id"] else []
         r["po_filename"] = po_filename(r)
     out.sort(key=lambda r: (r["delivery_date"], r["po_number"], r["warehouse"], r["category"], r["unit"], r["label"]))

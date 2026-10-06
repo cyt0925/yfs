@@ -142,7 +142,7 @@ function render() {
   let lastPo = null, gi = 0;
   for (const r of v.splits) {
     const key = r.split_key, warn = r.items.some(i => i.issues && i.issues.length);
-    const dis = r.id ? "" : "disabled title=\"先按「產出拆單表」才能填\"";
+    const dis = r.id ? "" : "disabled title=\"先按「產出 EMMA 與 EIP 檔」才能填\"";
     if (r.po_number !== lastPo) {
       lastPo = r.po_number; gi++;
       const same = v.splits.filter(x => x.po_number === r.po_number);
@@ -211,7 +211,7 @@ async function generate(ack) {
     const blob = await res.blob(); const cd = res.headers.get("Content-Disposition") || "";
     const m = cd.match(/filename\*=UTF-8''([^;]+)/); const name = m ? decodeURIComponent(m[1]) : "瑪氏拆單.zip";
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    toast("拆單表已產出，EIP 拿到單號後填回來"); loadSplits(); loadCalendar();
+    toast("已產出 EMMA 與 EIP 檔，EIP 拿到單號後填回來"); loadSplits(); loadCalendar();
   } catch (e) { toast(e.message, "err"); }
   finally { $("#btn-gen").disabled = false; }
 }

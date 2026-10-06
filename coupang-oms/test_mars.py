@@ -192,7 +192,7 @@ def main():
     check("同料號、盒跟包：依單位拆成兩份", len(pet) == 2 and {s["unit"] for s in pet} == {"盒", "包"}, str([s["filename"] for s in pet]))
     check("箱那列才有的採購單箱備註，盒的品項不會亂帶", all(not i["po_case_note"] for s in pet for i in s["items"]))
 
-    print("\n【5】產出拆單表")
+    print("\n【5】產出 EMMA 與 EIP 檔（原名產出拆單表）")
     r = c.post("/api/mars/splits/generate", json={"from": "2026-09-30", "to": "2026-09-30"})
     check("有箱數不是整數的 → 400、點名是哪個、什麼都沒存", r.status_code == 400 and "M81232885" in json.dumps(r.get_json(), ensure_ascii=False)
           and splits(c, "2026-09-30")["splits"][0]["id"] is None, str(r.get_json())[:200])

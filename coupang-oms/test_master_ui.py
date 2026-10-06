@@ -375,7 +375,7 @@ def main():
         check("點一列展開看品項（下採料號、箱數）", pg.eval_on_selector_all("#sp-table tr.sub", "els => els.length") == 1 and "下採料號" in pg.inner_text("#sp-table tr.sub"))
         with pg.expect_download() as dl:
             pg.click("#btn-gen")
-        check("按「產出拆單表」下載 zip", dl.value.suggested_filename == "瑪氏拆單_20260918.zip", dl.value.suggested_filename)
+        check("按「產出 EMMA 與 EIP 檔」下載 zip", dl.value.suggested_filename == "瑪氏拆單_20260918.zip", dl.value.suggested_filename)
         pg.wait_for_timeout(900)
         check("產出後狀態變「已產出」、單號格子可以填", pg.eval_on_selector_all("#sp-table .st-generated", "els => els.length") == 5 and not pg.is_disabled("#sp-table input.eip"))
         pg.fill("#sp-table input.eip >> nth=0", "PO123"); pg.keyboard.press("Enter"); pg.wait_for_timeout(700)

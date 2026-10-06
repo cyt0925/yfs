@@ -591,7 +591,7 @@ def api_po_zip():
     finally:
         conn.close()
     if not saved:
-        return jsonify({"error": "這段期間還沒有產出過拆單表，先按「產出拆單表」。"}), 400
+        return jsonify({"error": "這段期間還沒有產出過拆單表，先按「產出 EMMA 與 EIP 檔」。"}), 400
     ok, skipped = [], []
     for s in saved:
         items = _items_of(s)
