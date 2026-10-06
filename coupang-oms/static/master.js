@@ -1163,5 +1163,6 @@ $("#lg-go").addEventListener("click", loadLogs); $("#lg-q").addEventListener("ke
 (async () => {
   await loadMeta();
   if (await checkMaster()) setTab("products");
+  else if (location.hash === "#stats") setTab("stats");   // YFS 訂單系統首頁「看改單統計」連到 /master#stats
   refresh();
 })();

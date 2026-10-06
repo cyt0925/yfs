@@ -28,6 +28,7 @@ from importer import (
 import master
 import mars
 import zhuyun
+import portal
 import pdfsign
 import purchase
 from normalize import (norm_date, norm_int, norm_key, norm_money, norm_text,
@@ -39,7 +40,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-06.1"
+BUILD_VERSION = "2026-10-06.2"
 
 app = Flask(__name__)
 
@@ -71,6 +72,8 @@ app.register_blueprint(mars.mars_bp)
 # 竹運出貨拋檔及料號對照表（zhuyun.py）：跟採購表轉換一樣不進訂單資料庫，只共用倉庫資料表的電話。
 # 它的固定字走下面的 load_json／save_json（定義在後面，所以用 app 的屬性在第一次請求時取）
 app.register_blueprint(zhuyun.zhuyun_bp)
+# YFS 訂單系統入口（portal.py，網址 /portal）：只讀不寫，從既有的表現算首頁數字，左側選單連到各工具。
+app.register_blueprint(portal.portal_bp)
 app.config["BUILD_VERSION"] = BUILD_VERSION
 
 # 只要「開了資料資料夾、建了資料庫表」這件事，不管是 python app.py

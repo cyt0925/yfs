@@ -488,6 +488,8 @@ def main():
     res = client.post("/api/mars/warehouses", json={"code": "TAO5", "phone": "0911-556-291"})
     d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
     check("瑪氏倉庫資料表填了 TAO5 電話，竹運不理它（還是固定字）", res.status_code == 200 and d2["groups"][0]["phone"] == "02-55927598" and d2["groups"][0]["phone_from"] == "固定字", str(d2["groups"][0]["phone"]))
+    # 收掉：倉庫資料表是「設定」，清資料不會清；PostgreSQL 的 CI 四支測試共用同一個資料庫，留著會讓後面的 test_mars 讀到多一個倉
+    client.delete("/api/mars/warehouses/TAO5")
     check("手機寫法統一：+886-02-55927598 → 02-55927598、+886-986368794 → 0986368794、886-988705486 → 0988705486、+886-03-2711288 → 03-2711288、0911-556-291 → 0911556291、空白 → 空白",
           zhuyun.pg_phone("+886-02-55927598") == "02-55927598" and zhuyun.pg_phone("+886-986368794") == "0986368794" and zhuyun.pg_phone("886-988705486") == "0988705486"
           and zhuyun.pg_phone("+886-03-2711288") == "03-2711288" and zhuyun.pg_phone("0911-556-291") == "0911556291" and zhuyun.pg_phone("") == "")

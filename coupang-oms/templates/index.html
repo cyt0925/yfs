@@ -2651,7 +2651,11 @@ $("#ab-pull-off").addEventListener("click", () => openPullPanel(false));
 $("#f-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 $("#f-keyword").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 
-(async () => { await loadConfig(); await loadOrders(); })();
+(async () => {
+  await loadConfig(); await loadOrders();
+  // YFS 訂單系統左側選單的「驗收單簽名」捷徑連到 /#sign：進來就直接打開簽名視窗
+  if (location.hash === "#sign") { history.replaceState(null, "", location.pathname); $("#btn-sign").click(); }
+})();
 </script>
 </body>
 </html>

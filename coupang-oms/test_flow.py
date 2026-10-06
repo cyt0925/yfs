@@ -1270,6 +1270,80 @@ def main():
     check("規則上線前既有的 CPG 舊資料，補值邏輯跑過一次後也補上了",
           legacy_header["shipping_method"] == "原廠(EM)", legacy_header["shipping_method"])
 
+    print("\n【37】YFS 訂單系統入口（/portal）：首頁數字跟資料庫對得起來、待辦會出現也會消失")
+    import datetime as _dt
+    import portal
+    html = client.get("/portal").get_data(as_text=True)
+    check("入口頁打得開，標題是 YFS 訂單系統，左側捷徑連到各工具與 SOP",
+          "YFS 訂單系統" in html and all(u in html for u in ("/master", "/mars", "/zhuyun", "/purchase", "/#sign", "/portal/sop", "/master#stats", portal.WARROOM_URL)))
+    sop = client.get("/portal/sop").get_data(as_text=True)
+    check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
+    res = client.get("/api/portal/summary"); d = res.get_json()
+    chs = {c["key"]: c for c in d["channels"]}
+    check("三個通路：只有酷澎有數字，蝦皮特選、PChome 不放假數字",
+          res.status_code == 200 and list(chs) == ["coupang", "shopee", "pchome"] and chs["coupang"]["live"]
+          and not chs["shopee"]["live"] and "new_today" not in chs["shopee"] and "new_today" not in chs["pchome"])
+    conn = db.get_conn()
+    n_today = conn.execute("SELECT COUNT(*) AS n FROM po_headers WHERE filed_date = ?", (db.today(),)).fetchone()["n"]
+    conn.close()
+    check("今日新進＝今天第一次看到的 PO 張數（今天匯的範例都算）", chs["coupang"]["new_today"] == n_today and n_today > 0, f"{chs['coupang']['new_today']} vs {n_today}")
+    check("近 30 天每天一個點、7 天出貨一天一個點", len(chs["coupang"]["daily_new"]) == 30 and len(chs["coupang"]["ship_7d"]) == 7
+          and chs["coupang"]["daily_new"][-1] == {"date": db.today(), "value": n_today})
+
+    # 用範例資料的日子（8 月）當「今天」，自己逐列算一次，跟入口頁的數字比
+    day = _dt.date(2026, 8, 20)
+    conn = db.get_conn()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT o.po_number, o.delivery_date, o.qty_ship, o.qty_coupang, o.box_size, o.removed_from_coupang, o.line, o.warehouse, o.needs_review, "
+        "h.po_status, h.receiving_status FROM orders o LEFT JOIN po_headers h ON h.po_number = o.po_number").fetchall()]
+    box = lambda r: ((r["qty_ship"] if r["qty_ship"] is not None else (r["qty_coupang"] or 0)) / r["box_size"]) if (r["box_size"] or 0) > 0 else 0
+    alive = [r for r in rows if not r["removed_from_coupang"]]
+    exp_month = round(sum(box(r) for r in alive if "2026-08-01" <= (r["delivery_date"] or "") <= "2026-08-31" and r["po_status"] != "已取消"))
+    exp_pending = len({r["po_number"] for r in alive if (r["delivery_date"] or "") >= "2026-08-20" and (r["po_status"] or "") not in ("已完成", "已取消")})
+    exp_ship = [round(sum(box(r) for r in alive if r["delivery_date"] == (day + _dt.timedelta(days=i)).isoformat() and r["po_status"] != "已取消"), 1) for i in range(7)]
+    got = portal.coupang_summary(conn, day)
+    check("本月出貨箱數＝8 月交貨的出貨數量 ÷ 箱入數加總（不湊整再四捨五入到整數）", got["month_boxes"] == exp_month and exp_month > 0, f"{got['month_boxes']} vs {exp_month}")
+    check("待出貨＝交貨日 8/20 以後、沒完成沒取消的 PO 張數", got["pending_pos"] == exp_pending, f"{got['pending_pos']} vs {exp_pending}")
+    check("7 天出貨箱數逐天對得上", [x["value"] for x in got["ship_7d"]] == exp_ship and any(exp_ship), f"{[x['value'] for x in got['ship_7d']]} vs {exp_ship}")
+
+    # 待辦：酷澎改了單要確認
+    t = {x["key"]: x for x in portal.tasks(conn, day)}
+    exp_review = len({r["po_number"] for r in rows if r["needs_review"]})
+    check("「酷澎改了 N 張單」的張數＝需要確認的 PO 數（沒有就不列）",
+          (t["review"]["count"] == exp_review) if exp_review else ("review" not in t), str(exp_review))
+
+    # 待辦：寶僑竹運拋檔還沒產 → 產了一個倉就少一個
+    pg = [r for r in alive if r["line"] == "寶僑" and (r["delivery_date"] or "") > "2026-08-20"]
+    nxt = min(r["delivery_date"] for r in pg)
+    whs = sorted({r["warehouse"] for r in pg if r["delivery_date"] == nxt})
+    check("寶僑最近一個交貨日每個倉都還沒產竹運拋檔 → 列出來", t.get("zhuyun", {}).get("count") == len(whs) and len(whs) >= 1, f"{nxt} {whs}")
+    from master.common import _log as _mst_log
+    _mst_log(conn, "寶僑", "", "", "", "zhuyun_export", "匯出竹運拋檔", "", f"{nxt} {whs[0]}：13 列、2 張 PO", "小真", "manual")
+    conn.commit()
+    t2 = {x["key"]: x for x in portal.tasks(conn, day)}
+    check("產了其中一個倉的拋檔 → 少一個；全部產完那一條就消失",
+          (t2.get("zhuyun", {}).get("count") == len(whs) - 1) if len(whs) > 1 else ("zhuyun" not in t2), str(t2.get("zhuyun")))
+
+    # 待辦：瑪氏拆單還沒填 EIP
+    conn.execute("INSERT INTO mst_mars_splits (split_key, po_number, delivery_date, eip_po) VALUES (?, ?, ?, ?)", ("T|portal", "P-PORTAL", "2026-08-25", ""))
+    conn.commit()
+    t3 = {x["key"]: x for x in portal.tasks(conn, day)}
+    conn.execute("UPDATE mst_mars_splits SET eip_po = ? WHERE split_key = ?", ("PO202609999", "T|portal")); conn.commit()
+    t4 = {x["key"]: x for x in portal.tasks(conn, day)}
+    check("瑪氏拆單沒填 EIP 單號 → 列出來；填了就消失", t3.get("mars_eip", {}).get("count") == 1 and "mars_eip" not in t4)
+
+    # 待辦：過了交期還沒驗收（近 14 天）
+    exp_recv = len({r["po_number"] for r in alive if "2026-08-06" <= (r["delivery_date"] or "") < "2026-08-20"
+                    and r["receiving_status"] == "未驗收" and r["po_status"] != "已取消"})
+    check("「過了交期還沒驗收」只算近 14 天到貨、還沒驗收、沒取消的 PO",
+          (t.get("receiving", {}).get("count") == exp_recv) if exp_recv else ("receiving" not in t), str(exp_recv))
+
+    cs = portal.change_stats(conn, day); ra = portal.recent_actions(conn)
+    conn.close()
+    check("改單統計用同一套算法（這個月合計）、最近的動作新的在上面",
+          isinstance(cs["events"], int) and cs["month"] == "2026-08" and ra == sorted(ra, key=lambda x: x["at"], reverse=True) and len(ra) <= 6)
+    check("沒登入打不開入口頁的資料", app_module.app.test_client().get("/api/portal/summary").status_code == 401)
+
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
     if FAIL:

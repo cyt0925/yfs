@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if view == 'sop' %}營運 SOP 檢索 · {% endif %}YFS 訂單系統</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+/* YFS 訂單系統（portal.py）。L 形外框：左側深紫選單＋上方深紫漸層到酒紅的標題列（Jerry 2026-10-06 定酒紅）。
+   樣式全寫在這裡，不用 Tailwind class（新 class 沒重編 CSS 會沒效果）。 */
+:root {
+  --chrome-deep: #171028; --chrome-end: #96002a; --chrome-ink: #f3eef8; --chrome-ink2: #b9aecb;
+  --chrome-hover: rgba(255,255,255,.07); --chrome-on: rgba(255,255,255,.13);
+  --bg: #f6f4f8; --surface: #ffffff; --surface-2: #faf8fc; --ink: #1d1626; --ink-2: #4b4257; --muted: #776d84;
+  --line: #e7e2ed; --line-2: #f0ecf3; --accent: #8c1436; --accent-wash: #fbeaf0;
+  /* 通路顏色：驗證過的分類色前三格（色盲也分得開），顏色跟著通路走 */
+  --ch-coupang: #2a78d6; --ch-shopee: #eb6834; --ch-pchome: #1baf7a;
+  --st-critical: #d03b3b; --st-warning: #b07400; --st-info: #6b6378;
+  --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --f-num: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
+  --side: 248px; --r: 12px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.55; }
+button { font: inherit; color: inherit; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }
+
+.app { display: grid; grid-template-columns: var(--side) minmax(0, 1fr); min-height: 100%;
+       background: linear-gradient(90deg, var(--chrome-deep) 0 var(--side), var(--bg) var(--side)); }
+.side { background: var(--chrome-deep); color: var(--chrome-ink); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.brand { height: 60px; display: flex; align-items: center; gap: 10px; padding-inline: 18px; border-bottom: 1px solid rgba(255,255,255,.08); flex: none; text-decoration: none; }
+.brand .mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, var(--chrome-deep), var(--chrome-end)); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); font-family: var(--f-num); font-weight: 700; font-size: 11px; letter-spacing: .02em; }
+.brand b { font-size: 16px; font-weight: 900; letter-spacing: .04em; }
+.nav { padding: 14px 12px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.nav h6 { margin: 14px 10px 6px; font-size: 11px; font-weight: 500; color: var(--chrome-ink2); letter-spacing: .12em; }
+.nav h6:first-child { margin-top: 2px; }
+.nav a, .nav button { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 10px; border: 0; border-radius: 9px; background: transparent; color: var(--chrome-ink); text-align: left; cursor: pointer; font-size: 14px; text-decoration: none; }
+.nav a:hover, .nav button:hover { background: var(--chrome-hover); }
+.nav .on { background: var(--chrome-on); font-weight: 700; }
+.nav i.bi { font-size: 16px; width: 20px; text-align: center; color: var(--chrome-ink2); }
+.nav .on i.bi { color: var(--chrome-ink); }
+.nav .sub { padding: 6px 10px 6px 41px; font-size: 13px; color: var(--chrome-ink2); }
+.nav .sub:hover { color: var(--chrome-ink); }
+.nav .grp { display: block; margin: 8px 0 2px 41px; font-size: 11px; color: var(--chrome-ink2); opacity: .75; letter-spacing: .1em; }
+.nav .tag { margin-left: auto; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); color: var(--chrome-ink2); font-weight: 400; }
+.nav .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-inline: 6px; }
+.side-foot { padding: 14px 16px 18px; border-top: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; color: var(--chrome-ink2); flex: none; }
+.side-foot .war { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px; border: 1px solid rgba(255,255,255,.14); text-decoration: none; color: var(--chrome-ink); }
+.side-foot .war:hover { background: var(--chrome-hover); }
+.side-foot .who { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-foot .who button { border: 0; background: none; color: var(--chrome-ink2); cursor: pointer; display: inline-flex; gap: 5px; align-items: center; padding: 2px 4px; }
+.side-foot .who button:hover { color: var(--chrome-ink); }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.top { height: 60px; display: flex; align-items: center; gap: 14px; padding-inline: 24px; color: var(--chrome-ink); background: linear-gradient(90deg, var(--chrome-deep) 0%, var(--chrome-end) 100%); position: sticky; top: 0; z-index: 20; }
+.top .menu { display: none; border: 0; background: transparent; cursor: pointer; color: var(--chrome-ink); padding: 4px; font-size: 22px; }
+.top .crumb { font-size: 13px; color: var(--chrome-ink2); }
+.top .crumb b { color: var(--chrome-ink); font-weight: 700; }
+.top .grow { flex: 1; }
+
+.content { padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 22px; max-width: 1360px; width: 100%; }
+.head { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.head h1 { margin: 0; font-size: 24px; font-weight: 900; letter-spacing: .02em; }
+.head h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.head .sub { color: var(--muted); font-size: 13px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.sec-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
+.sec-h h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.sec-h .hint { color: var(--muted); font-size: 12.5px; }
+.sec-h .grow { flex: 1; }
+.link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--accent); text-decoration: none; font-weight: 500; }
+.link:hover { text-decoration: underline; }
+.empty { padding: 22px 18px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+
+.tasks { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.task { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line-2); border-right: 1px solid var(--line-2); text-decoration: none; }
+.task:hover { background: var(--surface-2); }
+.task .ico { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); font-size: 17px; color: var(--ink-2); }
+.task .t { font-weight: 700; font-size: 14px; }
+.task .d { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.task .go { color: var(--muted); }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; padding: 0 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.crit { color: var(--st-critical); } .pill.warn { color: var(--st-warning); } .pill.info { color: var(--st-info); }
+
+.chs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.ch { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; position: relative; overflow: hidden; }
+.ch::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--chc); }
+.ch-h { display: flex; align-items: center; gap: 8px; }
+.ch-h b { font-size: 16px; }
+.chip { font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat .k { font-size: 12px; color: var(--muted); }
+.stat .v { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.stat .v small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 2px; font-family: var(--f-body); }
+.ch-f { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); min-height: 32px; }
+.ch-f .grow { flex: 1; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--accent); background: var(--accent); cursor: pointer; font-size: 13px; font-weight: 500; color: #fff; text-decoration: none; }
+.btn:hover { filter: brightness(1.1); }
+.ch.soon { background: repeating-linear-gradient(135deg, var(--surface) 0 10px, var(--surface-2) 10px 20px); }
+.ch.soon .v { color: var(--muted); }
+
+.charts { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; }
+.chart-body { padding: 10px 14px 14px; position: relative; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 4px 4px 0; font-size: 12px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+svg.viz { width: 100%; height: auto; display: block; }
+svg.viz text { font-family: var(--f-num); font-size: 11px; fill: var(--muted); }
+svg.viz .grid { stroke: var(--line-2); stroke-width: 1; }
+svg.viz .base { stroke: var(--line); stroke-width: 1; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 12px; box-shadow: 0 8px 24px rgba(23,16,40,.14); min-width: 130px; z-index: 5; }
+.tip b { display: block; font-size: 12.5px; margin-bottom: 3px; }
+.tip .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.tip .row span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+.bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; }
+.cost { padding: 16px 18px; display: flex; flex-direction: column; gap: 16px; }
+.hero { display: flex; gap: 28px; flex-wrap: wrap; }
+.hero .v { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.hero .v small { font-size: 13px; color: var(--muted); font-weight: 500; font-family: var(--f-body); margin-left: 3px; }
+.hero .k { font-size: 12px; color: var(--muted); }
+.hero .note { font-size: 11.5px; color: var(--muted); }
+.reasons { display: flex; flex-direction: column; gap: 8px; }
+.rs { display: grid; grid-template-columns: 64px minmax(0, 1fr) 34px; align-items: center; gap: 10px; font-size: 13px; }
+.rs .bar { height: 12px; border-radius: 0 4px 4px 0; background: var(--accent); opacity: .85; min-width: 2px; }
+.rs .n { text-align: right; color: var(--ink-2); }
+.tbl-wrap { overflow-x: auto; }
+table.log { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.log th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 9px 14px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+table.log td { padding: 9px 14px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+table.log td.k { color: var(--muted); white-space: nowrap; }
+table.log .old { color: var(--muted); text-decoration: line-through; }
+
+.sop-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.sop-bar { display: flex; align-items: center; gap: 12px; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.sop-frame { flex: 1; width: 100%; border: 0; min-height: calc(100vh - 110px); background: var(--surface); }
+
+.scrim { display: none; }
+@media (max-width: 1100px) {
+  .chs { grid-template-columns: minmax(0, 1fr); }
+  .charts, .bottom { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr); background: var(--bg); }
+  .side { position: fixed; inset: 0 auto 0 0; width: min(280px, 86vw); z-index: 40; transform: translateX(-100%); transition: transform .2s ease; }
+  .app.open .side { transform: none; }
+  .app.open .scrim { display: block; position: fixed; inset: 0; background: rgba(10,6,18,.45); z-index: 30; }
+  .top { padding-inline: 16px; }
+  .top .menu { display: inline-flex; }
+  .top .crumb .path { display: none; }
+  .content { padding: 18px 16px 32px; }
+  .sop-bar { padding-inline: 16px; }
+}
+@media (max-width: 520px) { .stat .v { font-size: 19px; } .head h1 { font-size: 21px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side" aria-label="主選單">
+    <a class="brand" href="{{ url_for('portal.portal_page') }}"><span class="mark">YFS</span><b>訂單系統</b></a>
+    <nav class="nav" id="nav">
+      <h6>總覽</h6>
+      <a href="{{ url_for('portal.portal_page') }}" class="{{ 'on' if view == 'home' }}"><i class="bi bi-grid-1x2"></i>首頁總覽</a>
+      <h6>通路後台</h6>
+      <a href="{{ url_for('index') }}"><span class="dot" style="background:var(--ch-coupang)"></span>酷澎</a>
+      <a class="sub" href="{{ url_for('index') }}">訂單管理</a>
+      <a class="sub" href="{{ url_for('index') }}#sign">驗收單簽名</a>
+      <a class="sub" href="{{ url_for('purchase.purchase_page') }}">採購表轉換</a>
+      <span class="grp">寶僑</span>
+      <a class="sub" href="{{ url_for('master.master_page') }}">商品主檔自動化</a>
+      <a class="sub" href="{{ url_for('zhuyun.zhuyun_page') }}">竹運出貨拋檔</a>
+      <span class="grp">瑪氏</span>
+      <a class="sub" href="{{ url_for('mars.mars_page') }}">瑪氏出貨</a>
+      {% for c in channels if not c.live %}
+      <a href="{{ url_for('portal.portal_page') }}#ch-{{ c.key }}"><span class="dot" style="background:var(--ch-{{ c.key }})"></span>{{ c.name }}<span class="tag">{{ c.status }}</span></a>
+      {% endfor %}
+      <h6>共用</h6>
+      <a href="{{ url_for('portal.portal_sop') }}" class="{{ 'on' if view == 'sop' }}"><i class="bi bi-journal-text"></i>營運 SOP 檢索</a>
+      <button type="button" id="nav-hist"><i class="bi bi-clock-history"></i>歷程紀錄</button>
+    </nav>
+    <div class="side-foot">
+      <a class="war" href="{{ warroom_url }}" target="_blank" rel="noopener"><i class="bi bi-graph-up"></i>回 YFS-AI 戰情室<i class="bi bi-box-arrow-up-right" style="margin-left:auto;font-size:12px"></i></a>
+      <div class="who"><span><i class="bi bi-person-circle"></i> {{ logged_in_user }}</span>
+        <form method="post" action="{{ url_for('logout') }}" style="margin:0"><button type="submit"><i class="bi bi-box-arrow-right"></i>登出</button></form></div>
+      <span>版本 {{ build_version }}</span>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+
+  <div class="main">
+    <header class="top">
+      <button class="menu" id="menu" type="button" aria-label="打開選單"><i class="bi bi-list"></i></button>
+      <div class="crumb"><span class="path">YFS 訂單系統 ／ </span><b>{{ '營運 SOP 檢索' if view == 'sop' else '首頁總覽' }}</b></div>
+      <div class="grow"></div>
+      {% set hist_scope = 'all' %}{% set hist_color = '#fff' %}{% include '_history.html' %}
+    </header>
+
+    {% if view == 'sop' %}
+    <div class="sop-wrap">
+      <div class="sop-bar"><i class="bi bi-journal-text"></i>營運 SOP 檢索是獨立的網站，這裡直接打開。<span style="flex:1"></span>
+        <a class="link" href="{{ sop_url }}" target="_blank" rel="noopener">另開新分頁 <i class="bi bi-box-arrow-up-right"></i></a></div>
+      <iframe class="sop-frame" src="{{ sop_url }}" title="營運 SOP 檢索"></iframe>
+    </div>
+    {% else %}
+    <main class="content">
+      <div class="head">
+        <h1>首頁總覽</h1>
+        <span class="sub" id="as-of">讀取中…</span>
+      </div>
+
+      <section class="card" aria-labelledby="h-tasks">
+        <div class="sec-h"><h2 id="h-tasks">今天要處理的事</h2><span class="hint">點一下直接到那一頁</span><span class="grow"></span><span class="hint num" id="task-count"></span></div>
+        <div class="tasks" id="tasks"></div>
+      </section>
+
+      <section aria-labelledby="h-ch">
+        <div class="head" style="margin-bottom:12px"><h2 id="h-ch">各通路</h2></div>
+        <div class="chs" id="chs"></div>
+      </section>
+
+      <section aria-labelledby="h-trend">
+        <div class="head" style="margin-bottom:12px"><h2 id="h-trend">訂單與出貨</h2><span class="sub" id="trend-note"></span></div>
+        <div class="charts">
+          <div class="card">
+            <div class="sec-h"><h2>近 30 天每天新進 PO</h2><span class="hint">單位：張，以系統第一次看到這張單的日子算</span></div>
+            <div class="chart-body" id="c-line"><div class="legend" id="lg-line"></div></div>
+          </div>
+          <div class="card">
+            <div class="sec-h"><h2>今天起 7 天要出的箱數</h2><span class="hint">依交貨日</span></div>
+            <div class="chart-body" id="c-bar"><div class="legend" id="lg-bar"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="bottom">
+        <section class="card" aria-labelledby="h-cost">
+          <div class="sec-h"><h2 id="h-cost">本月改單與多花的時間</h2><span class="grow"></span><a class="link" href="{{ url_for('master.master_page') }}#stats">看改單統計 <i class="bi bi-chevron-right"></i></a></div>
+          <div class="cost" id="cost"></div>
+        </section>
+        <section class="card" aria-labelledby="h-log">
+          <div class="sec-h"><h2 id="h-log">最近的動作</h2><span class="grow"></span><button type="button" class="link" id="more-hist" style="border:0;background:none;cursor:pointer">全部歷程 <i class="bi bi-chevron-right"></i></button></div>
+          <div class="tbl-wrap"><table class="log" id="log"></table></div>
+        </section>
+      </div>
+    </main>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmt = n => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
+
+  /* 外框 */
+  $("#menu").addEventListener("click", () => $("#app").classList.toggle("open"));
+  $("#scrim").addEventListener("click", () => $("#app").classList.remove("open"));
+  const openHist = () => { $("#app").classList.remove("open"); const b = document.getElementById("hs-open"); if (b) b.click(); };
+  $("#nav-hist").addEventListener("click", openHist);
+  if (!$("#tasks")) return;   // SOP 頁到這裡就好
+  $("#more-hist").addEventListener("click", openHist);
+
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const md = s => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+  const wk = s => "日一二三四五六"[new Date(s + "T00:00:00").getDay()];
+  // 刻度：每格是 1、2、2.5、5 乘 10 的次方，而且是整數（張數、箱數不會出現 6.3），最多 5 格
+  function niceScale(v) {
+    v = Math.max(v, 4);
+    for (let p = 1; ; p *= 10) for (const m of [1, 2, 2.5, 5]) {
+      const step = m * p; if (step % 1) continue;
+      const n = Math.ceil(v / step); if (n <= 5) return { max: step * n, step, n };
+    }
+  }
+  function tipAt(box, x, y, html) {
+    let t = box.querySelector(".tip"); if (!t) { t = document.createElement("div"); t.className = "tip"; box.appendChild(t); }
+    t.innerHTML = html; t.hidden = false;
+    t.style.left = Math.min(Math.max(x + 14, 8), box.clientWidth - t.offsetWidth - 8) + "px"; t.style.top = Math.max(y - 10, 8) + "px";
+  }
+  const hideTip = box => { const t = box.querySelector(".tip"); if (t) t.hidden = true; };
+
+  let D = null;
+  const live = () => D.channels.filter(c => c.live);
+
+  function renderTasks() {
+    const ts = D.tasks;
+    $("#task-count").textContent = ts.length ? `共 ${ts.length} 件` : "";
+    $("#tasks").innerHTML = ts.map(t => `<a class="task" href="${esc(t.url)}">
+      <span class="ico"><i class="bi ${esc(t.icon)}"></i></span>
+      <span style="min-width:0"><span class="pill ${esc(t.level)}"><i class="bi ${t.level === "crit" ? "bi-exclamation-circle" : t.level === "warn" ? "bi-clock" : "bi-circle"}"></i>${esc(t.level_text)}</span>
+        <div class="t">${esc(t.title)}</div><div class="d">${esc(t.detail)}</div></span>
+      <i class="bi bi-chevron-right go"></i></a>`).join("")
+      || `<div class="empty"><i class="bi bi-check2-circle" style="color:var(--st-info)"></i>今天沒有待處理的事。</div>`;
+  }
+
+  function renderChannels() {
+    $("#chs").innerHTML = D.channels.map(c => {
+      const v = (n, unit) => c.live ? `${fmt(n)}<small>${unit}</small>` : `—`;
+      return `<div class="card ch ${c.live ? "" : "soon"}" id="ch-${esc(c.key)}" style="--chc:var(--ch-${esc(c.key)})">
+        <div class="ch-h"><b>${esc(c.name)}</b>${c.live ? "" : `<span class="chip">${esc(c.status)}</span>`}</div>
+        <div class="stats">
+          <div class="stat"><div class="k">今日新進</div><div class="v num">${v(c.new_today, "張 PO")}</div></div>
+          <div class="stat"><div class="k">待出貨</div><div class="v num">${v(c.pending_pos, "張")}</div></div>
+          <div class="stat"><div class="k">本月出貨</div><div class="v num">${v(c.month_boxes, "箱")}</div></div>
+        </div>
+        <div class="ch-f">${c.live
+          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "還沒有匯入過整合表"}</span><span class="grow"></span><a class="btn" href="/">進入後台 <i class="bi bi-arrow-right"></i></a>`
+          : `<span>${c.key === "shopee" ? "訂單來源檔確認後開工" : "排在蝦皮特選之後"}</span>`}</div></div>`;
+    }).join("");
+  }
+
+  function drawLine() {
+    const box = $("#c-line"); box.querySelectorAll("svg,.tip").forEach(e => e.remove());
+    const chs = live(); const days = chs[0].daily_new.map(x => x.date);
+    $("#lg-line").innerHTML = chs.length > 1 ? chs.map(c => `<span><i style="background:var(--ch-${c.key})"></i>${esc(c.name)}</span>`).join("") : "";
+    const W = Math.max(box.clientWidth - 28, 300), H = 230, L = 34, R = chs.length > 1 ? 64 : 14, T = 14, B = 26, n = days.length - 1;
+    const sc = niceScale(Math.max(...chs.flatMap(c => c.daily_new.map(x => x.value))) * 1.05), max = sc.max;
+    const x = i => L + (i * (W - L - R)) / n, y = v => T + (H - T - B) * (1 - v / max);
+    let s = `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="近 30 天每天新進 PO 張數">`;
+    for (let k = 0; k <= sc.n; k++) { const v = sc.step * k; s += `<line class="${k ? "grid" : "base"}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`; }
+    [0, 7, 14, 21, n].forEach(i => { s += `<text x="${x(i)}" y="${H - 6}" text-anchor="${i === n ? "end" : "middle"}">${md(days[i])}</text>`; });
+    chs.forEach(c => {
+      const col = css("--ch-" + c.key), vals = c.daily_new.map(p => p.value);
+      const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      if (chs.length === 1) s += `<polygon points="${x(0)},${y(0)} ${pts} ${x(n)},${y(0)}" fill="${col}" fill-opacity=".08"/>`;
+      s += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      s += `<circle cx="${x(n)}" cy="${y(vals[n])}" r="4" fill="${col}" stroke="${css("--surface")}" stroke-width="2"/>`;
+      if (chs.length > 1) s += `<text x="${x(n) + 9}" y="${y(vals[n]) + 4}" style="fill:${css("--ink-2")};font-weight:600">${esc(c.name)}</text>`;
+    });
+    s += `<line id="xh" class="base" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/><rect id="hit-line" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
+    box.insertAdjacentHTML("beforeend", s);
+    const svg = box.querySelector("svg"), xh = svg.querySelector("#xh"), hit = svg.querySelector("#hit-line");
+    hit.addEventListener("pointermove", ev => {
+      const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * W;
+      const i = Math.max(0, Math.min(n, Math.round(((px - L) / (W - L - R)) * n)));
+      xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.setAttribute("visibility", "visible");
+      const br = box.getBoundingClientRect();
+      tipAt(box, ev.clientX - br.left, ev.clientY - br.top, `<b>${md(days[i])}（${wk(days[i])}）</b>` + chs.map(c => `<div class="row"><span><i style="background:var(--ch-${c.key})"></i>${esc(c.name)}</span><span class="num">${c.daily_new[i].value} 張</span></div>`).join(""));
+    });
+    hit.addEventListener("pointerleave", () => { xh.setAttribute("visibility", "hidden"); hideTip(box); });
+  }
+
+  function drawBar() {
+    const box = $("#c-bar"); box.querySelectorAll("svg,.tip").forEach(e => e.remove());
+    const chs = live(); const days = chs[0].ship_7d.map(x => x.date);
+    $("#lg-bar").innerHTML = chs.length > 1 ? chs.map(c => `<span><i style="background:var(--ch-${c.key});height:10px;width:10px;border-radius:3px"></i>${esc(c.name)}</span>`).join("") : "";
+    const W = Math.max(box.clientWidth - 28, 280), H = 230, L = 40, R = 8, T = 18, B = 34;
+    const tot = days.map((_, i) => chs.reduce((a, c) => a + c.ship_7d[i].value, 0));
+    const sc = niceScale(Math.max(...tot) * 1.05), max = sc.max, slot = (W - L - R) / days.length;
+    const bw = Math.min(34, slot * 0.56), y = v => T + (H - T - B) * (1 - v / max), h = v => (H - T - B) * (v / max);
+    let s = `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="今天起 7 天每天要出的箱數">`;
+    for (let k = 0; k <= sc.n; k++) { const v = sc.step * k; s += `<line class="${k ? "grid" : "base"}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`; }
+    days.forEach((d, i) => {
+      const cx = L + (i + 0.5) * slot, x0 = cx - bw / 2; let acc = 0;
+      const segs = chs.filter(c => c.ship_7d[i].value > 0);
+      segs.forEach((c, j) => {
+        const v = c.ship_7d[i].value, top = y(acc + v), hh = Math.max(h(v) - (j ? 2 : 0), 1), r = j === segs.length - 1 ? Math.min(4, hh) : 0, col = css("--ch-" + c.key);
+        s += r ? `<path d="M${x0},${top + hh} V${top + r} Q${x0},${top} ${x0 + r},${top} H${x0 + bw - r} Q${x0 + bw},${top} ${x0 + bw},${top + r} V${top + hh} Z" fill="${col}"/>`
+               : `<rect x="${x0}" y="${top}" width="${bw}" height="${hh}" fill="${col}"/>`;
+        acc += v;
+      });
+      s += `<text x="${cx}" y="${y(tot[i]) - 6}" text-anchor="middle" style="fill:${css(tot[i] ? "--ink-2" : "--muted")}">${fmt(tot[i])}</text>`;
+      s += `<text x="${cx}" y="${H - 18}" text-anchor="middle">${md(d)}</text><text x="${cx}" y="${H - 5}" text-anchor="middle">${i === 0 ? "今天" : wk(d)}</text>`;
+      s += `<rect class="hb" data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>`;
+    });
+    box.insertAdjacentHTML("beforeend", s + `</svg>`);
+    box.querySelectorAll(".hb").forEach(rc => {
+      rc.addEventListener("pointermove", ev => {
+        const i = +rc.dataset.i, br = box.getBoundingClientRect();
+        tipAt(box, ev.clientX - br.left, ev.clientY - br.top, `<b>${md(days[i])}（${wk(days[i])}）交貨</b>` + chs.map(c => `<div class="row"><span><i style="background:var(--ch-${c.key})"></i>${esc(c.name)}</span><span class="num">${fmt(c.ship_7d[i].value)} 箱</span></div>`).join(""));
+      });
+      rc.addEventListener("pointerleave", () => hideTip(box));
+    });
+  }
+
+  function renderCost() {
+    const c = D.changes;
+    let minutes = 0; try { minutes = Math.max(0, Number(localStorage.getItem("mst_stat_min")) || 0); } catch (e) {}
+    const hours = minutes ? Math.round((c.events * minutes / 60) * 10) / 10 : null;
+    const rmax = Math.max(1, ...c.reasons.map(r => r.count));
+    $("#cost").innerHTML = `<div class="hero">
+        <div><div class="k">改單次數</div><div class="v num">${fmt(c.events)}<small>次</small></div><div class="note">酷澎改 ${fmt(c.coupang)} · 我們改 ${fmt(c.manual)}</div></div>
+        <div><div class="k">被改過的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div></div>
+        <div><div class="k">估計多花</div><div class="v num">${hours == null ? "—" : fmt(hours)}<small>${hours == null ? "" : "小時"}</small></div>
+          <div class="note">${hours == null ? "到改單統計填「每次改單約幾分鐘」就會算" : `每次約 ${minutes} 分鐘`}</div></div>
+      </div>
+      <div class="reasons" aria-label="我們改單的原因">${c.reasons.length
+        ? c.reasons.map(r => `<div class="rs"><span>${esc(r.name)}</span><span class="bar" style="width:${(r.count / rmax) * 100}%"></span><span class="n num">${r.count}</span></div>`).join("")
+        : `<div class="hint" style="color:var(--muted);font-size:12.5px">這個月還沒有我們改單的原因紀錄。</div>`}</div>`;
+  }
+
+  function renderLog() {
+    const cut = v => { v = String(v ?? ""); return v.length > 40 ? v.slice(0, 40) + "…" : v; };
+    $("#log").innerHTML = D.recent.length ? `<thead><tr><th>時間</th><th>操作人員</th><th>做了什麼</th></tr></thead><tbody>` +
+      D.recent.map(r => `<tr><td class="k num">${esc((r.at || "").slice(5, 16))}</td><td>${esc(r.who)}</td>
+        <td>${esc(r.what)}${r.po ? ` <span class="num" style="color:var(--muted)">${esc(r.po)}</span>` : ""}${r.old || r.new ? `：${r.old ? `<span class="old">${esc(cut(r.old))}</span> → ` : ""}${esc(cut(r.new))}` : ""}</td></tr>`).join("") + `</tbody>`
+      : `<tbody><tr><td class="k" style="padding:18px">還沒有紀錄。</td></tr></tbody>`;
+  }
+
+  function drawCharts() { if (D && live().length) { drawLine(); drawBar(); } }
+
+  async function load() {
+    try {
+      const res = await fetch("/api/portal/summary"); D = await res.json();
+      if (!res.ok) throw new Error(D.error || `伺服器錯誤 (${res.status})`);
+    } catch (e) { $("#as-of").textContent = `讀不到資料：${e.message}`; return; }
+    const t = D.today; $("#as-of").textContent = `${t.slice(0, 4)} 年 ${Number(t.slice(5, 7))} 月 ${Number(t.slice(8, 10))} 日（${wk(t)}）· 讀取時間 ${D.now.slice(11, 16)}`;
+    $("#trend-note").textContent = live().length === 1 ? `目前只有${live()[0].name}有資料，其他通路上線後會一起畫` : "";
+    renderTasks(); renderChannels(); drawCharts(); renderCost(); renderLog();
+  }
+  load();
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawCharts, 120); });
+})();
+</script>
+</body>
+</html>
