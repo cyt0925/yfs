@@ -397,13 +397,19 @@ table.st tr.sub td { color: var(--muted); }
     let s = `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="近 30 天每天新進 PO 張數">`;
     for (let k = 0; k <= sc.n; k++) { const v = sc.step * k; s += `<line class="${k ? "grid" : "base"}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`; }
     [0, 7, 14, 21, n].forEach(i => { s += `<text x="${x(i)}" y="${H - 6}" text-anchor="${i === n ? "end" : "middle"}">${md(days[i])}</text>`; });
+    // 線尾的通路名：最後一天數字一樣時會疊在一起，照高低排好、上下至少隔 15px（Jerry 2026-10-07：「折線圖會重疊」）
+    const labY = {};
+    chs.map(c => ({ k: c.key, y: y(c.daily_new[n].value) + 4 })).sort((a, b) => a.y - b.y)
+      .forEach((o, i, arr) => { labY[o.k] = i ? Math.max(o.y, labY[arr[i - 1].k] + 15) : o.y; });
+    const over = Math.max(0, ...Object.values(labY)) - (H - B + 4);
+    if (over > 0) Object.keys(labY).forEach(k => { labY[k] -= over; });
     chs.forEach(c => {
       const col = css("--ch-" + c.key), vals = c.daily_new.map(p => p.value);
       const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
       if (chs.length === 1) s += `<polygon points="${x(0)},${y(0)} ${pts} ${x(n)},${y(0)}" fill="${col}" fill-opacity=".08"/>`;
       s += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
       s += `<circle cx="${x(n)}" cy="${y(vals[n])}" r="4" fill="${col}" stroke="${css("--surface")}" stroke-width="2"/>`;
-      if (chs.length > 1) s += `<text x="${x(n) + 9}" y="${y(vals[n]) + 4}" style="fill:${css("--ink-2")};font-weight:600">${esc(c.name)}</text>`;
+      if (chs.length > 1) s += `<text x="${x(n) + 9}" y="${labY[c.key]}" style="fill:${css("--ink-2")};font-weight:600">${esc(c.name)}</text>`;
     });
     s += `<line id="xh" class="base" x1="0" x2="0" y1="${T}" y2="${H - B}" visibility="hidden"/><rect id="hit-line" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
     box.insertAdjacentHTML("beforeend", s);
