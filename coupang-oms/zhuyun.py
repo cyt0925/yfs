@@ -110,7 +110,7 @@ def parse_phone_sheet(fileobj):
     try:
         wb = openpyxl.load_workbook(fileobj, data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"打不開這個 Excel：{exc}") from exc
+        raise ValueError("無法讀取此 Excel 檔，請確認為 .xlsx 格式。") from exc
     for ws in wb.worksheets:
         for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
             cols = {}
@@ -126,7 +126,7 @@ def parse_phone_sheet(fileobj):
                     if code and ph:
                         out[code] = ph
                 return out
-    raise ValueError("找不到倉別手機表：第一列要有「FC」（或倉別）和「TEL」（或電話）兩欄。")
+    raise ValueError("找不到表頭：第一列須有「FC」（或「倉別」）與「TEL」（或「電話」）欄。")
 
 
 def warehouse_phones():
@@ -233,18 +233,18 @@ def _summary(groups, rows, warnings, settings, phones):
         rs = g["rows"]
         issues = []
         if any(_qty(r) in (None, 0) for r in rs):
-            issues.append(f"{sum(1 for r in rs if _qty(r) in (None, 0))} 列出貨數量是 0 或空的")
+            issues.append(f"{sum(1 for r in rs if _qty(r) in (None, 0))} 列出貨數量為 0 或空白")
         if any(not r.get("box_size") for r in rs):
-            issues.append(f"{sum(1 for r in rs if not r.get('box_size'))} 列沒有箱入數，箱數算不出來")
+            issues.append(f"{sum(1 for r in rs if not r.get('box_size'))} 列缺箱入數，無法計算箱數")
         if any(r.get("unit_price") is None for r in rs):
-            issues.append(f"{sum(1 for r in rs if r.get('unit_price') is None)} 列沒有單價，金額小計空白")
+            issues.append(f"{sum(1 for r in rs if r.get('unit_price') is None)} 列缺單價，金額小計留白")
         if any(not r.get("yf_sku") for r in rs):
-            issues.append(f"{sum(1 for r in rs if not r.get('yf_sku'))} 列沒有永豐料號")
+            issues.append(f"{sum(1 for r in rs if not r.get('yf_sku'))} 列缺永豐料號")
         out.append({"date": g["date"], "warehouse": g["warehouse"], "rows": len(rs), "pos": len({r["po_number"] for r in rs}),
                     "qty": sum(_qty(r) or 0 for r in rs), "cases": sum(math.ceil((_qty(r) or 0) / r["box_size"]) for r in rs if r.get("box_size")),
                     "amount": round(sum((_qty(r) or 0) * (r.get("unit_price") or 0) for r in rs), 2),
                     "throw_file": throw_filename(g, groups), "mapping_file": mapping_filename(g), "issues": issues,
-                    "phone": throw_phone(g, settings, phones), "phone_from": "倉別手機表" if phones.get((g["warehouse"] or "").upper()) else "固定字",
+                    "phone": throw_phone(g, settings, phones), "phone_from": "倉別手機表" if phones.get((g["warehouse"] or "").upper()) else "預設手機",
                     "recipient": settings["recipient"],
                     "preview": [{"po": r["po_number"], "sku": r["sku_id"], "yf_sku": r.get("yf_sku"), "name": (r.get("product_name") or "")[:40],
                                  "qty": _qty(r), "unit": r.get("unit"), "box": r.get("box_size"),
@@ -260,7 +260,9 @@ def _parse_files(files):
         try:
             rs, ws = importer.parse_workbook(f.stream, f.filename)
         except importer.ImportError_ as exc:
-            raise ValueError(f"{f.filename}：{exc}") from exc
+            # 打不開檔案時 importer 會把 openpyxl 的英文原因接在後面，畫面上不給使用者看英文
+            msg = "無法讀取此 Excel 檔，請確認為 .xlsx 格式。" if exc.__cause__ is not None else str(exc)
+            raise ValueError(f"{f.filename}：{msg}") from exc
         rows += rs; warnings += [f"{f.filename}：{w}" for w in ws]; names.append(f.filename)
     return rows, warnings, names
 
@@ -282,7 +284,7 @@ def api_zhuyun_settings():
         if k in payload:
             new[k] = str(payload.get(k) or "").strip()[:100]
     if not new["recipient"]:
-        return jsonify({"error": "收件人不能空白。"}), 400
+        return jsonify({"error": "請填寫收件人。"}), 400
     _save_settings(new)
     return jsonify({"ok": True, **new})
 
@@ -298,7 +300,7 @@ def api_zhuyun_phone_set():
     payload = request.get_json(silent=True) or {}
     code = norm_text(payload.get("code")).upper().replace(" ", "")
     if not WH_CODE_RE.match(code):
-        return jsonify({"error": f"倉別要像 TAO5、TXRC17 這樣的英數（2～12 碼），你填的是「{code or '空白'}」。"}), 400
+        return jsonify({"error": f"倉別格式錯誤：須為 2～12 碼英數字（例如 TAO5、TXRC17），目前輸入「{code or '空白'}」。"}), 400
     ph = pg_phone(payload.get("phone"))
     phones = load_phones(); old = phones.get(code, "")
     if ph:
@@ -315,17 +317,17 @@ def api_zhuyun_phone_set():
 def api_zhuyun_phones_import():
     f = request.files.get("file")
     if f is None or not f.filename:
-        return jsonify({"error": "沒有收到檔案。"}), 400
+        return jsonify({"error": "未收到檔案，請重新上傳。"}), 400
     try:
         new = parse_phone_sheet(f.stream)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     if not new:
-        return jsonify({"error": "檔案裡沒有任何倉別＋手機。"}), 400
+        return jsonify({"error": "檔案中沒有倉別與手機資料。"}), 400
     phones = load_phones()
     added = sum(1 for k in new if k not in phones); updated = sum(1 for k, v in new.items() if k in phones and phones[k] != v)
     phones.update(new); save_phones(phones)
-    _log_phone("", "", f"上傳 {f.filename}：{len(new)} 個倉，新增 {added}、更新 {updated}")
+    _log_phone("", "", f"上傳 {f.filename}：{len(new)} 個倉，新增 {added} 個、更新 {updated} 個")
     return jsonify({"ok": True, "rows": len(new), "added": added, "updated": updated, "same": len(new) - added - updated, "phones": phones})
 
 
@@ -345,7 +347,7 @@ def _log_phone(code, old, new):
 def api_zhuyun_parse():
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
-        return jsonify({"error": "沒有收到檔案。"}), 400
+        return jsonify({"error": "未收到檔案，請重新上傳。"}), 400
     try:
         rows, warnings, names = _parse_files(files)
     except ValueError as exc:
@@ -353,7 +355,7 @@ def api_zhuyun_parse():
     groups = group_rows(rows)
     if not groups:
         lines = collections.Counter(norm_text(r.get("line")) or "空白" for r in rows)
-        return jsonify({"error": "這份檔裡沒有線別是寶僑的列（" + "、".join(f"{k} {v} 列" for k, v in lines.items()) + "），竹運拋檔只做寶僑。"}), 400
+        return jsonify({"error": "檔案中沒有寶僑的資料列（" + "、".join(f"{k} {v} 列" for k, v in lines.items()) + "）。竹運出貨拋檔僅處理寶僑。"}), 400
     out = _summary(groups, rows, warnings, _load_settings(), warehouse_phones()); out["files"] = names
     return jsonify(out)
 
@@ -363,20 +365,20 @@ def api_zhuyun_export():
     """同一份檔再傳一次、直接產 zip：每組兩個檔。只有一組就各自一個檔也放 zip（檔名一致，人不用猜）。"""
     files = [f for f in request.files.getlist("file") if f and f.filename]
     if not files:
-        return jsonify({"error": "沒有收到檔案。"}), 400
+        return jsonify({"error": "未收到檔案，請重新上傳。"}), 400
     try:
         rows, _warnings, _names = _parse_files(files)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     groups = group_rows(rows)
     if not groups:
-        return jsonify({"error": "這份檔裡沒有線別是寶僑的列。"}), 400
+        return jsonify({"error": "檔案中沒有寶僑的資料列。竹運出貨拋檔僅處理寶僑。"}), 400
     only = norm_text(request.form.get("only"))      # "YYYY-MM-DD|倉"：只產這一組（檔名還是照全部算，同一天多倉才帶倉）
     all_groups = groups
     if only:
         groups = [g for g in groups if f"{g['date']}|{g['warehouse']}" == only]
         if not groups:
-            return jsonify({"error": "找不到這一組到貨日＋倉。"}), 400
+            return jsonify({"error": "找不到此到貨日與倉別的資料，請重新上傳檔案。"}), 400
     settings = _load_settings(); phones = warehouse_phones()
     try:
         conn = db.get_conn()

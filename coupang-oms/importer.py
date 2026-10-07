@@ -108,8 +108,8 @@ def parse_workbook(file_stream, filename=""):
     """讀取整合表，回傳 (rows, warnings)。rows 已完成正規化。"""
     try:
         wb = openpyxl.load_workbook(file_stream, data_only=True)
-    except Exception as exc:  # noqa: BLE001 - 要把原因原樣告訴 OP
-        raise ImportError_(f"無法開啟 Excel 檔案：{exc}") from exc
+    except Exception as exc:  # noqa: BLE001 - 原始英文錯誤不給 OP 看
+        raise ImportError_("無法開啟檔案，請確認是 .xlsx 格式的訂單彙總表。") from exc
 
     sheet = None
     for name in wb.sheetnames:
@@ -127,7 +127,7 @@ def parse_workbook(file_stream, filename=""):
     if header_idx is None or not all(f in mapping for f in REQUIRED):
         found = [norm_header(c) for c in raw_rows[0] if norm_header(c)][:12]
         raise ImportError_(
-            "找不到「PO單號」與「SKU ID」欄位，這可能不是整合表。"
+            "找不到「PO單號」與「SKU ID」欄位，這可能不是訂單彙總表。"
             f"（第一列讀到的欄位：{', '.join(found) or '空白'}）"
         )
 

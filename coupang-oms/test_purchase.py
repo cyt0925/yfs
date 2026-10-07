@@ -451,6 +451,60 @@ def main():
 
     res = export(client, "pg", [])
     check("匯出空清單要擋下來", res.status_code == 400)
+    check("壞檔的錯誤訊息是中文，不直接秀英文例外",
+          not re.search(r"[A-Za-z]{4,}", client.post("/api/purchase/parse", data={
+              "line": "pg", "file": (io.BytesIO(b"not an excel file"), "fake.xlsx")},
+              content_type="multipart/form-data").get_json()["error"].replace("Excel", "").replace("xlsx", "")))
+
+    print("\n【7.1】舊版 .xls 也讀得了（畫面寫「支援 .xlsx／.xls」）：同一份資料另存成 .xls，解析結果要一模一樣")
+    import datetime as _dt
+    import openpyxl as _opx
+    import xlwt
+
+    def to_xls(path):
+        """把樣本 .xlsx 用 xlwt 另存成舊版 .xls；日期格用日期格式寫，才是 Excel 真正存出來的樣子。"""
+        src = _opx.load_workbook(path, data_only=True)
+        out = xlwt.Workbook(encoding="utf-8")
+        date_style = xlwt.easyxf(num_format_str="yyyy-mm-dd")
+        for ws in src.worksheets:
+            sh = out.add_sheet(ws.title, cell_overwrite_ok=True)
+            for row in ws.iter_rows():
+                for c in row:
+                    if c.value is None:
+                        continue
+                    if isinstance(c.value, _dt.datetime):
+                        sh.write(c.row - 1, c.column - 1, c.value, date_style)
+                    else:
+                        sh.write(c.row - 1, c.column - 1, c.value)
+        buf = io.BytesIO()
+        out.save(buf)
+        return buf.getvalue()
+
+    def parse_bytes(line, data, name):
+        return client.post("/api/purchase/parse", data={"line": line, "file": (io.BytesIO(data), name)},
+                           content_type="multipart/form-data")
+
+    for line, fn in (("pg", "PG_訂單匯入範例.xlsx"), ("paper", "紙潔_訂單匯入範例.xlsx")):
+        path = os.path.join(SAMPLES, fn)
+        xls = to_xls(path)
+        with open(path, "rb") as fh:
+            a = parse_bytes(line, fh.read(), fn)
+        b = parse_bytes(line, xls, fn[:-1])
+        check(f"{purchase.LINES[line]['label']}：.xls 解析成功，結果跟 .xlsx 一樣（訂單編號、料號沒變成 13000000492925.0）",
+              not xls.startswith(b"PK") and a.status_code == 200 and b.status_code == 200
+              and a.get_json()["groups"] == b.get_json()["groups"],
+              b.get_json() if b.status_code != 200 else "")
+    # 瑪氏：配送日是日期格，要讀成日期（上傳檔名不帶 MMDD 到貨，日期只能從那格來）
+    up = "永豐Mars採購單(箱單位)-GUM糖_TAO4_13000000467952"
+    path = os.path.join(SAMPLES, "瑪氏_訂貨通知單範例.xlsx")
+    with open(path, "rb") as fh:
+        a = parse_bytes("mars", fh.read(), up + ".xlsx")
+    b = parse_bytes("mars", to_xls(path), up + ".xls")
+    gb = (b.get_json() or {}).get("groups") or [{}]
+    check("瑪氏：.xls 解析結果跟 .xlsx 一樣，配送日讀成 0904、品類 GUM糖",
+          a.status_code == 200 and b.status_code == 200 and a.get_json()["groups"] == b.get_json()["groups"]
+          and gb[0].get("date_guess") == "0904" and gb[0].get("category") == "GUM糖",
+          b.get_json() if b.status_code != 200 else gb[0])
 
     print("\n【5】竹運出貨拋檔及料號對照表（/zhuyun，獨立工具）")
     import openpyxl
@@ -464,7 +518,7 @@ def main():
     g = pg_groups[0]
     check("檔名：同一天兩個倉會撞名，拋檔才加 (倉)：指定到貨日20260823,酷澎_PG(TAO5).xlsx ＋ 永豐料號對照表_0823交貨(TAO5).xlsx", g["throw_file"] == "指定到貨日20260823,酷澎_PG(TAO5).xlsx" and g["mapping_file"] == "永豐料號對照表_0823交貨(TAO5).xlsx", g["throw_file"])
     check("只有一個倉的那天不加 (倉)", zhuyun.throw_filename({"date": "2026-09-18", "warehouse": "TAO5"}, [{"date": "2026-09-18", "warehouse": "TAO5"}]) == "指定到貨日20260918,酷澎_PG.xlsx")
-    check("手機：倉庫資料表沒填 TAO5 → 用固定字 02-55927598", g["phone"] == "02-55927598" and g["phone_from"] == "固定字" and g["recipient"] == "酷澎股份有限公司")
+    check("手機：倉別手機表沒填 TAO5 → 用預設手機 02-55927598", g["phone"] == "02-55927598" and g["phone_from"] == "預設手機" and g["recipient"] == "酷澎股份有限公司")
     res = client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data")
     check("匯出 zip，檔名帶交貨日", res.status_code == 200 and "竹運拋檔_0823交貨.zip" in res.headers.get("Content-Disposition", "").replace("%E7%AB%B9%E9%81%8B%E6%8B%8B%E6%AA%94", "竹運拋檔").replace("%E4%BA%A4%E8%B2%A8", "交貨"), res.headers.get("Content-Disposition"))
     z = zipfile.ZipFile(io.BytesIO(res.data)); names = z.namelist()
@@ -487,7 +541,7 @@ def main():
     # 倉別手機表：寶僑自己一張（Jerry 2026-10-05：瑪氏跟寶僑能去的倉不同，不共用）
     res = client.post("/api/mars/warehouses", json={"code": "TAO5", "phone": "0911-556-291"})
     d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
-    check("瑪氏倉庫資料表填了 TAO5 電話，竹運不理它（還是固定字）", res.status_code == 200 and d2["groups"][0]["phone"] == "02-55927598" and d2["groups"][0]["phone_from"] == "固定字", str(d2["groups"][0]["phone"]))
+    check("瑪氏倉庫資料表填了 TAO5 電話，竹運不理它（還是預設手機）", res.status_code == 200 and d2["groups"][0]["phone"] == "02-55927598" and d2["groups"][0]["phone_from"] == "預設手機", str(d2["groups"][0]["phone"]))
     # 收掉：倉庫資料表是「設定」，清資料不會清；PostgreSQL 的 CI 四支測試共用同一個資料庫，留著會讓後面的 test_mars 讀到多一個倉
     client.delete("/api/mars/warehouses/TAO5")
     check("手機寫法統一：+886-02-55927598 → 02-55927598、+886-986368794 → 0986368794、886-988705486 → 0988705486、+886-03-2711288 → 03-2711288、0911-556-291 → 0911556291、空白 → 空白",
@@ -496,7 +550,7 @@ def main():
     res = client.put("/api/zhuyun/phones", json={"code": "tao5", "phone": "+886-0911556291"})
     d2 = client.post("/api/zhuyun/parse", data={"file": (open(sample, "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
     check("頁面上直接填 TAO5（小寫也行）→ 拋檔手機用它 0911556291，來源寫「倉別手機表」", res.status_code == 200 and res.get_json()["code"] == "TAO5" and d2["groups"][0]["phone"] == "0911556291" and d2["groups"][0]["phone_from"] == "倉別手機表"
-          and d2["groups"][1]["phone_from"] == "固定字", str(d2["groups"][0]["phone"]))
+          and d2["groups"][1]["phone_from"] == "預設手機", str(d2["groups"][0]["phone"]))
     check("倉別亂填 → 400", client.put("/api/zhuyun/phones", json={"code": "台北倉", "phone": "0911"}).status_code == 400)
     wb = openpyxl.Workbook(); ws = wb.active; ws.append(["FC", "TEL"]); ws.append(["TXRC29", "+886-986368794"]); ws.append(["TAO5", "+886-02-55927598"]); ws.append(["TAO4", "+886-03-2711288"])
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
@@ -522,11 +576,13 @@ def main():
     check("三頁都有「歷程」鈕", all("hs-open" in client.get(u).get_data(as_text=True) for u in ("/purchase", "/zhuyun", "/mars")))
     check("only 亂填 → 400", client.post("/api/zhuyun/export", data={"file": (open(sample, "rb"), "整合表範例.xlsx"), "only": "2026-01-01|XX"}, content_type="multipart/form-data").status_code == 400)
     res = client.put("/api/zhuyun/settings", json={"recipient": "酷澎股份有限公司", "phone": "02-99999999"})
-    check("固定字可以改、存得住", res.status_code == 200 and client.get("/api/zhuyun/settings").get_json()["phone"] == "02-99999999")
+    check("預設收件資料可以改、存得住", res.status_code == 200 and client.get("/api/zhuyun/settings").get_json()["phone"] == "02-99999999")
     check("收件人空白 → 400", client.put("/api/zhuyun/settings", json={"recipient": ""}).status_code == 400)
     mars_only = os.path.join(SAMPLES, "mars")
     res = client.post("/api/zhuyun/parse", data={"file": (io.BytesIO(b"not excel"), "x.xlsx")}, content_type="multipart/form-data")
     check("壞檔 → 400", res.status_code == 400)
+    check("壞檔的錯誤訊息是中文，不直接秀 openpyxl 的英文原因", "無法讀取此 Excel 檔" in res.get_json()["error"]
+          and not re.search(r"[A-Za-z]{4,}", res.get_json()["error"].replace("Excel", "").replace("xlsx", "")), res.get_json()["error"])
     check("頁面打得開、線別工具寶僑欄有竹運出貨拋檔", client.get("/zhuyun").status_code == 200 and "/zhuyun" in client.get("/master").get_data(as_text=True))
 
     print("\n" + "=" * 62)

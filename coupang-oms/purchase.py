@@ -46,7 +46,7 @@ TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "purchase_templates")
 # 已經填好「箱」的空白列在後面，這裡抓大一點，寧可多清幾列不要漏。
 LINES = {
     "pg": {
-        "label": "P&G",
+        "label": "寶僑",
         "template": os.path.join(TEMPLATE_DIR, "pg_template.xls"),
         "group_by": "po_number",
         "wipe_rows": 250,
@@ -193,6 +193,46 @@ class PurchaseImportError(Exception):
     pass
 
 
+def _xls_cell_value(cell, datemode):
+    """xlrd 一格的值換成 openpyxl 讀 .xlsx 時會給的樣子：日期格變 datetime、
+    整數變 int（.xls 的數字一律存成浮點數，openpyxl 讀 .xlsx 的 27 是 int，
+    不換的話訂單編號會變成 13000000492925.0）、空格維持 None。"""
+    ct, v = cell.ctype, cell.value
+    if ct in (xlrd.XL_CELL_EMPTY, xlrd.XL_CELL_BLANK):
+        return None
+    if ct == xlrd.XL_CELL_DATE:
+        try:
+            return xlrd.xldate_as_datetime(v, datemode)
+        except Exception:  # noqa: BLE001  日期值壞掉就照原本的數字
+            return v
+    if ct == xlrd.XL_CELL_NUMBER:
+        return int(v) if float(v).is_integer() else v
+    if ct == xlrd.XL_CELL_BOOLEAN:
+        return bool(v)
+    if ct == xlrd.XL_CELL_ERROR:
+        return xlrd.error_text_from_code.get(v)
+    return v
+
+
+def _load_workbook(file_bytes):
+    """畫面寫「支援 .xlsx／.xls」，但 openpyxl 讀不了舊版 .xls（不是 zip）。
+    .xlsx 照舊用 openpyxl；.xls 改用 xlrd 讀，把每個工作表的值複製進一個
+    記憶體中的 openpyxl Workbook，後面的解析程式不用分兩套。"""
+    if zipfile.is_zipfile(io.BytesIO(file_bytes)):
+        return openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    book = xlrd.open_workbook(file_contents=file_bytes)
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for sh in book.sheets():
+        ws = wb.create_sheet(title=sh.name)
+        for r in range(sh.nrows):
+            for c in range(sh.ncols):
+                v = _xls_cell_value(sh.cell(r, c), book.datemode)
+                if v is not None:
+                    ws.cell(row=r + 1, column=c + 1, value=v)
+    return wb
+
+
 _MARS_HEADER_SCAN_ROWS = 15    # 表頭資訊區塊大概落在這幾列裡
 _MARS_HEADER_SCAN_COLS = 12
 CATEGORY_LIST_SHEET = "清單"
@@ -284,9 +324,9 @@ def parse_mars_order_form(file_bytes, filename=""):
       「有賣過、這次沒訂」的參考列，只有「採購數量」欄有填數字的才是
       真的要訂的品項，其他要濾掉，不能整批照抓。"""
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        wb = _load_workbook(file_bytes)
     except Exception as exc:
-        raise PurchaseImportError(f"檔案讀取失敗，請確認是有效的 Excel 檔：{exc}") from exc
+        raise PurchaseImportError("無法讀取檔案，請確認為 .xlsx 或 .xls 格式的 Excel 檔。") from exc
 
     ws = _find_mars_data_sheet(wb)
     if ws is None:
@@ -326,7 +366,7 @@ def parse_mars_order_form(file_bytes, filename=""):
 
     if not rows:
         raise PurchaseImportError(
-            "這份訂貨通知單裡找不到任何有填「採購數量」的品項，請確認上傳的檔案有勾選數量。")
+            "此訂貨通知單沒有任何品項填寫「採購數量」，請確認檔案內容。")
 
     delivery_date = _find_label_value(ws, "配送日")
     date_guess = ""
@@ -374,14 +414,14 @@ def parse_import_file(line_key, file_bytes, filename=""):
     filename 是上傳時的原始檔名，只用來在出貨備註猜不到日期時當備援
     （見 _guess_date_from_filename）——不影響解析內容，純粹輔助猜日期。"""
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        wb = _load_workbook(file_bytes)
         ws = wb[wb.sheetnames[0]]
     except Exception as exc:
-        raise PurchaseImportError(f"檔案讀取失敗，請確認是有效的 Excel 檔：{exc}") from exc
+        raise PurchaseImportError("無法讀取檔案，請確認為 .xlsx 或 .xls 格式的 Excel 檔。") from exc
 
     header_row = next(ws.iter_rows(min_row=1, max_row=1), None)
     if header_row is None:
-        raise PurchaseImportError("檔案是空的，沒有表頭列。")
+        raise PurchaseImportError("檔案沒有內容（找不到表頭列）。")
     headers = [c.value for c in header_row]
 
     cols = {}
@@ -393,7 +433,7 @@ def parse_import_file(line_key, file_bytes, filename=""):
         cols[field] = idx
     if missing:
         raise PurchaseImportError(
-            f"檔案裡找不到欄位：{'、'.join(missing)}，請確認上傳的是酷澎「訂單匯入」檔。")
+            f"檔案缺少欄位：{'、'.join(missing)}，請確認上傳的是酷澎「訂單匯入」檔。")
 
     warehouses = _load_warehouses()
     line_cfg = LINES[line_key]
@@ -419,7 +459,7 @@ def parse_import_file(line_key, file_bytes, filename=""):
         })
 
     if not rows:
-        raise PurchaseImportError("這個檔案解析不到任何資料列，請確認上傳的是酷澎「訂單匯入」檔。")
+        raise PurchaseImportError("檔案中沒有資料列，請確認上傳的是酷澎「訂單匯入」檔。")
 
     group_field = line_cfg["group_by"]
     groups_order = []
@@ -650,7 +690,7 @@ def api_purchase_parse():
         return jsonify({"error": "請選擇正確的線別。"}), 400
     uploads = [f for f in request.files.getlist("file") if f and f.filename]
     if not uploads:
-        return jsonify({"error": "沒有收到檔案。"}), 400
+        return jsonify({"error": "未收到檔案，請重新上傳。"}), 400
 
     if LINES[line_key].get("multi_file"):
         # 瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案，各自轉成
@@ -665,11 +705,11 @@ def api_purchase_parse():
             except PurchaseImportError as exc:
                 errors.append(f"「{upload.filename}」：{exc}")
         if errors:
-            return jsonify({"error": "有檔案解析失敗，本次都不會匯入：\n" + "\n".join(errors)}), 400
+            return jsonify({"error": "以下檔案無法解析，請修正後重新上傳：\n" + "\n".join(errors)}), 400
     else:
         if len(uploads) > 1:
             return jsonify({
-                "error": f"{LINES[line_key]['label']}一次只能上傳一個檔案（瑪氏才能一次選多個）。"}), 400
+                "error": f"{LINES[line_key]['label']}一次只能上傳一個檔案（僅瑪氏可一次上傳多個）。"}), 400
         try:
             groups = parse_import_file(line_key, uploads[0].read(), uploads[0].filename)
         except PurchaseImportError as exc:
@@ -784,7 +824,7 @@ def api_purchase_warehouses_save():
     address = (payload.get("address") or "").strip()
     code = (payload.get("code") or "").strip()
     if not address or not code:
-        return jsonify({"error": "地址跟倉別代碼都要填。"}), 400
+        return jsonify({"error": "請填寫地址與倉別代碼。"}), 400
     mapping = _load_warehouses()
     mapping[address] = code
     _save_warehouses(mapping)

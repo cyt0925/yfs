@@ -70,7 +70,7 @@
            class="h-9 w-auto flex-none" alt="永豐商店 logo">
       <div>
         <h1 class="text-lg font-bold leading-tight tracking-tight">採購表轉換</h1>
-        <p class="text-[11px] text-[#D2AB75] leading-tight">獨立工具．跟酷澎訂單管理系統資料完全無關</p>
+        <p class="text-[11px] text-[#D2AB75] leading-tight">獨立工具，與酷澎訂單管理系統資料無關</p>
       </div>
     </div>
     <div class="flex-1"></div>
@@ -78,7 +78,7 @@
     {% set lm_current = 'purchase' %}{% include '_line_menu.html' %}
     <a href="{{ url_for('index') }}"
        class="text-sm text-[#f7efe2] hover:text-white flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#D2AB75]/70 hover:bg-[#D2AB75]/20">
-      <i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+      <i class="bi bi-arrow-left"></i> 回酷澎訂單管理系統</a>
   </div>
 </header>
 
@@ -95,13 +95,13 @@
       <label class="flex flex-col gap-1">
         <span class="text-xs font-medium text-emerald-800">線別</span>
         <select id="p-line" class="border border-[#D2AB75] rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="pg">P&amp;G</option>
+          <option value="pg">寶僑</option>
           <option value="paper">紙潔</option>
           <option value="mars">瑪氏</option>
         </select>
       </label>
       <label class="flex flex-col gap-1">
-        <span class="text-xs font-medium text-emerald-800">到貨日期（用來套進備註／檔名，例如 9/5 到貨就填 0905）</span>
+        <span class="text-xs font-medium text-emerald-800">到貨日（MMDD，例如 9/5 到貨填 0905，用於備註與檔名）</span>
         <input id="p-date" type="text" maxlength="4" placeholder="0905"
                class="border border-[#D2AB75] rounded-lg px-3 py-2 text-sm w-28 font-mono">
       </label>
@@ -114,11 +114,10 @@
          onclick="document.getElementById('p-file').click()">
       <input id="p-file" type="file" accept=".xlsx,.xls" multiple class="hidden">
       <i class="bi bi-cloud-arrow-up text-3xl text-[#b8914f]"></i>
-      <p class="mt-2 text-sm text-emerald-900">點這裡選檔案，或直接把 Excel 拖進來</p>
+      <p class="mt-2 text-sm text-emerald-900">點此選擇檔案，或將 Excel 拖曳至此</p>
       <p class="text-[11px] text-[#8a6d3f] mt-0.5">支援 .xlsx／.xls</p>
       <p id="p-multi-hint" class="hidden text-[11px] text-[#8a6d3f]">
-        瑪氏一份訂貨通知單就是一張 PO，可以一次選多個檔案——資料分散在不同資料夾也沒關係，
-        分好幾次選，選過的檔案會累加，不會被最新一次蓋掉</p>
+        可分次從不同資料夾選取，已選的檔案會保留。</p>
     </div>
     <div id="p-filelist" class="hidden space-y-1" onclick="event.stopPropagation()"></div>
     <div class="flex items-center gap-3">
@@ -135,11 +134,11 @@
   <div id="p-results" class="g-card hidden bg-white rounded-xl shadow-sm p-5 space-y-4">
     <h2 class="font-bold text-emerald-900 flex items-center gap-2">
       <span class="g-step w-6 h-6 rounded-full text-white text-xs flex items-center justify-center">2</span>
-      確認分組內容，需要的話自己改備註／檔名／倉別，再匯出
+      確認分組並匯出
     </h2>
     <p class="text-xs text-ink-500">
-      倉別、備註、檔名都是系統依規則猜的，猜不到就留空——請自己看過再匯出。
-      點列可以展開看料號明細。
+      倉別、備註、檔名由系統自動帶入，無法判斷時留空，匯出前請確認。
+      點選該列或「展開料號明細」可查看明細。
     </p>
     <div class="overflow-x-auto">
       <table class="w-full text-sm border-collapse">
@@ -164,7 +163,7 @@
       </button>
       <button id="btn-export-merge" type="button"
               class="g-btn-gold px-5 py-2.5 rounded-lg font-semibold text-sm flex items-center gap-2">
-        <i class="bi bi-file-earmark-plus"></i> 合併所選（一個檔）
+        <i class="bi bi-file-earmark-plus"></i> 合併匯出所選（單一檔案）
       </button>
       <span id="p-export-status" class="text-sm text-emerald-700 font-medium"></span>
     </div>
@@ -175,6 +174,7 @@
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
+const fmtNum = n => (n == null || n === "") ? "" : Number(n).toLocaleString("en-US");
 
 let PARSED = null;   // 最後一次解析結果 { line, groups: [...] }
 
@@ -213,8 +213,8 @@ function showError(msg) {
 // （瑪氏是 MARS 開的訂貨通知單，不是酷澎系統匯出的「訂單匯入」表）──
 const LINE_UPLOAD_HINT = {
   pg: "上傳酷澎系統匯出的「訂單匯入」Excel。",
-  paper: "上傳酷澎系統匯出的「訂單匯入」Excel，可以一次選多張 PO 合併。",
-  mars: "上傳 MARS TAIWAN 開的「訂貨通知單」（ORDER FORM），一份就是一張 PO，可以一次選多個檔案。",
+  paper: "上傳酷澎系統匯出的「訂單匯入」Excel，可在下一步勾選多張 PO 合併匯出。",
+  mars: "上傳瑪氏開立的「訂貨通知單」（ORDER FORM），一份為一張 PO，可一次選取多個檔案。",
 };
 function updateLineUI() {
   const line = $("#p-line").value;
@@ -246,7 +246,7 @@ function addFiles(fileList) {
     added++;
   });
   renderFileList();
-  if (dup) $("#p-status").textContent = `已加入 ${added} 個檔案（${dup} 個檔名/大小都一樣，跳過重複）`;
+  if (dup) $("#p-status").textContent = `已加入 ${added} 個檔案，略過 ${dup} 個重複檔案`;
 }
 
 function removeFile(idx) {
@@ -299,7 +299,7 @@ $("#p-file").addEventListener("change", () => {
 // ── 解析 ──────────────────────────────────────────────
 $("#btn-parse").addEventListener("click", async () => {
   const files = SELECTED_FILES;
-  if (!files.length) { showError("請先選一個檔案。"); return; }
+  if (!files.length) { showError("請先選擇檔案。"); return; }
   showError("");
   $("#p-status").textContent = "解析中…";
   const fd = new FormData();
@@ -307,8 +307,12 @@ $("#btn-parse").addEventListener("click", async () => {
   files.forEach(f => fd.append("file", f));
   try {
     const res = await fetch("{{ url_for('purchase.api_purchase_parse') }}", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok) { showError(data.error || "解析失敗。"); $("#p-status").textContent = ""; return; }
+    // 伺服器出錯時回的不一定是 JSON，不能讓 SyntaxError 跑到下面變成「連線失敗」
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.groups) {
+      showError(data.error || `解析失敗：伺服器錯誤（${res.status}），請稍後再試。`);
+      $("#p-status").textContent = ""; return;
+    }
     PARSED = data;
     // 有猜到日期就自動帶進日期欄位（用第一組猜到的）
     if (!$("#p-date").value) {
@@ -322,11 +326,11 @@ $("#btn-parse").addEventListener("click", async () => {
     const blank = PARSED.line !== "paper" && data.groups.some(g => !g.remark);
     $("#p-status").textContent = `解析完成，共 ${data.groups.length} 組`;
     if (blank) {
-      showError("有幾組的備註是空的——通常是日期或倉別猜不到，"
-        + "請在上方填「到貨日期」後按「套用日期到全部」，或直接在下面表格裡手動填備註。");
+      showError("部分組別的備註空白，可能是無法判斷到貨日或倉別。"
+        + "請填寫「到貨日」後按「套用日期到全部」，或直接在表格中填寫備註。");
     }
   } catch (err) {
-    showError("連線失敗：" + err);
+    showError("連線失敗，請稍後再試。");
     $("#p-status").textContent = "";
   }
 });
@@ -344,9 +348,11 @@ function renderGroups() {
 
     const tr = document.createElement("tr");
     tr.className = "border-t border-[#e8dcc6] hover:bg-[#fbf7f0]";
-    const poLabel = g.po_numbers.join(", ");
+    tr.style.cursor = "pointer";
+    tr.dataset.groupIdx = idx;
+    const poLabel = g.po_numbers.join("、");
     const mismatchBadge = g.address_mismatch
-      ? '<span class="text-amber-600 text-xs" title="這組裡出現一個以上的收件地址，倉別可能猜不準，請自己確認"><i class="bi bi-exclamation-triangle-fill"></i></span>'
+      ? '<span class="text-amber-600 text-xs" title="此組有多個收件地址，倉別可能不正確，請確認"><i class="bi bi-exclamation-triangle-fill"></i></span>'
       : "";
     tr.innerHTML = `
       <td class="px-2 py-2 align-top"><input type="checkbox" class="p-row-check" checked data-idx="${idx}"></td>
@@ -356,11 +362,11 @@ function renderGroups() {
         <button type="button" class="p-toggle-detail g-link text-[11px] hover:underline mt-0.5" data-idx="${idx}">
           展開料號明細</button>
       </td>
-      <td class="px-2 py-2 text-right align-top">${g.item_count}</td>
-      <td class="px-2 py-2 text-right align-top">${g.qty_total}</td>
+      <td class="px-2 py-2 text-right align-top">${fmtNum(g.item_count)}</td>
+      <td class="px-2 py-2 text-right align-top">${fmtNum(g.qty_total)}</td>
       <td class="px-2 py-2 align-top">
         <input type="text" class="p-field-warehouse border border-[#e0cfae] rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.warehouse || ""}">
-        ${g.address ? `<button type="button" class="p-remember-wh g-link text-[10px] hover:underline mt-0.5" data-idx="${idx}" title="把這個收件地址記起來對應這個倉別代碼，下次匯入同一個地址就會自動猜到">記住這個倉別</button>` : ""}
+        ${g.address ? `<button type="button" class="p-remember-wh g-link text-[10px] hover:underline mt-0.5" data-idx="${idx}" title="將此收件地址對應到此倉別，之後相同地址會自動帶入">記住這個倉別</button>` : ""}
       </td>
       <td class="px-2 py-2 align-top">
         <input type="text" class="p-field-remark border border-[#e0cfae] rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.remark || ""}">
@@ -376,7 +382,7 @@ function renderGroups() {
     detailTr.innerHTML = `<td></td><td colspan="6" class="px-3 py-2">
       <table class="text-xs w-full max-w-md">
         <thead><tr class="text-[#8a6d3f]"><th class="text-left font-medium">料號</th><th class="text-right font-medium">數量</th></tr></thead>
-        <tbody>${g.rows.map(r => `<tr><td class="font-mono py-0.5">${r.material_no}</td><td class="text-right py-0.5">${r.qty}</td></tr>`).join("")}</tbody>
+        <tbody>${g.rows.map(r => `<tr><td class="font-mono py-0.5">${r.material_no}</td><td class="text-right py-0.5">${fmtNum(r.qty)}</td></tr>`).join("")}</tbody>
       </table>
     </td>`;
     tbody.appendChild(detailTr);
@@ -385,29 +391,41 @@ function renderGroups() {
   $$(".p-field-warehouse").forEach(el => el.addEventListener("input", onFieldEdit));
   $$(".p-field-remark").forEach(el => el.addEventListener("input", onFieldEdit));
   $$(".p-field-filename").forEach(el => el.addEventListener("input", onFieldEdit));
-  $$(".p-toggle-detail").forEach(btn => btn.addEventListener("click", () => {
-    const idx = btn.dataset.idx;
+  // 點整列跟按「展開料號明細」同一個效果；點在輸入框、按鈕、勾選框、連結上不算
+  const toggleDetail = idx => {
     const row = tbody.querySelector(`tr[data-detail-for="${idx}"]`);
+    const btn = tbody.querySelector(`.p-toggle-detail[data-idx="${idx}"]`);
     row.classList.toggle("hidden");
     btn.textContent = row.classList.contains("hidden") ? "展開料號明細" : "收起料號明細";
+  };
+  $$(".p-toggle-detail").forEach(btn => btn.addEventListener("click", () => toggleDetail(btn.dataset.idx)));
+  tbody.querySelectorAll("tr[data-group-idx]").forEach(tr => tr.addEventListener("click", e => {
+    if (e.target.closest("input, button, a, select, textarea, label")) return;
+    if (e.target.closest("td") === tr.firstElementChild) return;          // 勾選框那格，怕手滑
+    if (window.getSelection && String(window.getSelection())) return;   // 在選字複製，不要展開
+    toggleDetail(tr.dataset.groupIdx);
   }));
   $$(".p-remember-wh").forEach(btn => btn.addEventListener("click", async () => {
     const idx = Number(btn.dataset.idx);
     const g = PARSED.groups[idx];
     const code = (g.warehouse || "").trim();
-    if (!code) { alert("倉別欄位是空的，先填代碼再記住。"); return; }
+    if (!code) { alert("請先填寫倉別，再按「記住這個倉別」。"); return; }
+    let res;
     try {
-      const res = await fetch("{{ url_for('purchase.api_purchase_warehouses_save') }}", {
+      res = await fetch("{{ url_for('purchase.api_purchase_warehouses_save') }}", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ address: g.address, code }),
       });
-      if (!res.ok) throw new Error((await res.json()).error || "");
-      const orig = btn.textContent;
-      btn.textContent = "已記住";
-      setTimeout(() => { btn.textContent = orig; }, 1500);
     } catch (err) {
-      alert("記不起來：" + err.message);
+      alert("儲存失敗：連線失敗，請稍後再試。"); return;
     }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert("儲存失敗：" + (d.error || `伺服器錯誤（${res.status}）`)); return;
+    }
+    const orig = btn.textContent;
+    btn.textContent = "已記住";
+    setTimeout(() => { btn.textContent = orig; }, 1500);
   }));
 
   $("#p-results").classList.remove("hidden");
@@ -444,12 +462,12 @@ function selectedGroups() {
 }
 
 async function exportGroups(groups, merge) {
-  if (!groups.length) { $("#p-export-status").textContent = "沒有勾選任何一組。"; return; }
+  if (!groups.length) { $("#p-export-status").textContent = "請至少勾選一組。"; return; }
 
   // 紙潔的備註本來就固定空白，不算異常，不用問；其他線別勾到備註是
   // 空的就先確認一下，免得真的匯出一份漏了訂單編號的採購表。
   if (PARSED.line !== "paper" && groups.some(g => !g.remark)
-      && !confirm("勾選的組別裡有備註是空的，確定要匯出嗎？")) {
+      && !confirm("部分組別的備註空白，確定要匯出嗎？")) {
     $("#p-export-status").textContent = "已取消。";
     return;
   }
@@ -465,8 +483,8 @@ async function exportGroups(groups, merge) {
     $("#p-export-status").textContent = groups.length === 1
       ? "已下載。"
       : PARSED.line === "mars"
-        ? `已下載 1 個 zip，解壓縮後 ${pos.size} 個資料夾（一張 PO 一個），共 ${groups.length} 個檔。`
-        : `已下載 1 個 zip，解壓縮後就是 ${groups.length} 個檔。`;
+        ? `已下載壓縮檔：共 ${pos.size} 個資料夾（每張 PO 一個）、${groups.length} 個檔案。`
+        : `已下載壓縮檔，內含 ${groups.length} 個檔案。`;
     return;
   }
 
@@ -478,7 +496,7 @@ async function exportGroups(groups, merge) {
     const rows = groups.flatMap(g => g.rows.map(r => ({ ...r, remark: g.remark })));
     const warehouses = [...new Set(groups.map(g => (g.warehouse || "").trim()))];
     if (warehouses.length > 1 &&
-        !confirm(`勾選的這幾組倉別不一樣（${warehouses.join("、")}），合併成同一張採購表確定嗎？`)) {
+        !confirm(`勾選的組別倉別不同（${warehouses.join("、")}），確定要合併成一張採購表嗎？`)) {
       $("#p-export-status").textContent = "已取消。";
       return;
     }
@@ -504,7 +522,7 @@ async function downloadExport(payloadGroups, fallbackName) {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      $("#p-export-status").textContent = data.error || "匯出失敗。";
+      $("#p-export-status").textContent = data.error || `匯出失敗：伺服器錯誤（${res.status}），請稍後再試。`;
       return false;
     }
     const blob = await res.blob();
@@ -523,7 +541,7 @@ async function downloadExport(payloadGroups, fallbackName) {
     URL.revokeObjectURL(url);
     return true;
   } catch (err) {
-    $("#p-export-status").textContent = "連線失敗：" + err;
+    $("#p-export-status").textContent = "連線失敗，請稍後再試。";
     return false;
   }
 }
