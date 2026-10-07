@@ -111,44 +111,60 @@ def compare(conn, pages, none_ids=()):
             c = canon.get(it["code"], it["code"])
             d["qty"][c] += it["qty"] or 0
             d["names"].setdefault(c, it["name"])
-    splits = {s["eip_po"]: s for s in _rows(conn.execute("SELECT * FROM mst_mars_splits WHERE eip_po != ''"))}
+    # 一個 EIP 採購單號可能對到好幾份拆單（盒、包同一張 EIP 採購單，Shanin 2026-10-07）
+    splits = collections.OrderedDict()
+    for s in _rows(conn.execute("SELECT * FROM mst_mars_splits WHERE eip_po != '' ORDER BY id")):
+        splits.setdefault(s["eip_po"], []).append(s)
+    all_split_rows = [s for group in splits.values() for s in group]
     declared = set()
-    for s in splits.values():
+    for s in all_split_rows:
         if s["id"] in set(none_ids) and s["eip_po"] not in by_eip:
             by_eip[s["eip_po"]] = {"qty": collections.Counter(), "pages": [], "warehouse": s["warehouse"], "ship_date": s["delivery_date"], "names": {}}
             declared.add(s["eip_po"])
     unknown = [{"eip_po": k, "pages": v["pages"], "cases": sum(v["qty"].values())} for k, v in by_eip.items() if k not in splits]
     matched = {}     # 酷澎 PO → [split rows]
     for eip, d in by_eip.items():
-        s = splits.get(eip)
-        if s is None:
+        group = splits.get(eip)
+        if not group:
             continue
-        items = json.loads(s["items_json"] or "[]")
-        seen = set(); rows = []
-        for it in items:
-            c = canon.get(it.get("mars_code") or "", it.get("mars_code") or "")
-            seen.add(c)
-            ordered = it.get("cases") or 0
-            shipped = d["qty"].get(c, 0)
-            box = it.get("box_file") or 0
-            if shipped == ordered:
-                status = "ok"
-            elif shipped == 0:
-                status = "none"
-            elif shipped < ordered:
-                status = "partial"
-            else:
-                status = "over"
-            new_qty = int(round(shipped * box)) if box else None
-            rows.append({"sku_id": it["sku_id"], "yf_sku": it.get("yf_sku"), "purchase_code": it.get("purchase_code"), "mars_code": c,
-                         "product_name": it.get("product_name"), "unit": it.get("unit"), "box_file": box,
-                         "qty_ship": it.get("qty_ship"), "ordered": ordered, "shipped": shipped, "short": max(ordered - shipped, 0),
-                         "status": status, "new_qty": new_qty})
-        extra = [{"mars_code": c, "name": d["names"].get(c, ""), "cases": q} for c, q in d["qty"].items() if c not in seen and q]
-        matched.setdefault(s["po_number"], []).append({"split_id": s["id"], "eip_po": eip, "filename": s["filename"], "warehouse": s["warehouse"],
-                                                       "delivery_date": s["delivery_date"], "category": s["category"], "unit": s["unit"],
-                                                       "label": s["label"], "pages": d["pages"], "items": rows, "extra": extra,
-                                                       "declared_none": eip in declared})
+        # 同一個號碼的幾份合起來比：勇信出的箱數照順序分給各份的同一個貨號，最後一個拿剩下的（多出來的才看得到超量）
+        loaded = [(s, json.loads(s["items_json"] or "[]")) for s in group]
+        last_of = {}
+        for gi, (_, its) in enumerate(loaded):
+            for ii, it in enumerate(its):
+                last_of[canon.get(it.get("mars_code") or "", it.get("mars_code") or "")] = (gi, ii)
+        left = collections.Counter(d["qty"])
+        seen = set(); entries = []
+        for gi, (s, items) in enumerate(loaded):
+            rows = []
+            for ii, it in enumerate(items):
+                c = canon.get(it.get("mars_code") or "", it.get("mars_code") or "")
+                seen.add(c)
+                ordered = it.get("cases") or 0
+                shipped = left.get(c, 0) if last_of.get(c) == (gi, ii) else min(left.get(c, 0), ordered)
+                left[c] -= shipped
+                box = it.get("box_file") or 0
+                if shipped == ordered:
+                    status = "ok"
+                elif shipped == 0:
+                    status = "none"
+                elif shipped < ordered:
+                    status = "partial"
+                else:
+                    status = "over"
+                new_qty = int(round(shipped * box)) if box else None
+                rows.append({"sku_id": it["sku_id"], "yf_sku": it.get("yf_sku"), "purchase_code": it.get("purchase_code"), "mars_code": c,
+                             "product_name": it.get("product_name"), "unit": it.get("unit"), "box_file": box,
+                             "qty_ship": it.get("qty_ship"), "ordered": ordered, "shipped": shipped, "short": max(ordered - shipped, 0),
+                             "status": status, "new_qty": new_qty})
+            entries.append({"split_id": s["id"], "eip_po": eip, "filename": s["filename"], "warehouse": s["warehouse"],
+                            "delivery_date": s["delivery_date"], "category": s["category"], "unit": s["unit"],
+                            "label": s["label"], "pages": d["pages"], "items": rows, "extra": [],
+                            "declared_none": eip in declared})
+        # 勇信有出、但這個號碼的拆單都沒訂的貨號，掛在第一份
+        entries[0]["extra"] = [{"mars_code": c, "name": d["names"].get(c, ""), "cases": q} for c, q in d["qty"].items() if c not in seen and q]
+        for e, (s, _) in zip(entries, loaded):
+            matched.setdefault(s["po_number"], []).append(e)
     # 整張酷澎 PO 全缺：那張 PO 所有有 EIP 單號的份都在表裡，而且每個品項都 0
     pos = []
     for po, sp in matched.items():
@@ -162,7 +178,7 @@ def compare(conn, pages, none_ids=()):
     pos.sort(key=lambda p: (p["delivery_date"], p["po_number"]))
     # 有 EIP 單號、同倉同日、卻沒出現在這次表裡的
     whs = {p["warehouse"] for p in pages if p["warehouse"]}; dates = {p["ship_date"] for p in pages if p["ship_date"]}
-    not_in = [{"split_id": s["id"], "eip_po": s["eip_po"], "filename": s["filename"]} for s in splits.values()
+    not_in = [{"split_id": s["id"], "eip_po": s["eip_po"], "filename": s["filename"]} for s in all_split_rows
               if s["eip_po"] not in by_eip and s["warehouse"] in whs and s["delivery_date"] in dates]
     rows_all = [r for p in pos for y in p["splits"] for r in y["items"]]
     summary = {"pages": len(pages), "eip_pos": len(by_eip), "pos": len(pos), "items": len(rows_all),

@@ -250,7 +250,9 @@ def main():
     r = put(s1["id"], {"eip_po": " po202609300 "})
     check("前後空白、小寫都接受，存成 PO202609300", r.status_code == 200 and r.get_json()["split"]["eip_po"] == "PO202609300")
     r = put(s2["id"], {"eip_po": "PO202609300"})
-    check("同一個單號填到第二份 → 400，說已經填在哪一份", r.status_code == 400 and s1["filename"] in r.get_json()["error"])
+    check("同一張 PO 但品類不同的另一份填同一個號碼 → 可以存，但提醒依規則應分開、說用在哪一份",
+          r.status_code == 200 and "應分開" in r.get_json()["warning"] and s1["filename"] in r.get_json()["warning"], str(r.get_json()))
+    put(s2["id"], {"eip_po": ""})
     r = put(s1["id"], {"slot_time": "12:30~15:30（1台車）"})
     check("約倉時間存得進去", r.status_code == 200 and r.get_json()["split"]["slot_time"] == "12:30~15:30（1台車）")
     v = splits(c, "2026-09-30"); f1 = next(s for s in v["splits"] if s["id"] == s1["id"])
@@ -510,6 +512,53 @@ def main():
     left = [(o["sku_id"], o["qty_ship"]) for o in c.get("/api/master/orders?month=2026-09&q=13000000699901").get_json()["rows"] if o["qty_ship"] and o["sku_id"] in in_splits]
     check("確認整張不出 → 下修檔回來、系統那張 PO 有拆到的品項出貨數量全部改 0（對不到商品總表、沒拆進來的 M99999999 不動）", r.status_code == 200 and not left, f"{r.status_code} {left}")
     check("掃描檔／不是勇信表 → 400 講清楚", up(c, "/api/mars/shortage/compare", b"%PDF-1.4 nothing", "x.pdf").status_code == 400)
+
+    print("\n【8f】盒、包同一張 EIP 採購單（Shanin 2026-10-07：不同料號箱跟盒包分開；同料號箱、盒、包各一張）")
+    def row1012(**kw):
+        return base_row(**{"PO單號": "13000000583162", "交付日期": datetime.datetime(2026, 10, 12), **kw})
+    sheet = special_sheet([
+        row1012(**{"SKU ID": "910000000000001", "條碼(國條)": "4710000000001", "永豐料號": "M69072565", "品名": "喵愛餡 盒",
+                   "下單數量(酷澎單位)": 24, "出貨數量": 24, "單位": "盒", "箱入數": 12}),
+        row1012(**{"SKU ID": "910000000000002", "條碼(國條)": "4710000000002", "永豐料號": "M80676511", "品名": "喵喵鮮 包",
+                   "下單數量(酷澎單位)": 48, "出貨數量": 48, "單位": "包", "箱入數": 24}),
+        row1012(**{"SKU ID": "910000000000003", "條碼(國條)": "4710000000003", "永豐料號": "M80676511", "品名": "喵喵鮮 箱",
+                   "下單數量(酷澎單位)": 3, "出貨數量": 3, "單位": "箱", "箱入數": 1}),
+    ])
+    check("匯 10/12 那張（PET、都要貼中標：盒、包不同料號，箱跟包同料號）", import_orders(c, sheet, "盒包同單.xlsx").status_code == 200)
+    v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
+    check("拆單照舊依單位拆成 3 份", set(by_u) == {"盒", "包", "箱"}, str([x["filename"] for x in v["splits"]]))
+    check("畫面標出盒、包同一張 EIP 採購單，箱自己一張；統計 2 張 EIP 採購單",
+          [m["unit"] for m in by_u["盒"]["eip_mates"]] == ["包"] and [m["unit"] for m in by_u["包"]["eip_mates"]] == ["盒"]
+          and by_u["箱"]["eip_mates"] == [] and v["summary"]["eip_files"] == 2, str(v["summary"]))
+    r = c.post("/api/mars/splits/generate", json={"from": "2026-10-12", "to": "2026-10-12"})
+    z = zipfile.ZipFile(io.BytesIO(r.data)); names = z.namelist()
+    merged = next((n for n in names if "盒+包" in n), None)
+    check("下載 EIP 採購單：2 個檔，盒、包合成一個（檔名單位寫「盒+包」）", r.status_code == 200 and len(names) == 2 and merged, str(names))
+    eip_of = lambda data: {row[1]: row[6] for row in (xlrd.open_workbook(file_contents=data).sheet_by_index(0).row_values(i) for i in range(1, xlrd.open_workbook(file_contents=data).sheet_by_index(0).nrows)) if row[1]}  # noqa: E731
+    check("合併那個檔：盒、包兩個料號各自一列、箱數各 2", eip_of(z.read(merged)) == {"M69072565": 2.0, "M80676511": 2.0}, str(eip_of(z.read(merged))))
+    v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
+    r = c.get(f"/api/mars/splits/{by_u['包']['id']}/file?kind=eip")
+    check("在包那列單獨下載 EIP：拿到的也是盒+包合在一起的那張", r.status_code == 200 and "盒+包" in unquote(r.headers.get("Content-Disposition", ""))
+          and eip_of(r.data) == {"M69072565": 2.0, "M80676511": 2.0})
+    r = put(by_u["盒"]["id"], {"eip_po": "PO202610128"}); d = r.get_json()
+    v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
+    check("在盒那列填 PO202610128 → 包一起填上、箱不動、不跳提醒", r.status_code == 200 and len(d["mates_updated"]) == 1 and not d["warning"]
+          and by_u["包"]["eip_po"] == "PO202610128" and by_u["箱"]["eip_po"] == "", str(d))
+    r = put(by_u["箱"]["id"], {"eip_po": "PO202610128"}); d = r.get_json()
+    check("箱那份也填同一個號碼 → 可以存，但提醒依規則應分開", r.status_code == 200 and "應分開" in d["warning"], str(d))
+    put(by_u["箱"]["id"], {"eip_po": ""})
+    v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
+    check("清掉箱的號碼，盒、包不受影響", by_u["箱"]["eip_po"] == "" and by_u["盒"]["eip_po"] == by_u["包"]["eip_po"] == "PO202610128")
+    other = next(x for x in splits(c, "2026-09-30")["splits"] if x["id"])
+    r = put(other["id"], {"eip_po": "PO202610128"})
+    check("別張 PO 填到同一個號碼 → 400，說已經用在哪一份", r.status_code == 400 and "13000000583162" in r.get_json()["error"], str(r.get_json()))
+    pdf = yx_pdf([("PO202610128", "TAO3", "2026/10/12", [("69072565", 2, "2027/06/18"), ("80676511", 1, "2027/06/18")])])
+    res = up(c, "/api/mars/shortage/compare", pdf, "假_勇信_盒包.pdf").get_json()
+    sp = {y["unit"]: y for p_ in res["pos"] for y in p_["splits"]}
+    check("勇信比對：同一個號碼的盒、包兩份合起來比 → 盒沒缺、包少 1 箱", set(sp) == {"盒", "包"} and sp["盒"]["items"][0]["status"] == "ok"
+          and sp["包"]["items"][0]["status"] == "partial" and sp["包"]["items"][0]["short"] == 1 and not res["unknown"], str(res["summary"]))
+    r = put(by_u["包"]["id"], {"eip_po": ""}); v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
+    check("在包那列清掉號碼 → 盒一起清掉", r.status_code == 200 and by_u["盒"]["eip_po"] == "" and by_u["包"]["eip_po"] == "")
 
     print("\n【9】清除資料")
     app_module._write_users(app_module.get_users(), {"Jerry", "小真"})

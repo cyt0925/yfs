@@ -123,7 +123,7 @@ async function loadSplits() {
 }
 function render() {
   const v = VIEW, s = v.summary;
-  $("#sum").innerHTML = `<span><b>${s.pos}</b> 張 PO</span><span><b>${s.files}</b> 份拆單表</span><span><b>${fmt(s.cases)}</b> 箱</span><span><b>${s.items}</b> 個品項</span><span><b>${s.filled}</b>／${s.files} 已回填 EIP 採購單號</span><span><b>${s.po_ready}</b>／${s.files} 可產出瑪氏採購單</span>`;
+  $("#sum").innerHTML = `<span><b>${s.pos}</b> 張 PO</span><span><b>${s.files}</b> 份拆單表</span><span title="盒、包沒有相同料號時合成一張 EIP 採購單"><b>${s.eip_files}</b> 張 EIP 採購單</span><span><b>${fmt(s.cases)}</b> 箱</span><span><b>${s.items}</b> 個品項</span><span><b>${s.filled}</b>／${s.files} 已回填 EIP 採購單號</span><span><b>${s.po_ready}</b>／${s.files} 可產出瑪氏採購單</span>`;
   const al = [];
   if (!v.has_products) al.push(`<div class="alert al-bad"><i class="bi bi-exclamation-octagon-fill"></i> 尚未上傳瑪氏商品總表，無法區分品類與中標，無法拆單。</div>`);
   if (v.unmatched.length) al.push(`<div class="alert al-bad"><b><i class="bi bi-exclamation-octagon-fill"></i> ${v.unmatched.length} 個品項在瑪氏商品總表中找不到</b>，不會列入拆單表，請更新商品總表後重新拆單：<br>${v.unmatched.map(u => `${esc(u.po_number)} · ${esc(u.yf_sku)}${u.quote_note && u.quote_note !== u.yf_sku ? `（報價備註 ${esc(u.quote_note)}）` : ""} · ${esc(u.product_name)} · ${esc(u.unit)} ${fmt(u.qty_ship)}`).join("<br>")}</div>`);
@@ -161,7 +161,7 @@ function render() {
       <td><span class="cat cat-${esc(r.category)}">${esc(r.category || "?")}</span></td>${v.split_by_unit ? `<td>${esc(r.unit)}</td>` : ""}
       <td><span class="cat lbl-${r.label}">${r.label === "V" ? "需貼中標" : "不貼中標"}</span></td>
       <td class="num">${r.item_count}${warn ? ` <i class="bi bi-exclamation-triangle-fill" style="color:var(--warn)" title="有品項需注意，點選展開查看"></i>` : ""}</td><td class="num"><b>${fmt(r.cases_total)}</b></td>
-      <td><input class="inp eip" data-k="${esc(key)}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}></td>
+      <td><input class="inp eip" data-k="${esc(key)}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}>${r.eip_mates && r.eip_mates.length ? `<div class="kbd" title="${esc(r.eip_mates.map(m => m.filename).join("\n"))}">與「${r.eip_mates.map(m => esc(m.unit)).join("、")}」同一張 EIP 採購單</div>` : ""}</td>
       <td><input class="inp slot" data-k="${esc(key)}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
       <td class="whitespace-nowrap">${ok ? `<button class="btn btn-o btn-sm emma" data-k="${esc(key)}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "下載 EMMA 匯入檔" : "下載 EMMA 匯入檔（尚未填 EIP 採購單號，出貨備註會留空）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <button class="btn btn-o btn-sm eipf" data-k="${esc(key)}" title="下載 EIP 採購單">EIP</button> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-k="${esc(key)}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>瑪氏採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd" title="此份有品項需先處理（見上方紅色提示）">先處理紅色提示</span>`}</td></tr>`;
     if (OPEN.has(key)) {
@@ -186,7 +186,7 @@ function render() {
     await downloadBlob(`/api/mars/splits/${id}/emma?ack=1`, {}, "酷澎訂單匯入.xlsx", "EMMA 匯入檔已下載");
   }));
   $("#sp-table").querySelectorAll("button.eipf").forEach(b => b.addEventListener("click", async () => {
-    const id = await ensureSplit(b.dataset.k); if (!id) return;
+    const id = await ensureWithMates(b.dataset.k); if (!id) return;
     await downloadBlob(`/api/mars/splits/${id}/file?kind=eip`, {}, "EIP上傳.xls", "EIP 採購單已下載");
   }));
   const syncSel = () => { $("#btn-emma-sel").disabled = !CHECKED.size; $("#btn-emma-sel").innerHTML = `<i class="bi bi-check2-square"></i> 合併下載 EMMA 匯入檔${CHECKED.size ? `（勾選 ${CHECKED.size} 份）` : "（勾選）"}`; };
@@ -199,10 +199,14 @@ function render() {
     const save = async () => {
       if (inp.value === inp.dataset.orig) return;
       const body = inp.classList.contains("eip") ? { eip_po: inp.value } : { slot_time: inp.value };
-      const id = await ensureSplit(inp.dataset.k); if (!id) { inp.value = inp.dataset.orig; return; }
+      const isEip = inp.classList.contains("eip");
+      const id = await (isEip ? ensureWithMates(inp.dataset.k) : ensureSplit(inp.dataset.k)); if (!id) { inp.value = inp.dataset.orig; return; }
       try { const d = await api(`/api/mars/splits/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        inp.classList.remove("bad"); inp.dataset.orig = inp.classList.contains("eip") ? d.split.eip_po : d.split.slot_time; inp.value = inp.dataset.orig;
-        toast(inp.classList.contains("eip") ? (inp.value ? `已儲存 EIP 採購單號 ${inp.value}` : "已清除 EIP 採購單號") : "約倉時間已儲存"); loadSplits(); if (inp.classList.contains("eip")) loadCalendar();
+        inp.classList.remove("bad"); inp.dataset.orig = isEip ? d.split.eip_po : d.split.slot_time; inp.value = inp.dataset.orig;
+        const mates = d.mates_updated && d.mates_updated.length ? `（同一張 EIP 採購單的 ${d.mates_updated.length} 份一併${inp.value ? "填入" : "清除"}）` : "";
+        toast(isEip ? (inp.value ? `已儲存 EIP 採購單號 ${inp.value}${mates}` : `已清除 EIP 採購單號${mates}`) : "約倉時間已儲存");
+        if (d.warning) toast(d.warning, "err");
+        loadSplits(); if (isEip) loadCalendar();
       } catch (e) { inp.classList.add("bad"); toast(e.message, "err"); }
     };
     inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } if (e.key === "Escape") { inp.value = inp.dataset.orig; inp.blur(); } });
@@ -223,6 +227,12 @@ async function ensureSplit(key, ack) {
     if (d.created) setTimeout(() => { loadSplits(); loadCalendar(); }, 0);   // 狀態變「已產出」，畫面重抓
     return d.id;
   } catch (e) { toast(e.message, "err"); return null; }
+}
+/* 同一張 EIP 採購單（盒、包合一張）的其他份也先存起來，下載 EIP 檔、填號碼時才會整張一起處理 */
+async function ensureWithMates(key) {
+  const r = VIEW && VIEW.splits.find(x => x.split_key === key);
+  const ids = await ensureMany([key, ...((r && r.eip_mates) || []).map(m => m.split_key)]);
+  return ids ? ids[0] : null;
 }
 async function ensureMany(keys) {
   const ids = [];

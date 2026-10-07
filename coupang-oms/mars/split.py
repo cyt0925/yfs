@@ -137,6 +137,47 @@ def group_items(items):
     return list(groups.values())
 
 
+def _codes(items):
+    return {c for i in items for c in (i.get("yf_sku"), i.get("purchase_code")) if c}
+
+
+def _eip_base(s):
+    return (s["po_number"], s["delivery_date"], s["warehouse"] or "", s["category"] or "", s["label"] or "")
+
+
+def eip_groups(rows):
+    """哪幾份拆單在 EIP 是同一張採購單（Shanin 2026-10-07）。rows＝[(拆單, 品項)]，回傳 [[(拆單, 品項), ...], ...]。
+    同一張酷澎 PO、同倉、同到貨日、同品類、同中標裡：箱自己一張；盒、包這些小單位放同一張，
+    但有同一個料號（永豐料號或下採料號）的就分開——EIP 那邊同一個料號只能一列，合在一起會把兩種單位的箱數加在一起。"""
+    buckets = collections.OrderedDict()
+    for s, its in rows:
+        buckets.setdefault(_eip_base(s), []).append((s, its))
+    out = []
+    for members in buckets.values():
+        small = []                                   # [[成員...], 已用料號]
+        order = lambda u: UNITS.index(u) if u in UNITS else len(UNITS)  # noqa: E731 — 箱、盒、包的順序，檔名寫「盒+包」
+        for s, its in sorted(members, key=lambda x: (order(x[0]["unit"] or "箱"), x[0]["unit"] or "", x[0].get("filename") or "")):
+            if not SPLIT_BY_UNIT or (s["unit"] or "箱") == "箱":
+                out.append([(s, its)]); continue
+            codes = _codes(its)
+            for g in small:
+                if not (g[1] & codes):
+                    g[0].append((s, its)); g[1] |= codes; break
+            else:
+                small.append([[(s, its)], set(codes)])
+        out.extend(g[0] for g in small)
+    return out
+
+
+def eip_group_name(members):
+    """一張 EIP 採購單的檔名主體：只有一份就用那份的拆單表檔名；盒、包合在一起就把單位寫成「盒+包」。"""
+    first = members[0][0]
+    if len(members) == 1:
+        return _stem(first["filename"])
+    units = "+".join(m[0]["unit"] for m in members)
+    return _stem(make_filename({**first, "unit": units}))
+
+
 def _sig(items):
     """比對「存下來的」跟「現在的」品項用：只看會影響 EIP 的欄位。"""
     return sorted((i["po_number"], i["sku_id"], i.get("purchase_code") or "", i["unit"] or "", i["qty_ship"], i["box_file"]) for i in items)
@@ -199,7 +240,12 @@ def _view(date_from, date_to):
                     "item_count": s["item_count"], "cases_total": s["cases_total"], "blocking": [], "items": snap,
                     "status": "gone", "filename": s["filename"], "eip_po": s["eip_po"], "slot_time": s["slot_time"],
                     "diff": "目前訂單已無此份（品項刪除、改期或改倉）"})
+    for members in eip_groups([(r, r["items"]) for r in out if r["status"] != "gone"]):
+        for r, _ in members:          # 同一張 EIP 採購單的其他份：填號碼、下載 EIP 時一起處理
+            mates = [m for m, _ in members if m is not r]
+            r["eip_mates"] = [{"split_key": m["split_key"], "unit": m["unit"], "filename": m["filename"]} for m in mates]
     for r in out:                     # ③ 瑪氏採購單：這份差什麼才產得出來（空＝可以按）
+        r.setdefault("eip_mates", [])
         wh = whs.get(r["warehouse"]) or {"missing": ["地址", "電話", "ship-to"]}
         r["po_missing"] = po_missing(r, r["items"], wh, po_settings)
         r["po_hints"] = po_hints(r, r["items"], wh, po_settings)
@@ -211,6 +257,7 @@ def _view(date_from, date_to):
                         "cases": round(sum(r["cases_total"] or 0 for r in out), 4),
                         "items": sum(r["item_count"] for r in out), "unmatched": len(unmatched),
                         "filled": sum(1 for r in out if r["eip_po"]),
+                        "eip_files": len(eip_groups([(r, r["items"]) for r in out if r["status"] != "gone"])),
                         "po_ready": sum(1 for r in out if not r["po_missing"]),
                         "warnings": sum(1 for r in out for i in r["items"] if i.get("issues"))}}
 
@@ -430,11 +477,28 @@ def api_mars_generate():
         conn.close()
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for s, its in files:
-            zf.writestr(f"{_stem(s['filename'])}_EIP上傳.xls", eip_file(s, its))
+        for members in eip_groups(files):
+            zf.writestr(f"{eip_group_name(members)}_EIP上傳.xls", eip_file(members[0][0], [i for _, its in members for i in its]))
     buf.seek(0)
     name = f"瑪氏EIP採購單_{date_from.replace('-', '')}" + ("" if date_from == date_to else f"-{date_to.replace('-', '')}") + ".zip"
     return send_file(buf, as_attachment=True, download_name=name, mimetype="application/zip")
+
+
+def _eip_members(s, conn=None):
+    """存下來的拆單裡，跟 s 同一張 EIP 採購單的（含 s 自己）：[(拆單, 品項)]。"""
+    own = conn is None
+    conn = conn or get_conn()
+    try:
+        sibs = _rows(conn.execute(
+            "SELECT * FROM mst_mars_splits WHERE po_number = ? AND delivery_date = ? AND warehouse = ? AND category = ? AND label = ?",
+            (s["po_number"], s["delivery_date"], s["warehouse"], s["category"], s["label"])))
+    finally:
+        if own:
+            conn.close()
+    for members in eip_groups([(x, json.loads(x["items_json"] or "[]")) for x in sibs]):
+        if any(m["id"] == s["id"] for m, _ in members):
+            return members
+    return [(s, json.loads(s["items_json"] or "[]"))]
 
 
 @mars_bp.route("/api/mars/splits/<int:split_id>/file")
@@ -450,15 +514,17 @@ def api_mars_split_file(split_id):
         return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
     items = json.loads(s["items_json"] or "[]")
     if kind == "eip":
-        return send_file(io.BytesIO(eip_file(s, items)), as_attachment=True, download_name=f"{_stem(s['filename'])}_EIP上傳.xls",
-                         mimetype="application/vnd.ms-excel")
+        members = _eip_members(s)
+        return send_file(io.BytesIO(eip_file(s, [i for _, its in members for i in its])), as_attachment=True,
+                         download_name=f"{eip_group_name(members)}_EIP上傳.xls", mimetype="application/vnd.ms-excel")
     return send_file(io.BytesIO(split_workbook(s, items)), as_attachment=True, download_name=s["filename"],
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @mars_bp.route("/api/mars/splits/<int:split_id>", methods=["PUT"])
 def api_mars_split_update(split_id):
-    """回填 EIP 採購單號（PO＋9 碼，空白＝清掉）、約倉時間。一個 EIP 採購單號只能對一份拆單表。"""
+    """回填 EIP 採購單號（PO＋9 碼，空白＝清掉）、約倉時間。
+    同一張 EIP 採購單（eip_groups：盒、包合一張）的幾份共用一個號碼，填一份就一起填；其他 PO 用過的號碼不給填。"""
     payload = request.get_json(silent=True) or {}
     operator = _operator()
     conn = get_conn()
@@ -466,18 +532,31 @@ def api_mars_split_update(split_id):
         s = _row(conn.execute("SELECT * FROM mst_mars_splits WHERE id = ?", (split_id,)))
         if s is None:
             return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
-        sets, vals = [], []
+        sets, vals, mates_done, warning = [], [], [], ""
         if "eip_po" in payload:
             eip = norm_text(payload.get("eip_po")).upper().replace(" ", "")
             if eip and not EIP_PO_RE.match(eip):
                 return jsonify({"error": f"EIP 採購單號格式為 PO 加 9 碼數字（例如 PO202609004），目前填的是「{eip}」。"}), 400
+            mates = [m for m, _ in _eip_members(s, conn) if m["id"] != split_id]
             if eip:
-                dup = _row(conn.execute("SELECT filename FROM mst_mars_splits WHERE eip_po = ? AND id != ?", (eip, split_id)))
-                if dup:
-                    return jsonify({"error": f"{eip} 已用於「{dup['filename']}」，一個 EIP 採購單號只能對應一份拆單表。"}), 400
+                # 同一個號碼只能用在同一張酷澎 PO、同倉、同到貨日（Shanin 2026-10-07：盒、包同一張 EIP 採購單）；
+                # 別張 PO 用了同一個號碼多半是打錯。同 PO 但照規則應該分開下採的，只提醒不擋。
+                for dup in _rows(conn.execute("SELECT * FROM mst_mars_splits WHERE eip_po = ? AND id != ?", (eip, split_id))):
+                    if (dup["po_number"], dup["delivery_date"], dup["warehouse"]) != (s["po_number"], s["delivery_date"], s["warehouse"]):
+                        return jsonify({"error": f"{eip} 已用於「{dup['filename']}」（不同的 PO、倉或到貨日），請確認號碼是否正確。"}), 400
+                    if dup["id"] not in {m["id"] for m in mates}:
+                        warning = (f"{eip} 也用於「{dup['filename']}」。依下採規則，箱與盒、包，或有相同料號的不同單位，"
+                                   "應分開成不同的 EIP 採購單，請確認。")
             if eip != (s["eip_po"] or ""):
                 sets.append("eip_po = ?"); vals.append(eip)
                 _log(conn, LINE, s["po_number"], "", "", "mars_eip_po", "EIP 採購單號", s["eip_po"], eip, operator, "manual", s["filename"])
+                for m in mates:               # 同一張 EIP 採購單的其他份：號碼原本跟這份一樣（含都沒填）的一起改
+                    if (m["eip_po"] or "") == (s["eip_po"] or ""):
+                        conn.execute("UPDATE mst_mars_splits SET eip_po = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+                                     (eip, operator, now(), m["id"]))
+                        _log(conn, LINE, m["po_number"], "", "", "mars_eip_po", "EIP 採購單號", m["eip_po"], eip, operator, "manual",
+                             f"{m['filename']}（與「{s['filename']}」同一張 EIP 採購單）")
+                        mates_done.append(m["filename"])
         if "slot_time" in payload:
             slot = str(payload.get("slot_time") or "").strip()[:80]     # 照人打的存，不轉全形半形（「（1台車）」要原樣進採購單）
             if slot != (s["slot_time"] or ""):
@@ -486,12 +565,12 @@ def api_mars_split_update(split_id):
         if sets:
             sets += ["updated_by = ?", "updated_at = ?"]; vals += [operator, now()]
             conn.execute(f"UPDATE mst_mars_splits SET {', '.join(sets)} WHERE id = ?", vals + [split_id])
-            conn.commit()
+        conn.commit()
         fresh = _row(conn.execute("SELECT id, eip_po, slot_time, filename FROM mst_mars_splits WHERE id = ?", (split_id,)))
     finally:
         conn.close()
-    return jsonify({"ok": True, "split": fresh})
+    return jsonify({"ok": True, "split": fresh, "mates_updated": mates_done, "warning": warning})
 
 
-__all__ = ["build_items", "group_items", "split_key", "make_filename", "split_workbook", "eip_rows",
+__all__ = ["build_items", "group_items", "eip_groups", "eip_group_name", "split_key", "make_filename", "split_workbook", "eip_rows",
            "api_mars_calendar", "api_mars_splits", "api_mars_generate", "api_mars_split_ensure", "api_mars_split_file", "api_mars_split_update"]
