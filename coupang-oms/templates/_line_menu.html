@@ -14,12 +14,12 @@
 {% set LINES = [
   {"key": "pg",   "name": "寶僑", "logo": "line_pg.png",   "color": "#175fab", "accent": "#175fab", "tools": [
       {"id": "master", "label": "商品主檔自動化", "icon": "bi-calendar3", "url": url_for('master.master_page'),
-       "desc": "匯訂單彙總表，自動出總表、專案報價檔、改單統計"},
+       "desc": "匯入訂單彙總表，自動產出總表、專案報價檔與改單統計"},
       {"id": "zhuyun", "label": "竹運出貨拋檔", "icon": "bi-box-seam", "url": url_for('zhuyun.zhuyun_page'),
-       "desc": "整合表轉訂單系統拋檔＋永豐料號對照表"} ]},
+       "desc": "將訂單彙總表轉成竹運出貨拋檔與永豐料號對照表"} ]},
   {"key": "mars", "name": "瑪氏", "logo": "line_mars.png", "color": "#000fb7", "accent": "#06d9be", "tools": [
       {"id": "mars", "label": "瑪氏出貨", "icon": "bi-truck", "url": url_for('mars.mars_page'),
-       "desc": "拆單、EIP 單號、瑪氏採購單、EMMA 匯入檔、勇信缺貨下修"} ]},
+       "desc": "拆單、EIP 採購單號、瑪氏採購單、EMMA 匯入檔、勇信缺貨下修"} ]},
   {"key": "cpg",  "name": "紙潔", "logo": "line_cpg.png",  "color": "#c90121", "accent": "#c90121", "tools": []},
 ] %}
 <style>
@@ -52,7 +52,7 @@
   .lm-item i { color:var(--lc); margin-top:2px; }
   .lm-item small { display:block; font-weight:400; color:#64748b; font-size:11.5px; margin-top:2px; }
   a.lm-item:hover { background:color-mix(in srgb, var(--lc) 8%, #fff); }
-  .lm-item.on { background:color-mix(in srgb, var(--lc) 14%, #fff); } .lm-item.on::after { content:"目前在這"; font-size:10.5px; color:var(--lc); font-weight:700; margin-left:auto; white-space:nowrap; align-self:center; }
+  .lm-item.on { background:color-mix(in srgb, var(--lc) 14%, #fff); } .lm-item.on::after { content:"目前頁面"; font-size:10.5px; color:var(--lc); font-weight:700; margin-left:auto; white-space:nowrap; align-self:center; }
   .lm-item.soon { color:#94a3b8; font-weight:500; cursor:default; } .lm-item.soon i { color:#cbd5e1; }
   @media (max-width: 760px) { .lm-pop, .lm-pop.wide { min-width:0; width:calc(100vw - 32px); flex-direction:column; right:auto; left:0; } }
 </style>
@@ -64,7 +64,7 @@
       <a class="lm-item {{ 'on' if current == t.id else '' }}" href="{{ t.url }}" role="menuitem">
         <i class="bi {{ t.icon }}"></i><span>{{ t.label }}<small>{{ t.desc }}</small></span></a>
     {% else %}
-      <div class="lm-item soon"><i class="bi bi-hourglass-split"></i><span>準備中<small>{{ line.name }}的工具做好會放這裡</small></span></div>
+      <div class="lm-item soon"><i class="bi bi-hourglass-split"></i><span>建置中<small>{{ line.name }}專用工具建置中</small></span></div>
     {% endfor %}
   </div>
 {% endmacro %}
@@ -73,16 +73,16 @@
   {% for line in LINES %}
   <div class="lm lm-split" data-line="{{ line.key }}" style="--lc:{{ line.color }};--la:{{ line.accent }}">
     <button type="button" class="lm-btn {{ '' if line.tools else 'soon' }}" aria-haspopup="true" aria-expanded="false"
-            title="{{ line.name }}的工具{{ '' if line.tools else '（還沒有，準備中）' }}">
+            title="{{ line.name }}專用工具{{ '' if line.tools else '（建置中）' }}">
       <img src="{{ url_for('static', filename=line.logo) }}" alt=""> {{ line.name }}
-      {% if line.tools %}<i class="bi bi-chevron-down chev"></i>{% else %}<span class="lm-tag">準備中</span>{% endif %}
+      {% if line.tools %}<i class="bi bi-chevron-down chev"></i>{% else %}<span class="lm-tag">建置中</span>{% endif %}
     </button>
     <div class="lm-pop one" role="menu">{{ column(line, lm_current) }}</div>
   </div>
   {% endfor %}
 {% else %}
   <div class="lm" id="line-menu">
-    <button type="button" class="lm-btn" id="lm-btn" aria-haspopup="true" aria-expanded="false" title="各線別自己的工具都在這裡">
+    <button type="button" class="lm-btn" id="lm-btn" aria-haspopup="true" aria-expanded="false" title="各線別專用工具">
       <span class="lm-dots">{% for line in LINES %}<i style="--d:linear-gradient(135deg, {{ line.color }}, {{ line.accent }})"></i>{% endfor %}</span>
       線別工具 <i class="bi bi-chevron-down chev"></i>
     </button>

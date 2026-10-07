@@ -32,14 +32,14 @@
   .hs-new { font-weight:700; } .hs-old { color:#94a3b8; text-decoration:line-through; }
   .hs-empty { padding:28px; text-align:center; color:#64748b; }
 </style>
-<button type="button" class="hs-btn" id="hs-open" title="本頁相關的操作與修改紀錄"><i class="bi bi-clock-history"></i> 歷程紀錄</button>
+<button type="button" class="hs-btn" id="hs-open" title="{{ '全部操作與修改紀錄' if _scope == 'all' else '本頁相關的操作與修改紀錄' }}"><i class="bi bi-clock-history"></i> 歷程紀錄</button>
 <dialog id="hs-dlg">
   <div class="hs-h"><i class="bi bi-clock-history"></i><b>歷程紀錄</b><span class="hs-cnt" id="hs-title"></span><button type="button" class="x" id="hs-close" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="hs-b">
     <div class="hs-f">
       <input id="hs-q" placeholder="搜尋 PO 單號、料號、檔名、操作人員" style="width:260px">
       <select id="hs-scope">
-        <option value="{{ _scope }}">本頁相關紀錄</option>
+        {% if _scope != 'all' %}<option value="{{ _scope }}">本頁相關紀錄</option>{% endif %}{# 首頁 scope 就是 all，兩個選項一樣，只留「全部紀錄」 #}
         <option value="all">全部紀錄</option>
       </select>
       <input id="hs-from" type="date" title="起始日期"><span class="hs-cnt">～</span><input id="hs-to" type="date" title="結束日期">
@@ -64,13 +64,13 @@
     return p;
   }
   async function load() {
-    $("#hs-table").innerHTML = `<tr><td class="hs-empty">載入中</td></tr>`;
+    $("#hs-table").innerHTML = `<tr><td class="hs-empty">載入中…</td></tr>`;
     const res = await fetch(`/api/master/logs?${params()}`); const d = await res.json().catch(() => ({}));
     if (!res.ok) { $("#hs-table").innerHTML = `<tr><td class="hs-empty">${esc(d.error || "無法載入歷程紀錄")}</td></tr>`; return; }
     LAST = d.logs || [];
     $("#hs-count").textContent = LAST.length ? `共 ${LAST.length} 筆${LAST.length >= 500 ? "（僅顯示最近 500 筆，請縮小期間或輸入關鍵字）" : ""}` : "";
     const fmt = v => v == null || v === "" ? "" : esc(v);
-    $("#hs-table").innerHTML = `<thead><tr><th>時間</th><th>操作人員</th><th>來源</th><th>線別</th><th>PO 單號</th><th>料號／國條</th><th>項目</th><th>修改前 → 修改後</th><th>原因</th><th>備註</th></tr></thead><tbody>` +
+    $("#hs-table").innerHTML = `<thead><tr><th>時間</th><th>操作人員</th><th>來源</th><th>線別</th><th>PO 單號</th><th>國條／SKU ID</th><th>項目</th><th>修改前 → 修改後</th><th>原因</th><th>備註</th></tr></thead><tbody>` +
       (LAST.map(l => `<tr><td class="k">${esc((l.changed_at || "").slice(0, 16))}</td><td>${esc(l.operator)}</td><td><span class="hs-src ${esc(l.source)}">${SRC[l.source] || esc(l.source)}</span></td><td class="k">${esc(l.line)}</td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode || l.sku_id)}</td><td>${esc(l.field_label)}</td><td>${l.old_value || l.new_value ? `<span class="hs-old">${fmt(l.old_value)}</span>${l.old_value ? " → " : ""}<span class="hs-new">${fmt(l.new_value)}</span>` : ""}</td><td class="k">${esc(l.reason)}</td><td class="k">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="10" class="hs-empty">查無紀錄</td></tr>`) + `</tbody>`;
   }
   function csv() {

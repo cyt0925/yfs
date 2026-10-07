@@ -235,7 +235,7 @@ table.st tr.sub td { color: var(--muted); }
 
     {% if view == 'sop' %}
     <div class="sop-wrap">
-      <div class="sop-bar"><i class="bi bi-journal-text"></i>營運 SOP 檢索是獨立的網站，這裡直接打開。<span style="flex:1"></span>
+      <div class="sop-bar"><i class="bi bi-journal-text"></i>營運 SOP 檢索為獨立網站，以下為內嵌畫面。<span style="flex:1"></span>
         <a class="link" href="{{ sop_url }}" target="_blank" rel="noopener">另開新分頁 <i class="bi bi-box-arrow-up-right"></i></a></div>
       <iframe class="sop-frame" src="{{ sop_url }}" title="營運 SOP 檢索"></iframe>
     </div>
@@ -243,30 +243,30 @@ table.st tr.sub td { color: var(--muted); }
     <main class="content">
       <div class="head">
         <h1>改單統計</h1>
-        <span class="sub">一段期間幾張 PO、幾張被改過、改了幾次、為什麼。主管要拿這個講「改單都是成本」。</span>
+        <span class="sub">統計期間內的 PO 張數、被改過的 PO 張數、改單次數與原因。</span>
       </div>
       <div class="card st-filter">
-        <label>從 <input type="month" id="st-from" class="inp"></label>
-        <label>到 <input type="month" id="st-to" class="inp"></label>
+        <label>期間 <input type="month" id="st-from" class="inp" aria-label="起始月份"></label>
+        <label>～ <input type="month" id="st-to" class="inp" aria-label="結束月份"></label>
         <label>線別 <select id="st-line" class="inp"><option value="">全部線別</option></select></label>
-        <label title="這個數字是人估的，系統只是拿來乘。留 0 就不算工時">每次改單約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
-        <label title="同事在正式站試功能時勾了「這是測試」的改單，預設不算"><input type="checkbox" id="st-test"> 含測試</label>
+        <label title="估計值；工時＝改單次數 × 分鐘數，填 0 則不計算">每次改單約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
+        <label title="改單時勾選「這是測試，不算進統計」的改單，預設不計入"><input type="checkbox" id="st-test"> 含測試</label>
         <span class="grow"></span>
         <a id="st-export" class="btn" href="#"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
       </div>
       <div class="kpis" id="st-kpi"></div>
-      <section class="card"><div class="sec-h"><h2>每個月</h2><span class="hint">紅色底線的數字可以點，會列出背後是哪幾次改單</span></div><div class="tbl-wrap"><table class="log st" id="st-months"></table></div></section>
+      <section class="card"><div class="sec-h"><h2>每月統計</h2><span class="hint">點選有底線的數字可查看改單明細</span></div><div class="tbl-wrap"><table class="log st" id="st-months"></table></div></section>
       <div class="bottom">
-        <section class="card"><div class="sec-h"><h2>我們改單的原因</h2><span class="hint">只有我們改的才有原因，酷澎不會講</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
-        <section class="card"><div class="sec-h"><h2>改了什麼</h2><span class="hint">一次改單可能同時改數量和交期，加起來會比改單次數多</span></div><div class="tbl-wrap"><table class="log st" id="st-kinds"></table></div></section>
+        <section class="card"><div class="sec-h"><h2>我方修改原因</h2><span class="hint">僅我方修改有原因，酷澎修改不提供原因</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
+        <section class="card"><div class="sec-h"><h2>改單類型</h2><span class="hint">一次改單可能同時改數量與到貨日，所以合計可能大於改單次數</span></div><div class="tbl-wrap"><table class="log st" id="st-kinds"></table></div></section>
       </div>
-      <section class="card"><div class="sec-h"><h2>改最多次的 PO</h2></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
-      <details class="card st-how"><summary>這些數字怎麼算的</summary>
-        <div>PO 歸哪個月看它目前的交貨日。沒排日期的另外列「未排日期」。</div>
-        <div>「被改過」是這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期會一個品項記一筆，一次動作不能算很多次。</div>
-        <div>「酷澎改的」是整合表上的出貨數量或交貨日跟上次不一樣，或品項從檔案裡消失。「我們改的」是人手改出貨數量或交貨日；恢復成整合表的數字不算。</div>
-        <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。改單時勾了「這是測試」的預設不算，上面勾「含測試」才會算進來。</div>
-        <div>估計工時是改單次數乘上你填的分鐘數，分鐘數是人估的，不是系統算的。資料從系統開始用（2026 年 9 月中）才有。</div>
+      <section class="card"><div class="sec-h"><h2>改單次數最多的 PO</h2></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
+      <details class="card st-how"><summary>計算方式說明</summary>
+        <div>PO 依目前到貨日歸入月份；未排到貨日的另列「未排日期」。</div>
+        <div>「被改過 PO」指修改歷程中至少有一次改單的 PO。同一張 PO、同一來源、同一時間的變動算一次：整張 PO 改到貨日時每個品項各記一筆，但同一次操作只算一次。</div>
+        <div>「酷澎修改」指訂單彙總表上的出貨數量或到貨日與上次不同，或品項從檔案中消失。「我方修改」指人工修改出貨數量或到貨日；改回訂單彙總表的數字不算。</div>
+        <div>僅我方修改有原因；2026-09-22 之前的改單沒有原因，列為「未填」。改單時勾選「這是測試，不算進統計」的改單預設不計入，勾選上方「含測試」才會計入。</div>
+        <div>估計工時＝改單次數 × 每次改單分鐘數（人工估計）。資料自 2026 年 9 月中系統啟用起才有。</div>
       </details>
     </main>
     <dialog id="st-dlg" class="st-dlg">
@@ -277,11 +277,11 @@ table.st tr.sub td { color: var(--muted); }
     <main class="content">
       <div class="head">
         <h1>首頁總覽</h1>
-        <span class="sub" id="as-of">讀取中…</span>
+        <span class="sub" id="as-of">載入中…</span>
       </div>
 
       <section class="card" aria-labelledby="h-tasks">
-        <div class="sec-h"><h2 id="h-tasks">今日事項</h2><span class="hint">點一下直接到那一頁</span><span class="grow"></span><span class="hint num" id="task-count"></span></div>
+        <div class="sec-h"><h2 id="h-tasks">今日事項</h2><span class="hint">點選項目可前往處理頁面</span><span class="grow"></span><span class="hint num" id="task-count"></span></div>
         <div class="tasks" id="tasks"></div>
       </section>
 
@@ -294,11 +294,11 @@ table.st tr.sub td { color: var(--muted); }
         <div class="head" style="margin-bottom:12px"><h2 id="h-trend">訂單與出貨</h2><span class="sub" id="trend-note"></span></div>
         <div class="charts">
           <div class="card">
-            <div class="sec-h"><h2>近 30 天每天新進 PO</h2><span class="hint">單位：張，以系統第一次看到這張單的日子算</span></div>
+            <div class="sec-h"><h2>近 30 天每天新進 PO</h2><span class="hint">單位：張；以系統首次讀到該 PO 的日期計算</span></div>
             <div class="chart-body" id="c-line"><div class="legend" id="lg-line"></div></div>
           </div>
           <div class="card">
-            <div class="sec-h"><h2>今天起 7 天要出的箱數</h2><span class="hint">依交貨日</span></div>
+            <div class="sec-h"><h2>未來 7 天出貨箱數</h2><span class="hint">含今天，依到貨日</span></div>
             <div class="chart-body" id="c-bar"><div class="legend" id="lg-bar"></div></div>
           </div>
         </div>
@@ -306,11 +306,11 @@ table.st tr.sub td { color: var(--muted); }
 
       <div class="bottom">
         <section class="card" aria-labelledby="h-cost">
-          <div class="sec-h"><h2 id="h-cost">本月改單與多花的時間</h2><span class="grow"></span><a class="link" href="{{ url_for('portal.portal_stats') }}">看改單統計 <i class="bi bi-chevron-right"></i></a></div>
+          <div class="sec-h"><h2 id="h-cost">本月改單與估計工時</h2><span class="grow"></span><a class="link" href="{{ url_for('portal.portal_stats') }}">查看改單統計 <i class="bi bi-chevron-right"></i></a></div>
           <div class="cost" id="cost"></div>
         </section>
         <section class="card" aria-labelledby="h-log">
-          <div class="sec-h"><h2 id="h-log">最近的動作</h2><span class="grow"></span><button type="button" class="link" id="more-hist" style="border:0;background:none;cursor:pointer">全部歷程 <i class="bi bi-chevron-right"></i></button></div>
+          <div class="sec-h"><h2 id="h-log">最近操作紀錄</h2><span class="grow"></span><button type="button" class="link" id="more-hist" style="border:0;background:none;cursor:pointer">全部歷程紀錄 <i class="bi bi-chevron-right"></i></button></div>
           <div class="tbl-wrap"><table class="log" id="log"></table></div>
         </section>
       </div>
@@ -336,6 +336,7 @@ table.st tr.sub td { color: var(--muted); }
   const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const md = s => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
   const wk = s => "日一二三四五六"[new Date(s + "T00:00:00").getDay()];
+  const pad = s => (/^[\x21-\x7e]/.test(s) ? " " : "") + s + (/[\x21-\x7e]$/.test(s) ? " " : "");   // 中英文之間空一格：酷澎→「僅酷澎有」，PChome→「僅 PChome 有」
   // 刻度：每格是 1、2、2.5、5 乘 10 的次方，而且是整數（張數、箱數不會出現 6.3），最多 5 格
   function niceScale(v) {
     v = Math.max(v, 4);
@@ -373,12 +374,12 @@ table.st tr.sub td { color: var(--muted); }
         <div class="ch-h"><img src="${STATIC}${esc(c.logo)}" alt=""><b>${esc(c.title)}</b>${c.live ? "" : `<span class="chip">${esc(c.status)}</span>`}</div>
         <div class="stats">
           <div class="stat"><div class="k">今日新進</div><div class="v num">${v(c.new_today, "張 PO")}</div></div>
-          <div class="stat"><div class="k">待出貨</div><div class="v num">${v(c.pending_pos, "張")}</div></div>
+          <div class="stat"><div class="k">待出貨</div><div class="v num">${v(c.pending_pos, "張 PO")}</div></div>
           <div class="stat"><div class="k">本月出貨</div><div class="v num">${v(c.month_boxes, "箱")}</div></div>
         </div>
         <div class="ch-f">${c.live
-          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "還沒有匯入過整合表"}</span><span class="grow"></span><a class="btn ch-go" href="{{ url_for('index') }}" style="background:var(--ch-${esc(c.key)});border-color:var(--ch-${esc(c.key)})">進入後台 <i class="bi bi-arrow-right"></i></a>`
-          : `<span>${c.key === "shopee" ? "訂單來源檔確認後開工" : "排在蝦皮特選之後"}</span>`}</div></div>`;
+          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "尚未匯入訂單彙總表"}</span><span class="grow"></span><a class="btn ch-go" href="{{ url_for('index') }}" style="background:var(--ch-${esc(c.key)});border-color:var(--ch-${esc(c.key)})">進入後台 <i class="bi bi-arrow-right"></i></a>`
+          : `<span>${c.key === "shopee" ? "訂單來源檔確認後開始建置" : "預計於蝦皮特選之後建置"}</span>`}</div></div>`;
     }).join("");
   }
 
@@ -421,7 +422,7 @@ table.st tr.sub td { color: var(--muted); }
     const tot = days.map((_, i) => chs.reduce((a, c) => a + c.ship_7d[i].value, 0));
     const sc = niceScale(Math.max(...tot) * 1.05), max = sc.max, slot = (W - L - R) / days.length;
     const bw = Math.min(34, slot * 0.56), y = v => T + (H - T - B) * (1 - v / max), h = v => (H - T - B) * (v / max);
-    let s = `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="今天起 7 天每天要出的箱數">`;
+    let s = `<svg class="viz" viewBox="0 0 ${W} ${H}" role="img" aria-label="未來 7 天每日出貨箱數">`;
     for (let k = 0; k <= sc.n; k++) { const v = sc.step * k; s += `<line class="${k ? "grid" : "base"}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`; }
     days.forEach((d, i) => {
       const cx = L + (i + 0.5) * slot, x0 = cx - bw / 2; let acc = 0;
@@ -440,7 +441,7 @@ table.st tr.sub td { color: var(--muted); }
     box.querySelectorAll(".hb").forEach(rc => {
       rc.addEventListener("pointermove", ev => {
         const i = +rc.dataset.i, br = box.getBoundingClientRect();
-        tipAt(box, ev.clientX - br.left, ev.clientY - br.top, `<b>${md(days[i])}（${wk(days[i])}）交貨</b>` + chs.map(c => `<div class="row"><span><i style="background:var(--ch-${c.key})"></i>${esc(c.name)}</span><span class="num">${fmt(c.ship_7d[i].value)} 箱</span></div>`).join(""));
+        tipAt(box, ev.clientX - br.left, ev.clientY - br.top, `<b>${md(days[i])}（${wk(days[i])}）到貨</b>` + chs.map(c => `<div class="row"><span><i style="background:var(--ch-${c.key})"></i>${esc(c.name)}</span><span class="num">${fmt(c.ship_7d[i].value)} 箱</span></div>`).join(""));
       });
       rc.addEventListener("pointerleave", () => hideTip(box));
     });
@@ -452,22 +453,22 @@ table.st tr.sub td { color: var(--muted); }
     const hours = minutes ? Math.round((c.events * minutes / 60) * 10) / 10 : null;
     const rmax = Math.max(1, ...c.reasons.map(r => r.count));
     $("#cost").innerHTML = `<div class="hero">
-        <div><div class="k">改單次數</div><div class="v num">${fmt(c.events)}<small>次</small></div><div class="note">酷澎改 ${fmt(c.coupang)} · 我們改 ${fmt(c.manual)}</div></div>
+        <div><div class="k">改單次數</div><div class="v num">${fmt(c.events)}<small>次</small></div><div class="note">酷澎修改 ${fmt(c.coupang)} · 我方修改 ${fmt(c.manual)}</div></div>
         <div><div class="k">被改過的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div></div>
-        <div><div class="k">估計多花</div><div class="v num">${hours == null ? "—" : fmt(hours)}<small>${hours == null ? "" : "小時"}</small></div>
-          <div class="note">${hours == null ? "到改單統計填「每次改單約幾分鐘」就會算" : `每次約 ${minutes} 分鐘`}</div></div>
+        <div><div class="k">估計工時</div><div class="v num">${hours == null ? "—" : fmt(hours)}<small>${hours == null ? "" : "小時"}</small></div>
+          <div class="note">${hours == null ? "請到改單統計頁填寫每次改單分鐘數" : `每次約 ${minutes} 分鐘`}</div></div>
       </div>
-      <div class="reasons" aria-label="我們改單的原因">${c.reasons.length
+      <div class="reasons" aria-label="我方修改原因">${c.reasons.length
         ? c.reasons.map(r => `<div class="rs"><span>${esc(r.name)}</span><span class="bar" style="width:${(r.count / rmax) * 100}%"></span><span class="n num">${r.count}</span></div>`).join("")
-        : `<div class="hint" style="color:var(--muted);font-size:12.5px">這個月還沒有我們改單的原因紀錄。</div>`}</div>`;
+        : `<div class="hint" style="color:var(--muted);font-size:12.5px">本月尚無我方修改原因紀錄。</div>`}</div>`;
   }
 
   function renderLog() {
     const cut = v => { v = String(v ?? ""); return v.length > 40 ? v.slice(0, 40) + "…" : v; };
-    $("#log").innerHTML = D.recent.length ? `<thead><tr><th>時間</th><th>操作人員</th><th>系統</th><th>做了什麼</th></tr></thead><tbody>` +
+    $("#log").innerHTML = D.recent.length ? `<thead><tr><th>時間</th><th>操作人員</th><th>系統</th><th>操作內容</th></tr></thead><tbody>` +
       D.recent.map(r => `<tr><td class="k num">${esc((r.at || "").slice(5, 16))}</td><td>${esc(r.who)}</td><td><span class="badge">${esc(r.system)}</span></td>
         <td>${esc(r.what)}${r.po ? ` <span class="num" style="color:var(--muted)">${esc(r.po)}</span>` : ""}${r.old || r.new ? `：${r.old ? `<span class="old">${esc(cut(r.old))}</span> → ` : ""}${esc(cut(r.new))}` : ""}</td></tr>`).join("") + `</tbody>`
-      : `<tbody><tr><td class="k" style="padding:18px">還沒有紀錄。</td></tr></tbody>`;
+      : `<tbody><tr><td class="k" style="padding:18px">查無紀錄</td></tr></tbody>`;
   }
 
   function drawCharts() { if (D && live().length) { drawLine(); drawBar(); } }
@@ -475,10 +476,10 @@ table.st tr.sub td { color: var(--muted); }
   async function load() {
     try {
       const res = await fetch("/api/portal/summary"); D = await res.json();
-      if (!res.ok) throw new Error(D.error || `伺服器錯誤 (${res.status})`);
-    } catch (e) { $("#as-of").textContent = `讀不到資料：${e.message}`; return; }
-    const t = D.today; $("#as-of").textContent = `${t.slice(0, 4)} 年 ${Number(t.slice(5, 7))} 月 ${Number(t.slice(8, 10))} 日（${wk(t)}）· 讀取時間 ${D.now.slice(11, 16)}`;
-    $("#trend-note").textContent = live().length === 1 ? `目前只有${live()[0].name}有資料，其他通路上線後會一起畫` : "";
+      if (!res.ok) throw new Error(D.error || `伺服器錯誤（${res.status}）`);
+    } catch (e) { $("#as-of").textContent = `資料載入失敗：${e.message}`; return; }
+    const t = D.today; $("#as-of").textContent = `${t}（${wk(t)}）· 更新時間 ${D.now.slice(11, 16)}`;
+    $("#trend-note").textContent = live().length === 1 ? `目前僅${pad(live()[0].name)}有資料，其他通路上線後一併顯示` : "";
     renderTasks(); renderChannels(); drawCharts(); renderCost(); renderLog();
   }
   load();
@@ -492,9 +493,9 @@ table.st tr.sub td { color: var(--muted); }
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fmt = n => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 1 });
-  const api = async u => { const r = await fetch(u); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `伺服器錯誤 (${r.status})`); return d; };
+  const api = async u => { const r = await fetch(u); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || `伺服器錯誤（${r.status}）`); return d; };
   const n = (v, f) => v ? `<span class="st-n" data-f="${esc(JSON.stringify(f))}">${fmt(v)}</span>` : `<span class="st-zero">0</span>`;
-  const mTh = m => m.month === "合計" ? "合計" : (m.month.length === 7 ? `${Number(m.month.slice(5))} 月` : m.month);
+  const mTh = m => m.month;   // 月份三張表都寫 2026-10（跨年時「10 月」分不出哪一年）
   let EV = null;
 
   function qs() {
@@ -513,28 +514,28 @@ table.st tr.sub td { color: var(--muted); }
   function render(d, minutes) {
     const t = d.total, hours = minutes ? Math.round(t.events * minutes / 6) / 10 : null;
     const card = (k, v, unit, sub) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div><div class="s">${sub || ""}</div></div>`;
-    $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
+    $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 個品項 · ${fmt(t.skus)} 個 SKU`)
       + card("被改過的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
-      + card("改單次數", n(t.events, {}), "次", `酷澎改的 ${n(t.coupang, { source: "import" })} · 我們改的 ${n(t.manual, { source: "manual" })}${d.test_events ? ` · 另有 ${fmt(d.test_events)} 次測試沒算` : ""}`)
-      + card("估計多花", hours == null ? "—" : fmt(hours), hours == null ? "" : "小時", hours == null ? "上面填「每次改單約幾分鐘」就會算" : `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`);
+      + card("改單次數", n(t.events, {}), "次", `酷澎修改 ${n(t.coupang, { source: "import" })} · 我方修改 ${n(t.manual, { source: "manual" })}${d.test_events ? ` · 另有 ${fmt(d.test_events)} 次測試未計入` : ""}`)
+      + card("估計工時", hours == null ? "—" : fmt(hours), hours == null ? "" : "小時", hours == null ? "填寫上方「每次改單約 __ 分鐘」後顯示" : `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`);
     const rows = d.months.concat(d.months.length > 1 ? [t] : []);
     const mf = m => m.month === "合計" ? {} : { month: m.month };
     const tr = m => m.month === "合計" ? ' class="tot"' : "";
-    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">被改過</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎改</th><th class="num">我們改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">被改過 PO</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
       + (rows.map(m => `<tr${tr(m)}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${fmt(m.items)}</td><td class="num">${fmt(m.skus)}</td><td class="num">${fmt(m.changed_pos)}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td><td class="num">${n(m.events, mf(m))}</td><td class="num">${n(m.coupang, { ...mf(m), source: "import" })}</td><td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td>${minutes ? `<td class="num">${fmt(Math.round(m.events * minutes / 6) / 10)}</td>` : ""}</tr>`).join("")
-        || `<tr><td colspan="10" class="k" style="padding:18px">這段期間沒有訂單</td></tr>`) + `</tbody>`;
+        || `<tr><td colspan="10" class="k" style="padding:18px">此期間查無訂單</td></tr>`) + `</tbody>`;
     $("#st-reasons").innerHTML = `<thead><tr><th>原因</th>${rows.map(m => `<th class="num">${esc(mTh(m))}</th>`).join("")}</tr></thead><tbody>`
       + d.reasons.map(r => `<tr><td>${esc(r)}</td>${rows.map(m => `<td class="num">${n(m.reasons[r], { ...mf(m), source: "manual", reason: r })}</td>`).join("")}</tr>`).join("")
-      + `<tr class="tot"><td>我們改的合計</td>${rows.map(m => `<td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td>`).join("")}</tr></tbody>`;
-    const kinds = [["改數量（酷澎）", "qty_c", { source: "import", kind: "qty" }], ["改數量（我們）", "qty_m", { source: "manual", kind: "qty" }],
+      + `<tr class="tot"><td>我方修改合計</td>${rows.map(m => `<td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td>`).join("")}</tr></tbody>`;
+    const kinds = [["改數量（酷澎）", "qty_c", { source: "import", kind: "qty" }], ["改數量（我方）", "qty_m", { source: "manual", kind: "qty" }],
       ["　其中下修", "qty_down", { kind: "qty", dir: "down" }], ["　其中上修", "qty_up", { kind: "qty", dir: "up" }], ["　其中有上有下", "qty_mixed", { kind: "qty", dir: "mixed" }],
-      ["改交期（酷澎）", "date_c", { source: "import", kind: "date" }], ["改交期（我們）", "date_m", { source: "manual", kind: "date" }], ["品項被拿掉（酷澎）", "gone_c", { source: "import", kind: "gone" }]];
+      ["改到貨日（酷澎）", "date_c", { source: "import", kind: "date" }], ["改到貨日（我方）", "date_m", { source: "manual", kind: "date" }], ["品項遭移除（酷澎）", "gone_c", { source: "import", kind: "gone" }]];
     $("#st-kinds").innerHTML = `<thead><tr><th>類型</th>${rows.map(m => `<th class="num">${esc(mTh(m))}</th>`).join("")}</tr></thead><tbody>`
       + kinds.filter(([, k]) => !k.startsWith("qty_") || ["qty_c", "qty_m"].includes(k) || rows.some(m => m.kinds[k]))
         .map(([label, k, f]) => `<tr${label.startsWith("　") ? ' class="sub"' : ""}><td>${esc(label)}</td>${rows.map(m => `<td class="num">${n(m.kinds[k], { ...mf(m), ...f })}</td>`).join("")}</tr>`).join("") + `</tbody>`;
-    $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎改</th><th class="num">我們改</th><th>原因</th></tr></thead><tbody>`
+    $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th>原因</th></tr></thead><tbody>`
       + (d.top_pos.map(p => `<tr><td class="num" style="text-align:left">${esc(p.po_number)}</td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${n(p.events, { po: p.po_number })}</td><td class="num">${n(p.coupang, { po: p.po_number, source: "import" })}</td><td class="num">${n(p.manual, { po: p.po_number, source: "manual" })}</td><td>${esc(p.reasons)}</td></tr>`).join("")
-        || `<tr><td colspan="8" class="k" style="padding:18px">這段期間沒有被改過的 PO</td></tr>`) + `</tbody>`;
+        || `<tr><td colspan="8" class="k" style="padding:18px">此期間查無被改過的 PO</td></tr>`) + `</tbody>`;
     document.querySelectorAll(".st-n").forEach(el => el.addEventListener("click", () => events(JSON.parse(el.dataset.f))));
   }
   async function events(f) {
@@ -543,12 +544,12 @@ table.st tr.sub td { color: var(--muted); }
     const list = EV.list.filter(e => (!f.month || e.month === f.month) && (!f.source || e.source === f.source) && (!f.reason || e.reason === f.reason)
       && (!f.kind || e.kinds.includes(f.kind)) && (!f.dir || e.qty_dir === f.dir) && (!f.po || e.po_number === f.po));
     const desc = [f.month || `${from}${to !== from ? "～" + to : ""}`, $("#st-line").value || "全部線別", f.po ? `PO ${f.po}` : "",
-      f.source === "import" ? "酷澎改的" : f.source === "manual" ? "我們改的" : "", f.kind ? ({ qty: "改數量", date: "改交期", gone: "品項被拿掉" })[f.kind] : "",
+      f.source === "import" ? "酷澎修改" : f.source === "manual" ? "我方修改" : "", f.kind ? ({ qty: "改數量", date: "改到貨日", gone: "品項遭移除" })[f.kind] : "",
       f.dir ? ({ down: "下修", up: "上修", mixed: "有上有下" })[f.dir] : "", f.reason ? `原因：${f.reason}` : ""].filter(Boolean);
     $("#st-dlg-title").textContent = `改單明細 · ${list.length} 次`; $("#st-dlg-sub").textContent = desc.join(" · ");
     $("#st-dlg-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>改了什麼</th><th>原因</th></tr></thead><tbody>`
       + (list.map(e => `<tr><td class="k">${esc(e.when.slice(0, 16))}</td><td class="num">${esc(e.po_number)}</td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge">${esc(e.source_label)}</span></td><td style="max-width:460px">${esc(e.summary)}</td><td>${e.reason ? `<span class="badge">${esc(e.reason)}</span>` : ""}${e.note ? `<div class="k">${esc(e.note)}</div>` : ""}</td></tr>`).join("")
-        || `<tr><td colspan="7" class="k" style="padding:18px">沒有符合的改單</td></tr>`) + `</tbody>`;
+        || `<tr><td colspan="7" class="k" style="padding:18px">查無符合條件的改單</td></tr>`) + `</tbody>`;
     $("#st-dlg").showModal();
   }
   $("#st-dlg-x").addEventListener("click", () => $("#st-dlg").close());

@@ -38,7 +38,7 @@ DONE_STATUSES = ("已完成", "已取消")
 CHANNELS = [
     # title／logo：首頁「各通路系統」卡片的標題與圖示（Jerry 2026-10-06 給的三個圖檔，縮成 160px 高放 static/）
     {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": ""},
-    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮訂單管理系統", "logo": "logo_shopee.png", "live": False, "status": "建置中"},
+    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理系統", "logo": "logo_shopee.png", "live": False, "status": "建置中"},
     {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中"},
 ]
 
@@ -114,15 +114,15 @@ def tasks(conn, today):
                            ORDER BY o.po_number""", ("import", since)).fetchall()
     if rows:
         pos = [r["po"] for r in rows]
-        out.append({"key": "review", "level": "crit", "level_text": "要確認", "icon": "bi-pencil-square",
-                    "title": f"酷澎最近 {REVIEW_DAYS} 天改了 {len(pos)} 張單", "detail": "PO " + "、".join(pos[:2]) + ("…" if len(pos) > 2 else ""),
+        out.append({"key": "review", "level": "crit", "level_text": "待確認", "icon": "bi-pencil-square",
+                    "title": f"酷澎近 {REVIEW_DAYS} 天修改 {len(pos)} 張 PO", "detail": "PO " + "、".join(pos[:2]) + ("…" if len(pos) > 2 else ""),
                     "url": COUPANG_URL, "count": len(pos)})
 
     # 商品主檔、瑪氏的表 init_db 一定會建；不包 try：PostgreSQL 一句失敗整個交易就不能再查，包了反而後面全錯
     n = _one(conn, "SELECT COUNT(*) FROM mst_mars_splits WHERE COALESCE(eip_po, '') = '' AND delivery_date >= ?", (t,)) or 0
     if n:
-        out.append({"key": "mars_eip", "level": "warn", "level_text": "待辦", "icon": "bi-receipt",
-                    "title": f"瑪氏 {n} 份拆單還沒填 EIP 單號", "detail": "填了才能產瑪氏採購單", "url": "/mars", "count": int(n)})
+        out.append({"key": "mars_eip", "level": "warn", "level_text": "待回填", "icon": "bi-receipt",
+                    "title": f"瑪氏 {n} 份拆單未填 EIP 採購單號", "detail": "填寫後才能下載瑪氏採購單", "url": "/mars", "count": int(n)})
 
     nxt = _one(conn, "SELECT MIN(delivery_date) FROM orders WHERE line = ? AND delivery_date > ? AND removed_from_coupang = 0", (PG_LINE, t))
     if nxt and nxt <= _iso(today + _dt.timedelta(days=7)):
@@ -135,9 +135,8 @@ def tasks(conn, today):
             if not done:
                 missing.append(wh or "倉別空白")
         if missing:
-            md = f"{int(nxt[5:7])}/{int(nxt[8:10])}"
-            out.append({"key": "zhuyun", "level": "warn", "level_text": "要出貨", "icon": "bi-truck",
-                        "title": f"寶僑 {md} 到貨還有 {len(missing)} 個倉沒產竹運拋檔", "detail": "、".join(missing),
+            out.append({"key": "zhuyun", "level": "warn", "level_text": "待產出", "icon": "bi-truck",
+                        "title": f"寶僑 {nxt} 到貨，{len(missing)} 個倉尚未產出竹運出貨拋檔", "detail": "、".join(missing),
                         "url": "/zhuyun", "count": len(missing)})
 
     d14 = _iso(today - _dt.timedelta(days=14))
@@ -146,8 +145,8 @@ def tasks(conn, today):
         WHERE o.delivery_date >= ? AND o.delivery_date < ? AND o.removed_from_coupang = 0
           AND h.receiving_status = ? AND h.po_status <> ?""", (d14, t, "未驗收", "已取消")) or 0
     if n:
-        out.append({"key": "receiving", "level": "info", "level_text": "待辦", "icon": "bi-clipboard-check",
-                    "title": f"過了交期還沒驗收 {n} 張 PO", "detail": "近 14 天到貨的", "url": COUPANG_URL, "count": int(n)})
+        out.append({"key": "receiving", "level": "info", "level_text": "待驗收", "icon": "bi-clipboard-check",
+                    "title": f"已過到貨日未驗收 {n} 張 PO", "detail": "到貨日在近 14 天內", "url": COUPANG_URL, "count": int(n)})
     return out
 
 
@@ -169,7 +168,7 @@ _SYSTEM_BY_PREFIX = (("mars_", "瑪氏出貨"), ("zhuyun_", "竹運出貨拋檔"
 
 def system_of(table, field, note=""):
     if table == "edit_logs":
-        return "酷澎訂單管理"
+        return "酷澎訂單管理系統"
     for prefix, name in _SYSTEM_BY_PREFIX:
         if (field or "").startswith(prefix):
             return name
