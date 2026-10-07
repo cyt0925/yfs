@@ -342,10 +342,11 @@ def special_text(settings, s, items, wh=None):
 
 
 def po_rows(items):
-    """同一個永豐料號（同單位）合成一列；箱數、出貨數量加總。A 欄放永豐料號，不是下採料號。"""
+    """同一個下採料號（同單位）合成一列；箱數、出貨數量加總。
+    A 欄放下採料號（＝訂單彙總表的報價備註，組出商品跟永豐料號不同）。Jerry 2026-10-07 改：原本 9/30 定的是放永豐料號。"""
     rows = collections.OrderedDict()
     for it in items:
-        key = (it.get("yf_sku") or it.get("purchase_code") or "", it.get("unit") or "")
+        key = (it.get("purchase_code") or it.get("yf_sku") or "", it.get("unit") or "")
         r = rows.get(key)
         if r is None:
             r = rows[key] = {"code": key[0], "mars_code": it.get("mars_code") or "", "name": it.get("mars_name") or it.get("product_name") or "",

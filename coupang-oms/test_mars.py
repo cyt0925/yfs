@@ -392,9 +392,12 @@ def main():
           and f5[len(exp_first) + 3] == "進倉時間12:30~15:30（1台車）" and f5[len(exp_first) + 4] == "*請在12:30前抵達，以免被算遲到，謝謝", str(f5))
     rows = [[ws.cell(rr, cc).value for cc in range(1, 14)] for rr in range(12, 12 + len(f2["items"]))]
     codes_in = {r_[0] for r_ in rows}
-    check("第 12 列起每列一個永豐料號（不是下採料號）：A 料號、B 瑪氏貨號、D 單位需求＝出貨數量、E 箱數、F 價格、J 每箱產品數、K 每箱中盒數",
-          codes_in == {i["yf_sku"] for i in f2["items"]} and all(r_[3] == sum(i["qty_ship"] for i in f2["items"] if i["yf_sku"] == r_[0])
-          and r_[4] == sum(i["cases"] for i in f2["items"] if i["yf_sku"] == r_[0]) and r_[1] and r_[5] and r_[9] and r_[10] for r_ in rows), str(rows))
+    check("第 12 列起每列一個下採料號（Jerry 2026-10-07 改）：A 料號、B 瑪氏貨號、D 單位需求＝出貨數量、E 箱數、F 價格、J 每箱產品數、K 每箱中盒數",
+          codes_in == {i["purchase_code"] for i in f2["items"]} and all(r_[3] == sum(i["qty_ship"] for i in f2["items"] if i["purchase_code"] == r_[0])
+          and r_[4] == sum(i["cases"] for i in f2["items"] if i["purchase_code"] == r_[0]) and r_[1] and r_[5] and r_[9] and r_[10] for r_ in rows), str(rows))
+    from mars.po import po_rows
+    combo_rows = po_rows([i for i in gum_combo["items"] if i["sku_id"] == "900000000000001"])
+    check("組出商品：瑪氏採購單 A 欄放下採料號 M55500001，不是永豐料號 M60055599", [r_["code"] for r_ in combo_rows] == ["M55500001"], str(combo_rows))
     check("H 中盒需貼標照這份的中標；I 指定效期留空", all((r_[7] == "V") == (f2["label"] == "V") and r_[8] is None for r_ in rows))
     last = 12 + len(f2["items"]) - 1
     check("E10／F10 加總公式蓋到最後一列（範本原本只到 28）", ws["E10"].value == f"=SUM(E12:E{last})" and ws["F10"].value == f"=SUM(G12:G{last})", f"{ws['E10'].value} {ws['F10'].value}")
@@ -446,7 +449,8 @@ def main():
     check("整段期間全部合併：列數＝所有拆單表的料號數", r.status_code == 200 and r.headers.get("X-Mars-Emma-Rows") == str(len(v["splits"])), str(r.headers.get("X-Mars-Emma-Rows")))
     check("沒有拆單表的期間 → 400", c.post("/api/mars/emma", json={"from": "2026-09-01", "to": "2026-09-02"}).status_code == 400)
     pr = mp.po_rows(fake_items)
-    check("採購單一列一個永豐料號（組出 M9 就寫 M9，不寫下採的 M1）：同料號合成一列、數量箱數加總、備註照商品總表", [r_["code"] for r_ in pr] == ["M9", "M8"] and pr[0]["qty"] == 30 and pr[0]["cases"] == 3 and pr[0]["note"] == "舊備註", str(pr))
+    check("採購單一列一個下採料號（Jerry 2026-10-07：永豐料號 M9、M8 都下採 M1 → 寫 M1 一列）：同下採料號合成一列、數量箱數加總、備註照商品總表",
+          [r_["code"] for r_ in pr] == ["M1"] and pr[0]["qty"] == 35 and pr[0]["cases"] == 4 and pr[0]["note"] == "舊備註", str(pr))
     check("下單日：9/21（一）往前 2 個工作天 → 9/17（四）", mp.order_date(datetime.date(2026, 9, 21), 2, set()) == datetime.date(2026, 9, 17))
     check("內建國定假日自動跳過：9/29（二）到貨，9/28 教師節、9/25 中秋、週末都跳 → 下單日 9/23（三）", mp.order_date(datetime.date(2026, 9, 29), 2) == datetime.date(2026, 9, 23))
     check("春節：2026-02-23（一）到貨，2/16～2/20 全放、2/14～15 週末 → 下單日 2/12（四）", mp.order_date(datetime.date(2026, 2, 23), 2) == datetime.date(2026, 2, 12))
