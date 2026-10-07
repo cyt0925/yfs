@@ -46,7 +46,7 @@ def parse_yx_pdf(data, filename=""):
     try:
         doc = pymupdf.open(stream=data, filetype="pdf")
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"{filename}：打不開這個 PDF（{exc}）") from exc
+        raise ValueError(f"{filename}：無法開啟此 PDF 檔。") from exc
     pages = []
     for pno, page in enumerate(doc, start=1):
         text = page.get_text()
@@ -75,16 +75,16 @@ def parse_yx_pdf(data, filename=""):
                 cur["expiry"] = f"{cur['expiry']}、{d}" if cur["expiry"] else d; continue
             if ln and not ln.isdigit() and not cur["name"] and not ln.startswith("備註") and cur["qty"] is None:
                 cur["name"] = re.sub(r"\s*\d+:\d+:\d+\s*$", "", ln)
-        warnings = [f"第 {pno} 頁 {it['raw_code']} 沒讀到配送數量" for it in items if it["qty"] is None]
+        warnings = [f"第 {pno} 頁 {it['raw_code']} 未讀取到配送數量" for it in items if it["qty"] is None]
         total = int(tot.group(1)) if tot else None
         got = sum(it["qty"] or 0 for it in items)
         if total is not None and got != total:
-            warnings.append(f"第 {pno} 頁明細加總 {got} 箱 ≠ 合計箱數 {total}，請人工核對這頁")
+            warnings.append(f"第 {pno} 頁明細加總 {got} 箱與合計箱數 {total} 箱不符，請人工核對")
         pages.append({"page": pno, "eip_po": m.group(1), "warehouse": wh.group(1) if wh else "",
                       "ship_date": f"{sd.group(1)}-{sd.group(2)}-{sd.group(3)}" if sd else "",
                       "items": items, "total": total, "warnings": warnings})
     if not pages:
-        raise ValueError(f"{filename}：這份 PDF 裡沒有勇信的配送明細表（找不到收貨單號）。掃描的圖檔 PDF 讀不到字。")
+        raise ValueError(f"{filename}：此 PDF 不是勇信配送明細表（找不到收貨單號）；掃描圖檔的 PDF 無法讀取。")
     return pages
 
 
@@ -157,7 +157,7 @@ def compare(conn, pages, none_ids=()):
         every_zero = all(r["shipped"] == 0 for y in sp for r in y["items"]) and any(r["ordered"] for y in sp for r in y["items"])
         full = every_zero and not missing
         pos.append({"po_number": po, "warehouse": sp[0]["warehouse"], "delivery_date": sp[0]["delivery_date"], "full": full,
-                    "full_note": "整張 PO 全部沒出" if full else ("每個品項都 0，但這張 PO 還有幾份沒在表裡，先當部分缺貨" if every_zero and missing else ""),
+                    "full_note": "整張 PO 全部沒出" if full else ("所有品項出貨皆為 0，但此 PO 尚有拆單不在勇信配送明細表中，暫以部分缺貨處理" if every_zero and missing else ""),
                     "missing_splits": [x["filename"] + ("" if x["eip_po"] else "（還沒填 EIP 單號）") for x in missing], "splits": sp})
     pos.sort(key=lambda p: (p["delivery_date"], p["po_number"]))
     # 有 EIP 單號、同倉同日、卻沒出現在這次表裡的
@@ -268,7 +268,7 @@ def api_shortage_compare():
     conn = get_conn()
     try:
         if conn.execute("SELECT COUNT(*) AS n FROM mst_mars_splits WHERE eip_po != ''").fetchone()["n"] == 0:
-            return jsonify({"error": "還沒有任何一份拆單表填了 EIP 採購單號，沒東西可以比。"}), 400
+            return jsonify({"error": "目前沒有拆單表填入 EIP 採購單號，無法比對。"}), 400
         none_ids = [int(x) for x in re.split(r"[,\s]+", request.form.get("none_ids", "")) if x.strip().isdigit()]
         result = compare(conn, pages, none_ids)
     finally:
@@ -284,7 +284,7 @@ def api_shortage_apply():
     payload = request.get_json(silent=True) or {}
     result = payload.get("result") or {}
     if not isinstance(result.get("pos"), list):
-        return jsonify({"error": "沒有比對結果，請重新上傳勇信表。"}), 400
+        return jsonify({"error": "沒有比對結果，請重新上傳勇信配送明細表。"}), 400
     operator = _operator()
     rows = downgrade_rows(result)
     changed, notes = 0, []
@@ -298,7 +298,7 @@ def api_shortage_apply():
     if payload.get("only_apply"):
         return jsonify({"ok": True, "changed": changed, "notes": notes})
     if not rows:
-        return jsonify({"ok": True, "changed": changed, "notes": notes, "error": "沒有缺貨的品項，不用下修檔。"}), 200
+        return jsonify({"ok": True, "changed": changed, "notes": notes, "error": "沒有缺貨品項，不需酷澎下修檔。"}), 200
     resp = send_file(io.BytesIO(downgrade_file(rows)), as_attachment=True, download_name=downgrade_filename(result),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp.headers["X-Mars-Changed"] = str(changed)

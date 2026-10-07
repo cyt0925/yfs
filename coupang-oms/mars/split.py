@@ -57,12 +57,12 @@ def _match(o, by_key, by_code):
     if (code, unit) in by_key:
         return by_key[(code, unit)], "下採料號", ""
     if yf and yf != code and (yf, unit) in by_key:
-        return by_key[(yf, unit)], "永豐料號", f"下採料號 {code} 在商品總表找不到，用永豐料號 {yf} 對到"
+        return by_key[(yf, unit)], "永豐料號", f"商品總表找不到下採料號 {code}，改用永豐料號 {yf} 比對"
     for c, how in ((code, "下採料號"), (yf, "永豐料號")):
         if c and c in by_code:
             units = by_code[c]
             p = units.get("箱") or next(iter(units.values()))
-            return p, how, f"商品總表沒有 {c} 的「{unit}」這個單位，用「{p['unit']}」那列的資料"
+            return p, how, f"商品總表沒有 {c} 的「{unit}」單位，改用「{p['unit']}」的資料"
     return None, "", ""
 
 
@@ -91,11 +91,11 @@ def build_items(conn, date_from, date_to):
         if note:
             issues.append(note)
         if not box:
-            issues.append("整合表箱入數是空的，算不出箱數")
+            issues.append("訂單彙總表箱入數空白，無法計算箱數")
         elif cases is not None and abs(cases - round(cases)) > 1e-6:
             issues.append(f"箱數 {qty}÷{box}＝{cases:g} 不是整數")
         if box and p["unit"] == (o["unit"] or "") and p["box_qty"] and abs(p["box_qty"] - box) > 1e-6:
-            issues.append(f"箱入數：整合表 {box:g}、商品總表 {p['box_qty']:g}（箱數照整合表）")
+            issues.append(f"箱入數：訂單彙總表 {box:g}、商品總表 {p['box_qty']:g}（箱數依訂單彙總表）")
         base.update({
             "purchase_code": purchase_code_of(o), "via": via, "mars_code": p["mars_code"], "category_name": p["category"],
             "category": cat_code(p["category"]), "mars_name": p["name"], "price": p["price"],
@@ -105,7 +105,7 @@ def build_items(conn, date_from, date_to):
             "blocking": (not box) or (cases is not None and abs(cases - round(cases)) > 1e-6) or not cat_code(p["category"]),
         })
         if not base["category"]:
-            issues.append(f"商品總表的 Category 是「{p['category'] or '空白'}」，分不出品類")
+            issues.append(f"商品總表的 Category 是「{p['category'] or '空白'}」，無法判斷品類")
         items.append(base)
     return items, unmatched, zero
 
@@ -146,9 +146,9 @@ def _diff_text(old, new):
     o = {(i["sku_id"]): i for i in old}; n = {(i["sku_id"]): i for i in new}
     out = []
     for k in n.keys() - o.keys():
-        out.append(f"多了 {n[k]['yf_sku']}（{n[k]['qty_ship']}）")
+        out.append(f"新增 {n[k]['yf_sku']}（{n[k]['qty_ship']} {n[k].get('unit') or '個'}）")
     for k in o.keys() - n.keys():
-        out.append(f"少了 {o[k]['yf_sku']}")
+        out.append(f"移除 {o[k]['yf_sku']}")
     for k in o.keys() & n.keys():
         if o[k]["qty_ship"] != n[k]["qty_ship"]:
             out.append(f"{n[k]['yf_sku']} 出貨 {o[k]['qty_ship']}→{n[k]['qty_ship']}")
@@ -198,7 +198,7 @@ def _view(date_from, date_to):
                     "warehouse": s["warehouse"], "category": s["category"], "unit": s["unit"], "label": s["label"],
                     "item_count": s["item_count"], "cases_total": s["cases_total"], "blocking": [], "items": snap,
                     "status": "gone", "filename": s["filename"], "eip_po": s["eip_po"], "slot_time": s["slot_time"],
-                    "diff": "現在的訂單已經沒有這份（品項被拿掉、改期或改倉）"})
+                    "diff": "目前訂單已無此份（品項刪除、改期或改倉）"})
     for r in out:                     # ③ 瑪氏採購單：這份差什麼才產得出來（空＝可以按）
         wh = whs.get(r["warehouse"]) or {"missing": ["地址", "電話", "ship-to"]}
         r["po_missing"] = po_missing(r, r["items"], wh, po_settings)
@@ -227,7 +227,7 @@ def api_mars_calendar():
     """月曆：這個月每天有幾張瑪氏 PO、幾箱、拆成幾份、幾份填了 EIP 單號、幾個對不到。"""
     month = norm_text(request.args.get("month"))
     if not re.fullmatch(r"\d{4}-\d{2}", month):
-        return jsonify({"error": "月份要像 2026-09。"}), 400
+        return jsonify({"error": "月份格式應為 2026-09。"}), 400
     y, m = int(month[:4]), int(month[5:])
     d1 = f"{month}-01"
     last = (_dt.date(y + (m == 12), (m % 12) + 1, 1) - _dt.timedelta(days=1)).day
@@ -262,7 +262,7 @@ def api_mars_calendar():
 def api_mars_splits():
     date_from, date_to = _range_args(request.args)
     if not date_from:
-        return jsonify({"error": "請選到貨日的起訖（像 2026-09-21）。"}), 400
+        return jsonify({"error": "請選擇到貨日起訖（格式如 2026-09-21）。"}), 400
     v = _view(date_from, date_to)
     v.update({"from": date_from, "to": date_to, "split_by_unit": SPLIT_BY_UNIT})
     return jsonify(v)
@@ -364,13 +364,13 @@ def api_mars_split_ensure():
         items, unmatched, _zero = build_items(conn, day, day)
         g = next((x for x in group_items(items) if x["split_key"] == key), None)
         if g is None:
-            return jsonify({"error": "現在的訂單已經沒有這份了（品項被拿掉、改期或改倉），請重新整理。"}), 404
+            return jsonify({"error": "目前訂單已無此份（品項刪除、改期或改倉），請重新整理頁面。"}), 404
         if g["blocking"]:
-            return jsonify({"error": "這份有品項的箱數算不出整數或分不出品類，EIP 採購表不能這樣送。先處理這幾個：",
+            return jsonify({"error": "有品項箱數不是整數或無法判斷品類，無法產出 EIP 採購單，請先處理以下品項：",
                             "details": g["blocking"][:30]}), 400
         miss = [u for u in unmatched if u["po_number"] == g["po_number"]]
         if miss and not payload.get("ack_unmatched"):
-            return jsonify({"error": f"這張 PO 有 {len(miss)} 個品項對不到瑪氏商品總表，不會進這份。", "needs_ack": True,
+            return jsonify({"error": f"此 PO 有 {len(miss)} 個品項在瑪氏商品總表中找不到，不會列入此份拆單。", "needs_ack": True,
                             "details": [f"{u['po_number']} {u['yf_sku']} {u['product_name']}" for u in miss[:30]]}), 409
         new_id = _insert_split(conn, g, operator, now())
         _log(conn, LINE, g["po_number"], "", "", "mars_split", "瑪氏拆單", "", "1 份（單列自動存）", operator, "manual", g["filename"])
@@ -388,22 +388,22 @@ def api_mars_generate():
     payload = request.get_json(silent=True) or {}
     date_from, date_to = _range_args(payload)
     if not date_from:
-        return jsonify({"error": "請選到貨日的起訖。"}), 400
+        return jsonify({"error": "請選擇到貨日起訖。"}), 400
     operator = _operator()
     conn = get_conn()
     try:
         if conn.execute("SELECT COUNT(*) AS n FROM mst_mars_products").fetchone()["n"] == 0:
-            return jsonify({"error": "還沒上傳瑪氏商品總表，拆不出品類和中標。"}), 400
+            return jsonify({"error": "尚未上傳瑪氏商品總表，無法區分品類與中標，無法拆單。"}), 400
         items, unmatched, _zero = build_items(conn, date_from, date_to)
         groups = group_items(items)
         if not groups:
-            return jsonify({"error": "這段期間沒有瑪氏的訂單可以拆。"}), 400
+            return jsonify({"error": "此期間沒有可拆單的瑪氏訂單。"}), 400
         blocking = [b for g in groups for b in g["blocking"]]
         if blocking:
-            return jsonify({"error": "有品項的箱數算不出整數或分不出品類，EIP 採購表不能這樣送。先處理這幾個：",
+            return jsonify({"error": "有品項箱數不是整數或無法判斷品類，無法產出 EIP 採購單，請先處理以下品項：",
                             "details": blocking[:30]}), 400
         if unmatched and not payload.get("ack_unmatched"):
-            return jsonify({"error": f"有 {len(unmatched)} 個品項對不到瑪氏商品總表，不會進拆單表。", "needs_ack": True,
+            return jsonify({"error": f"有 {len(unmatched)} 個品項在瑪氏商品總表中找不到，不會列入拆單表。", "needs_ack": True,
                             "details": [f"{u['po_number']} {u['yf_sku']} {u['product_name']}" for u in unmatched[:30]]}), 409
         saved = _saved(conn, date_from, date_to)
         stamp = now(); files = []
@@ -447,7 +447,7 @@ def api_mars_split_file(split_id):
     finally:
         conn.close()
     if s is None:
-        return jsonify({"error": "找不到這份拆單表，可能已經重拆過了。"}), 404
+        return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
     items = json.loads(s["items_json"] or "[]")
     if kind == "eip":
         return send_file(io.BytesIO(eip_file(s, items)), as_attachment=True, download_name=f"{_stem(s['filename'])}_EIP上傳.xls",
@@ -465,16 +465,16 @@ def api_mars_split_update(split_id):
     try:
         s = _row(conn.execute("SELECT * FROM mst_mars_splits WHERE id = ?", (split_id,)))
         if s is None:
-            return jsonify({"error": "找不到這份拆單表，請重新整理。"}), 404
+            return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
         sets, vals = [], []
         if "eip_po" in payload:
             eip = norm_text(payload.get("eip_po")).upper().replace(" ", "")
             if eip and not EIP_PO_RE.match(eip):
-                return jsonify({"error": f"EIP 採購單號要像 PO202609004（PO 加 9 個數字），你填的是「{eip}」。"}), 400
+                return jsonify({"error": f"EIP 採購單號格式為 PO 加 9 碼數字（例如 PO202609004），目前填的是「{eip}」。"}), 400
             if eip:
                 dup = _row(conn.execute("SELECT filename FROM mst_mars_splits WHERE eip_po = ? AND id != ?", (eip, split_id)))
                 if dup:
-                    return jsonify({"error": f"{eip} 已經填在「{dup['filename']}」，一個採購單號只能對一份拆單表。"}), 400
+                    return jsonify({"error": f"{eip} 已用於「{dup['filename']}」，一個 EIP 採購單號只能對應一份拆單表。"}), 400
             if eip != (s["eip_po"] or ""):
                 sets.append("eip_po = ?"); vals.append(eip)
                 _log(conn, LINE, s["po_number"], "", "", "mars_eip_po", "EIP 採購單號", s["eip_po"], eip, operator, "manual", s["filename"])

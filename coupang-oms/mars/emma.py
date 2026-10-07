@@ -149,7 +149,7 @@ def _load_splits(conn, ids):
 def _send_emma(conn, splits, ack):
     missing = [s["filename"] for s, _ in splits if not s.get("eip_po")]
     if missing and not ack:
-        return jsonify({"error": f"有 {len(missing)} 份還沒填 EIP 採購單號，出貨備註會空著。", "needs_ack": True, "details": missing[:30]}), 409
+        return jsonify({"error": f"有 {len(missing)} 份尚未填 EIP 採購單號，EMMA 匯入檔的出貨備註會留空。", "needs_ack": True, "details": missing[:30]}), 409
     data, warnings = emma_file(conn, splits)
     resp = send_file(io.BytesIO(data), as_attachment=True, download_name=emma_filename(splits),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -165,7 +165,7 @@ def api_split_emma(split_id):
     try:
         splits = _load_splits(conn, [split_id])
         if not splits:
-            return jsonify({"error": "找不到這份拆單表，可能已經重拆過了。"}), 404
+            return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
         return _send_emma(conn, splits, request.args.get("ack") == "1")
     finally:
         conn.close()
@@ -185,12 +185,12 @@ def api_emma_merge():
             try:
                 _dt.date.fromisoformat(d1); _dt.date.fromisoformat(d2)
             except ValueError:
-                return jsonify({"error": "請選到貨日的起訖，或勾選要合併的拆單表。"}), 400
+                return jsonify({"error": "請選擇到貨日起訖，或勾選要合併的拆單表。"}), 400
             d1, d2 = sorted([d1, d2])
             ids = [r["id"] for r in _rows(conn.execute("SELECT id FROM mst_mars_splits WHERE delivery_date >= ? AND delivery_date <= ?", (d1, d2)))]
         splits = _load_splits(conn, ids)
         if not splits:
-            return jsonify({"error": "沒有可以合併的拆單表，先按「下載 EIP 採購單」，或那一列的按鈕。"}), 400
+            return jsonify({"error": "沒有可合併的拆單表，請先按「下載 EIP 採購單」或該列的下載按鈕。"}), 400
         return _send_emma(conn, splits, bool(payload.get("ack_missing_eip")))
     finally:
         conn.close()

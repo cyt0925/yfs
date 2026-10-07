@@ -98,33 +98,33 @@
     <span class="text-xs" style="color:var(--m2)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
     {% set hist_scope = 'mars' %}{% set hist_color = '#fff' %}{% include '_history.html' %}
     {% set lm_current = 'mars' %}{% include '_line_menu.html' %}
-    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--m2)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--m2)"><i class="bi bi-arrow-left"></i> 回酷澎訂單管理系統</a>
   </div>
 </header>
 
 <main class="max-w-[1560px] mx-auto px-5 py-5 space-y-4">
   <!-- 兩份要傳的檔：出貨彙總表（訂單）、瑪氏商品總表 -->
   <section class="grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
-    <div class="card p-4 dz" id="dz-od" title="把出貨彙總表拖進這裡也可以">
+    <div class="card p-4 dz" id="dz-od">
       <div class="flex items-center gap-3 flex-wrap">
         <div>
-          <b>出貨彙總表（訂單）</b>
+          <b>訂單彙總表</b>
           <div id="od-status" class="text-sm muted mt-1">讀取中…</div>
         </div>
       </div>
-      <label class="dzbox mt-3" title="Kate 系統匯出的整合表（Coupang_PO_Integration 或出貨彙總表）。只會動到檔案裡有的 PO，寶僑的單不會被碰到"><i class="bi bi-cloud-arrow-up"></i><div><b>把出貨彙總表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx，可以一次好幾份</div></div>
+      <label class="dzbox mt-3" title="Kate 系統匯出的訂單彙總表（Coupang_PO_Integration）。只更新檔案裡有的 PO；檔案裡其他線別的訂單會一起匯入商品主檔自動化的訂單明細。"><i class="bi bi-cloud-arrow-up"></i><div><b>將訂單彙總表拖曳至此</b>，或點選檔案<div class="kbd">.xlsx，可一次上傳多份</div></div>
         <input type="file" id="od-file" accept=".xlsx" class="hidden" multiple></label>
       <div id="od-preview" class="hidden mt-3 text-sm"></div>
       <div id="od-msg" class="text-sm mt-2"></div>
     </div>
-    <div class="card p-4 dz" id="dz-mp" title="把商品總表拖進這裡也可以">
+    <div class="card p-4 dz" id="dz-mp">
       <div class="flex items-center gap-3 flex-wrap">
         <div>
           <b>瑪氏商品總表</b>
           <div id="mp-status" class="text-sm muted mt-1">讀取中…</div>
         </div>
       </div>
-      <label class="dzbox mt-3" title="Alice 的「自動化_Mars整合商品資料」，有更新就再傳一次，整份覆蓋"><i class="bi bi-cloud-arrow-up"></i><div><b>把瑪氏商品總表拖到這裡</b>，或點一下選檔<div class="kbd">.xlsx，整份覆蓋</div></div>
+      <label class="dzbox mt-3" title="Alice 維護的「自動化_Mars整合商品資料」，有更新時重新上傳即可。"><i class="bi bi-cloud-arrow-up"></i><div><b>將瑪氏商品總表拖曳至此</b>，或點選檔案<div class="kbd">.xlsx，整份覆蓋</div></div>
         <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
       <div id="mp-msg" class="text-sm mt-2"></div>
     </div>
@@ -141,46 +141,46 @@
       <button id="cal-toggle" class="btn btn-o btn-sm ml-1" title="收起／展開月曆"><i class="bi bi-calendar3"></i> 月曆</button>
       <div class="flex-1"></div>
       <button id="btn-gen" class="btn btn-p"><i class="bi bi-download"></i> 下載 EIP 採購單</button>
-      <button id="btn-emma-sel" class="btn btn-o" disabled title="把勾選的幾份合併成一個 EMMA 匯入檔"><i class="bi bi-check2-square"></i> 勾選的合併成 EMMA 檔</button>
-      <button id="btn-emma-all" class="btn btn-o" title="這段期間全部合併成一個 EMMA 匯入檔"><i class="bi bi-file-earmark-spreadsheet"></i> EMMA 檔（全部）</button>
-      <button id="btn-po" class="btn btn-o" title="這段期間裡已填 EIP 單號的，全部套進瑪氏採購單範本打包下載"><i class="bi bi-file-earmark-text"></i> 瑪氏採購單（全部）</button>
+      <button id="btn-emma-sel" class="btn btn-o" disabled title="將勾選的拆單合併成一個 EMMA 匯入檔"><i class="bi bi-check2-square"></i> 合併下載 EMMA 匯入檔（勾選）</button>
+      <button id="btn-emma-all" class="btn btn-o" title="將此期間的拆單全部合併成一個 EMMA 匯入檔"><i class="bi bi-file-earmark-spreadsheet"></i> 下載 EMMA 匯入檔（全部）</button>
+      <button id="btn-po" class="btn btn-o" title="將此期間已填 EIP 採購單號的拆單，全部產出瑪氏採購單並打包下載"><i class="bi bi-file-earmark-text"></i> 下載瑪氏採購單（全部）</button>
     </div>
     <div id="cal-wrap" class="mb-3">
       <div class="flex items-center gap-2 mb-1">
         <button class="btn btn-o btn-sm" id="cal-prev" style="padding:2px 8px"><i class="bi bi-chevron-left"></i></button>
         <b id="cal-title" class="text-sm" style="color:var(--m9)"></b>
         <button class="btn btn-o btn-sm" id="cal-next" style="padding:2px 8px"><i class="bi bi-chevron-right"></i></button>
-        <span class="kbd">點一天看那天的拆單；按住 Shift 再點另一天就是一段。格子裡是箱數、PO 數，右上角是填了幾份 EIP 單號。</span>
+        <span class="kbd">點選日期查看當天拆單；按住 Shift 再點另一天可選取區間。格子內為箱數與 PO 數，右上角為已填 EIP 採購單號的份數。</span>
       </div>
       <div id="cal" class="cal"></div>
     </div>
     <div id="sum" class="sum text-sm mb-3"></div>
     <div id="alerts" class="space-y-2 mb-3"></div>
     <div class="tbl-wrap"><table class="t" id="sp-table"></table></div>
-    <details class="text-sm mt-3"><summary class="cursor-pointer font-semibold">怎麼拆的、要怎麼用</summary>
+    <details class="text-sm mt-3"><summary class="cursor-pointer font-semibold">拆單規則與使用說明</summary>
       <div class="mt-2 space-y-1 muted">
-        <div>訂單在這頁上傳出貨彙總表，或在「商品主檔自動化 ② 訂單明細」上傳，兩邊進的是同一份訂單（照每列的線別分開）。這頁只拆線別是瑪氏的單；出貨數量照 ② 現在的數字（人改過的照改過的）。</div>
-        <div>同一張酷澎 PO、同一天、同一個倉，再依品類（CHO／GUM／PET）、單位（箱／盒／包）、要不要貼中標拆成一份一份。一份拆單表對一張 EIP 採購單。</div>
-        <div>下採料號＝整合表的「報價備註」（空白才用永豐料號）。對商品總表先用下採料號＋單位，對不到才退回永豐料號並標出來。</div>
-        <div>箱數 = 出貨數量 ÷ 整合表箱入數。EIP 採購表一律用箱，箱數不是整數會擋下來。</div>
-        <div>「下載 EIP 採購單」的 zip 裡每份一個 EIP 上傳用採購表（_EIP上傳.xls，格式跟採購表轉換的瑪氏一樣）。EMMA 匯入檔等 EIP 單號填回來，再用旁邊的 EMMA 按鈕下載。</div>
-        <div>⑤ 勇信缺貨：上傳勇信配送明細表 PDF（可多份），收貨單號對回 EIP 單號、料號用 58880＋瑪氏貨號對、箱數相比。相等＝沒缺、少＝部分缺、沒出現＝全缺、多＝異常（不動、要人看）。整張 PO 全缺：系統改 0，下修檔第一支填 1 其他 0、評論寫此單不出。按「確認」才會改系統數量，改完的 EMMA 檔、採購單都跟著變。</div>
-        <div>④ EMMA 匯入檔：每列的「EMMA」單份下載；前面打勾再按「勾選的合併成 EMMA 檔」就合成一個檔（檔名寫交貨日和倉別）；「EMMA 檔（全部）」是這段期間全部合成一個。出貨備註放 EIP 採購單號，沒填會先問你、留空；料號是下採料號，單價＝酷澎下單單價×箱入數。</div>
-        <div>EIP 拿到採購單號後填回這裡，約倉時間也一起填。填了單號，那一份的內容就固定了；之後酷澎改單會標紅提醒，要重拆就先把單號清掉再按產出。</div>
-        <div>③ 瑪氏採購單：填了 EIP 單號，每列最右邊的「採購單」就能按，套的是 V2 範本。倉庫的電話、ship-to 沒填就留空、約倉時間沒填就不放「進倉時間」那兩行，按鈕上有驚嘆號就是有格子會留空，滑上去看是哪些；補了再下載一次就有。下單日＝到貨日往前推 2 個工作天（扣週六日、內建的台灣國定假日、設定裡額外填的假日）；入倉倉別、地址、電話、ship-to 從「採購單設定」的倉庫資料帶；特殊需求照設定的文字，要貼中標的第一行多「需貼中盒標」，有採購單箱備註的最後多「指定品需加工貼小白標」。同一個下採料號合成一列。</div>
+        <div>訂單可在本頁上傳訂單彙總表，或在商品主檔自動化的「訂單明細」分頁上傳，兩邊匯入的是同一份訂單（依各列線別區分）。本頁只拆線別為瑪氏的訂單；出貨數量以訂單明細目前的數字為準（我方修改過的以修改後為準）。</div>
+        <div>同一張酷澎 PO、同一到貨日、同一倉，再依品類（CHO／GUM／PET）、單位（箱／盒／包）及是否貼中標拆成多份。每份拆單表對應一張 EIP 採購單。</div>
+        <div>下採料號取訂單彙總表的「報價備註」，空白時改用永豐料號。比對商品總表時先用下採料號＋單位，找不到再用永豐料號，並標示提醒。</div>
+        <div>箱數＝出貨數量 ÷ 訂單彙總表箱入數。EIP 採購單一律以箱計，箱數不是整數時無法產出。</div>
+        <div>「下載 EIP 採購單」的 zip 內，每份拆單各有一個 EIP 採購單（_EIP上傳.xls，格式與採購表轉換的瑪氏格式相同）。EMMA 匯入檔請在回填 EIP 採購單號後，按各列的「EMMA」按鈕下載。</div>
+        <div>⑤ 勇信缺貨：上傳勇信配送明細表 PDF（可多份），以收貨單號比對 EIP 採購單號、以 58880＋瑪氏貨號比對料號，再比較箱數。箱數相同為沒缺、較少為部分缺、沒出現為全缺、較多為異常（不調整，請人工確認）。整張 PO 全缺時，系統數量改為 0，酷澎下修檔第一個品項填 1、其他填 0，評論填「此單不出」。按「確認」才會修改系統數量。</div>
+        <div>④ EMMA 匯入檔：按各列的「EMMA」可單份下載；勾選後按「合併下載 EMMA 匯入檔（勾選）」會合併成一個檔（檔名含到貨日與倉別）；「下載 EMMA 匯入檔（全部）」會將此期間全部合併成一個檔。出貨備註帶入 EIP 採購單號；未填時會先確認，並留空。料號為下採料號，單價＝酷澎下單單價 × 箱入數。</div>
+        <div>在 EIP 取得採購單號後回填至此，約倉時間也一併填寫。填入 EIP 採購單號後，該份內容即固定；之後酷澎修改訂單會標紅提醒。如需重新拆單，請先清除 EIP 採購單號，再按「下載 EIP 採購單」。</div>
+        <div>③ 瑪氏採購單：填入 EIP 採購單號後，即可按各列的「瑪氏採購單」下載（V2 範本）。倉庫電話、ship-to 未填時留空；約倉時間未填時不列「進倉時間」。按鈕有驚嘆號表示有欄位留空，滑鼠移上去可查看；補齊後重新下載即可。下單日＝到貨日往前推 2 個工作天（扣除週六日、內建的台灣國定假日、設定中的額外假日）；入倉倉別、地址、電話、ship-to 取自「採購單設定」的倉庫資料；特殊需求依設定的文字，需貼中標的第一行加「需貼中盒標」，有採購單箱備註的最後一行加「指定品需加工貼小白標」。同一個永豐料號合成一列。</div>
       </div>
     </details>
   </section>
 
   <!-- ⑤ 勇信缺貨：上傳配送明細表 PDF → 比對 → 確認改系統數量＋下修檔 -->
-  <section class="card p-4 dz" id="dz-yx" title="把勇信的 PDF 拖進這裡也可以">
+  <section class="card p-4 dz" id="dz-yx">
     <div class="flex items-center gap-3 flex-wrap">
       <div>
         <b>勇信缺貨</b>
-        <div class="text-sm muted mt-1">用收貨單號對回已填 EIP 單號的拆單表，逐料號比箱數。確認後系統裡的出貨數量改成實際出的，並下載酷澎下修上傳檔。</div>
+        <div class="text-sm muted mt-1">以收貨單號比對已填 EIP 採購單號的拆單表，逐一核對各料號箱數。確認後，系統出貨數量會改為實際出貨量，並下載酷澎下修檔。</div>
       </div>
     </div>
-    <label class="dzbox mt-3"><i class="bi bi-file-earmark-pdf"></i><div><b>把勇信配送明細表 PDF 拖到這裡</b>，或點一下選檔<div class="kbd">可以一次好幾份；掃描的圖檔 PDF 讀不到字</div></div>
+    <label class="dzbox mt-3"><i class="bi bi-file-earmark-pdf"></i><div><b>將勇信配送明細表 PDF 拖曳至此</b>，或點選檔案<div class="kbd">可一次上傳多份；掃描圖檔的 PDF 無法讀取</div></div>
       <input type="file" id="yx-file" accept=".pdf" class="hidden" multiple></label>
     <div id="yx-msg" class="text-sm mt-2"></div>
     <div id="yx-result" class="hidden mt-3"></div>
@@ -189,13 +189,13 @@
   <!-- ③ 採購單設定：各倉資料、特殊需求文字、假日 -->
   <section class="card p-4" id="po-settings">
     <details id="ps-details">
-      <summary class="cursor-pointer flex items-center gap-2 flex-wrap"><b>採購單設定</b><span class="kbd">各倉的地址、電話、ship-to；特殊需求文字；效期要求；額外的假日</span><span id="ps-warn" class="badge st-changed hidden"></span></summary>
+      <summary class="cursor-pointer flex items-center gap-2 flex-wrap"><b>採購單設定</b><span class="kbd">各倉的地址、電話、ship-to；特殊需求文字；效期要求；額外假日</span><span id="ps-warn" class="badge st-changed hidden"></span></summary>
       <div class="mt-3 grid gap-4" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr)">
         <div>
           <div class="flex items-center gap-2 flex-wrap mb-1 dz" id="dz-wh">
-            <span class="text-sm font-semibold">倉庫資料</span><span class="kbd">訂單裡出現過的倉會自動列出來，也可以在最下面直接加；地址沒填時用訂單上的地址。「特殊需求加註」是這個倉才有的那一行。填完直接離開格子就存</span>
+            <span class="text-sm font-semibold">倉庫資料</span><span class="kbd">訂單中出現過的倉會自動列出，也可在最下方新增；地址未填時使用訂單上的地址。「特殊需求加註」為此倉專屬的特殊需求。填完離開該列即自動儲存。</span>
             <div class="flex-1"></div>
-            <label class="dzbox sm" title="一列一個倉，第一列是表頭：倉別、地址（或中文地址）、電話，有 ship-to、聯絡人也吃。檔案有值就蓋掉、空白的不動；電話會轉成 02-5592-7598 這種寫法"><i class="bi bi-cloud-arrow-up"></i><span><b>倉庫資料表拖到這裡</b>或點選檔</span>
+            <label class="dzbox sm" title="一列一個倉，第一列為表頭：倉別、地址（或中文地址）、電話，也可包含 ship-to、聯絡人。檔案中有值的欄位會覆蓋原資料，空白欄位保留原值；電話會轉成 02-5592-7598 格式。"><i class="bi bi-cloud-arrow-up"></i><span><b>將倉庫資料表拖曳至此</b>，或點選檔案</span>
               <input type="file" id="wh-file" accept=".xlsx" class="hidden"></label>
           </div>
           <div id="wh-msg" class="kbd mb-1"></div>
@@ -203,16 +203,16 @@
         </div>
         <div class="text-sm space-y-2">
           <div class="font-semibold">採購單其他固定文字</div>
-          <label class="block">下單日提前幾個工作天 <input id="ps-lead" class="inp" type="number" min="0" max="10" style="width:80px"></label>
+          <label class="block">下單日提前工作天數 <input id="ps-lead" class="inp" type="number" min="0" max="10" style="width:80px"></label>
           <div>效期要求（F6，依品類）<div class="grid gap-2 mt-1" style="grid-template-columns:repeat(3,1fr)"><label class="kbd">CHO 巧克力<input id="ps-shelf-CHO" class="inp"></label><label class="kbd">GUM 糖果<input id="ps-shelf-GUM" class="inp"></label><label class="kbd">PET 寵物<input id="ps-shelf-PET" class="inp"></label></div></div>
-          <label class="block">送貨聯絡人（F8，倉庫沒填時） <input id="ps-contact" class="inp"></label>
-          <label class="block">要貼中標時，特殊需求第一行 <input id="ps-label" class="inp"></label>
-          <label class="block">有採購單箱備註時，特殊需求最後一行 <input id="ps-white" class="inp"></label>
-          <label class="block">特殊需求固定文字（一行一條；<code>{約倉時間}</code> 換成那份填的約倉時間，<code>{約倉開始}</code> 換成裡面第一個時間，<code>{倉庫加註}</code> 換成那個倉的特殊需求加註）<textarea id="ps-special" class="inp" rows="5"></textarea></label>
-          <div>台灣國定假日已內建（<span id="ps-builtin-years"></span>），下單日往前推會自動跳過，不用填。<span id="ps-builtin-warn" class="badge st-changed hidden"></span> <a href="#" id="ps-builtin-show" class="kbd" style="text-decoration:underline">看清單</a><div id="ps-builtin-list" class="kbd hidden mt-1" style="columns:3;font-size:11px"></div></div>
-          <label class="block">額外的假日（公司自己放的、國定假日以外的；一行一個，像 2026-09-25 或 9/25）<textarea id="ps-holidays" class="inp" rows="2"></textarea></label>
-          <div>EMMA 匯入檔固定字<div class="grid gap-2 mt-1" style="grid-template-columns:2fr 1fr 1fr 1fr 1.4fr"><label class="kbd">收件人<input id="ps-em-recipient" class="inp"></label><label class="kbd">客編<input id="ps-em-customer" class="inp"></label><label class="kbd">BillTo<input id="ps-em-billto" class="inp"></label><label class="kbd">ShipTo<input id="ps-em-shipto" class="inp"></label><label class="kbd">付款方式<input id="ps-em-payment" class="inp"></label></div></div>
-          <div class="flex items-center gap-2"><button id="ps-save" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 存設定</button><span id="ps-msg" class="kbd"></span></div>
+          <label class="block">送貨聯絡人（F8，倉庫未填時使用） <input id="ps-contact" class="inp"></label>
+          <label class="block">需貼中標時的特殊需求第一行 <input id="ps-label" class="inp"></label>
+          <label class="block">有採購單箱備註時的特殊需求最後一行 <input id="ps-white" class="inp"></label>
+          <label class="block">特殊需求固定文字（一行一條；<code>{約倉時間}</code> 代入該份的約倉時間，<code>{約倉開始}</code> 代入其中第一個時間，<code>{倉庫加註}</code> 代入該倉的特殊需求加註）<textarea id="ps-special" class="inp" rows="5"></textarea></label>
+          <div>台灣國定假日已內建（<span id="ps-builtin-years"></span>），下單日往前推算時會自動略過，不需填寫。<span id="ps-builtin-warn" class="badge st-changed hidden"></span> <a href="#" id="ps-builtin-show" class="kbd" style="text-decoration:underline">查看清單</a><div id="ps-builtin-list" class="kbd hidden mt-1" style="columns:3;font-size:11px"></div></div>
+          <label class="block">額外假日（國定假日以外的公司休假日；一行一個，格式如 2026-09-25 或 9/25）<textarea id="ps-holidays" class="inp" rows="2"></textarea></label>
+          <div>EMMA 匯入檔固定欄位<div class="grid gap-2 mt-1" style="grid-template-columns:2fr 1fr 1fr 1fr 1.4fr"><label class="kbd">收件人<input id="ps-em-recipient" class="inp"></label><label class="kbd">客編<input id="ps-em-customer" class="inp"></label><label class="kbd">BillTo<input id="ps-em-billto" class="inp"></label><label class="kbd">ShipTo<input id="ps-em-shipto" class="inp"></label><label class="kbd">付款方式<input id="ps-em-payment" class="inp"></label></div></div>
+          <div class="flex items-center gap-2"><button id="ps-save" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 儲存設定</button><span id="ps-msg" class="kbd"></span></div>
         </div>
       </div>
     </details>

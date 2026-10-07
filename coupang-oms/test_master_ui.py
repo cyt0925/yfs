@@ -357,7 +357,7 @@ def main():
         check("線別工具：瑪氏那欄有「瑪氏出貨」而且標目前在這", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("瑪氏出貨"))
         pg.keyboard.press("Escape")
         pg.set_input_files("#od-file", os.path.join(BASE, "samples", "master", "訂單彙總表範例.xlsx")); pg.wait_for_selector("#od-preview:not(.hidden)", timeout=30000)
-        check("從瑪氏頁傳只有寶僑的檔 → 擋下來說沒有瑪氏的單，不匯", "沒有瑪氏的單" in pg.inner_text("#od-preview") and pg.eval_on_selector_all("#od-commit", "els => els.length") == 0)
+        check("從瑪氏頁傳只有寶僑的檔 → 擋下來說沒有瑪氏的單，不匯", "沒有瑪氏訂單" in pg.inner_text("#od-preview") and pg.eval_on_selector_all("#od-commit", "els => els.length") == 0)
         pg.set_input_files("#od-file", os.path.join(FAKE, "假_訂單彙總表_9月_第二次.xlsx")); pg.wait_for_selector("#od-commit", timeout=30000)
         check("傳有瑪氏的檔 → 預覽寫瑪氏幾列、另有哪些線別", "瑪氏" in pg.inner_text("#od-preview") and "另有" in pg.inner_text("#od-preview"), pg.inner_text("#od-preview")[:160])
         pg.click("#od-commit"); pg.wait_for_selector("#od-msg .bi-check-circle", timeout=30000); pg.wait_for_timeout(600)
@@ -398,8 +398,8 @@ def main():
         check("採購單設定：倉庫清單有 TAO1、地址已從訂單帶入、標缺電話與 ship-to", "缺 電話、ship-to" in pg.inner_text("#wh-table tr[data-code='TAO1']")
               and pg.input_value("#wh-table tr[data-code='TAO1'] input[data-f='address']") != "", pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
         pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='phone']", "02-5592-7598"); pg.fill("#wh-table tr[data-code='TAO1'] input[data-f='ship_to']", "17617037"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
-        check("填電話與 ship-to 離開格子就存 → 那倉變「齊了」、提醒消失", "齊了" in pg.inner_text("#wh-table tr[data-code='TAO1']") and "TAO1" not in pg.inner_text("#alerts"), pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
-        check("按鈕提示不再寫會留空、統計寫 1／5 可產瑪氏採購單", "留空" not in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "1／5 可產瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
+        check("填電話與 ship-to 離開格子就存 → 那倉變「齊了」、提醒消失", "已填齊" in pg.inner_text("#wh-table tr[data-code='TAO1']") and "TAO1" not in pg.inner_text("#alerts"), pg.inner_text("#wh-table tr[data-code='TAO1']")[:120])
+        check("按鈕提示不再寫會留空、統計寫 1／5 可產瑪氏採購單", "留空" not in pg.get_attribute("#sp-table button.po >> nth=0", "title") and "1／5 可產出瑪氏採購單" in pg.inner_text("#sum").replace("\n", ""), pg.inner_text("#sum"))
         with pg.expect_download() as dl:
             pg.click("#sp-table button.po >> nth=0")
         check("按採購單 → 下載 PO202609901永豐Mars採購單(箱單位)-…_TAO1_PO(盒).xlsx", dl.value.suggested_filename.startswith("PO202609901永豐Mars採購單(箱單位)-") and dl.value.suggested_filename.endswith("_TAO1_13000000600028(盒).xlsx"), dl.value.suggested_filename)
@@ -414,7 +414,7 @@ def main():
         check("按 EMMA（已填單號的）→ 直接下載 酷澎訂單匯入_0918交貨-TAO1_PO_…", dl.value.suggested_filename.startswith("酷澎訂單匯入_0918交貨-TAO1_13000000600028_"), dl.value.suggested_filename)
         check("沒勾選時「勾選的合併」鎖住", pg.is_disabled("#btn-emma-sel"))
         pg.check("#sp-table input.ck >> nth=0"); pg.check("#sp-table input.ck >> nth=1"); pg.wait_for_timeout(200)
-        check("勾兩份 → 按鈕解鎖、寫（2）", not pg.is_disabled("#btn-emma-sel") and "（2）" in pg.inner_text("#btn-emma-sel"), pg.inner_text("#btn-emma-sel"))
+        check("勾兩份 → 按鈕解鎖、寫（2）", not pg.is_disabled("#btn-emma-sel") and "（勾選 2 份）" in pg.inner_text("#btn-emma-sel"), pg.inner_text("#btn-emma-sel"))
         pg.once("dialog", lambda d: d.accept())
         with pg.expect_download() as dl:
             pg.click("#btn-emma-sel")
@@ -446,7 +446,7 @@ def main():
             page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
         yxp = os.path.join(tempfile.gettempdir(), "ui_勇信.pdf"); doc.save(yxp)
         pg.set_input_files("#yx-file", yxp); pg.wait_for_selector("#yx-result:not(.hidden)", timeout=20000); pg.wait_for_timeout(400)
-        check("上傳勇信 PDF → 比對表：1 張 PO、有一筆部分缺、確認鈕寫改 1 筆", "1 張 PO 對到" in pg.inner_text("#yx-result").replace("\n", "") and pg.eval_on_selector_all("#yx-result .st-changed", "els => els.length") >= 1
+        check("上傳勇信 PDF → 比對表：1 張 PO、有一筆部分缺、確認鈕寫改 1 筆", "對到 1 張 PO" in pg.inner_text("#yx-result").replace("\n", "") and pg.eval_on_selector_all("#yx-result .st-changed", "els => els.length") >= 1
               and "改 1 筆" in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
         pg.once("dialog", lambda d: d.accept())
         with pg.expect_download() as dl:

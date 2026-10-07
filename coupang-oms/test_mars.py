@@ -139,7 +139,7 @@ def main():
     s_cho = next(s for s in v["splits"] if s["category"] == "CHO" and s["label"] == "")
     it = s_cho["items"][0]
     check("箱數 = 出貨數量 ÷ 整合表箱入數（36 ÷ 12 = 3）", it["cases"] == 3 and s_cho["cases_total"] == 3, str(it["cases"]))
-    check("整合表箱入數跟商品總表不一樣 → 提醒、箱數照整合表", any("整合表 12、商品總表 6" in x for x in it["issues"]), str(it["issues"]))
+    check("整合表箱入數跟商品總表不一樣 → 提醒、箱數照整合表", any("訂單彙總表 12、商品總表 6" in x for x in it["issues"]), str(it["issues"]))
     check("帶進商品總表的欄（瑪氏貨號、品名、價格、每箱中盒數…）", it["mars_code"] == "36752197" and it["mars_name"].startswith("【巧克棒】") and it["price"] == 2410.0 and it["inner_per_case"] == 12)
     check("全部都還沒產出", all(s["status"] == "new" and s["id"] is None for s in v["splits"]))
     total_file = sum(r["cases_total"] for r in v["splits"])
@@ -355,7 +355,7 @@ def main():
     v = splits(c, "2026-09-29", "2026-09-30")
     f2 = next(x for x in v["splits"] if x["id"] == s2["id"])          # 9/30、已填 PO202609301、還沒填約倉時間
     check("清單帶每份差什麼才能產採購單：這份填了單號、約倉時間不強制 → 可以產", f2["po_missing"] == [], str(f2["po_missing"]))
-    check("9/29 那幾份：沒填 EIP 單號", all("還沒填 EIP 採購單號" in x["po_missing"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"))
+    check("9/29 那幾份：沒填 EIP 單號", all("尚未填 EIP 採購單號" in x["po_missing"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"))
     check("提示（不擋）：約倉時間沒填", any("約倉時間" in h for h in f2["po_hints"]), str(f2["po_hints"]))
     import mars.po as mp
     st0 = c.get("/api/mars/po/settings").get_json()["settings"]
@@ -399,9 +399,9 @@ def main():
     check("G 欄小計公式還在", ws["G12"].value == "=IFERROR(E12*F12,0)")
     r = c.post("/api/mars/po/zip", json={"from": "2026-09-29", "to": "2026-09-30"})
     z = zipfile.ZipFile(io.BytesIO(r.data)); names = z.namelist()
-    check("整段期間打包：只有填齊的那 1 份進 zip，其他列在說明檔，標頭寫幾份產了幾份沒", r.status_code == 200 and f2["po_filename"] in names and "沒產出的.txt" in names
+    check("整段期間打包：只有填齊的那 1 份進 zip，其他列在說明檔，標頭寫幾份產了幾份沒", r.status_code == 200 and f2["po_filename"] in names and "未產出清單.txt" in names
           and r.headers.get("X-Mars-Po-Count") == "1" and int(r.headers.get("X-Mars-Po-Skipped")) == len(v["splits"]) - 1
-          and "還沒填 EIP 採購單號" in z.read("沒產出的.txt").decode("utf-8"), str(names))
+          and "尚未填 EIP 採購單號" in z.read("未產出清單.txt").decode("utf-8"), str(names))
     check("zip 檔名帶到貨日區間", "瑪氏採購單_20260929-20260930.zip" in unquote(r.headers.get("Content-Disposition", "")))
     check("沒有一份能產 → 400", c.post("/api/mars/po/zip", json={"from": "2026-09-01", "to": "2026-09-02"}).status_code == 400)
     # 特殊需求：有採購單箱備註的品項 → 最後多一行；組出商品備註寫訂單料號；同料號合併

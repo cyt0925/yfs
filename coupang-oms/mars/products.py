@@ -39,7 +39,7 @@ def parse_master(fileobj):
     try:
         wb = openpyxl.load_workbook(fileobj, data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"打不開這個 Excel：{exc}") from exc
+        raise ValueError("無法開啟此 Excel 檔，請確認檔案格式。") from exc
     ws, hdr, cols = _find_sheet(wb)
     if ws is None:
         raise ValueError("找不到瑪氏商品總表：要有「永豐料號」「單位類別」「Category」「中盒貼標」這幾個欄位。")
@@ -53,7 +53,7 @@ def parse_master(fileobj):
             continue
         unit = norm_text(get("unit"))
         if unit not in UNITS:
-            warnings.append(f"第 {n} 列 {yf}：單位類別是「{unit or '空白'}」，不是箱／盒／包，跳過。"); continue
+            warnings.append(f"第 {n} 列 {yf}：單位類別是「{unit or '空白'}」，不是箱／盒／包，已略過。"); continue
         rec = {"yf_sku": yf, "unit": unit}
         for f in ("mars_code", "item_code", "item_code2"):
             rec[f] = norm_key(get(f))
@@ -66,10 +66,10 @@ def parse_master(fileobj):
         rec["inner_label"] = "V" if norm_text(get("inner_label")).upper() == "V" else ""
         rec["shelf_days"] = norm_int(get("shelf_days"))
         if not cat_code(rec["category"]):
-            warnings.append(f"第 {n} 列 {yf}：Category 是「{rec['category'] or '空白'}」，不是 Chocolate／Gum／Petcare，拆單時會標出來。")
+            warnings.append(f"第 {n} 列 {yf}：Category 是「{rec['category'] or '空白'}」，不是 Chocolate／Gum／Petcare，拆單時會標示提醒。")
         key = (yf, unit)
         if key in seen:
-            warnings.append(f"第 {n} 列 {yf}（{unit}）跟第 {seen[key]} 列重複，用後面這列。")
+            warnings.append(f"第 {n} 列 {yf}（{unit}）與第 {seen[key]} 列重複，以後者為準。")
             rows = [r for r in rows if (r["yf_sku"], r["unit"]) != key]
         seen[key] = n
         rows.append(rec)

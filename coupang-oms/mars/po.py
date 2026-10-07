@@ -121,7 +121,7 @@ def save_settings(conn, payload, operator):
     if "lead_days" in payload:
         n = norm_int(payload.get("lead_days"))
         if n is None or n < 0 or n > 10:
-            return None, "下單日提前幾個工作天要填 0～10 的整數。"
+            return None, "下單日提前工作天數請填 0～10 的整數。"
         new["lead_days"] = n
     for k in TEXT_KEYS:
         if k in payload:
@@ -139,7 +139,7 @@ def save_settings(conn, payload, operator):
             d = parse_holiday(p)
             (days if d else bad).append(d or p)
         if bad:
-            return None, f"這幾個假日看不懂日期：{'、'.join(bad[:5])}。請用 2026-09-25 或 9/25 這種寫法。"
+            return None, f"以下假日日期無法辨識：{'、'.join(bad[:5])}。請使用 2026-09-25 或 9/25 格式。"
         new["holidays"] = sorted(set(days))
     if new != cur:
         conn.execute("DELETE FROM mst_meta WHERE key = ?", (SETTINGS_KEY,))
@@ -248,7 +248,7 @@ def parse_warehouse_sheet(fileobj):
     try:
         wb = openpyxl.load_workbook(fileobj, data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"打不開這個 Excel：{exc}") from exc
+        raise ValueError("無法開啟此 Excel 檔，請確認檔案格式。") from exc
     for ws in wb.worksheets:
         for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), start=1):
             cols = {}
@@ -275,7 +275,7 @@ def parse_warehouse_sheet(fileobj):
                         r["ship_to"] = r["ship_to"][:-2]
                     rows.append(r)
                 return rows
-    raise ValueError("找不到倉庫資料表：第一列要有「倉別」，再加「地址」「電話」「ship-to」「聯絡人」其中至少一欄。")
+    raise ValueError("找不到倉庫資料表：表頭需有「倉別」，以及「地址」「電話」「ship-to」「聯絡人」至少一欄。")
 
 
 def import_warehouses(conn, rows, operator):
@@ -296,7 +296,7 @@ def import_warehouses(conn, rows, operator):
 def save_warehouse(conn, code, payload, operator):
     code = norm_text(code)
     if not code:
-        return "倉別不能是空的。"
+        return "倉別不可空白。"
     vals = {k: str(payload.get(k) or "").strip()[:200] for k in ("name", "address", "phone", "ship_to", "contact", "special_note") if k in payload}
     old = _row(conn.execute("SELECT * FROM mst_mars_warehouses WHERE code = ?", (code,)))
     stamp = now()
@@ -369,20 +369,20 @@ def po_rows(items):
 def po_missing(s, items, wh, settings=None):
     """擋下來不給產的原因；空 list＝可以按。只擋 EIP 採購單號（Jerry：只要有 EIP 採購單號就能按），
     其他沒填的格子留空，讓人在 Excel 補，po_hints 只提示。"""
-    return [] if s.get("eip_po") else ["還沒填 EIP 採購單號"]
+    return [] if s.get("eip_po") else ["尚未填 EIP 採購單號"]
 
 
 def po_hints(s, items, wh, settings=None):
     """產得出來、但會留空的地方（按鈕提示用）。"""
     hints = []
     if wh.get("missing"):
-        hints.append(f"{s.get('warehouse') or '倉'} 的{'、'.join(wh['missing'])}沒填，會留空（採購單設定）")
+        hints.append(f"{s.get('warehouse') or '倉'} 的{'、'.join(wh['missing'])}未填，採購單該欄會留空（請至採購單設定補填）")
     if not (s.get("slot_time") or "").strip():
-        hints.append("約倉時間沒填，進倉時間那兩行不放")
+        hints.append("未填約倉時間，採購單不會列出進倉時間")
     if s.get("category") not in CAT_FULL:
-        hints.append("分不出品類，B9 留空")
+        hints.append("無法判斷品類，品類欄（B9）會留空")
     if not items:
-        hints.append("沒有品項")
+        hints.append("此份沒有品項")
     return hints
 
 
@@ -480,11 +480,11 @@ def api_warehouse_add():
     payload = request.get_json(silent=True) or {}
     code = norm_text(payload.get("code")).upper().replace(" ", "")
     if not WH_CODE_RE.match(code):
-        return jsonify({"error": f"倉別要像 TAO8、TXRC29 這樣的英數（2～12 碼），你填的是「{code or '空白'}」。"}), 400
+        return jsonify({"error": f"倉別應為 2～12 碼英數字（例如 TAO8、TXRC29），目前填的是「{code or '空白'}」。"}), 400
     conn = get_conn()
     try:
         if any(w["code"] == code for w in warehouse_rows(conn)):
-            return jsonify({"error": f"{code} 已經在清單裡了，直接改那列就好。"}), 400
+            return jsonify({"error": f"{code} 已在清單中，請直接修改該列。"}), 400
         vals = {k: payload.get(k) or "" for k in ("name", "address", "phone", "ship_to", "contact", "special_note")}
         vals["phone"] = format_phone(vals["phone"]) if vals["phone"].lstrip().startswith("+") else vals["phone"]
         err = save_warehouse(conn, code, vals, _operator())
@@ -505,9 +505,9 @@ def api_warehouse_delete(code):
     try:
         old = _row(conn.execute("SELECT * FROM mst_mars_warehouses WHERE code = ?", (code,)))
         if old is None:
-            return jsonify({"error": f"{code} 不是手動加或上傳的倉，沒有東西可以刪。"}), 404
+            return jsonify({"error": f"{code} 不是手動新增或上傳的倉，無資料可刪除。"}), 404
         if code in _codes_in_orders(conn):
-            return jsonify({"error": f"{code} 在訂單裡出現過，不能刪；要清內容就把格子清空。"}), 400
+            return jsonify({"error": f"{code} 已出現在訂單中，無法刪除；如需清除資料，請清空該列欄位。"}), 400
         conn.execute("DELETE FROM mst_mars_warehouses WHERE code = ?", (code,))
         _log(conn, LINE, "", "", "", "mars_warehouse", f"瑪氏採購單倉庫資料 {code}", f"{old['address']}｜{old['phone']}｜{old['ship_to']}", "刪除", operator, "manual")
         conn.commit()
@@ -560,7 +560,7 @@ def api_split_po(split_id):
     try:
         s = _row(conn.execute("SELECT * FROM mst_mars_splits WHERE id = ?", (split_id,)))
         if s is None:
-            return jsonify({"error": "找不到這份拆單表，可能已經重拆過了。"}), 404
+            return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
         st = load_settings(conn)
         wh = warehouse_info(conn, s["warehouse"], st)
     finally:
@@ -568,7 +568,7 @@ def api_split_po(split_id):
     items = _items_of(s)
     miss = po_missing(s, items, wh, st)
     if miss:
-        return jsonify({"error": "這份還產不了瑪氏採購單：" + "；".join(miss), "missing": miss}), 400
+        return jsonify({"error": "此份無法產出瑪氏採購單：" + "；".join(miss), "missing": miss}), 400
     return send_file(io.BytesIO(po_file(s, items, wh, st)), as_attachment=True, download_name=po_filename(s),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
@@ -581,7 +581,7 @@ def api_po_zip():
     try:
         _dt.date.fromisoformat(d1); _dt.date.fromisoformat(d2)
     except ValueError:
-        return jsonify({"error": "請選到貨日的起訖。"}), 400
+        return jsonify({"error": "請選擇到貨日起訖。"}), 400
     d1, d2 = sorted([d1, d2])
     conn = get_conn()
     try:
@@ -591,7 +591,7 @@ def api_po_zip():
     finally:
         conn.close()
     if not saved:
-        return jsonify({"error": "這段期間還沒有產出過拆單表，先按「下載 EIP 採購單」，或那一列的按鈕。"}), 400
+        return jsonify({"error": "此期間尚未產出拆單表，請先按「下載 EIP 採購單」或該列的下載按鈕。"}), 400
     ok, skipped = [], []
     for s in saved:
         items = _items_of(s)
@@ -602,13 +602,13 @@ def api_po_zip():
         else:
             ok.append((s, items, wh))
     if not ok:
-        return jsonify({"error": "這段期間沒有一份產得出採購單。", "details": skipped[:30]}), 400
+        return jsonify({"error": "此期間沒有可產出的瑪氏採購單。", "details": skipped[:30]}), 400
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for s, items, wh in ok:
             zf.writestr(po_filename(s), po_file(s, items, wh, st))
         if skipped:
-            zf.writestr("沒產出的.txt", "這幾份還差東西，沒有產出採購單：\n\n" + "\n".join(skipped))
+            zf.writestr("未產出清單.txt", "以下拆單資料不足，未產出瑪氏採購單：\n\n" + "\n".join(skipped))
     buf.seek(0)
     name = f"瑪氏採購單_{d1.replace('-', '')}" + ("" if d1 == d2 else f"-{d2.replace('-', '')}") + ".zip"
     resp = send_file(buf, as_attachment=True, download_name=name, mimetype="application/zip")
