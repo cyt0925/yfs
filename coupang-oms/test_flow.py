@@ -116,7 +116,7 @@ def main():
     check("正確抓出 3 筆異動", diff["updated_count"] == 3, f"實際 {diff['updated_count']}")
     labels = {c["label"] for u in diff["updated"] for c in u["changes"]}
     check("三種異動都被辨識（數量／交期／倉別）",
-          {"下單數量", "交期", "倉別"} <= labels, f"實際 {labels}")
+          {"下單數量", "到貨日", "到貨倉別"} <= labels, f"實際 {labels}")
     check("其餘 100 筆仍判定為相同", diff["identical_count"] == 100,
           f"實際 {diff['identical_count']}")
     check("沒有把改期／改倉誤判成新單（新增 0 筆）", diff["new_count"] == 0,
@@ -565,7 +565,8 @@ def main():
           heads[:8] == ["時間", "PO 單號", "SKU ID", "層級", "欄位", "改前", "改後", "操作人員"],
           heads)
     check("匯出的內容只有篩選到的欄位",
-          all(r[4].value == "交期" for r in wb_log.active.iter_rows(min_row=2)))
+          # 手動改的歷程欄名是「到貨日」；匯入的歷程欄名來自 importer.py（目前仍是「交期」）
+          all(r[4].value in ("到貨日", "交期") for r in wb_log.active.iter_rows(min_row=2)))
 
     print("\n【20】訂單類型改成可編輯，跟交期／倉別同一套規則")
     ot_po = next(r["po_number"] for r in
@@ -1283,13 +1284,13 @@ def main():
     check("改單統計在 YFS 訂單系統裡有自己一頁（不再跳到商品主檔）", "改單統計" in st and 'id="st-kpi"' in st and "/api/master/stats" in st)
     check("首頁標題：今日事項、各通路系統；卡片用各通路 logo＋訂單管理系統名稱",
           "今日事項" in html and "各通路系統" in html and "今天要處理的事" not in html
-          and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理系統", "蝦皮訂單管理系統", "PChome 訂單管理系統"]
+          and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理系統", "蝦皮特選訂單管理系統", "PChome 訂單管理系統"]
           and all(os.path.exists(os.path.join(BASE_DIR, "static", c["logo"])) for c in portal.CHANNELS))
     idx = client.get("/coupang").get_data(as_text=True)
     check("酷澎訂單管理系統：logo 換成酷澎配送與購物清單圖示、有回 YFS 訂單系統的連結", "logo_coupang.png" in idx and 'id="btn-yfs"' in idx and '<a href="/" id="btn-yfs"' in idx)
-    check("回 YFS 訂單系統的連結只放在酷澎訂單管理（小字加底線）；商品主檔、瑪氏、竹運、採購表只留「回訂單管理系統」，一層回一層",
+    check("回 YFS 訂單系統的連結只放在酷澎訂單管理（小字加底線）；商品主檔、瑪氏、竹運、採購表只留「回酷澎訂單管理系統」，一層回一層",
           'class="yfs-home"' in idx and "text-decoration:underline" in idx
-          and all('class="yfs-home"' not in client.get(u).get_data(as_text=True) and "回訂單管理系統" in client.get(u).get_data(as_text=True) for u in ("/master", "/mars", "/zhuyun", "/purchase")))
+          and all('class="yfs-home"' not in client.get(u).get_data(as_text=True) and "回酷澎訂單管理系統" in client.get(u).get_data(as_text=True) for u in ("/master", "/mars", "/zhuyun", "/purchase")))
     sop = client.get("/portal/sop").get_data(as_text=True)
     check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
     res = client.get("/api/portal/summary"); d = res.get_json()
@@ -1326,7 +1327,7 @@ def main():
     recent = {r["po_number"] for r in conn.execute("SELECT po_number FROM edit_logs WHERE source = ? AND changed_at >= ?", ("import", since)).fetchall()}
     exp_review = len({r["po_number"] for r in rows if r["needs_review"] and r["po_number"] in recent})
     check("「酷澎最近 7 天改了 N 張單」＝需要確認、而且 7 天內被整合表改過的 PO 數（沒有就不列）",
-          (t["review"]["count"] == exp_review and "最近 7 天" in t["review"]["title"]) if exp_review else ("review" not in t), str(exp_review))
+          (t["review"]["count"] == exp_review and "近 7 天" in t["review"]["title"]) if exp_review else ("review" not in t), str(exp_review))
     t_far = {x["key"]: x for x in portal.tasks(conn, _dt.date.today() + _dt.timedelta(days=30))}
     check("7 天以前改的不算：拿 30 天後當今天，「酷澎改了單」那條就不列", "review" not in t_far, str(t_far.get("review")))
 
@@ -1359,7 +1360,7 @@ def main():
     cs = portal.change_stats(conn, day); ra = portal.recent_actions(conn)
     conn.close()
     check("最近的動作標出是哪個系統改的",
-          portal.system_of("edit_logs", "qty_ship") == "酷澎訂單管理" and portal.system_of("mst_logs", "mars_eip_po") == "瑪氏出貨"
+          portal.system_of("edit_logs", "qty_ship") == "酷澎訂單管理系統" and portal.system_of("mst_logs", "mars_eip_po") == "瑪氏出貨"
           and portal.system_of("mst_logs", "zhuyun_export") == "竹運出貨拋檔" and portal.system_of("mst_logs", "purchase_export") == "採購表轉換"
           and portal.system_of("mst_logs", "qty_ship", "勇信出 3 箱，訂 5 箱") == "瑪氏出貨" and portal.system_of("mst_logs", "qty_ship", "") == "商品主檔自動化"
           and all(x.get("system") for x in ra))

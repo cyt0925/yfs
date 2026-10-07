@@ -52,9 +52,9 @@ COUPANG_FIELDS = {
     "product_name":  "品名",
     "barcode":       "條碼",
     "yf_sku":        "永豐料號",
-    "warehouse":     "倉別",
+    "warehouse":     "到貨倉別",
     "address":       "地址",
-    "delivery_date": "交期",
+    "delivery_date": "到貨日",
     "qty_coupang":   "下單數量",
     "unit":          "單位",
     "box_size":      "箱入數",
@@ -151,7 +151,7 @@ def parse_workbook(file_stream, filename=""):
         delivery = norm_date(delivery_raw)
         if delivery_raw not in (None, "") and not delivery:
             warnings.append(
-                f"第 {offset} 列（{po} / {sku}）交期「{norm_text(delivery_raw)}」無法解析，已存為空白。"
+                f"第 {offset} 列（{po} / {sku}）到貨日「{norm_text(delivery_raw)}」無法解析，已存為空白。"
             )
 
         qty = norm_int(cell(raw, "qty_coupang"))

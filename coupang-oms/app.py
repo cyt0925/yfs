@@ -160,7 +160,7 @@ ALWAYS_EDITABLE_FIELDS = {"receiving_note"}
 # 整張 PO 共用的欄位，改了就是整張單一起改（OP 拋 ERP、交倉庫都是整張
 # 單一起行動，不會拆開）。存在 po_headers，匯入一律不覆蓋。
 PO_EDITABLE_FIELDS = {
-    "po_status":        "PO狀態",
+    "po_status":        "PO 狀態",
     "receiving_status": "驗收狀態",
     "filed_date":       "建檔日",
     "shipping_method":  "配送方式",
@@ -177,8 +177,8 @@ PO_ALWAYS_EDITABLE_FIELDS = {"receiving_status", "shipping_method", "remarks"}
 # 整張 PO 共用、但屬於酷澎來源的欄位：OP 可以改（跟酷澎談好調整），
 # 改的時候整張單一起改，但它們存在 orders 上、且會參與匯入比對。
 PO_COUPANG_FIELDS = {
-    "delivery_date": "交期",
-    "warehouse":     "倉別",
+    "delivery_date": "到貨日",
+    "warehouse":     "到貨倉別",
     "order_type":    "訂單類型",
 }
 
@@ -475,7 +475,7 @@ def require_login():
     if session.get("user"):
         return
     if request.path.startswith("/api/"):
-        return jsonify({"error": "未登入，請重新整理頁面登入"}), 401
+        return jsonify({"error": "登入已逾時，請重新整理頁面後登入。"}), 401
     return redirect(url_for("login", next=request.path))
 
 
@@ -493,7 +493,7 @@ def login():
     # 就是雜湊值，verify_password 兩種都認得。
     if not verify_password(users.get(username, ""), password):
         return render_template(
-            "login.html", error="帳號或密碼不對，再檢查一次",
+            "login.html", error="帳號或密碼錯誤，請重新輸入。",
             build_version=BUILD_VERSION,
         ), 401
 
@@ -538,7 +538,7 @@ def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not is_admin():
-            return jsonify({"error": "只有管理員可以做這個操作。"}), 403
+            return jsonify({"error": "此操作僅限管理員。"}), 403
         return fn(*args, **kwargs)
     return wrapper
 
@@ -575,7 +575,7 @@ def api_change_password():
     old_password = payload.get("old_password") or ""
 
     if len(new_password) < 6:
-        return jsonify({"error": "新密碼至少 6 個字。"}), 400
+        return jsonify({"error": "新密碼至少 6 個字元。"}), 400
 
     users = get_users()
     if target not in users:
@@ -585,7 +585,7 @@ def api_change_password():
         if not is_admin(me):
             return jsonify({"error": "只有管理員可以重設別人的密碼。"}), 403
     elif not verify_password(users[target], old_password):
-        return jsonify({"error": "舊密碼不對。"}), 400
+        return jsonify({"error": "目前密碼錯誤。"}), 400
 
     users[target] = generate_password_hash(new_password)
     _write_users(users, get_admins())
@@ -601,11 +601,11 @@ def api_add_user():
     make_admin = bool(payload.get("is_admin"))
 
     if not name:
-        return jsonify({"error": "請填帳號名稱。"}), 400
+        return jsonify({"error": "請輸入帳號名稱。"}), 400
     if name.startswith("_"):
-        return jsonify({"error": "帳號名稱不能用底線開頭。"}), 400
+        return jsonify({"error": "帳號名稱不可以底線（_）開頭。"}), 400
     if len(password) < 6:
-        return jsonify({"error": "密碼至少 6 個字。"}), 400
+        return jsonify({"error": "密碼至少 6 個字元。"}), 400
 
     users = get_users()
     if name in users:
@@ -635,7 +635,7 @@ def api_delete_user():
 
     admins = get_admins() - {name}
     if not admins:
-        return jsonify({"error": "刪掉他就沒有管理員了，請先指定其他管理員。"}), 400
+        return jsonify({"error": "此帳號為唯一的管理員，請先指定其他管理員。"}), 400
 
     del users[name]
     _write_users(users, admins & set(users.keys()))
@@ -676,7 +676,7 @@ def api_reset_data():
     但也有「只想重來一次匯入」的情況，歷程留著才查得到之前發生什麼。"""
     payload = request.get_json(silent=True) or {}
     if norm_text(payload.get("confirm")) != "清空資料":
-        return jsonify({"error": "請照著輸入「清空資料」四個字再確認。"}), 400
+        return jsonify({"error": "請輸入「清空資料」以確認。"}), 400
 
     keep_logs = bool(payload.get("keep_logs"))
     backup = db.backup_db("reset")
@@ -790,17 +790,18 @@ def api_save_sign_settings():
     # 極難查。這裡要的是跟 PDF 內文逐字相符，不是好看的正規化結果。
     keyword = str(payload.get("keyword") or "").strip()
     if not keyword:
-        return jsonify({"error": "關鍵字不能空白。"}), 400
+        return jsonify({"error": "定位欄位文字不可空白。"}), 400
     geo["keyword"] = keyword
 
+    key_labels = {"width": "寬", "height": "高", "offset_x": "左右偏移", "offset_y": "上下偏移"}
     for key in ("width", "height", "offset_x", "offset_y"):
         if key not in payload:
             continue
         value = norm_int(payload.get(key))
         if value is None:
-            return jsonify({"error": f"{key} 請填數字。"}), 400
+            return jsonify({"error": f"「{key_labels[key]}」請填數字。"}), 400
         if key in ("width", "height") and value <= 0:
-            return jsonify({"error": "簽名寬高要大於 0。"}), 400
+            return jsonify({"error": "簽名寬度與高度須大於 0。"}), 400
         geo[key] = value
 
     if "retention_days" in payload:
@@ -825,7 +826,7 @@ def api_sign_calibrate_upload():
         return jsonify({"error": "沒有收到 PDF 檔。"}), 400
     raw = upload.read()
     if len(raw) > MAX_SIGN_PDF_BYTES:
-        return jsonify({"error": "檔案太大（超過 25MB）。"}), 400
+        return jsonify({"error": "檔案太大（超過 25 MB）。"}), 400
 
     keyword = str(request.form.get("keyword") or "").strip() \
         or get_sign_settings()["keyword"]
@@ -882,9 +883,9 @@ def api_upload_signature():
 
     raw = upload.read()
     if not raw:
-        return jsonify({"error": "檔案是空的。"}), 400
+        return jsonify({"error": "檔案內容為空。"}), 400
     if len(raw) > MAX_SIGNATURE_BYTES:
-        return jsonify({"error": "簽名圖請小於 2MB。"}), 400
+        return jsonify({"error": "簽名圖請小於 2 MB。"}), 400
 
     try:
         info = pdfsign.validate_signature(raw)
@@ -957,7 +958,7 @@ def api_sign_run():
         conn.close()
     if sig_row is None:
         return jsonify({
-            "error": "你還沒上傳簽名圖，請先到「設定 → 驗收單簽名」上傳一次。",
+            "error": "尚未上傳簽名圖，請先在「驗收單簽名」視窗的「我的簽名圖」上傳。",
         }), 400
     signature = base64.b64decode(sig_row["image_b64"])
 
@@ -999,7 +1000,7 @@ def api_sign_run():
                 fail_total += 1
                 continue
             if len(raw) > MAX_SIGN_PDF_BYTES:
-                record_failure(name, "檔案太大（超過 25MB）。")
+                record_failure(name, "檔案太大（超過 25 MB）。")
                 fail_total += 1
                 continue
 
@@ -1037,8 +1038,8 @@ def api_sign_run():
         "ok": True, "batch_id": batch_id, "results": results,
         "ok_count": ok_count, "fail_count": fail_total,
         "signed_total": signed_total,
-        "message": (f"{ok_count} 份簽好了（共蓋 {signed_total} 處）"
-                    + (f"，{fail_total} 份沒處理成功" if fail_total else "")),
+        "message": (f"已完成 {ok_count} 份（共簽名 {signed_total} 處）"
+                    + (f"，{fail_total} 份失敗" if fail_total else "")),
     })
 
 
@@ -1270,7 +1271,7 @@ def api_sync_verified_qty():
 
     token = request.headers.get("X-Sync-Token", "")
     if not token or not secrets.compare_digest(token, _load_or_create_sync_token()):
-        return jsonify({"error": "同步碼不對，請確認腳本設定的 token。"}), 401
+        return jsonify({"error": "通行碼錯誤，請確認批次驗收工具的通行碼設定。"}), 401
 
     payload = request.get_json(silent=True) or {}
     items = payload.get("items")
@@ -1382,7 +1383,7 @@ def api_sync_verified_qty():
         "judged_done": judged_done, "judged_abnormal": judged_abnormal,
         "message": f"同步完成，比對到 {matched} 個品項"
                    + (f"（其中 {amount_matched} 個更新了驗收金額）" if amount_matched else "")
-                   + (f"，{len(not_found)} 個系統裡還沒有、略過" if not_found else "")
+                   + (f"，{len(not_found)} 個品項不在系統中，已略過" if not_found else "")
                    + (f"；{'、'.join(judged)}" if judged else ""),
     })
 
@@ -1629,9 +1630,14 @@ def api_logs():
             params + [size, (page - 1) * size]).fetchall()
 
         # 篩選面板用的選項，只列真的出現過的值
-        fields = conn.execute(
-            "SELECT DISTINCT field, field_label FROM edit_logs ORDER BY field_label"
-        ).fetchall()
+        # 同一個欄位的中文名改過（例如交期→到貨日）時，舊紀錄還是舊名字；
+        # 一個欄位只列一次，用最近一筆紀錄的名字。
+        latest = {}
+        for f in conn.execute(
+                "SELECT field, field_label, MAX(id) AS mid FROM edit_logs GROUP BY field, field_label").fetchall():
+            if f["field"] not in latest or f["mid"] > latest[f["field"]][1]:
+                latest[f["field"]] = (f["field_label"], f["mid"])
+        fields = sorted(({"field": k, "field_label": v[0]} for k, v in latest.items()), key=lambda f: f["field_label"])
         operators = conn.execute(
             "SELECT DISTINCT operator FROM edit_logs WHERE operator != '' ORDER BY operator"
         ).fetchall()
@@ -1733,8 +1739,8 @@ def api_update_order(order_id):
             return jsonify({
                 "error": "conflict",
                 "message": (
-                    f"這筆訂單剛剛被「{order['updated_at']}」的另一次儲存修改過，"
-                    "你看到的已經不是最新版本。請重新載入後再編輯。"
+                    f"此筆資料已於 {order['updated_at']} 被其他人修改，"
+                    "請重新載入後再編輯。"
                 ),
                 "current": order,
             }), 409
@@ -1773,7 +1779,7 @@ def api_update_order(order_id):
                     "error": "readonly",
                     "message": (
                         f"「{label}」已經有值（{order[field]}），不開放修改。"
-                        "這個欄位以酷澎整合表為準，需要更正請回頭修主檔後重新上傳。"
+                        "這個欄位以酷澎訂單彙總表為準，如需更正，請修改訂單彙總表後重新上傳。"
                     ),
                 }), 400
             changes.append((field, label, order[field], new_val))
@@ -1791,7 +1797,7 @@ def api_update_order(order_id):
         if cur.rowcount == 0:
             conn.rollback()
             return jsonify({"error": "conflict",
-                            "message": "儲存瞬間有其他人也改了這筆，請重新載入。"}), 409
+                            "message": "其他人同時修改了此筆資料，請重新載入。"}), 409
 
         for field, label, old_val, new_val in changes:
             log_change(conn, order, field, label, old_val, new_val, operator, "manual")
@@ -2002,8 +2008,8 @@ def api_update_po(po_number):
         if header["version"] != client_version:
             return jsonify({
                 "error": "conflict",
-                "message": (f"這張單剛剛被另一次儲存修改過（{header['updated_at']}），"
-                            "你看到的不是最新版本，請重新載入後再編輯。"),
+                "message": (f"此筆資料已於 {header['updated_at']} 被其他人修改，"
+                            "請重新載入後再編輯。"),
             }), 409
 
         stamp = now()
@@ -2070,7 +2076,7 @@ def api_update_po(po_number):
             if cur.rowcount == 0:
                 conn.rollback()
                 return jsonify({"error": "conflict",
-                                "message": "儲存瞬間有其他人也改了這張單，請重新載入。"}), 409
+                                "message": "其他人同時修改了此筆資料，請重新載入。"}), 409
 
         for field, label, old_val, new_val in row_changes:
             # 一併標記「這個欄位人工調整過」，之後匯入就不再覆蓋它
@@ -2203,7 +2209,7 @@ def api_batch_status():
     if field not in ("po_status", "receiving_status", "shipping_method"):
         return jsonify({"error": "只能批次修改 PO 狀態、驗收狀態或配送方式。"}), 400
     if not value:
-        return jsonify({"error": "請選擇要改成什麼狀態。"}), 400
+        return jsonify({"error": "請選擇要套用的值。"}), 400
 
     label = PO_EDITABLE_FIELDS[field]
     conn = get_conn()
@@ -2517,7 +2523,7 @@ def api_import_commit():
 
             log_change(conn, current, "qty_ship", "出貨數量",
                        current["qty_ship"], 0, operator, "import",
-                       "酷澎後台已移除此品項（下單數量歸零後，整合表不會再帶這一列），"
+                       "酷澎後台已移除此品項（下單數量歸零後，訂單彙總表不再包含此列），"
                        "出貨數量歸零、不計入 PO 總數，保留成稽核紀錄")
 
             reason = ("這個品項已在酷澎後台被移除，本次上傳的整合表已找不到這筆資料，"
@@ -2553,7 +2559,7 @@ def api_import_commit():
         conn.commit()
     except Exception as exc:  # noqa: BLE001
         conn.rollback()
-        return jsonify({"error": f"匯入失敗，資料已全部還原，沒有寫入任何一筆：{exc}"}), 500
+        return jsonify({"error": f"匯入失敗，資料已全部還原。錯誤原因：{exc}"}), 500
     finally:
         conn.close()
 
@@ -2602,7 +2608,7 @@ def api_export():
     profiles = get_profiles()
     profile = profiles.get(profile_key)
     if not profile:
-        return jsonify({"error": f"找不到匯出格式「{profile_key}」，請檢查 export_profiles.json。"}), 400
+        return jsonify({"error": f"找不到匯出格式「{profile_key}」，請聯絡系統管理員。"}), 400
 
     conn = get_conn()
     try:
