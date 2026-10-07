@@ -222,26 +222,26 @@
       <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_pg.png') }}" style="height:30px;width:auto" alt="寶僑"></div>
       <div>
         <h1 class="text-lg font-bold leading-tight tracking-tight">商品主檔自動化</h1>
-        <p class="text-[11px] leading-tight" style="color:var(--b200)">① 匯酷澎主檔與總表 → ② 匯訂單彙總表 → ③ 專案報價檔、總表自動產出，不用再手動貼、做樞紐、VLOOKUP</p>
+        <p class="text-[11px] leading-tight" style="color:var(--b200)">先在「商品主檔」分頁匯入酷澎主檔與總表，再到「訂單明細」分頁匯入訂單彙總表，系統會自動產出專案報價檔與總表</p>
       </div>
     </div>
     <div class="flex-1"></div>
     <button id="btn-logs" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-clock-history"></i> 修改歷程</button>
 {% if is_admin %}
-    <button id="btn-reset" class="btn btn-o btn-sm" style="background:transparent;color:#fecaca;border-color:#f87171" title="清掉訂單明細或商品主檔（只有管理員看得到）"><i class="bi bi-trash3"></i> 清除資料</button>
+    <button id="btn-reset" class="btn btn-o btn-sm" style="background:transparent;color:#fecaca;border-color:#f87171" title="清除訂單明細或商品主檔（限管理員）"><i class="bi bi-trash3"></i> 清除資料</button>
 {% endif %}
     <span class="text-xs" style="color:var(--b200)"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
     {% set lm_current = 'master' %}{% include '_line_menu.html' %}
-    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-arrow-left"></i> 回訂單管理系統</a>
+    <a href="{{ url_for('index') }}" class="btn btn-o btn-sm" style="background:transparent;color:#fff;border-color:var(--b200)"><i class="bi bi-arrow-left"></i> 回酷澎訂單管理系統</a>
   </div>
 </header>
 
 <main class="max-w-[1560px] mx-auto px-5 py-5">
   <div class="m-tabs mb-4">
-    <button class="m-tab" data-tab="products"><i class="bi bi-box-seam"></i> ① 商品主檔 <span class="kbd">先匯總表鋪底</span></button>
-    <button class="m-tab active" data-tab="orders"><i class="bi bi-calendar3"></i> ② 訂單明細 <span class="kbd">匯訂單彙總表、改數量交期</span></button>
-    <button class="m-tab" data-tab="summary"><i class="bi bi-table"></i> ③ 總表 <span class="kbd">自動算好</span></button>
-    <button class="m-tab" data-tab="stats"><i class="bi bi-bar-chart-line"></i> ④ 改單統計 <span class="kbd">幾張 PO、改幾次、為什麼</span></button>
+    <button class="m-tab" data-tab="products"><i class="bi bi-box-seam"></i> ① 商品主檔 <span class="kbd">先匯入總表</span></button>
+    <button class="m-tab active" data-tab="orders"><i class="bi bi-calendar3"></i> ② 訂單明細 <span class="kbd">匯入訂單彙總表、調整數量與到貨日</span></button>
+    <button class="m-tab" data-tab="summary"><i class="bi bi-table"></i> ③ 總表 <span class="kbd">自動計算</span></button>
+    <button class="m-tab" data-tab="stats"><i class="bi bi-bar-chart-line"></i> ④ 改單統計 <span class="kbd">PO 張數、改單次數與原因</span></button>
   </div>
 
   <!-- ══════════ ① 商品主檔 ══════════ -->
@@ -249,13 +249,13 @@
     <div class="card p-4 mb-4">
       <div id="dz-prod" class="dropzone compact">
         <i class="bi bi-file-earmark-arrow-up text-2xl"></i>
-        <div class="flex-1"><b>匯入主檔與來源檔</b> — 寶僑相關的檔通通拖到這裡：酷澎主檔、寶僑總表、寶僑 supply 表、Coupang Master、庫存銷售表。系統看表頭自己認是哪一種。可以分幾次加，加完按「匯入主檔」。
-          <div class="kbd">都是認表頭文字不認位置：酷澎主檔／總表補商品資料；supply 表帶每月 Supply 與 demand；Coupang Master 帶 GIV／NIV；庫存銷售表帶每月下單與實銷。來源空白或 #N/A 的格子不會蓋掉既有的值。</div></div>
+        <div class="flex-1"><b>匯入主檔與來源檔</b>：將寶僑相關檔案拖曳至此（酷澎主檔、寶僑總表、寶僑 supply 表、Coupang Master、庫存銷售表），系統會依表頭自動判斷檔案類型。
+          <div class="kbd">欄位依表頭文字辨識，與欄位位置無關：酷澎主檔／總表提供商品資料；寶僑 supply 表提供每月 Supply 與 demand；Coupang Master 提供 GIV／NIV；庫存銷售表提供每月下單與實銷。來源空白或 #N/A 的格子不會覆蓋既有的值。</div></div>
       </div>
       <input type="file" id="file-prod" accept=".xlsx" multiple class="hidden">
       <div id="prod-files" class="mt-2 hidden">
         <div class="flex items-center gap-2 flex-wrap text-sm">
-          <b>已加入的檔案</b><span class="kbd">再拖或再點一次可以繼續加（可以換資料夾），加完按「匯入主檔」</span>
+          <b>已加入的檔案</b><span class="kbd">可分次拖曳或點選加入（可換資料夾），加入完成後按「匯入主檔」</span>
           <button id="prod-files-clear" class="btn btn-g btn-sm" style="margin-left:auto"><i class="bi bi-x-circle"></i> 全部移除</button>
           <button id="prod-files-go" class="btn btn-p btn-sm"><i class="bi bi-box-arrow-in-down"></i> 匯入主檔</button>
         </div>
@@ -278,25 +278,25 @@
   <!-- ══════════ ② 訂單明細 ══════════ -->
   <section id="tab-orders">
     <div id="no-master-banner" class="hidden card p-4 mb-4" style="border-color:#fcd34d;background:#fffbeb">
-      <b style="color:var(--warn)"><i class="bi bi-exclamation-triangle-fill"></i> 商品主檔還是空的</b>
-      <span class="text-sm" style="color:var(--ink2)">　品類、Note、單價(含稅)、箱入數都要從總表來，建議先到「① 商品主檔」把總表拖進去鋪底，再上傳訂單彙總表。</span>
+      <b style="color:var(--warn)"><i class="bi bi-exclamation-triangle-fill"></i> 商品主檔尚無資料</b>
+      <span class="text-sm" style="color:var(--ink2)">　品類、Note、單價（含稅）、箱入數取自總表，請先到「商品主檔」分頁匯入總表，再上傳訂單彙總表。</span>
     </div>
     <div class="flex items-center gap-2 flex-wrap mb-3">
       <button id="btn-upload" class="btn btn-p"><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</button>
       <span class="flex items-center gap-1 ml-2 dd">
         <button id="m-prev" class="btn btn-g btn-sm" title="上個月"><i class="bi bi-chevron-left"></i></button>
-        <button id="month-pill" class="fbtn" title="看哪個月；要一次看好幾個月就在這裡選起訖"><i class="bi bi-calendar3"></i><span class="fv" id="month-pill-txt"></span><i class="bi bi-chevron-down caret"></i></button>
+        <button id="month-pill" class="fbtn" title="選擇月份"><i class="bi bi-calendar3"></i><span class="fv" id="month-pill-txt"></span><i class="bi bi-chevron-down caret"></i></button>
         <button id="m-next" class="btn btn-g btn-sm" title="下個月"><i class="bi bi-chevron-right"></i></button>
         <div id="month-menu" class="dd-menu hidden" style="min-width:300px;padding:12px">
-          <div class="text-sm mb-2"><b>看哪幾個月</b> <span class="kbd">平常只看一個月；要一次看、一次匯好幾個月，把「到」往後拉</span></div>
+          <div class="text-sm mb-2"><b>選擇月份</b> <span class="kbd">可設定起訖月份，一次檢視或匯出多個月</span></div>
           <div class="flex items-center gap-2 mb-2"><span class="text-sm muted" style="width:24px">從</span><input type="month" id="sel-month" class="sel" style="padding:4px 8px"></div>
           <div class="flex items-center gap-2 mb-2"><span class="text-sm muted" style="width:24px">到</span><input type="month" id="exp-to" class="sel" style="padding:4px 8px"></div>
-          <div class="flex gap-2"><button class="btn btn-g btn-sm" id="month-one">只看一個月</button><button class="btn btn-g btn-sm" id="month-two">這個月＋下個月</button></div>
+          <div class="flex gap-2"><button class="btn btn-g btn-sm" id="month-one">只看一個月</button><button class="btn btn-g btn-sm" id="month-two">本月＋下月</button></div>
         </div>
       </span>
       <div class="flex-1"></div>
       <span class="text-sm muted" id="orders-count"></span>
-      <a id="btn-export-daily" class="btn btn-p" title="匯出「目前畫面篩出來的」訂單：一個交貨日一個分頁（0904交貨、0903交貨…），PO 之間黃色空白列，跟專案報價檔一樣。沒篩就是整個月；「匯到」往後拉可以跨月。"><i class="bi bi-calendar-week"></i> 匯出專案報價檔</a>
+      <a id="btn-export-daily" class="btn btn-p" title="匯出目前篩選的訂單，每個到貨日一個分頁；未篩選時匯出整月。要跨月請在月份選單設定「到」。"><i class="bi bi-calendar-week"></i> 匯出專案報價檔</a>
     </div>
 
     <div class="fbar mb-3">
@@ -306,11 +306,11 @@
       <div class="dd"><button id="dd-brand-btn" class="fbtn"><i class="bi bi-tags"></i><span class="fl">品牌</span><span class="fv" id="dd-brand-n">全部</span><i class="bi bi-chevron-down caret"></i></button><div id="dd-brand" class="dd-menu hidden"></div></div>
       <div class="dd"><button id="dd-wh-btn" class="fbtn"><i class="bi bi-building"></i><span class="fl">倉別</span><span class="fv" id="dd-wh-n">全部</span><i class="bi bi-chevron-down caret"></i></button><div id="dd-wh" class="dd-menu hidden"></div></div>
       <span style="width:1px;height:24px;background:var(--line2)"></span>
-      <label class="chip hidden" id="chip-edited" title="有人手改過出貨數量、交貨日或備註的品項；點一下只看這些"><i class="bi bi-pencil"></i> 人工調整過</label>
-      <label class="chip hidden" id="chip-missing" style="border-color:#fcd34d;background:var(--warnbg);color:var(--warn)" title="箱入數不明、算不出箱數的品項；點一下只看這些，補進主檔就會消失"><i class="bi bi-exclamation-triangle-fill"></i> 算不出箱數</label>
+      <label class="chip hidden" id="chip-edited" title="經人工調整出貨數量、到貨日或備註的品項，點選後只顯示這些品項"><i class="bi bi-pencil"></i> 人工調整過</label>
+      <label class="chip hidden" id="chip-missing" style="border-color:#fcd34d;background:var(--warnbg);color:var(--warn)" title="箱入數不明、無法計算箱數的品項，點選後只顯示這些品項；補齊主檔後即不再標示"><i class="bi bi-exclamation-triangle-fill"></i> 無法計算箱數</label>
       <input id="q" type="text" placeholder="搜尋 PO、國條、品名…" class="txt" style="width:220px">
       <button id="btn-clear" class="btn btn-g btn-sm hidden"><i class="bi bi-x-circle"></i> 清除篩選</button>
-      <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔會照這個範圍">匯出會照這個篩選</span>
+      <span class="badge bd-warn hidden" id="filter-hint" title="匯出專案報價檔時只匯出目前篩選的訂單">匯出將套用目前篩選</span>
     </div>
 
     <div id="last-import" class="hidden mb-3 text-sm"></div>
@@ -318,7 +318,7 @@
       <div class="flex items-center gap-3 mb-2 flex-wrap">
         <span class="seg" id="cal-view"><button data-v="cal" class="on"><i class="bi bi-calendar3"></i> 行事曆</button><button data-v="list"><i class="bi bi-list-ul"></i> 日期清單</button></span>
         <b id="cal-title" class="text-sm" style="color:var(--b900)"></b>
-        <span class="kbd" id="cal-hint">點一天或按著滑過好幾天一起選，再點一次取消。格子裡是當天出貨總箱數／PO 數。</span>
+        <span class="kbd" id="cal-hint">點選日期可篩選，按住拖曳可多選，按 Shift 可選取區間，再點一次取消。格內為當日出貨箱數／PO 張數。</span>
         <div class="flex-1"></div>
         <button class="chip hidden" id="cal-clear-dates">全部取消</button>
         <span id="chip-nodate" class="chip hidden"></span>
@@ -330,10 +330,10 @@
     </div>
 
     <div class="flex items-center gap-2 mb-2 text-sm muted">
-      <label class="flex items-center gap-1"><input type="checkbox" id="sel-all-po"> 全選這頁的 PO</label>
+      <label class="flex items-center gap-1"><input type="checkbox" id="sel-all-po"> 全選本頁 PO</label>
       <span class="seg" style="margin-left:4px"><button id="btn-expand-all" title="展開所有 PO 的品項明細"><i class="bi bi-arrows-expand"></i> 全部展開</button><button id="btn-collapse-all" title="只留日期和 PO 標題"><i class="bi bi-arrows-collapse"></i> 全部收合</button></span>
-      <span class="seg" id="density" title="列高：資料多時切緊湊，一頁看得更多"><button data-d="normal" class="on">一般</button><button data-d="dense">緊湊</button></span>
-      <span class="kbd">勾選 PO 可以批次改交貨日；點 PO 單號打開整張單一次改。出貨數量、備註直接點格子改：Enter 或點別處＝存，Esc＝取消。</span>
+      <span class="seg" id="density" title="列高：資料較多時可切換為緊湊"><button data-d="normal" class="on">一般</button><button data-d="dense">緊湊</button></span>
+      <span class="kbd">勾選 PO 可批次修改到貨日；點 PO 單號可修改整張 PO。點出貨數量或備註可直接修改，按 Enter 或點選他處儲存，按 Esc 取消。</span>
     </div>
     <div id="orders-list" class="space-y-4"></div>
   </section>
@@ -344,30 +344,30 @@
       <label class="text-sm muted">線別</label><select id="sum-line" class="sel"></select>
       <label class="text-sm muted ml-2">月份</label><input type="month" id="sum-month" class="sel" style="padding:4px 8px">
       <div class="seg ml-2" id="bd-view"><button data-v="products" class="on">商品</button><button data-v="brands">品牌</button><button data-v="daily">每日出貨</button></div>
-      <input id="bd-q" class="txt ml-2" style="width:220px" placeholder="搜品名、品牌、條碼">
+      <input id="bd-q" class="txt ml-2" style="width:220px" placeholder="搜尋品名、品牌、國條">
       <div class="flex-1"></div>
       <a id="btn-export-2" class="btn btn-p" title="照業務的總表底稿填這個月的數字"><i class="bi bi-file-earmark-excel"></i> 匯出總表</a>
     </div>
     <div class="flex items-center gap-2 flex-wrap mb-3 text-sm" style="justify-content:flex-end">
       <span id="tpl-info" class="text-sm"></span>
       <div class="flex-1"></div>
-      <label class="muted" title="專案報價檔要一次匯好幾個月，把這裡往後拉">匯到</label><input type="month" id="sum-exp-to" class="sel" style="padding:3px 8px">
-      <a id="btn-export-daily-2" class="btn btn-o" style="padding:4px 10px" title="這個線別的專案報價檔：一個交貨日一個分頁，「匯到」往後拉可以跨月"><i class="bi bi-calendar-week"></i> 匯出這線別的專案報價檔</a>
+      <label class="muted" title="可設定結束月份，一次匯出多個月">匯出至</label><input type="month" id="sum-exp-to" class="sel" style="padding:3px 8px">
+      <a id="btn-export-daily-2" class="btn btn-o" style="padding:4px 10px" title="本線別的專案報價檔：每個到貨日一個分頁；要跨月請在「匯出至」設定結束月份"><i class="bi bi-calendar-week"></i> 匯出本線別專案報價檔</a>
     </div>
     <div class="grid gap-3 mb-3" id="bd-kpi" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))"></div>
     <div id="sum-stats" class="hidden"></div>
     <div id="bd-products" class="tbl-wrap"><table class="m bd" id="bd-prod-table"></table></div>
     <div id="bd-brands" class="tbl-wrap hidden"><table class="m bd" id="bd-brand-table"></table></div>
     <div id="bd-daily" class="tbl-wrap hidden"><table class="m" id="sum-table"></table></div>
-    <details class="card p-4 text-sm mt-3"><summary class="cursor-pointer font-semibold">這些數字怎麼來的</summary>
+    <details class="card p-4 text-sm mt-3"><summary class="cursor-pointer font-semibold">計算說明</summary>
       <div class="mt-2 space-y-1 muted">
         <div>COGS、GIV、NIV 來自商品主檔；GIV、NIV 由 Coupang Master 更新。Supply、demand 來自寶僑 supply 表。下單是這個月訂單明細的出貨箱數加總。</div>
-        <div>GIV、NIV、Supply、demand 也可以直接點格子改，改過的格子右上角有個橘色小點，滑過去看是誰改的。重匯舊的總表時，如果會蓋到這些格子，系統會先列出來問你。</div>
+        <div>GIV、NIV、Supply、demand 也可以直接點選格子修改，修改過的格子右上角有橘色小點，滑鼠移到格子上可查看修改人員。重新匯入舊的總表時，如果會覆蓋這些格子，系統會先列出衝突項目供確認。</div>
         <div>剩餘可供貨 = Supply − 下單。下單超過 Supply 就標「超打」，Note 寫「不可超打」的會標紅。</div>
-        <div>剩餘庫存 = 累計下單 − 累計實銷。下單一個商品一個月看：系統有這個商品這個月的訂單就用訂單明細，沒有就用庫存銷售表帶進來的數字（卡片上會寫哪幾個月用哪個，兩邊不一樣的也會標出來）。實銷目前只有庫存銷售表，要更新就再傳一次，之後接酷澎銷售報表。庫存天數 = 剩餘 ÷ 本月日均實銷，低於 14 天標紅。剩餘算出負的代表下單比實銷少、資料有缺（例如某張單還沒匯進來），會另外標「庫存算出負的」。到月底天數是用日均實銷往後推。</div>
+        <div>剩餘庫存 = 累計下單 − 累計實銷。下單依商品逐月計算：系統有該商品當月的訂單就用訂單明細，沒有就用庫存銷售表帶入的數字（卡片上會標示各月份的來源，兩邊不一致的也會標出來）。實銷目前只來自庫存銷售表，如需更新請重新匯入。庫存天數 = 剩餘庫存 ÷ 本月日均實銷，低於 14 天標紅。剩餘庫存為負代表下單比實銷少、資料有缺（例如某張 PO 尚未匯入），會另外標「庫存為負」。月底預估天數以日均實銷往後推算。</div>
         <div>下單 GIV = 下單 × GIV。COGS 含稅 = 下單 × COGS × 箱入數。永豐成本未稅 = 下單 × NIV × 1.02。品牌那頁是同品牌加總。</div>
-        <div>目標和 REBATE 目標跟總表一樣是<b>一季一個數字</b>（10～12 月算一季）：達成 = 這季三個月的下單 GIV 合計 ÷ 目標；DIFF = REBATE 目標 − 這季 COGS 含稅合計。點格子就能填，匯總表進來時裡面的目標也會帶進來。</div>
-        <div>匯出總表：照業務的底稿填各交貨日箱數、GIV／NIV、這個月的 Supply／demand、庫存三欄、品牌目標（系統有值的才填），其他格不動；另附「系統看板」（畫面原樣）和「系統填入說明」兩個分頁。</div>
+        <div>目標和 REBATE 目標跟總表一樣是<b>一季一個數字</b>（10～12 月算一季）：達成 = 這季三個月的下單 GIV 合計 ÷ 目標；DIFF = REBATE 目標 − 這季 COGS 含稅合計。點選格子即可填寫，匯入總表時，表內的目標會一併帶入。</div>
+        <div>匯出總表：照業務的底稿填各到貨日箱數、GIV／NIV、這個月的 Supply／demand、庫存三欄、品牌目標（系統有值的才填），其他格不動；另附「系統看板」（畫面原樣）和「系統填入說明」兩個分頁。</div>
       </div>
     </details>
   </section>
@@ -378,27 +378,27 @@
       <label class="text-sm muted">從</label><input type="month" id="st-from" class="sel" style="padding:4px 8px">
       <label class="text-sm muted">到</label><input type="month" id="st-to" class="sel" style="padding:4px 8px">
       <label class="text-sm muted ml-2">線別</label><select id="st-line" class="sel"><option value="">全部線別</option></select>
-      <label class="text-sm muted ml-3" title="這個數字是人估的，系統只是拿來乘。留 0 就不算工時">每次改單約</label>
+      <label class="text-sm muted ml-3" title="分鐘數為人工估計，系統只用來計算估計工時；填 0 不計算工時">每次改單約</label>
       <input type="number" id="st-min" class="sel" min="0" step="5" style="width:70px;padding:4px 8px" value="0"><span class="text-sm muted">分鐘</span>
-      <label class="flex items-center gap-1 text-sm muted ml-3" title="同事在正式站試功能時勾了「這是測試」的改單，預設不算"><input type="checkbox" id="st-test"> 含測試</label>
+      <label class="flex items-center gap-1 text-sm muted ml-3" title="預設不計入標示為測試的改單"><input type="checkbox" id="st-test"> 含測試</label>
       <div class="flex-1"></div>
       <a id="btn-export-stats" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
     </div>
     <div class="grid gap-3 mb-4" id="st-kpi" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
-    <div class="card p-4 mb-4"><b class="text-sm">每個月</b><span class="kbd ml-2">藍色數字都可以點，會列出背後是哪幾次改單</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+    <div class="card p-4 mb-4"><b class="text-sm">每個月</b><span class="kbd ml-2">點選藍色數字可查看對應的改單明細</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
     <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
-      <div class="card p-4"><b class="text-sm">我們改單的原因</b><span class="kbd ml-2">只有我們改的才有原因，酷澎不會講</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
-      <div class="card p-4"><b class="text-sm">改了什麼</b><span class="kbd ml-2">一次改單可能同時改數量和交期，所以加起來會比改單次數多</span><div class="tbl-wrap mt-2"><table class="m" id="st-kinds"></table></div></div>
+      <div class="card p-4"><b class="text-sm">我方改單原因</b><span class="kbd ml-2">酷澎修改無原因資料</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
+      <div class="card p-4"><b class="text-sm">改單類型</b><span class="kbd ml-2">一次改單可能同時修改數量與到貨日，各類型加總會大於改單次數</span><div class="tbl-wrap mt-2"><table class="m" id="st-kinds"></table></div></div>
     </div>
-    <div class="card p-4 mb-4"><b class="text-sm">改最多次的 PO</b><div class="tbl-wrap mt-2"><table class="m" id="st-top"></table></div></div>
-    <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">這些數字怎麼算的</summary>
+    <div class="card p-4 mb-4"><b class="text-sm">改單次數最多的 PO</b><div class="tbl-wrap mt-2"><table class="m" id="st-top"></table></div></div>
+    <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">計算說明</summary>
       <div class="mt-2 space-y-1 muted">
-        <div>PO 歸哪個月看它目前的交貨日。沒排日期的另外列「未排日期」。</div>
-        <div>「被改過」是這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期會一個品項記一筆，一次動作不能算很多次。</div>
-        <div>「酷澎改的」是整合表上的出貨數量或交貨日跟上次不一樣，或品項從檔案裡消失。「我們改的」是人手改出貨數量或交貨日；恢復成整合表的數字不算。</div>
-        <div>「改了什麼」分改數量、改交期、品項被拿掉三類。一次改單可能同時改數量和交期，三類各自算，加起來會比改單次數多。改數量再分下修、上修。</div>
-        <div>原因只有我們改的才有。2026-09-22 之前改的沒有原因，列「未填」。改單時勾了「這是測試」的預設不算，上面勾「含測試」才會算進來。</div>
-        <div>估計工時是改單次數乘上你填的分鐘數，分鐘數是人估的，不是系統算的。資料從系統開始用（2026 年 9 月中）才有。</div>
+        <div>PO 依目前的到貨日歸屬月份，未排日期的另列「未排日期」。</div>
+        <div>「曾改單」是指這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期時每個品項各記一筆，一次動作不能重複計算。</div>
+        <div>「酷澎修改」是訂單彙總表上的出貨數量或到貨日與上次不同，或品項從檔案中消失。「我方修改」是人工修改出貨數量或到貨日；恢復成訂單彙總表的數字不算。</div>
+        <div>「改單類型」分改數量、改到貨日、品項移除三類，各自計算。改數量再分下修、上修。</div>
+        <div>只有我方修改才有原因。2026-09-22 之前的修改沒有原因，列「未填」。改單時勾選「這是測試」的預設不計入，勾選上方「含測試」才會計入。</div>
+        <div>估計工時 = 改單次數 × 填寫的分鐘數，分鐘數為人工估計，不是系統計算。資料自 2026-09 中旬系統上線起計算。</div>
       </div>
     </details>
   </section>
@@ -407,9 +407,9 @@
 <!-- 批次動作列 -->
 <div id="batchbar" class="batchbar">
   <b>已勾選 <span id="batch-n">0</span> 張 PO</b>
-  <span>改交貨日</span><input type="date" id="batch-date">
+  <span>改到貨日</span><input type="date" id="batch-date">
   <button id="batch-apply" class="btn btn-p btn-sm"><i class="bi bi-check2"></i> 套用</button>
-  <button id="batch-reset" class="btn btn-g btn-sm" title="恢復成整合表的交貨日"><i class="bi bi-arrow-counterclockwise"></i> 恢復整合表日期</button>
+  <button id="batch-reset" class="btn btn-g btn-sm" title="恢復成訂單彙總表的到貨日"><i class="bi bi-arrow-counterclockwise"></i> 恢復訂單彙總表日期</button>
   <button id="batch-clear" class="btn btn-g btn-sm"><i class="bi bi-x"></i> 取消勾選</button>
 </div>
 
@@ -417,11 +417,11 @@
 <dialog id="dlg-import">
   <div class="dlg-h"><b><i class="bi bi-cloud-arrow-up"></i> 上傳訂單彙總表</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">
-    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">跟上傳 OMS 的整合表是同一份。一份檔可以有多個線別、多個月份，系統照每一列的線別與交貨日自己分；可以一次拖好幾份，也可以分幾次從不同資料夾加，加完再按確認匯入。</div></div>
+    <div id="dz" class="dropzone"><i class="bi bi-file-earmark-excel text-2xl"></i><div class="mt-1">把凱特系統下載的訂單彙總表拖到這裡，或點一下選檔</div><div class="kbd mt-1">與酷澎訂單管理系統使用的訂單彙總表為同一份檔案。一份檔案可包含多個線別、多個月份，系統會依每一列的線別與到貨日自動分類；可一次拖曳多份，也可分次從不同資料夾加入。</div></div>
     <input type="file" id="file-import" accept=".xlsx" multiple class="hidden">
     <div id="imp-files" class="mt-3 hidden">
       <div class="flex items-center gap-2 flex-wrap text-sm">
-        <b>已加入的檔案</b><span class="kbd">再拖或再點一次可以繼續加（可以換資料夾），加完按右下「確認匯入」。只看預覽不會寫進系統，想試試看可以放心按。</span>
+        <b>已加入的檔案</b><span class="kbd">可繼續拖曳或點選加入（可換資料夾）。預覽不會寫入系統，按右下「確認匯入」才會寫入。</span>
         <button id="imp-files-clear" class="btn btn-g btn-sm" style="margin-left:auto"><i class="bi bi-x-circle"></i> 全部移除</button>
       </div>
       <div id="imp-files-list" class="flex gap-2 flex-wrap mt-2"></div>
@@ -429,7 +429,7 @@
     <div id="imp-result" class="mt-4 hidden"></div>
   </div>
   <div class="dlg-f">
-    <label id="imp-addmissing-wrap" class="hidden flex items-center gap-2 text-sm mr-auto"><input type="checkbox" id="imp-addmissing" checked> 總表裡還沒有的商品，先用檔案裡的箱入數建進主檔（會標「請核對」，Note 留空）</label>
+    <label id="imp-addmissing-wrap" class="hidden flex items-center gap-2 text-sm mr-auto"><input type="checkbox" id="imp-addmissing" checked> 自動建立缺少的商品主檔（箱入數取自訂單彙總表，標示「請核對」）</label>
     <button data-close class="btn btn-g">取消</button>
     <button id="btn-commit" class="btn btn-p hidden"><i class="bi bi-check2-circle"></i> 確認匯入</button>
   </div>
@@ -443,15 +443,15 @@
   </div>
   <div class="dlg-b">
     <div class="flex items-center gap-3 flex-wrap mb-3">
-      <label class="text-sm">交貨日（整張 PO 一起搬） <input type="date" id="po-date" class="sel" style="padding:4px 8px"></label>
+      <label class="text-sm">到貨日（套用整張 PO） <input type="date" id="po-date" class="sel" style="padding:4px 8px"></label>
       <span id="po-date-note" class="kbd"></span>
-      <button id="po-date-reset" class="btn btn-g btn-sm hidden"><i class="bi bi-arrow-counterclockwise"></i> 恢復整合表日期</button>
+      <button id="po-date-reset" class="btn btn-g btn-sm hidden"><i class="bi bi-arrow-counterclockwise"></i> 恢復訂單彙總表日期</button>
       <div class="flex-1"></div>
       <span class="text-sm muted">出貨合計 <b id="po-total" style="color:var(--b900)"></b> 箱</span>
     </div>
     <div class="grid" style="grid-template-columns:minmax(0,1fr) 320px;gap:14px">
       <div class="tbl-wrap" style="max-height:52vh"><table class="m" id="po-table"></table></div>
-      <div class="card p-3" style="max-height:52vh;overflow:auto"><b class="text-sm">這張單的修改歷程</b><div id="po-logs" class="text-xs mt-2 space-y-1"></div></div>
+      <div class="card p-3" style="max-height:52vh;overflow:auto"><b class="text-sm">本 PO 修改歷程</b><div id="po-logs" class="text-xs mt-2 space-y-1"></div></div>
     </div>
   </div>
   <div class="dlg-f">
@@ -463,11 +463,11 @@
 
 <!-- 改單原因：人手改出貨數量／交貨日前一定要選，主管之後要統計改單成本 -->
 <dialog id="dlg-reason" style="max-width:440px">
-  <div class="dlg-h"><b><i class="bi bi-question-circle"></i> <span id="rsn-title">為什麼要改？</span></b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-h"><b><i class="bi bi-question-circle"></i> <span id="rsn-title">改單原因</span></b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">
     <div id="rsn-desc" class="text-sm muted mb-3"></div>
     <div id="rsn-opts" class="rsn-opts"></div>
-    <input id="rsn-note" class="txt mt-3 hidden" placeholder="簡單寫一下是什麼原因">
+    <input id="rsn-note" class="txt mt-3 hidden" placeholder="請填寫原因">
     <div id="rsn-msg" class="neg text-sm mt-2"></div>
     <label class="flex items-center gap-2 mt-3 kbd" style="cursor:pointer"><input type="checkbox" id="rsn-test"> 這是測試，不算進統計</label>
   </div>
@@ -482,13 +482,13 @@
 
 <!-- 商品編輯 -->
 <dialog id="dlg-sheet-conf" style="max-width:860px;width:92vw">
-  <div class="dlg-h"><b><i class="bi bi-shield-exclamation"></i> 總表的數字比系統舊</b></div>
+  <div class="dlg-h"><b><i class="bi bi-shield-exclamation"></i> 總表數值比系統舊</b></div>
   <div class="dlg-b text-sm">
     <p id="sc-head" class="mb-3"></p>
     <div id="sc-list" class="tbl-wrap" style="max-height:48vh"></div>
-    <p class="kbd mt-2">其他沒衝突的格子（新商品、系統沒改過的欄位）兩種選法都會照總表匯進去。</p>
+    <p class="kbd mt-2">其他無衝突的格子（新商品、系統未修改的欄位），無論選擇哪一種都會依總表匯入。</p>
   </div>
-  <div class="dlg-f"><button id="sc-cancel" class="btn btn-g">取消，這份先不匯</button><button id="sc-over" class="btn btn-o">用總表的蓋過去</button><button id="sc-keep" class="btn btn-p"><i class="bi bi-shield-check"></i> 保留系統的，其他照匯</button></div>
+  <div class="dlg-f"><button id="sc-cancel" class="btn btn-g">取消匯入</button><button id="sc-over" class="btn btn-o">以總表覆蓋</button><button id="sc-keep" class="btn btn-p"><i class="bi bi-shield-check"></i> 保留系統數值</button></div>
 </dialog>
 
 <dialog id="dlg-prod" style="max-width:620px">
@@ -497,7 +497,7 @@
     <label>國條 <input id="p-barcode" class="txt"></label>
     <label>箱入數 <input id="p-box" type="number" min="1" class="txt"></label>
     <label>品類（總表 Category） <input id="p-cat" class="txt" placeholder="例如 Fabric、Baby、Fem"></label>
-    <label>單價(含稅)（業務報價單價＝COGS） <input id="p-cost" type="number" step="0.01" class="txt"></label>
+    <label>單價（含稅，業務報價單價＝COGS） <input id="p-cost" type="number" step="0.01" class="txt"></label>
     <label>SKU ID <input id="p-sku" class="txt"></label>
     <label>永豐料號 <input id="p-yf" class="txt"></label>
     <label>品牌 <input id="p-brand" class="txt"></label>
@@ -507,7 +507,7 @@
     <label>單位 <input id="p-unit" class="txt" placeholder="箱／瓶／袋…"></label>
     <label>總效期天數 <input id="p-shelf" type="number" min="0" class="txt"></label>
     <label>啟用 <select id="p-active" class="sel" style="width:100%"><option value="Y">Y（啟用）</option><option value="N">N（停用）</option></select></label>
-    <label class="col-span-2">Note／報價備註（會放進專案報價檔的備註） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
+    <label class="col-span-2">Note／報價備註（帶入專案報價檔備註欄） <input id="p-note" class="txt" placeholder="例如：不可超打、停產、新品"></label>
     <label>GIV（每箱進價） <input id="p-giv" type="number" step="any" min="0" class="txt"></label>
     <label>NIV（每箱進價扣折讓） <input id="p-niv" type="number" step="any" min="0" class="txt"></label>
   </div>
@@ -517,15 +517,15 @@
 <!-- 修改歷程 -->
 <nav id="date-rail" class="hidden" aria-label="日期導覽"></nav>
 <aside id="imp-drawer" class="drawer" aria-hidden="true">
-  <div class="dh"><b><i class="bi bi-clock-history"></i> 匯入紀錄</b><span class="kbd">點一列，畫面就只剩那批動到的訂單</span><span class="x" id="imp-drawer-close" title="關閉"><i class="bi bi-x-lg"></i></span></div>
+  <div class="dh"><b><i class="bi bi-clock-history"></i> 匯入紀錄</b><span class="kbd">點選一筆即只顯示該批新增或變動的訂單</span><span class="x" id="imp-drawer-close" title="關閉"><i class="bi bi-x-lg"></i></span></div>
   <div class="df"><select id="imp-period" class="sel" style="padding:5px 8px;font-size:13px"><option value="">全部期間</option><option value="week">本週</option><option value="month">本月</option><option value="last">上個月</option></select>
-    <input id="imp-q" class="txt" style="flex:1;font-size:13px" placeholder="搜檔名或 PO 單號"><span class="kbd" id="imp-count"></span></div>
+    <input id="imp-q" class="txt" style="flex:1;font-size:13px" placeholder="搜尋檔名或 PO 單號"><span class="kbd" id="imp-count"></span></div>
   <div class="db" id="imp-drawer-body"></div>
 </aside>
 <dialog id="dlg-logs">
   <div class="dlg-h"><b><i class="bi bi-clock-history"></i> 修改歷程</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b">
-    <div class="flex gap-2 mb-3"><input id="lg-q" class="txt" style="width:300px" placeholder="搜 PO、國條、操作者、欄位…"><button id="lg-go" class="btn btn-o btn-sm">查詢</button></div>
+    <div class="flex gap-2 mb-3"><input id="lg-q" class="txt" style="width:300px" placeholder="搜尋 PO、國條、操作人員、欄位…"><button id="lg-go" class="btn btn-o btn-sm">查詢</button></div>
     <div class="tbl-wrap" style="max-height:60vh"><table class="m" id="lg-table"></table></div>
   </div>
 </dialog>
@@ -535,21 +535,21 @@
   <div class="dlg-h" style="background:#b91c1c"><b><i class="bi bi-trash3-fill"></i> 清除資料</b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b text-sm space-y-3">
     <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:10px 12px;color:#991b1b">
-      <b><i class="bi bi-exclamation-octagon-fill"></i> 清掉就回不來了</b>
-      <p class="text-xs mt-1">清空前系統會自動備份一份，但備份放在伺服器上，你不一定拿得回來。正式資料請先「匯出總表」或「匯出專案報價檔」存一份 Excel 再清。</p>
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 清除後無法復原</b>
+      <p class="text-xs mt-1">清除前系統會自動備份，但備份存放在伺服器，不一定能取回。正式資料請先「匯出總表」或「匯出專案報價檔」存一份 Excel 留存。</p>
     </div>
-    <div><b>要清哪些？</b></div>
+    <div><b>清除項目</b></div>
     <label class="flex items-start gap-2">
       <input id="rs-orders" type="checkbox" class="w-4 h-4 mt-0.5" checked>
-      <span>訂單明細<span class="block text-xs muted mt-0.5">② 頁所有月份、所有線別的訂單，連還沒確認匯入的預覽一起清。最常用：試用完要正式開始用。</span></span>
+      <span>訂單明細<span class="block text-xs muted mt-0.5">「訂單明細」分頁的所有訂單（所有月份、所有線別），包含尚未確認匯入的預覽。適用於試用結束、正式啟用前。</span></span>
     </label>
     <label class="flex items-start gap-2">
       <input id="rs-products" type="checkbox" class="w-4 h-4 mt-0.5">
-      <span>商品主檔<span class="block text-xs muted mt-0.5">① 頁從總表鋪底的資料（含配額）。清掉後要重新匯一次總表，箱數才算得出來。一般不用勾。</span></span>
+      <span>商品主檔<span class="block text-xs muted mt-0.5">「商品主檔」分頁的資料（含配額）。清除後須重新匯入總表才能計算箱數，一般不需勾選。</span></span>
     </label>
     <label class="flex items-start gap-2">
       <input id="rs-keeplogs" type="checkbox" class="w-4 h-4 mt-0.5">
-      <span>保留修改歷程<span class="block text-xs muted mt-0.5">不勾＝連歷程一起清乾淨。勾起來＝資料清掉但誰改過什麼還查得到，並多記一筆「誰在何時清了什麼」。</span></span>
+      <span>保留修改歷程<span class="block text-xs muted mt-0.5">不勾選時修改歷程一併清除；勾選時保留修改歷程，並記錄這次清除（操作人員、時間與清除項目）。</span></span>
     </label>
     <label class="flex flex-col gap-1">
       <span class="text-xs muted">請輸入「清空資料」四個字以確認</span>

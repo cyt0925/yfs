@@ -85,9 +85,9 @@ def build_board(conn, group, month, cfg):
     for m in _rows(conn.execute("SELECT * FROM mst_field_src WHERE src = 'manual' AND kind IN ('product', 'month')")):
         bc, _, mon = m["rkey"].partition("|")
         if m["kind"] == "product" and m["field"] in ("giv", "niv", "cost_price", "box_size", "note"):
-            edited[bc][m["field"]] = f"{m['operator']} {m['at'][:16]} 在系統上改"
+            edited[bc][m["field"]] = f"{m['operator']} {m['at'][:16]} 系統手動修改"
         elif m["kind"] == "month" and mon == month:
-            edited[bc][m["field"]] = f"{m['operator']} {m['at'][:16]} 在系統上改"
+            edited[bc][m["field"]] = f"{m['operator']} {m['at'][:16]} 系統手動修改"
 
     barcodes = set(sum_by_bc) | {bc for bc in stats if bc in products}
     stock = stock_by_barcode(conn, month, sorted(barcodes)) if barcodes else {}
@@ -191,7 +191,7 @@ def api_board():
     if not group:
         return jsonify({"error": "請選線別。"}), 400
     if not _valid_month(month):
-        return jsonify({"error": "月份格式要像 2026-09。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     cfg = _line_groups()
     conn = get_conn()
     try:
@@ -207,19 +207,19 @@ def api_board_value():
     payload = request.get_json(silent=True) or {}
     barcode, month, field = norm_key(payload.get("barcode")), norm_text(payload.get("month")), norm_text(payload.get("field"))
     if not barcode or field not in ("giv", "niv", "supply_cs", "demand_cs"):
-        return jsonify({"error": "缺國條，或這一欄不能在這裡改。"}), 400
+        return jsonify({"error": "缺少國條，或此欄位無法修改。"}), 400
     if field in ("supply_cs", "demand_cs") and not _valid_month(month):
-        return jsonify({"error": "月份格式要像 2026-09。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     v = payload.get("value")
     if v in (None, ""):
         value = None
     else:
         n = norm_decimal(v)
         if n is None:
-            return jsonify({"error": "要是數字。"}), 400
+            return jsonify({"error": "請輸入數字。"}), 400
         value = float(n)
         if value < 0:
-            return jsonify({"error": "不能是負數。"}), 400
+            return jsonify({"error": "不可為負數。"}), 400
     conn = get_conn()
     try:
         try:
@@ -251,7 +251,7 @@ def api_set_brand_target():
             else:
                 n = norm_decimal(v)
                 if n is None:
-                    return jsonify({"error": "目標要是數字。"}), 400
+                    return jsonify({"error": "目標須為數字。"}), 400
                 vals[k] = float(n)
     if not vals:
         return jsonify({"error": "沒有要改的欄位。"}), 400

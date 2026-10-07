@@ -776,7 +776,7 @@ def main():
     bdg = client.get("/api/master/board?line=寶僑&month=2026-09").get_json(); rg2 = next(r for r in bdg["rows"] if r["barcode"] == bc_g)
     check("看板直接改 GIV、9 月 Supply：存進去、下單 GIV 與剩餘可供貨跟著重算", res.status_code == 200 and res2.status_code == 200 and rg2["giv"] == 1111.5 and rg2["supply"] == 77
           and rg2["ttl_giv"] == round(rg2["ttl"] * 1111.5, 2) and rg2["remaining_supply"] == round(77 - rg2["ttl"], 2), str((rg2["giv"], rg2["supply"], rg2["ttl_giv"])))
-    check("改過的格子有標記（誰在系統上改）", "giv" in rg2["edited"] and "supply_cs" in rg2["edited"] and "在系統上改" in rg2["edited"]["giv"], str(rg2["edited"]))
+    check("改過的格子有標記（誰在系統手動修改）", "giv" in rg2["edited"] and "supply_cs" in rg2["edited"] and "系統手動修改" in rg2["edited"]["giv"], str(rg2["edited"]))
     check("10 月的 Supply 沒被 9 月的改動影響", next((r["supply"] for r in client.get("/api/master/board?line=寶僑&month=2026-10").get_json()["rows"] if r["barcode"] == bc_g), None) == ms10[bc_g]["supply_cs"])
     check("改了有記歷程（GIV、Supply（9 月））", {"GIV", "Supply（9 月）"} <= {l["field_label"] for l in client.get(f"/api/master/logs?q={bc_g}&limit=1000").get_json()["logs"] if l["source"] == "manual"})
     check("不是數字 → 400；負數 → 400；不能改的欄位 → 400", jput(client, "/api/master/board/value", {"barcode": bc_g, "month": "2026-09", "field": "giv", "value": "abc"}).status_code == 400

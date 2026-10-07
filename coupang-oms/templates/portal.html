@@ -243,7 +243,7 @@ table.st tr.sub td { color: var(--muted); }
     <main class="content">
       <div class="head">
         <h1>改單統計</h1>
-        <span class="sub">統計期間內的 PO 張數、被改過的 PO 張數、改單次數與原因。</span>
+        <span class="sub">統計期間內的 PO 張數、曾改單的 PO 張數、改單次數與原因。</span>
       </div>
       <div class="card st-filter">
         <label>期間 <input type="month" id="st-from" class="inp" aria-label="起始月份"></label>
@@ -263,7 +263,7 @@ table.st tr.sub td { color: var(--muted); }
       <section class="card"><div class="sec-h"><h2>改單次數最多的 PO</h2></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
       <details class="card st-how"><summary>計算方式說明</summary>
         <div>PO 依目前到貨日歸入月份；未排到貨日的另列「未排日期」。</div>
-        <div>「被改過 PO」指修改歷程中至少有一次改單的 PO。同一張 PO、同一來源、同一時間的變動算一次：整張 PO 改到貨日時每個品項各記一筆，但同一次操作只算一次。</div>
+        <div>「曾改單的 PO」指修改歷程中至少有一次改單的 PO。同一張 PO、同一來源、同一時間的變動算一次：整張 PO 改到貨日時每個品項各記一筆，但同一次操作只算一次。</div>
         <div>「酷澎修改」指訂單彙總表上的出貨數量或到貨日與上次不同，或品項從檔案中消失。「我方修改」指人工修改出貨數量或到貨日；改回訂單彙總表的數字不算。</div>
         <div>僅我方修改有原因；2026-09-22 之前的改單沒有原因，列為「未填」。改單時勾選「這是測試，不算進統計」的改單預設不計入，勾選上方「含測試」才會計入。</div>
         <div>估計工時＝改單次數 × 每次改單分鐘數（人工估計）。資料自 2026 年 9 月中系統啟用起才有。</div>
@@ -454,7 +454,7 @@ table.st tr.sub td { color: var(--muted); }
     const rmax = Math.max(1, ...c.reasons.map(r => r.count));
     $("#cost").innerHTML = `<div class="hero">
         <div><div class="k">改單次數</div><div class="v num">${fmt(c.events)}<small>次</small></div><div class="note">酷澎修改 ${fmt(c.coupang)} · 我方修改 ${fmt(c.manual)}</div></div>
-        <div><div class="k">被改過的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div></div>
+        <div><div class="k">曾改單的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div></div>
         <div><div class="k">估計工時</div><div class="v num">${hours == null ? "—" : fmt(hours)}<small>${hours == null ? "" : "小時"}</small></div>
           <div class="note">${hours == null ? "請到改單統計頁填寫每次改單分鐘數" : `每次約 ${minutes} 分鐘`}</div></div>
       </div>
@@ -515,13 +515,13 @@ table.st tr.sub td { color: var(--muted); }
     const t = d.total, hours = minutes ? Math.round(t.events * minutes / 6) / 10 : null;
     const card = (k, v, unit, sub) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div><div class="s">${sub || ""}</div></div>`;
     $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 個品項 · ${fmt(t.skus)} 個 SKU`)
-      + card("被改過的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
+      + card("曾改單的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
       + card("改單次數", n(t.events, {}), "次", `酷澎修改 ${n(t.coupang, { source: "import" })} · 我方修改 ${n(t.manual, { source: "manual" })}${d.test_events ? ` · 另有 ${fmt(d.test_events)} 次測試未計入` : ""}`)
       + card("估計工時", hours == null ? "—" : fmt(hours), hours == null ? "" : "小時", hours == null ? "填寫上方「每次改單約 __ 分鐘」後顯示" : `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`);
     const rows = d.months.concat(d.months.length > 1 ? [t] : []);
     const mf = m => m.month === "合計" ? {} : { month: m.month };
     const tr = m => m.month === "合計" ? ' class="tot"' : "";
-    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">被改過 PO</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">曾改單的 PO</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
       + (rows.map(m => `<tr${tr(m)}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${fmt(m.items)}</td><td class="num">${fmt(m.skus)}</td><td class="num">${fmt(m.changed_pos)}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td><td class="num">${n(m.events, mf(m))}</td><td class="num">${n(m.coupang, { ...mf(m), source: "import" })}</td><td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td>${minutes ? `<td class="num">${fmt(Math.round(m.events * minutes / 6) / 10)}</td>` : ""}</tr>`).join("")
         || `<tr><td colspan="10" class="k" style="padding:18px">此期間查無訂單</td></tr>`) + `</tbody>`;
     $("#st-reasons").innerHTML = `<thead><tr><th>原因</th>${rows.map(m => `<th class="num">${esc(mTh(m))}</th>`).join("")}</tr></thead><tbody>`
@@ -535,7 +535,7 @@ table.st tr.sub td { color: var(--muted); }
         .map(([label, k, f]) => `<tr${label.startsWith("　") ? ' class="sub"' : ""}><td>${esc(label)}</td>${rows.map(m => `<td class="num">${n(m.kinds[k], { ...mf(m), ...f })}</td>`).join("")}</tr>`).join("") + `</tbody>`;
     $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th>原因</th></tr></thead><tbody>`
       + (d.top_pos.map(p => `<tr><td class="num" style="text-align:left">${esc(p.po_number)}</td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${n(p.events, { po: p.po_number })}</td><td class="num">${n(p.coupang, { po: p.po_number, source: "import" })}</td><td class="num">${n(p.manual, { po: p.po_number, source: "manual" })}</td><td>${esc(p.reasons)}</td></tr>`).join("")
-        || `<tr><td colspan="8" class="k" style="padding:18px">此期間查無被改過的 PO</td></tr>`) + `</tbody>`;
+        || `<tr><td colspan="8" class="k" style="padding:18px">此期間查無曾改單的 PO</td></tr>`) + `</tbody>`;
     document.querySelectorAll(".st-n").forEach(el => el.addEventListener("click", () => events(JSON.parse(el.dataset.f))));
   }
   async function events(f) {

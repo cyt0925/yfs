@@ -23,7 +23,7 @@ from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyx
 
 UNDATED = "未排日期"
 NO_REASON = "未填"
-_RESTORE_PREFIX = "恢復為整合表"
+_RESTORE_PREFIXES = ("恢復為整合表", "恢復為訂單彙總表")   # 舊紀錄寫「整合表」，2026-10-07 起寫「訂單彙總表」
 
 
 def _stats_range():
@@ -40,8 +40,8 @@ def _po_month(dates):
     return real[0][:7] if real else UNDATED
 
 
-KIND_LABEL = {"qty": "改數量", "date": "改交期", "gone": "品項被拿掉"}
-DIR_LABEL = {"down": "下修", "up": "上修", "mixed": "有上有下", "": ""}
+KIND_LABEL = {"qty": "改數量", "date": "改到貨日", "gone": "品項移除"}
+DIR_LABEL = {"down": "下修", "up": "上修", "mixed": "上修與下修", "": ""}
 
 
 def _num(v):
@@ -90,9 +90,9 @@ def _events(logs):
         if e["_date"]:
             pairs = {(a, b) for a, b in e["_date"]}
             ex = "、".join(f"{_short(a)}→{_short(b)}" for a, b in sorted(pairs)[:2])
-            parts.append(f"交貨日 {ex}（{len(e['_date'])} 項）")
+            parts.append(f"到貨日 {ex}（{len(e['_date'])} 項）")
         if e["_gone"]:
-            parts.append(f"品項被拿掉 {e['_gone']} 項")
+            parts.append(f"品項移除 {e['_gone']} 項")
         e["summary"] = "；".join(parts)
         e["kind_labels"] = "、".join(KIND_LABEL[k] for k in ("qty", "date", "gone") if k in e["kinds"])
         for k in ("_qty", "_date", "_gone"):
@@ -103,7 +103,7 @@ def _events(logs):
 def _event_row(e, p):
     """給 API／Excel 用的一列。"""
     return {"when": e["when"], "po_number": e["po"], "month": p["month"], "lines": "／".join(sorted(p["lines"])),
-            "source": e["source"], "source_label": "酷澎" if e["source"] == "import" else "我們",
+            "source": e["source"], "source_label": "酷澎修改" if e["source"] == "import" else "我方修改",
             "operator": e["operator"], "kinds": sorted(e["kinds"]), "kind_labels": e["kind_labels"],
             "qty_dir": e["qty_dir"], "summary": e["summary"],
             "reason": (e["reason"] or NO_REASON) if e["source"] == "manual" else "", "note": e["note"]}
@@ -141,8 +141,8 @@ def _collect(conn, month_from, month_to, line_group, include_test=False):
            WHERE po_number != '' AND (
                  (source = 'import' AND field IN ('qty_file_ship', 'delivery_date_file'))
               OR (source = 'import' AND field = 'qty_ship' AND note LIKE ?)
-              OR (source = 'manual' AND field IN ('qty_ship', 'delivery_date') AND note NOT LIKE ?))""",
-        ("%已沒有這個品項%", f"{_RESTORE_PREFIX}%")))
+              OR (source = 'manual' AND field IN ('qty_ship', 'delivery_date') AND note NOT LIKE ? AND note NOT LIKE ?))""",
+        ("%已沒有這個品項%",) + tuple(f"{p}%" for p in _RESTORE_PREFIXES)))
     events = _events([l for l in logs if l["po_number"] in keep])
     if include_test:
         return keep, events, 0
@@ -238,7 +238,7 @@ def _finish_month(m, reasons=None):
 def api_stats():
     month_from, month_to, months = _stats_range()
     if not months:
-        return jsonify({"error": "月份格式不對，請用 2026-09 這種寫法。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     line = norm_text(request.args.get("line"))
     conn = get_conn()
     try:
@@ -254,7 +254,7 @@ def api_stats_events():
     """一次改單一列，畫面上點數字時撈的。篩選在前端做（一段期間的事件頂多幾百幾千筆）。"""
     month_from, month_to, months = _stats_range()
     if not months:
-        return jsonify({"error": "月份格式不對，請用 2026-09 這種寫法。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     line = norm_text(request.args.get("line"))
     conn = get_conn()
     try:
@@ -268,7 +268,7 @@ def api_stats_events():
 def api_stats_export():
     month_from, month_to, months = _stats_range()
     if not months:
-        return jsonify({"error": "月份格式不對，請用 2026-09 這種寫法。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     line = norm_text(request.args.get("line"))
     minutes = norm_int(request.args.get("minutes")) or 0
     conn = get_conn()
@@ -282,8 +282,8 @@ def api_stats_export():
     wb = openpyxl.Workbook()
 
     ws = wb.active; ws.title = "每月統計"
-    hdr = ["月份", "PO 張數", "品項數", "不同 SKU 數", "被改過的 PO", "被改過比例", "改單次數",
-           "其中酷澎改的", "其中我們改的", "被改過的 PO 平均改幾次"]
+    hdr = ["月份", "PO 張數", "品項數", "不同 SKU 數", "曾改單的 PO", "曾改單比例", "改單次數",
+           "其中酷澎修改", "其中我方修改", "曾改單的 PO 平均改單次數"]
     if minutes:
         hdr.append(f"估計工時（每次 {minutes} 分鐘）")
     ws.append(hdr)
@@ -296,15 +296,15 @@ def api_stats_export():
     _style(ws, hdr, bold, head, tot, total_row=True)
 
     ws2 = wb.create_sheet("改單原因")
-    hdr2 = ["月份", "我們改的次數"] + d["reasons"]
+    hdr2 = ["月份", "我方修改次數"] + d["reasons"]
     ws2.append(hdr2)
     for m in d["months"] + [d["total"]]:
         ws2.append([m["month"], m["manual"]] + [m["reasons"].get(r, 0) for r in d["reasons"]])
     _style(ws2, hdr2, bold, head, tot, total_row=True)
 
     wsk = wb.create_sheet("改了什麼")
-    hdrk = ["月份", "改數量（酷澎）", "改數量（我們）", "其中下修", "其中上修", "其中有上有下",
-            "改交期（酷澎）", "改交期（我們）", "品項被拿掉（酷澎）"]
+    hdrk = ["月份", "改數量（酷澎）", "改數量（我方）", "其中下修", "其中上修", "其中上修與下修",
+            "改到貨日（酷澎）", "改到貨日（我方）", "品項移除（酷澎）"]
     wsk.append(hdrk)
     for m in d["months"] + [d["total"]]:
         k = m["kinds"]
@@ -312,14 +312,14 @@ def api_stats_export():
     _style(wsk, hdrk, bold, head, tot, total_row=True)
 
     ws3 = wb.create_sheet("改最多次的 PO")
-    hdr3 = ["PO 單號", "月份", "線別", "品項數", "改單次數", "酷澎改的", "我們改的", "原因"]
+    hdr3 = ["PO 單號", "月份", "線別", "品項數", "改單次數", "酷澎修改", "我方修改", "原因"]
     ws3.append(hdr3)
     for t in d["top_pos"]:
         ws3.append([t["po_number"], t["month"], t["lines"], t["items"], t["events"], t["coupang"], t["manual"], t["reasons"]])
     _style(ws3, hdr3, bold, head, tot, total_row=False)
 
     wsd = wb.create_sheet("明細")
-    hdrd = ["時間", "月份", "PO 單號", "線別", "誰", "來源", "改了什麼", "內容", "原因", "說明"]
+    hdrd = ["時間", "月份", "PO 單號", "線別", "操作人員", "來源", "改單類型", "修改內容", "原因", "說明"]
     wsd.append(hdrd)
     for r in _event_rows(keep, events):
         wsd.append([r["when"], r["month"], r["po_number"], r["lines"], r["operator"], r["source_label"],
@@ -331,13 +331,13 @@ def api_stats_export():
     for line_text in [
         f"範圍：{month_from} ～ {month_to}" + (f"，線別 {line}" if line else "，全部線別")
         + ("，含勾了「這是測試」的改單" if _include_test() else f"，不含勾了「這是測試」的改單（這段期間有 {n_test} 次）"),
-        "PO 歸哪個月：看它目前的交貨日（多個日期取最早那天）。沒排日期的另列「未排日期」。",
-        "被改過：這張 PO 在變動紀錄裡至少有一次改單事件。",
+        "PO 歸屬月份：依目前的到貨日（多個日期取最早那天）。未排日期的另列「未排日期」。",
+        "曾改單：這張 PO 在修改歷程裡至少有一次改單事件。",
         "改單事件：同一張 PO、同一來源、同一時間的變動算一次（整張 PO 改期會一個品項記一筆，一次動作不能算很多次）。",
-        "酷澎改的：整合表上的出貨數量／交貨日跟上次不一樣，或品項從檔案裡消失。",
-        "我們改的：人手改出貨數量／交貨日；恢復成整合表數字／日期不算。",
-        "改了什麼：一次改單可能同時改數量和交期，三類各自算，加起來會大於改單次數。改數量再分下修／上修。",
-        "原因：只有我們改的才有。缺貨／沒車／酷澎要求／其他；2026-09-22 之前的紀錄沒有原因，列「未填」。",
+        "酷澎修改：訂單彙總表上的出貨數量／到貨日與上次不同，或品項從檔案中消失。",
+        "我方修改：人工修改出貨數量／到貨日；恢復成訂單彙總表數字／日期不算。",
+        "改單類型：分改數量、改到貨日、品項移除三類，一次改單可能同時屬於多類，各類加總會大於改單次數。改數量再分下修／上修。",
+        "原因：只有我方修改才有。缺貨／沒車／酷澎要求／其他；2026-09-22 之前的紀錄沒有原因，列「未填」。",
         "明細分頁：一次改單一列，要自己做樞紐分析就用這一頁。",
         "估計工時：改單次數 × 每次幾分鐘 ÷ 60。每次幾分鐘是人填的，不是系統算的。",
         "資料從系統開始用（2026 年 9 月中）才有，之前 Excel 時代的紀錄不在裡面。",

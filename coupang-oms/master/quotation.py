@@ -10,7 +10,7 @@ def api_export_daily():
     month = norm_text(request.args.get("month")) or _this_month()
     month_to = norm_text(request.args.get("month_to")) or month
     if not _valid_month(month) or not _valid_month(month_to):
-        return jsonify({"error": "月份格式要像 2026-09。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     months = _month_span(month, month_to)       # 可以跨月：7 月～9 月就是三個月的交貨日全部進來
     filters = _read_filters(request.args)
     cfg = _line_groups()

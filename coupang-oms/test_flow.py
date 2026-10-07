@@ -1367,6 +1367,16 @@ def main():
     check("改單統計用同一套算法（這個月合計）、最近的動作新的在上面",
           isinstance(cs["events"], int) and cs["month"] == "2026-08" and ra == sorted(ra, key=lambda x: x["at"], reverse=True) and len(ra) <= 6)
     check("沒登入打不開入口頁的資料", app_module.app.test_client().get("/api/portal/summary").status_code == 401)
+    hl = client.get("/api/master/logs?scope=all&limit=1000").get_json()["logs"]
+    cp = [l for l in hl if l.get("system") == "酷澎訂單管理系統"]
+    check("全部歷程紀錄也查得到酷澎訂單管理系統的紀錄，每筆都標系統、新的在上面",
+          bool(cp) and all(l.get("system") for l in hl) and hl == sorted(hl, key=lambda l: l["changed_at"], reverse=True), f"酷澎 {len(cp)} 筆")
+    po1 = cp[0]["po_number"] if cp else "x"
+    check("全部歷程紀錄用 PO 單號搜得到酷澎的紀錄",
+          any(l.get("system") == "酷澎訂單管理系統" for l in client.get(f"/api/master/logs?scope=all&q={po1}").get_json()["logs"]))
+    check("各工具頁的本頁紀錄不混進酷澎訂單管理系統的紀錄",
+          not any(l.get("system") == "酷澎訂單管理系統" for s in ("mars", "zhuyun", "purchase")
+                  for l in client.get(f"/api/master/logs?scope={s}&limit=1000").get_json()["logs"]))
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

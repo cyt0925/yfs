@@ -9,7 +9,7 @@ def api_orders():
     # 不用逐月切；跟匯出用同一個範圍，畫面上看到的就是匯出去的）
     month_to = norm_text(request.args.get("month_to")) or month
     if not _valid_month(month) or not _valid_month(month_to):
-        return jsonify({"error": "月份格式要像 2026-09。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     months = _month_span(month, month_to)
     filters = _read_filters(request.args)
     cfg = _line_groups()
@@ -81,7 +81,7 @@ def _apply_item_edit(conn, o, payload, operator, reason=None):
     if "qty_ship" in payload and payload.get("qty_ship") not in (None, ""):
         new = norm_int(payload.get("qty_ship"))
         if new is None or new < 0:
-            raise ValueError("出貨數量要是 0 或正整數。")
+            raise ValueError("出貨數量須為 0 或正整數。")
         if not _same(o["qty_ship"], new):
             if not reason:
                 raise ValueError(REASON_REQUIRED_MSG)
@@ -100,7 +100,7 @@ def _apply_item_edit(conn, o, payload, operator, reason=None):
         file_ship = o["qty_file_ship"] if o["qty_file_ship"] is not None else o["qty_coupang"]
         sets += ["qty_ship = ?", "qty_ship_overridden = 0"]; vals.append(file_ship)
         _log(conn, o["line"], o["po_number"], o["sku_id"], o["barcode"], "qty_ship", "出貨數量",
-             o["qty_ship"], file_ship, operator, "manual", "恢復為整合表數字")
+             o["qty_ship"], file_ship, operator, "manual", "恢復為訂單彙總表數字")
         changed += 1
     return sets, vals, changed
 
@@ -116,10 +116,10 @@ def api_update_order(order_id):
     try:
         o = _row(conn.execute("SELECT * FROM mst_orders WHERE id = ?", (order_id,)))
         if o is None:
-            return jsonify({"error": "找不到這筆。"}), 404
+            return jsonify({"error": "找不到此品項。"}), 404
         if o["version"] != client_version:
             return jsonify({"error": "conflict",
-                            "message": f"這筆剛被另一次儲存修改過（{o['updated_at']}），請重新載入後再編輯。"}), 409
+                            "message": f"此品項剛被其他人修改（{o['updated_at']}）。"}), 409
         try:
             sets, vals, changed = _apply_item_edit(conn, o, payload, operator)
         except ValueError as exc:
@@ -132,7 +132,7 @@ def api_update_order(order_id):
                            vals + [order_id, client_version])
         if cur.rowcount == 0:
             conn.rollback()
-            return jsonify({"error": "conflict", "message": "儲存瞬間有其他人也改了這筆，請重新載入。"}), 409
+            return jsonify({"error": "conflict", "message": "儲存時此品項剛好被其他人修改。"}), 409
         conn.commit()
         fresh = _decorate(_row(conn.execute(f"{_ORDER_SELECT} WHERE o.id = ?", (order_id,))))
         return jsonify({"ok": True, "changed": changed, "row": fresh})
@@ -146,10 +146,10 @@ def api_delete_order(order_id):
     try:
         o = _row(conn.execute("SELECT * FROM mst_orders WHERE id = ?", (order_id,)))
         if o is None:
-            return jsonify({"error": "找不到這筆。"}), 404
+            return jsonify({"error": "找不到此品項。"}), 404
         conn.execute("DELETE FROM mst_orders WHERE id = ?", (order_id,))
         _log(conn, o["line"], o["po_number"], o["sku_id"], o["barcode"], "delete", "刪除品項",
-             f"出貨 {o['qty_ship']} / 交貨 {o['delivery_date']}", "", _operator(), "manual")
+             f"出貨 {o['qty_ship']} / 到貨 {o['delivery_date']}", "", _operator(), "manual")
         conn.commit()
         return jsonify({"ok": True})
     finally:
@@ -173,7 +173,7 @@ def _move_po_dates(conn, pos, new_date, reset, expected, operator, note, reason=
         if expected and po in expected and expected[po] is not None:
             current = {r["delivery_date"] or "" for r in rows}
             if current != {expected[po] or ""}:
-                raise PermissionError(f"PO {po} 的交貨日剛被別人改過，請重新載入後再改。")
+                raise PermissionError(f"PO {po} 的到貨日剛被其他人修改。")
         stamp = now()
         for r in rows:
             target = r["delivery_date_file"] if reset else new_date
@@ -183,7 +183,7 @@ def _move_po_dates(conn, pos, new_date, reset, expected, operator, note, reason=
             conn.execute(
                 """UPDATE mst_orders SET delivery_date = ?, delivery_date_overridden = ?,
                    updated_at = ?, version = version + 1 WHERE id = ?""", (target, flag, stamp, r["id"]))
-            _log(conn, r["line"], po, r["sku_id"], r["barcode"], "delivery_date", "交貨日",
+            _log(conn, r["line"], po, r["sku_id"], r["barcode"], "delivery_date", "到貨日",
                  r["delivery_date"], target, operator, "manual", note, "" if reset else reason)
             moved += 1
     return moved
@@ -200,7 +200,7 @@ def api_update_po_date():
     if not pos:
         return jsonify({"error": "缺少 PO 單號。"}), 400
     if not reset and not new_date:
-        return jsonify({"error": "交貨日格式不對，請用 2026-09-17 這種寫法。"}), 400
+        return jsonify({"error": "到貨日格式錯誤，請使用 2026-09-17 格式。"}), 400
     try:
         reason = _parse_reason(payload)
     except ValueError as exc:
@@ -209,7 +209,7 @@ def api_update_po_date():
     try:
         try:
             moved = _move_po_dates(conn, pos, new_date, reset, expected, operator,
-                                   "恢復為整合表日期" if reset else ("批次改期" if len(pos) > 1 else "整張 PO 改期"),
+                                   "恢復為訂單彙總表日期" if reset else ("批次改期" if len(pos) > 1 else "整張 PO 改期"),
                                    reason)
         except ValueError as exc:
             conn.rollback(); return jsonify({"error": str(exc)}), 400
@@ -269,11 +269,11 @@ def api_po_save(po):
         if payload.get("delivery_date") or payload.get("reset_date"):
             new_date = norm_date(payload.get("delivery_date")) if not payload.get("reset_date") else None
             if not payload.get("reset_date") and not new_date:
-                return jsonify({"error": "交貨日格式不對。"}), 400
+                return jsonify({"error": "到貨日格式錯誤，請使用 2026-09-17 格式。"}), 400
             try:
                 changed_total += _move_po_dates(conn, [po], new_date, bool(payload.get("reset_date")),
                                                 {po: payload.get("expected_date")}, operator,
-                                                "PO 視窗改期" if not payload.get("reset_date") else "恢復為整合表日期",
+                                                "PO 視窗改期" if not payload.get("reset_date") else "恢復為訂單彙總表日期",
                                                 reason)
             except ValueError as exc:
                 conn.rollback(); return jsonify({"error": str(exc)}), 400
@@ -293,7 +293,7 @@ def api_po_save(po):
             if o["version"] not in (ver, ver + 1):
                 conn.rollback()
                 return jsonify({"error": "conflict",
-                                "message": f"品項 {o['sku_id']} 剛被別人改過，請重新載入後再存。"}), 409
+                                "message": f"品項 {o['sku_id']} 剛被其他人修改。"}), 409
             try:
                 sets, vals, changed = _apply_item_edit(conn, o, it, operator, reason)
             except ValueError as exc:

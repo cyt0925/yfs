@@ -195,7 +195,7 @@ def _record_upload(conn, kind, fname, sheet, operator, total, matched, updated, 
            rows_updated, rows_skipped, months, note) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (kind, fname, sheet, operator, now(), total, matched, updated, skipped, ",".join(sorted(months)), note))
     _log(conn, "", "", "", "", "source_upload", KIND_LABEL.get(kind, kind), "", f"{matched}/{total}", operator, "import",
-         f"{fname}：對到 {matched} 個商品、更新 {updated}、來源沒值 {skipped}" + (f"；月份 {'、'.join(sorted(months))}" if months else ""))
+         f"{fname}：比對到 {matched} 個商品、更新 {updated} 筆、來源沒值 {skipped} 筆" + (f"；月份 {'、'.join(sorted(months))}" if months else ""))
 
 
 def import_supply(conn, ws, hdr_idx, headers, operator, fname):
@@ -425,7 +425,7 @@ def set_brand_target(conn, group, month, brand, vals, operator, source="manual",
         conn.execute(f"UPDATE mst_brand_targets SET {sets}, updated_by = ?, updated_at = ? WHERE id = ?",
                      list(changed.values()) + [operator, now(), cur["id"]])
     for k, v in changed.items():
-        _log(conn, group, "", "", "", f"brand_{k}", "品牌目標" if k == "target_giv" else "REBATE目標",
+        _log(conn, group, "", "", "", f"brand_{k}", "品牌目標" if k == "target_giv" else "REBATE 目標",
              (cur or {}).get(k), v, operator, source, note or f"{brand} {_quarter_label(month)}")
     fresh = _row(conn.execute("SELECT * FROM mst_brand_targets WHERE line = ? AND month = ? AND brand = ?", (group, qstart, brand)))
     return fresh, True
@@ -562,7 +562,7 @@ def api_month_stats():
     另外總表的：PG 最大剩餘可供貨量 BE = Supply − 該月下單；最低應打完 BF = 綜合CS − 該月下單（綜合CS 目前就等於 Supply）。"""
     month = request.args.get("month") or _this_month()
     if not _valid_month(month):
-        return jsonify({"error": "月份格式不對，請用 2026-09 這種寫法。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     barcode = norm_key(request.args.get("barcode"))
     conn = get_conn()
     try:

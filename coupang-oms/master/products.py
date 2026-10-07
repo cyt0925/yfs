@@ -116,10 +116,10 @@ def api_save_product():
         return jsonify({"error": "國條必填。"}), 400
     box = norm_int(payload.get("box_size"))
     if payload.get("box_size") not in (None, "") and (box is None or box <= 0):
-        return jsonify({"error": "箱入數要是正整數。"}), 400
+        return jsonify({"error": "箱入數須為正整數。"}), 400
     cost = None if payload.get("cost_price") in (None, "") else norm_decimal(payload.get("cost_price"))
     if payload.get("cost_price") not in (None, "") and cost is None:
-        return jsonify({"error": "單價(含稅)要是數字。"}), 400
+        return jsonify({"error": "單價（含稅）須為數字。"}), 400
     fields = {k: (norm_key(payload.get(k)) if k in ("sku_id", "yf_sku") else norm_text(payload.get(k)))
               for k in _PRODUCT_TEXT_FIELDS}
     fields["active"] = (fields["active"] or "Y").upper()[:1]
@@ -130,7 +130,7 @@ def api_save_product():
             v = payload.get(k)
             prices[k] = None if v in (None, "") else norm_decimal(v)
             if v not in (None, "") and prices[k] is None:
-                return jsonify({"error": f"{k.upper()} 要是數字。"}), 400
+                return jsonify({"error": f"{k.upper()} 須為數字。"}), 400
     operator = _operator()
     conn = get_conn()
     try:
@@ -217,7 +217,8 @@ def api_import_products():
         raw = upload.read()
         wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": f"無法開啟 Excel：{exc}"}), 400
+        print(f"[master] 無法開啟上傳的主檔 {upload.filename}：{exc!r}")
+        return jsonify({"error": "無法開啟檔案，請確認是 .xlsx 格式。"}), 400
     # 先看是不是三種外部來源檔（supply 表／Coupang Master／庫存銷售表），是的話走 sources.py，
     # 只更新它們負責的欄位，不碰品名、品牌那些。
     kind, sws, sidx, shs, _raw = sources.find_source_sheet(wb)
@@ -237,7 +238,7 @@ def api_import_products():
         if hdr_idx:
             chosen = (ws, hdr_idx, mapping); break
     if chosen is None:
-        return jsonify({"error": "找不到同時有「國條／Barcode」和「箱入數」標題的工作表，也不是 supply 表／Coupang Master／庫存銷售表。"}), 400
+        return jsonify({"error": "找不到同時有「國條／Barcode」和「箱入數」標題的工作表，也不是寶僑 supply 表／Coupang Master／庫存銷售表。"}), 400
     ws, hdr_idx, mapping = chosen
 
     def get(row, field):

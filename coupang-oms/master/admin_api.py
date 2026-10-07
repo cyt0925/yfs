@@ -15,12 +15,12 @@ def api_reset():
         return jsonify({"error": "只有管理員可以清除資料。"}), 403
     payload = request.get_json(silent=True) or {}
     if norm_text(payload.get("confirm")) != "清空資料":
-        return jsonify({"error": "請照著輸入「清空資料」四個字再確認。"}), 400
+        return jsonify({"error": "請輸入「清空資料」以確認。"}), 400
     clear_orders = bool(payload.get("orders", True))
     clear_products = bool(payload.get("products", False))
     keep_logs = bool(payload.get("keep_logs", False))
     if not clear_orders and not clear_products:
-        return jsonify({"error": "至少要勾一個要清的範圍。"}), 400
+        return jsonify({"error": "請至少勾選一項清除範圍。"}), 400
 
     backup = db.backup_db("mst_reset")
     conn = get_conn()
@@ -134,6 +134,27 @@ def api_imports_pos():
     return jsonify({"pos": out})
 
 
+def _coupang_logs(conn, po, q, d_from, d_to, limit):
+    """酷澎訂單管理系統的歷程（edit_logs），整理成跟 mst_logs 一樣的欄位。"""
+    where, params = ["1=1"], []
+    if po:
+        where.append("po_number = ?"); params.append(po)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d_from):
+        where.append("changed_at >= ?"); params.append(d_from)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d_to):
+        where.append("changed_at < ?"); params.append(d_to + "T99")
+    if q:
+        where.append("(po_number LIKE ? OR sku_id LIKE ? OR operator LIKE ? OR field_label LIKE ? "
+                     "OR old_value LIKE ? OR new_value LIKE ? OR note LIKE ?)")
+        params += [f"%{q}%"] * 7
+    rows = _rows(conn.execute(
+        f"""SELECT id, po_number, sku_id, field, field_label, old_value, new_value, operator, source, note, changed_at
+            FROM edit_logs WHERE {' AND '.join(where)} ORDER BY changed_at DESC, id DESC LIMIT ?""", params + [limit]))
+    for r in rows:
+        r.update(line="", barcode="", reason="", system="酷澎訂單管理系統")
+    return rows
+
+
 @master_bp.route("/api/master/logs")
 def api_logs():
     po = norm_key(request.args.get("po")); barcode = norm_key(request.args.get("barcode"))
@@ -162,6 +183,14 @@ def api_logs():
         rows = _rows(conn.execute(
             f"SELECT * FROM mst_logs WHERE {' AND '.join(where)} ORDER BY changed_at DESC, id DESC LIMIT ?",
             params + [limit]))
+        from portal import system_of
+        for r in rows:
+            r["system"] = system_of("mst_logs", r.get("field"), r.get("note"))
+        # 「全部紀錄」也要看得到酷澎訂單管理系統的紀錄（edit_logs）：首頁「最近操作紀錄」有列，
+        # 點進來卻查不到會讓人以為沒記到（Jerry 2026-10-07）。各工具頁的本頁紀錄、商品主檔的歷程分頁不合併。
+        if scope == "all" and not barcode:
+            rows = sorted(rows + _coupang_logs(conn, po, q, d_from, d_to, limit),
+                          key=lambda r: (r.get("changed_at") or "", r.get("id") or 0), reverse=True)[:limit]
         return jsonify({"logs": rows})
     finally:
         conn.close()

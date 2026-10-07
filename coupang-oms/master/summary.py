@@ -13,7 +13,7 @@ def api_set_quota():
     raw = payload.get("qty_cases")
     qty = None if raw in (None, "") else norm_decimal(raw)
     if raw not in (None, "") and qty is None:
-        return jsonify({"error": "配額要是數字。"}), 400
+        return jsonify({"error": "配額須為數字。"}), 400
     operator = _operator()
     conn = get_conn()
     try:
@@ -90,7 +90,7 @@ def api_summary():
     if not group:
         return jsonify({"error": "請選線別。"}), 400
     if not _valid_month(month):
-        return jsonify({"error": "月份格式要像 2026-09。"}), 400
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     cfg = _line_groups()
     conn = get_conn()
     try:

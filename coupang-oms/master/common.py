@@ -30,8 +30,8 @@ COUPANG_FIELDS = {
     "line": "線別", "barcode": "國條", "yf_sku": "永豐料號", "brand": "品牌",
     "product_name": "品名", "warehouse": "倉別", "order_type": "訂單類型",
     "unit": "單位", "unit_price": "下單單價", "qty_coupang": "下單數量",
-    "qty_file_ship": "整合表出貨數量", "box_size_file": "整合表箱入數",
-    "delivery_date_file": "整合表交貨日",
+    "qty_file_ship": "訂單彙總表出貨數量", "box_size_file": "訂單彙總表箱入數",
+    "delivery_date_file": "訂單彙總表到貨日",
 }
 
 
@@ -40,7 +40,7 @@ def _guard_ready():
     """資料表初始化失敗時（見 db.init_db），這個模組整個停用、講清楚原因，
     不要讓使用者看到一堆零散的資料庫錯誤。"""
     if not getattr(db, "MASTER_READY", False):
-        msg = f"商品主檔自動化目前無法使用：{getattr(db, 'MASTER_ERROR', '')}。訂單管理不受影響。"
+        msg = f"商品主檔自動化目前無法使用：{getattr(db, 'MASTER_ERROR', '')}。酷澎訂單管理系統不受影響。"
         if request.path.startswith("/api/"):
             return jsonify({"error": msg}), 503
         return f"<h2 style='font-family:sans-serif;padding:40px'>{msg}</h2>", 503
@@ -98,7 +98,7 @@ def _parse_reason(payload):
     if reason not in CHANGE_REASONS:
         raise ValueError(REASON_REQUIRED_MSG)
     if reason == "其他" and not note:
-        raise ValueError("選「其他」要簡單寫一下是什麼原因。")
+        raise ValueError("選擇「其他」時請填寫原因。")
     return reason, note
 
 
@@ -131,10 +131,10 @@ def _quarter_label(month):
 
 # ── 某一格的值是誰給的（mst_field_src）───────────────────────────────────────────
 # 用來擋「舊的總表重匯，偷偷蓋掉系統上改過、或 supply 表／Coupang Master 更新過的數字」。
-SRC_LABEL = {"manual": "在系統上改", "supply": "寶僑 supply 表", "master_price": "Coupang Master"}
+SRC_LABEL = {"manual": "系統手動修改", "supply": "寶僑 supply 表", "master_price": "Coupang Master"}
 FIELD_LABEL = {"sku_id": "SKU ID", "yf_sku": "永豐料號", "brand": "品牌", "product_name": "品名", "category": "品類",
                "pgcode": "PG code", "note": "Note", "cost_price": "COGS", "box_size": "箱入數", "giv": "GIV", "niv": "NIV",
-               "supply_cs": "Supply", "demand_cs": "demand", "target_giv": "品牌目標", "rebate_target": "REBATE目標"}
+               "supply_cs": "Supply", "demand_cs": "demand", "target_giv": "品牌目標", "rebate_target": "REBATE 目標"}
 
 
 def _mark_src(conn, kind, rkey, field, src, operator):

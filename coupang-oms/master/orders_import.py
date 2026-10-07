@@ -68,7 +68,7 @@ def _parse_uploads(uploads):
         except ImportError_ as exc:
             msg = f"「{up.filename}」：{exc}" if many else str(exc)
             if many:
-                msg += "　（有檔案解析失敗，這次全部都沒匯入；修好再一起丟，或分開丟。）"
+                msg += "　（有檔案解析失敗，本次全部未匯入。請修正後重新上傳，或分開上傳。）"
             return (msg, 400), None
         for w in warns:
             warnings.append(f"「{up.filename}」{w}" if many else w)
@@ -165,7 +165,7 @@ def _commit_mark_removed(conn, removed, batch_id, operator, stamp):
                WHERE id = ?""",
             (stamp, stamp, batch_id, f"檔案已無此品項，出貨 {_short(ex['qty_ship'])}→0", ex["id"]))
         _log(conn, ex["line"], ex["po_number"], ex["sku_id"], ex["barcode"], "qty_ship", "出貨數量",
-             ex["qty_ship"], 0, operator, "import", "這次的整合表裡這張 PO 已沒有這個品項，出貨數量歸 0")
+             ex["qty_ship"], 0, operator, "import", "本次訂單彙總表中這張 PO 已沒有這個品項，出貨數量歸 0")
         n += 1
     return n
 
@@ -214,23 +214,23 @@ def _commit_update_row(conn, existing, r, batch_id, operator, stamp, fname):
         sets.append("qty_ship = ?"); vals.append(ship); changed = True
         notes.append(f"出貨數量 {_short(existing['qty_ship'])}→{_short(ship)}")
         _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "qty_ship", "出貨數量",
-             existing["qty_ship"], ship, operator, "import", "隨整合表更新")
+             existing["qty_ship"], ship, operator, "import", "隨訂單彙總表更新")
     elif existing["qty_ship_overridden"] and not _same(existing["qty_file_ship"], r["qty_file_ship"]):
-        notes.append(f"整合表出貨 {_short(existing['qty_file_ship'])}→{_short(r['qty_file_ship'])}（人工調整過，畫面不動）")
+        notes.append(f"訂單彙總表出貨 {_short(existing['qty_file_ship'])}→{_short(r['qty_file_ship'])}（已人工調整，不覆蓋）")
     if not existing["delivery_date_overridden"] and not _same(existing["delivery_date"], r["delivery_date"]):
         sets.append("delivery_date = ?"); vals.append(r["delivery_date"]); changed = True
-        notes.append(f"交貨日 {_short(existing['delivery_date'])}→{_short(r['delivery_date'])}")
-        _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "delivery_date", "交貨日",
-             existing["delivery_date"], r["delivery_date"], operator, "import", "隨整合表更新")
+        notes.append(f"到貨日 {_short(existing['delivery_date'])}→{_short(r['delivery_date'])}")
+        _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "delivery_date", "到貨日",
+             existing["delivery_date"], r["delivery_date"], operator, "import", "隨訂單彙總表更新")
     elif existing["delivery_date_overridden"] and not _same(existing["delivery_date_file"], r["delivery_date"]):
-        notes.append(f"整合表交貨日 {_short(existing['delivery_date_file'])}→{_short(r['delivery_date'])}（人工改期過，畫面不動）")
+        notes.append(f"訂單彙總表到貨日 {_short(existing['delivery_date_file'])}→{_short(r['delivery_date'])}（已人工改期，不覆蓋）")
     if existing["missing_in_file"]:
         sets.append("missing_in_file = 0"); changed = True
         notes.append("品項重新出現")
         if not existing["qty_ship_overridden"] and "qty_ship = ?" not in sets:
             sets.append("qty_ship = ?"); vals.append(ship)
         _log(conn, line, r["po_number"], r["sku_id"], r["barcode"], "missing_in_file",
-             "品項重新出現", 1, 0, operator, "import", "整合表裡又有這個品項了")
+             "品項重新出現", 1, 0, operator, "import", "品項重新出現在訂單彙總表")
     sets.append("last_seen_at = ?"); vals.append(stamp)
     sets.append("source_file = ?"); vals.append(r["source_file"])
     # 地址、報價備註：瑪氏拆單要用，靜靜跟著整合表更新，不算「有變」、不記歷程（跟出貨無關）
