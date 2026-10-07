@@ -505,7 +505,8 @@ def main():
               pg.eval_on_selector_all("#chs .ch-h img", "els => els.length === 3 && els.every(i => i.complete && i.naturalWidth > 0)")
               and "酷澎訂單管理系統" in pg.inner_text("#ch-coupang") and "蝦皮訂單管理系統" in pg.inner_text("#ch-shopee") and "PChome 訂單管理系統" in pg.inner_text("#ch-pchome")
               and pg.eval_on_selector("#ch-coupang", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(224, 20, 34)"
-              and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)")
+              and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)"
+              and pg.eval_on_selector("#ch-coupang .ch-go", "e => getComputedStyle(e).backgroundColor") == "rgb(224, 20, 34)")
         check("蝦皮特選、PChome 卡片不放數字", "—" in pg.inner_text("#ch-shopee") and "建置中" in pg.inner_text("#ch-shopee") and "規劃中" in pg.inner_text("#ch-pchome"))
         pg.click("#nav-hist"); pg.wait_for_selector("#hs-dlg[open]", timeout=5000)
         check("左側「歷程紀錄」打開歷程視窗", pg.is_visible("#hs-dlg")); pg.click("#hs-close")

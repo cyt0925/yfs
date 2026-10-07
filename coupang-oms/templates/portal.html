@@ -377,7 +377,7 @@ table.st tr.sub td { color: var(--muted); }
           <div class="stat"><div class="k">本月出貨</div><div class="v num">${v(c.month_boxes, "箱")}</div></div>
         </div>
         <div class="ch-f">${c.live
-          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "還沒有匯入過整合表"}</span><span class="grow"></span><a class="btn" href="{{ url_for('index') }}">進入後台 <i class="bi bi-arrow-right"></i></a>`
+          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "還沒有匯入過整合表"}</span><span class="grow"></span><a class="btn ch-go" href="{{ url_for('index') }}" style="background:var(--ch-${esc(c.key)});border-color:var(--ch-${esc(c.key)})">進入後台 <i class="bi bi-arrow-right"></i></a>`
           : `<span>${c.key === "shopee" ? "訂單來源檔確認後開工" : "排在蝦皮特選之後"}</span>`}</div></div>`;
     }).join("");
   }
