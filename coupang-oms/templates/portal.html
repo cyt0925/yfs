@@ -53,9 +53,6 @@ a { color: inherit; }
 .side-foot { padding: 14px 16px 18px; border-top: 1px solid rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; color: var(--chrome-ink2); flex: none; }
 .side-foot .war { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px; border: 1px solid rgba(255,255,255,.14); text-decoration: none; color: var(--chrome-ink); }
 .side-foot .war:hover { background: var(--chrome-hover); }
-.side-foot .who { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.side-foot .who button { border: 0; background: none; color: var(--chrome-ink2); cursor: pointer; display: inline-flex; gap: 5px; align-items: center; padding: 2px 4px; }
-.side-foot .who button:hover { color: var(--chrome-ink); }
 
 .main { min-width: 0; display: flex; flex-direction: column; }
 .top { height: 60px; display: flex; align-items: center; gap: 14px; padding-inline: 24px; color: var(--chrome-ink); background: linear-gradient(90deg, var(--chrome-deep) 0%, var(--chrome-end) 100%); position: sticky; top: 0; z-index: 20; }
@@ -222,8 +219,7 @@ table.st tr.sub td { color: var(--muted); }
     </nav>
     <div class="side-foot">
       <a class="war" href="{{ warroom_url }}" target="_blank" rel="noopener"><i class="bi bi-graph-up"></i>回 YFS-AI 戰情室<i class="bi bi-box-arrow-up-right" style="margin-left:auto;font-size:12px"></i></a>
-      <div class="who"><span><i class="bi bi-person-circle"></i> {{ logged_in_user }}</span>
-        <form method="post" action="{{ url_for('logout') }}" style="margin:0"><button type="submit"><i class="bi bi-box-arrow-right"></i>登出</button></form></div>
+      {% set acct_color = 'var(--chrome-ink)' %}{% set acct_side = True %}{% include '_account.html' %}
       <span>版本 {{ build_version }}</span>
     </div>
   </aside>

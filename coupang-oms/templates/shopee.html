@@ -83,9 +83,9 @@
       </div>
     </div>
     <div class="flex-1"></div>
-    <span class="text-xs" style="color:#ffe3da"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
     {% set hist_scope = 'shopee' %}{% set hist_color = '#fff' %}{% include '_history.html' %}
     <a href="{{ url_for('portal.portal_page') }}" style="font-size:12px;color:rgba(255,255,255,.88);text-decoration:underline;text-underline-offset:3px;white-space:nowrap" title="回 YFS 訂單系統首頁">YFS 訂單系統</a>
+    {% set acct_color = '#ffe3da' %}{% include '_account.html' %}
   </div>
 </header>
 

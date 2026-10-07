@@ -149,17 +149,12 @@
     <button id="btn-export" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-file-earmark-excel"></i> 匯出報表
     </button>
-    {% if logged_in_user %}
     <div class="flex items-center gap-2 pl-2 border-l border-ink-700">
-      <span class="text-xs text-ink-300" title="修改紀錄以此帳號記錄">
-        <i class="bi bi-person-check-fill text-emerald-400"></i> {{ logged_in_user }}</span>
-      <button id="btn-settings" type="button" title="設定"
-              class="text-ink-300 hover:text-white text-sm px-1"><i class="bi bi-gear-fill"></i></button>
-      <form action="{{ url_for('logout') }}" method="post">
-        <button type="submit" class="text-xs text-ink-300 hover:text-white underline underline-offset-2">登出</button>
-      </form>
+      <!-- 帳號（修改密碼、帳號管理、登出）跟其他系統共用 _account.html；齒輪只剩酷澎自己的設定，只有管理員看得到 -->
+      <button id="btn-settings" type="button" title="酷澎訂單管理設定（清空訂單資料、驗收同步）"
+              class="hidden text-ink-300 hover:text-white text-sm px-1"><i class="bi bi-gear-fill"></i></button>
+      {% set acct_color = '#cbd5e1' %}{% include '_account.html' %}
     </div>
-    {% endif %}
   </div>
 </header>
 
@@ -640,61 +635,16 @@
 
 <dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]"
   <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
-    <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
+    <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 酷澎訂單管理設定</h2>
     <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
 
   <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
-    <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">修改密碼</button>
-    <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
-    <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清空訂單資料</button>
-    <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium hidden">驗收同步</button>
+    <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium">清空訂單資料</button>
+    <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium">驗收同步</button>
   </div>
 
-  <!-- 改密碼：每個人都看得到，改自己的 -->
-  <div data-pane="password" class="st-pane p-5 space-y-3 text-sm">
-    <p class="text-xs text-ink-500">修改 <b id="st-me"></b> 的登入密碼。</p>
-    <!-- 給 Chrome 密碼管理器配對用的帳號欄，看不見、不可編輯。沒有它，
-         Chrome 看到下面的密碼欄就會去抓頁面上第一個純文字輸入框（正好是
-         首頁的「品名 / 料號 / 條碼」關鍵字欄）把存過的帳號填進去，每次
-         重新整理關鍵字欄就莫名出現登入者名字。 -->
-    <input id="st-user" type="text" autocomplete="username" readonly tabindex="-1"
-           aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
-    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">目前密碼</span>
-      <input id="st-old" type="password" autocomplete="current-password" class="border rounded px-2 py-2"></label>
-    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">新密碼（至少 6 個字元）</span>
-      <input id="st-new" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
-    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">確認新密碼</span>
-      <input id="st-new2" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
-    <div class="pt-1">
-      <button id="btn-save-password"
-              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
-        <i class="bi bi-key-fill"></i> 修改密碼</button>
-    </div>
-  </div>
-
-  <!-- 驗收單簽名：簽名圖每個人自己傳；下面的尺寸／關鍵字只有管理員能改 -->
-  <!-- 帳號管理：只有管理員 -->
-  <div data-pane="users" class="st-pane p-5 space-y-4 text-sm hidden">
-    <div>
-      <p class="text-xs text-ink-400 mb-2">目前帳號</p>
-      <div id="st-userlist" class="border rounded-lg divide-y"></div>
-    </div>
-    <div class="border-t pt-4 space-y-3">
-      <p class="text-xs text-ink-400">新增帳號</p>
-      <div class="flex gap-2">
-        <input id="st-newuser" placeholder="帳號名稱" class="border rounded px-2 py-2 flex-1">
-        <input id="st-newpass" type="text" placeholder="密碼（至少 6 個字元）" class="border rounded px-2 py-2 flex-1">
-      </div>
-      <label class="flex items-center gap-2 text-xs">
-        <input id="st-newadmin" type="checkbox" class="w-4 h-4"> 設為管理員（可新增帳號、修改他人密碼、清除資料）
-      </label>
-      <button id="btn-add-user"
-              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
-        <i class="bi bi-person-plus-fill"></i> 新增帳號</button>
-    </div>
-  </div>
-
+  <!-- 修改密碼、帳號管理搬到 _account.html（點名字打開），每個系統共用（Jerry 2026-10-07） -->
   <!-- 清除資料：只有管理員 -->
   <div data-pane="data" class="st-pane p-5 space-y-4 text-sm hidden">
     <div class="bg-red-50 border border-red-300 rounded-lg p-3 text-red-800">
@@ -1867,42 +1817,24 @@ function switchSettingsTab(name) {
   });
 }
 
-function renderUserList() {
-  const box = $("#st-userlist");
-  box.innerHTML = ACCOUNT.users.map(u => {
-    const admin = ACCOUNT.admins.includes(u);
-    const isMe = u === ACCOUNT.user;
-    return `<div class="flex items-center gap-2 px-3 py-2">
-      <span class="flex-1">${esc(u)}${isMe ? '<span class="text-xs text-ink-400">（本人）</span>' : ""}
-        ${admin ? '<span class="ml-1 text-[10px] bg-brand-100 text-brand-700 rounded px-1.5 py-0.5">管理員</span>' : ""}</span>
-      <button data-reset="${esc(u)}" class="text-xs text-brand-700 hover:underline">重設密碼</button>
-      <button data-admin="${esc(u)}" data-make="${admin ? "0" : "1"}"
-              class="text-xs text-ink-500 hover:underline">${admin ? "取消管理員" : "設為管理員"}</button>
-      ${isMe ? "" : `<button data-del="${esc(u)}" class="text-xs text-red-600 hover:underline">刪除</button>`}
-    </div>`;
-  }).join("");
-}
-
+// 修改密碼、帳號管理在 _account.html；這裡只抓「我是誰、是不是管理員」，
+// 給齒輪（只有管理員看得到）跟驗收單簽名用。
 async function loadAccount() {
   ACCOUNT = await (await fetch("/api/account")).json();
-  $("#st-me").textContent = ACCOUNT.user;
-  $("#st-user").value = ACCOUNT.user;
-  document.querySelectorAll('[data-tab="users"], [data-tab="data"], [data-tab="sync"]')
-    .forEach(b => b.classList.toggle("hidden", !ACCOUNT.is_admin));
-  if (ACCOUNT.is_admin) renderUserList();
-  if (ACCOUNT.is_admin) {
-    $("#st-sync-url").value = `${location.origin}/api/sync/verified-qty`;
-    const t = await (await fetch("/api/account/sync-token")).json();
-    $("#st-sync-token").dataset.value = t.token;
-    $("#st-sync-token").value = "•".repeat(t.token.length);
-  }
+  $("#btn-settings").classList.toggle("hidden", !ACCOUNT.is_admin);
 }
+loadAccount();
 
 $("#btn-settings").addEventListener("click", async () => {
   await loadAccount();
+  if (!ACCOUNT.is_admin) return;
   await loadSignSettings();
-  switchSettingsTab("password");
-  ["#st-old", "#st-new", "#st-new2", "#st-confirm"].forEach(s => $(s).value = "");
+  $("#st-sync-url").value = `${location.origin}/api/sync/verified-qty`;
+  const t = await (await fetch("/api/account/sync-token")).json();
+  $("#st-sync-token").dataset.value = t.token;
+  $("#st-sync-token").value = "•".repeat(t.token.length);
+  switchSettingsTab("data");
+  $("#st-confirm").value = "";
   $("#dlg-settings").showModal();
 });
 
@@ -2507,60 +2439,6 @@ $("#btn-sg-save").addEventListener("click", async () => {
 
 document.querySelectorAll(".st-tab").forEach(b => {
   b.addEventListener("click", () => switchSettingsTab(b.dataset.tab));
-});
-
-$("#btn-save-password").addEventListener("click", async () => {
-  const nw = $("#st-new").value;
-  if (nw !== $("#st-new2").value) { toast("兩次輸入的新密碼不一致。", "warn"); return; }
-  const { ok, data } = await postJSON("/api/account/password",
-    { old_password: $("#st-old").value, new_password: nw });
-  if (!ok) { toast(data.error || "修改密碼失敗。", "err"); return; }
-  ["#st-old", "#st-new", "#st-new2"].forEach(s => $(s).value = "");
-  toast(data.message, "ok");
-});
-
-$("#btn-add-user").addEventListener("click", async () => {
-  const { ok, data } = await postJSON("/api/account/users", {
-    username: $("#st-newuser").value,
-    password: $("#st-newpass").value,
-    is_admin: $("#st-newadmin").checked,
-  });
-  if (!ok) { toast(data.error || "新增失敗。", "err"); return; }
-  $("#st-newuser").value = ""; $("#st-newpass").value = ""; $("#st-newadmin").checked = false;
-  await loadAccount();
-  toast(data.message, "ok");
-});
-
-$("#st-userlist").addEventListener("click", async e => {
-  const btn = e.target.closest("button");
-  if (!btn) return;
-
-  if (btn.dataset.reset) {
-    const pw = prompt(`請輸入「${btn.dataset.reset}」的新密碼（至少 6 個字元）`);
-    if (!pw) return;
-    const { ok, data } = await postJSON("/api/account/password",
-      { username: btn.dataset.reset, new_password: pw });
-    toast(ok ? data.message : (data.error || "重設失敗。"), ok ? "ok" : "err");
-    return;
-  }
-
-  if (btn.dataset.admin) {
-    const { ok, data } = await postJSON("/api/account/admin",
-      { username: btn.dataset.admin, is_admin: btn.dataset.make === "1" });
-    if (!ok) { toast(data.error || "調整失敗。", "err"); return; }
-    await loadAccount();
-    toast(data.message, "ok");
-    return;
-  }
-
-  if (btn.dataset.del) {
-    if (!confirm(`確定要刪除帳號「${btn.dataset.del}」？\n此帳號的修改歷程會保留。`)) return;
-    const { ok, data } = await postJSON("/api/account/users/delete",
-      { username: btn.dataset.del });
-    if (!ok) { toast(data.error || "刪除失敗。", "err"); return; }
-    await loadAccount();
-    toast(data.message, "ok");
-  }
 });
 
 $("#btn-reset-data").addEventListener("click", async () => {

@@ -1,0 +1,151 @@
+{#
+  共用的帳號選單：點名字 → 修改密碼、帳號管理（只有管理員看得到）、登出。
+  Jerry 2026-10-07：帳號的東西集中一份，每個系統右上角都一樣、首頁左下角也一樣；酷澎的「設定」只留酷澎自己的。
+  用法：{% set acct_color = '#fff' %}{% include '_account.html' %}
+    acct_color：名字的顏色（放在深色標題列用白色）
+    acct_side：放在 YFS 首頁左側選單底下時設 True，選單往上開
+  後端用 app.py 的 /api/account、/api/account/password、/api/account/users、/api/account/users/delete、/api/account/admin。
+#}
+{% set _ac_color = acct_color or '#fff' %}
+<style>
+  .ac-wrap { position:relative; display:inline-block; }
+  .ac-btn { display:inline-flex; align-items:center; gap:6px; background:transparent; border:1px solid transparent; cursor:pointer; font-size:12.5px; color:{{ _ac_color }}; padding:4px 8px; border-radius:8px; white-space:nowrap; font-family:inherit; }
+  .ac-btn:hover, .ac-btn[aria-expanded="true"] { border-color:color-mix(in srgb, {{ _ac_color }} 45%, transparent); }
+  .ac-menu { position:absolute; right:0; top:calc(100% + 6px); min-width:180px; background:#fff; color:#0f172a; border:1px solid #e2e8f0; border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.18); padding:6px; z-index:150; font-size:13.5px; }
+  .ac-menu[hidden] { display:none; }
+  .ac-wrap.ac-side { display:block; }
+  .ac-wrap.ac-side .ac-btn { width:100%; }
+  .ac-wrap.ac-side .ac-menu { left:0; right:auto; top:auto; bottom:calc(100% + 6px); }
+  .ac-menu .ac-who { padding:6px 10px 8px; font-size:12px; color:#64748b; border-bottom:1px solid #e2e8f0; margin-bottom:4px; }
+  .ac-menu button { display:flex; align-items:center; gap:8px; width:100%; text-align:left; background:transparent; border:0; padding:8px 10px; border-radius:7px; cursor:pointer; color:inherit; font:inherit; }
+  .ac-menu button:hover { background:#f1f5f9; }
+  .ac-menu button[hidden] { display:none; }
+  .ac-menu .ac-sep { height:1px; background:#e2e8f0; margin:4px 2px; }
+  #ac-dlg { border:none; border-radius:14px; padding:0; width:min(640px,94vw); max-height:88vh; box-shadow:0 30px 80px rgba(0,0,0,.35); color:#0f172a; font-family:inherit; }
+  #ac-dlg::backdrop { background:rgba(15,23,42,.45); }
+  #ac-dlg .ac-h { display:flex; align-items:center; gap:10px; padding:12px 16px; background:#0f172a; color:#fff; font-weight:700; }
+  #ac-dlg .ac-h .x { margin-left:auto; background:transparent; border:0; color:#cbd5e1; font-size:18px; cursor:pointer; }
+  #ac-dlg .ac-tabs { display:flex; gap:4px; padding:0 16px; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+  #ac-dlg .ac-tabs button { background:transparent; border:0; border-bottom:2px solid transparent; padding:9px 12px; cursor:pointer; font:inherit; font-size:13.5px; color:#64748b; font-weight:600; }
+  #ac-dlg .ac-tabs button.on { border-color:#0f172a; color:#0f172a; }
+  #ac-dlg .ac-tabs button[hidden] { display:none; }
+  #ac-dlg .ac-b { padding:16px; overflow:auto; max-height:calc(88vh - 100px); font-size:13.5px; }
+  #ac-dlg .ac-pane[hidden] { display:none; }
+  #ac-dlg label { display:flex; flex-direction:column; gap:4px; margin-bottom:10px; font-size:12px; color:#64748b; }
+  #ac-dlg input[type=password], #ac-dlg input[type=text] { border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-size:14px; color:#0f172a; }
+  #ac-dlg .ac-go { display:inline-flex; align-items:center; gap:6px; background:#0f172a; color:#fff; border:0; border-radius:8px; padding:8px 16px; font:inherit; font-weight:600; cursor:pointer; }
+  #ac-dlg .ac-msg { margin-top:10px; font-size:13px; min-height:1em; }
+  #ac-dlg .ac-msg.ok { color:#15803d; } #ac-dlg .ac-msg.err { color:#b91c1c; }
+  #ac-dlg .ac-users { border:1px solid #e2e8f0; border-radius:10px; }
+  #ac-dlg .ac-users > div { display:flex; align-items:center; gap:10px; padding:8px 12px; border-top:1px solid #e2e8f0; }
+  #ac-dlg .ac-users > div:first-child { border-top:0; }
+  #ac-dlg .ac-users .nm { flex:1; } #ac-dlg .ac-users .tag { font-size:11px; background:#e2e8f0; border-radius:5px; padding:1px 6px; margin-left:6px; }
+  #ac-dlg .ac-users button { background:transparent; border:0; cursor:pointer; font:inherit; font-size:12.5px; color:#1d4ed8; text-decoration:underline; text-underline-offset:2px; }
+  #ac-dlg .ac-users button.del { color:#b91c1c; }
+</style>
+<div class="ac-wrap{% if acct_side %} ac-side{% endif %}" id="ac-wrap">
+  <button type="button" class="ac-btn" id="ac-btn" aria-haspopup="menu" aria-expanded="false" title="帳號：修改密碼、登出">
+    <i class="bi bi-person-circle"></i> {{ logged_in_user or session.get('user', '') }} <i class="bi bi-chevron-down" style="font-size:10px;opacity:.8"></i></button>
+  <div class="ac-menu" id="ac-menu" role="menu" hidden>
+    <div class="ac-who">登入帳號：<b>{{ logged_in_user or session.get('user', '') }}</b></div>
+    <button type="button" data-ac="password" role="menuitem"><i class="bi bi-key"></i>修改密碼</button>
+    <button type="button" data-ac="users" role="menuitem" id="ac-users-item" hidden><i class="bi bi-people"></i>帳號管理</button>
+    <div class="ac-sep"></div>
+    <form method="post" action="{{ url_for('logout') }}" style="margin:0"><button type="submit" role="menuitem" id="ac-logout"><i class="bi bi-box-arrow-right"></i>登出</button></form>
+  </div>
+</div>
+<dialog id="ac-dlg">
+  <div class="ac-h"><i class="bi bi-person-circle"></i><span>帳號</span><button type="button" class="x" id="ac-close" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="ac-tabs"><button type="button" data-tab="password">修改密碼</button><button type="button" data-tab="users" hidden>帳號管理</button></div>
+  <div class="ac-b">
+    <div class="ac-pane" data-pane="password">
+      <p style="font-size:12px;color:#64748b;margin:0 0 10px">修改 <b id="ac-me"></b> 的登入密碼。整個 YFS 訂單系統共用同一組帳號密碼。</p>
+      <!-- 給 Chrome 密碼管理器配對用的帳號欄，看不見、不可編輯（沒有它 Chrome 會把帳號填進頁面上別的文字框） -->
+      <input id="ac-user" type="text" autocomplete="username" readonly tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+      <label>目前密碼<input id="ac-old" type="password" autocomplete="current-password"></label>
+      <label>新密碼（至少 6 個字元）<input id="ac-new" type="password" autocomplete="new-password"></label>
+      <label>確認新密碼<input id="ac-new2" type="password" autocomplete="new-password"></label>
+      <button type="button" class="ac-go" id="ac-save-pw"><i class="bi bi-key-fill"></i> 修改密碼</button>
+    </div>
+    <div class="ac-pane" data-pane="users" hidden>
+      <p style="font-size:12px;color:#64748b;margin:0 0 6px">目前帳號</p>
+      <div class="ac-users" id="ac-userlist"></div>
+      <p style="font-size:12px;color:#64748b;margin:16px 0 6px">新增帳號</p>
+      <label>帳號名稱<input id="ac-newuser" type="text" autocomplete="off"></label>
+      <label>密碼（至少 6 個字元）<input id="ac-newpass" type="text" autocomplete="off"></label>
+      <label style="flex-direction:row;align-items:center;gap:8px;color:#0f172a"><input id="ac-newadmin" type="checkbox"> 設為管理員（可新增帳號、修改他人密碼、清除資料）</label>
+      <button type="button" class="ac-go" id="ac-add-user"><i class="bi bi-person-plus-fill"></i> 新增帳號</button>
+    </div>
+    <div class="ac-msg" id="ac-msg"></div>
+  </div>
+</dialog>
+<script>
+(function () {
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let ACC = { user: "", is_admin: false, users: [], admins: [] };
+  const post = async (url, body) => {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({})); return { ok: res.ok, data };
+  };
+  const msg = (t, kind) => { const m = $("#ac-msg"); m.textContent = t || ""; m.className = "ac-msg " + (kind || ""); };
+  async function load() {
+    try { ACC = await (await fetch("/api/account")).json(); } catch (e) { return; }
+    $("#ac-me").textContent = ACC.user; $("#ac-user").value = ACC.user;
+    $("#ac-users-item").hidden = !ACC.is_admin;
+    document.querySelector('#ac-dlg .ac-tabs [data-tab="users"]').hidden = !ACC.is_admin;
+    if (ACC.is_admin) renderUsers();
+  }
+  function renderUsers() {
+    $("#ac-userlist").innerHTML = ACC.users.map(u => {
+      const admin = ACC.admins.includes(u), me = u === ACC.user;
+      return `<div><span class="nm">${esc(u)}${me ? "（本人）" : ""}${admin ? '<span class="tag">管理員</span>' : ""}</span>
+        <button type="button" data-reset="${esc(u)}">重設密碼</button>
+        <button type="button" data-admin="${esc(u)}" data-make="${admin ? "0" : "1"}">${admin ? "取消管理員" : "設為管理員"}</button>
+        ${me ? "" : `<button type="button" class="del" data-del="${esc(u)}">刪除</button>`}</div>`;
+    }).join("");
+  }
+  function tab(name) {
+    document.querySelectorAll("#ac-dlg .ac-tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
+    document.querySelectorAll("#ac-dlg .ac-pane").forEach(p => { p.hidden = p.dataset.pane !== name; });
+    msg("");
+  }
+  const menu = $("#ac-menu"), btn = $("#ac-btn");
+  const closeMenu = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  btn.addEventListener("click", e => { e.stopPropagation(); const open = menu.hidden; menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); if (open) load(); });
+  document.addEventListener("click", e => { if (!e.target.closest("#ac-wrap")) closeMenu(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
+  menu.querySelectorAll("[data-ac]").forEach(b => b.addEventListener("click", async () => { closeMenu(); await load(); tab(b.dataset.ac); $("#ac-dlg").showModal(); }));
+  document.querySelectorAll("#ac-dlg .ac-tabs button").forEach(b => b.addEventListener("click", () => tab(b.dataset.tab)));
+  $("#ac-close").addEventListener("click", () => $("#ac-dlg").close());
+  $("#ac-dlg").addEventListener("click", e => { if (e.target === $("#ac-dlg")) $("#ac-dlg").close(); });
+  $("#ac-save-pw").addEventListener("click", async () => {
+    if ($("#ac-new").value !== $("#ac-new2").value) return msg("兩次輸入的新密碼不一致。", "err");
+    const { ok, data } = await post("/api/account/password", { old_password: $("#ac-old").value, new_password: $("#ac-new").value });
+    if (!ok) return msg(data.error || "修改密碼失敗。", "err");
+    ["#ac-old", "#ac-new", "#ac-new2"].forEach(s => { $(s).value = ""; }); msg(data.message || "密碼已修改。", "ok");
+  });
+  $("#ac-add-user").addEventListener("click", async () => {
+    const { ok, data } = await post("/api/account/users", { username: $("#ac-newuser").value, password: $("#ac-newpass").value, is_admin: $("#ac-newadmin").checked });
+    if (!ok) return msg(data.error || "新增失敗。", "err");
+    $("#ac-newuser").value = ""; $("#ac-newpass").value = ""; $("#ac-newadmin").checked = false; await load(); msg(data.message, "ok");
+  });
+  $("#ac-userlist").addEventListener("click", async e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.reset) {
+      const pw = prompt(`請輸入「${b.dataset.reset}」的新密碼（至少 6 個字元）`); if (!pw) return;
+      const { ok, data } = await post("/api/account/password", { username: b.dataset.reset, new_password: pw });
+      return msg(ok ? data.message : (data.error || "重設失敗。"), ok ? "ok" : "err");
+    }
+    if (b.dataset.admin) {
+      const { ok, data } = await post("/api/account/admin", { username: b.dataset.admin, is_admin: b.dataset.make === "1" });
+      if (!ok) return msg(data.error || "調整失敗。", "err"); await load(); return msg(data.message, "ok");
+    }
+    if (b.dataset.del) {
+      if (!confirm(`確定要刪除帳號「${b.dataset.del}」？\n此帳號的修改歷程會保留。`)) return;
+      const { ok, data } = await post("/api/account/users/delete", { username: b.dataset.del });
+      if (!ok) return msg(data.error || "刪除失敗。", "err"); await load(); msg(data.message, "ok");
+    }
+  });
+})();
+</script>
