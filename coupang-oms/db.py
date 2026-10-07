@@ -561,7 +561,8 @@ def file_stamp():
 _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "SIGN_BATCHES", "SIGNED_DOCS",
                      "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES",
-                     "MST_MARS_SPLITS")   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
+                     "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
+                     "SHP_UPLOADS", "SHP_ORDERS")   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
 
 
 def _wants_returning_id(sql):
@@ -983,6 +984,87 @@ CREATE TABLE IF NOT EXISTS mst_templates (
     content_b64   TEXT DEFAULT '',
     uploaded_by   TEXT DEFAULT '',
     uploaded_at   TEXT DEFAULT ''
+);
+
+-- ── 蝦皮特選（shopee/）────────────────────────────────────────────
+-- 每次上傳一筆，原始檔整個留著（content_b64）。status：pending＝預覽中還沒確認、ok＝已匯入、canceled＝預覽後取消。
+CREATE TABLE IF NOT EXISTS shp_uploads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind          TEXT NOT NULL,             -- purchase（蝦皮採購單 PurchaseOrder）／inbound（入庫單 InboundOrder）
+    filename      TEXT DEFAULT '',
+    fulfil        TEXT DEFAULT '',           -- 匯入時人選的履約方式（只有採購單要選）
+    content_b64   TEXT DEFAULT '',
+    payload_json  TEXT DEFAULT '',           -- 解析好的列（預覽到確認之間用）
+    rows_total    INTEGER DEFAULT 0,
+    new_count     INTEGER DEFAULT 0,
+    changed_count INTEGER DEFAULT 0,
+    same_count    INTEGER DEFAULT 0,
+    removed_count INTEGER DEFAULT 0,
+    errors_json   TEXT DEFAULT '[]',
+    status        TEXT DEFAULT 'pending',
+    uploaded_by   TEXT DEFAULT '',
+    uploaded_at   TEXT DEFAULT '',
+    committed_at  TEXT DEFAULT ''
+);
+
+-- 一張蝦皮單的一個品項一筆。okey＝「PR:PR 號碼|蝦皮商品編號」；只有入庫單、沒有採購單的用「PO:PO 號碼|蝦皮商品編號」。
+-- 數量都是蝦皮的單位（Pieces）；qty_original 是第一次看到的數量（原始訂購量），qty 是最新一版。
+CREATE TABLE IF NOT EXISTS shp_orders (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    okey            TEXT NOT NULL UNIQUE,
+    pr_id           TEXT DEFAULT '',
+    po_id           TEXT DEFAULT '',
+    inbound_ids     TEXT DEFAULT '',          -- 入庫單號，一個品項可能分兩張（雙效期），用逗號串
+    warehouse       TEXT DEFAULT '',          -- TWA／TWX／TWG…
+    expected_date   TEXT DEFAULT '',          -- 到貨日 YYYY-MM-DD
+    shopee_sku_id   TEXT NOT NULL,
+    supplier_sku_id TEXT DEFAULT '',          -- 4987176232878_CNN／M10273409_QMN／1022257_PNN
+    base_code       TEXT DEFAULT '',          -- 底線前面：國條／永豐料號
+    unit_code       TEXT DEFAULT '',          -- 底線後面第一個字：R 箱、C 包、P 瓶…
+    unit_name       TEXT DEFAULT '',
+    line            TEXT DEFAULT '',          -- 寶僑／瑪氏／紙潔
+    sku_name        TEXT DEFAULT '',
+    ean             TEXT DEFAULT '',
+    selling_type    TEXT DEFAULT '',          -- Pcs／Carton
+    qty             INTEGER DEFAULT 0,
+    qty_original    INTEGER DEFAULT 0,
+    inbound_qty     INTEGER,
+    removed         INTEGER DEFAULT 0,        -- 重傳時這張單已經沒有這個品項
+    fulfil          TEXT DEFAULT '',          -- 竹運出貨／竹運採購進貨／供應商直送
+    status          TEXT DEFAULT '已匯入',     -- 處理狀態
+    diff_pending    INTEGER DEFAULT 0,        -- 有差異還沒確認
+    version         INTEGER DEFAULT 1,
+    first_upload_id INTEGER,
+    last_upload_id  INTEGER,
+    created_at      TEXT DEFAULT '',
+    updated_at      TEXT DEFAULT ''
+);
+
+-- 每一版的內容都留著（需求 3.1.1：保留上一版本，不得刪除）
+CREATE TABLE IF NOT EXISTS shp_order_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL,
+    version     INTEGER NOT NULL,
+    upload_id   INTEGER,
+    kind        TEXT DEFAULT '',
+    data_json   TEXT DEFAULT '{}',
+    created_at  TEXT DEFAULT ''
+);
+
+-- 重傳時跟上一版不一樣的地方，一個欄位一筆；確認之前那張單不能往下做
+CREATE TABLE IF NOT EXISTS shp_diffs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id     INTEGER NOT NULL,
+    upload_id    INTEGER,
+    field        TEXT NOT NULL,
+    field_label  TEXT DEFAULT '',
+    old_value    TEXT DEFAULT '',
+    new_value    TEXT DEFAULT '',
+    qty_delta    INTEGER,
+    uploaded_by  TEXT DEFAULT '',
+    uploaded_at  TEXT DEFAULT '',
+    confirmed_by TEXT DEFAULT '',
+    confirmed_at TEXT DEFAULT ''
 );
 """
 

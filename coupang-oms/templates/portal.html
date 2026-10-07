@@ -209,8 +209,12 @@ table.st tr.sub td { color: var(--muted); }
       <a class="sub" href="{{ url_for('zhuyun.zhuyun_page') }}">竹運出貨拋檔</a>
       <span class="grp">瑪氏</span>
       <a class="sub" href="{{ url_for('mars.mars_page') }}">瑪氏出貨</a>
-      {% for c in channels if not c.live %}
+      {% for c in channels if c.key != 'coupang' %}
+      {% if c.live %}
+      <a href="{{ c.url }}"><span class="dot" style="background:var(--ch-{{ c.key }})"></span>{{ c.name }}</a>
+      {% else %}
       <a href="{{ url_for('portal.portal_page') }}#ch-{{ c.key }}"><span class="dot" style="background:var(--ch-{{ c.key }})"></span>{{ c.name }}<span class="tag">{{ c.status }}</span></a>
+      {% endif %}
       {% endfor %}
       <h6>共用</h6>
       <a href="{{ url_for('portal.portal_sop') }}" class="{{ 'on' if view == 'sop' }}"><i class="bi bi-journal-text"></i>營運 SOP 檢索</a>
@@ -369,7 +373,7 @@ table.st tr.sub td { color: var(--muted); }
 
   function renderChannels() {
     $("#chs").innerHTML = D.channels.map(c => {
-      const v = (n, unit) => c.live ? `${fmt(n)}<small>${unit}</small>` : `—`;
+      const v = (n, unit) => c.live && n != null ? `${fmt(n)}<small>${unit}</small>` : `—`;
       return `<div class="card ch ${c.live ? "" : "soon"}" id="ch-${esc(c.key)}" style="--chc:var(--ch-${esc(c.key)})">
         <div class="ch-h"><img src="${STATIC}${esc(c.logo)}" alt=""><b>${esc(c.title)}</b>${c.live ? "" : `<span class="chip">${esc(c.status)}</span>`}</div>
         <div class="stats">
@@ -378,14 +382,14 @@ table.st tr.sub td { color: var(--muted); }
           <div class="stat"><div class="k">本月出貨</div><div class="v num">${v(c.month_boxes, "箱")}</div></div>
         </div>
         <div class="ch-f">${c.live
-          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : "尚未匯入訂單彙總表"}</span><span class="grow"></span><a class="btn ch-go" href="{{ url_for('index') }}" style="background:var(--ch-${esc(c.key)});border-color:var(--ch-${esc(c.key)})">進入後台 <i class="bi bi-arrow-right"></i></a>`
-          : `<span>${c.key === "shopee" ? "訂單來源檔確認後開始建置" : "預計於蝦皮特選之後建置"}</span>`}</div></div>`;
+          ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : (c.key === "shopee" ? "尚未匯入蝦皮採購單" : "尚未匯入訂單彙總表")}</span><span class="grow"></span><a class="btn ch-go" href="${esc(c.url)}" style="background:var(--ch-${esc(c.key)});border-color:var(--ch-${esc(c.key)})">進入後台 <i class="bi bi-arrow-right"></i></a>`
+          : `<span>預計於蝦皮特選之後建置</span>`}</div></div>`;
     }).join("");
   }
 
   function drawLine() {
     const box = $("#c-line"); box.querySelectorAll("svg,.tip").forEach(e => e.remove());
-    const chs = live(); const days = chs[0].daily_new.map(x => x.date);
+    const chs = live().filter(c => c.daily_new); if (!chs.length) return; const days = chs[0].daily_new.map(x => x.date);
     $("#lg-line").innerHTML = chs.length > 1 ? chs.map(c => `<span><i style="background:var(--ch-${c.key})"></i>${esc(c.name)}</span>`).join("") : "";
     const W = Math.max(box.clientWidth - 28, 300), H = 230, L = 34, R = chs.length > 1 ? 64 : 14, T = 14, B = 26, n = days.length - 1;
     const sc = niceScale(Math.max(...chs.flatMap(c => c.daily_new.map(x => x.value))) * 1.05), max = sc.max;
@@ -416,7 +420,7 @@ table.st tr.sub td { color: var(--muted); }
 
   function drawBar() {
     const box = $("#c-bar"); box.querySelectorAll("svg,.tip").forEach(e => e.remove());
-    const chs = live(); const days = chs[0].ship_7d.map(x => x.date);
+    const chs = live().filter(c => c.ship_7d); if (!chs.length) return; const days = chs[0].ship_7d.map(x => x.date);   // 蝦皮特選還沒有箱數，先不畫
     $("#lg-bar").innerHTML = chs.length > 1 ? chs.map(c => `<span><i style="background:var(--ch-${c.key});height:10px;width:10px;border-radius:3px"></i>${esc(c.name)}</span>`).join("") : "";
     const W = Math.max(box.clientWidth - 28, 280), H = 230, L = 40, R = 8, T = 18, B = 34;
     const tot = days.map((_, i) => chs.reduce((a, c) => a + c.ship_7d[i].value, 0));

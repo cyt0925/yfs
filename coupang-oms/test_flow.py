@@ -1295,9 +1295,10 @@ def main():
     check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
     res = client.get("/api/portal/summary"); d = res.get_json()
     chs = {c["key"]: c for c in d["channels"]}
-    check("三個通路：只有酷澎有數字，蝦皮特選、PChome 不放假數字",
+    check("三個通路：酷澎、蝦皮特選有數字（蝦皮特選 2026-10-07 上線），PChome 不放假數字",
           res.status_code == 200 and list(chs) == ["coupang", "shopee", "pchome"] and chs["coupang"]["live"]
-          and not chs["shopee"]["live"] and "new_today" not in chs["shopee"] and "new_today" not in chs["pchome"])
+          and chs["shopee"]["live"] and chs["shopee"]["url"] == "/shopee" and isinstance(chs["shopee"]["new_today"], int)
+          and chs["shopee"]["month_boxes"] is None and not chs["pchome"]["live"] and "new_today" not in chs["pchome"])
     conn = db.get_conn()
     n_today = conn.execute("SELECT COUNT(*) AS n FROM po_headers WHERE filed_date = ?", (db.today(),)).fetchone()["n"]
     conn.close()

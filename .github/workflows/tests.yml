@@ -34,6 +34,8 @@ jobs:
         run: python test_master.py
       - name: test_mars（瑪氏出貨）
         run: python test_mars.py
+      - name: test_shopee（蝦皮特選）
+        run: python test_shopee.py
 
   postgres:
     name: PostgreSQL（正式站模式）
@@ -69,6 +71,8 @@ jobs:
         run: python test_master.py
       - name: test_mars（瑪氏出貨）
         run: python test_mars.py
+      - name: test_shopee（蝦皮特選）
+        run: python test_shopee.py
 
   ui:
     name: 前端煙霧測試（Playwright）

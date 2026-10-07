@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>蝦皮特選訂單管理系統</title>
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo_shopee.png') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
+<style>
+  /* 蝦皮橘（Jerry 2026-10-07：「要以蝦皮橘色為主題」，色碼跟首頁蝦皮卡片同一個 #ee4d2d）。
+     樣式全部寫在這裡，不加新的 Tailwind class（static/tailwind.css 是預編譯的，只用瑪氏出貨頁已經用過的那幾個） */
+  :root {
+    --s9:#b8361b; --s8:#ee4d2d; --s7:#f05d40; --s3:#fbc1b3; --s2:#fdd9cf; --s1:#ffece6; --s0:#fff6f3;
+    --ink:#1f1410; --ink2:#4a3a33; --muted:#7a6a63; --line:#e8d8d2; --line2:#f1e6e2;
+    --ok:#15803d; --okbg:#dcfce7; --warn:#b45309; --warnbg:#fef3c7; --bad:#b91c1c; --badbg:#fee2e2;
+  }
+  body { font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#fbf7f5; color:var(--ink); }
+  .hidden { display:none !important; }
+  .wrap { max-width:1560px; }
+  .nw { white-space:nowrap; }
+  .sh { background:linear-gradient(100deg,#d0381a 0%,var(--s8) 55%,#ff7337 100%); color:#fff; border-bottom:3px solid #ffd1c2; }
+  .card { background:#fff; border:1px solid var(--line2); border-radius:12px; box-shadow:0 1px 2px rgba(238,77,45,.06); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid transparent; white-space:nowrap; text-decoration:none; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-p { background:var(--s8); color:#fff; } .btn-p:hover:not(:disabled) { background:var(--s9); }
+  .btn-o { background:#fff; color:var(--s9); border-color:var(--s3); } .btn-o:hover { background:var(--s0); }
+  .btn-sm { padding:4px 10px; font-size:12.5px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:6px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+  .b-ok { background:var(--okbg); color:var(--ok); } .b-diff { background:var(--badbg); color:var(--bad); }
+  .b-dim { background:#f3eeec; color:var(--muted); } .b-s { background:var(--s1); color:var(--s9); } .b-warn { background:var(--warnbg); color:var(--warn); }
+  table.t { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  table.t th { background:#fbf1ee; color:var(--ink2); font-weight:600; font-size:12px; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:1px solid var(--line); }
+  table.t td { padding:7px 10px; border-bottom:1px solid var(--line2); vertical-align:middle; }
+  table.t td.num, table.t th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  table.t tr.og td { cursor:pointer; } table.t tr.og:hover td { background:var(--s0); }
+  table.t tr.og.pend td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
+  table.t tr.og td:first-child { box-shadow:inset 4px 0 0 var(--s3); }
+  .sub td { background:#fffaf8; } .sub table { font-size:12px; } .sub table td, .sub table th { padding:4px 8px; }
+  .fn { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11.5px; color:var(--ink2); }
+  .inp { border:1px solid var(--line); border-radius:7px; padding:5px 9px; font-size:13px; background:#fff; }
+  .inp:focus { outline:none; border-color:var(--s7); box-shadow:0 0 0 2px var(--s1); }
+  .tbl-wrap { overflow:auto; max-height:70vh; border:1px solid var(--line2); border-radius:10px; background:#fff; }
+  .muted { color:var(--muted); } .neg { color:var(--bad); font-weight:700; } .pos { color:var(--ok); font-weight:700; } .kbd { font-size:11.5px; color:var(--muted); }
+  .alert { border-radius:10px; padding:10px 14px; font-size:13px; }
+  .al-bad { background:var(--badbg); color:#7f1d1d; border:1px solid #fecaca; } .al-warn { background:var(--warnbg); color:#78350f; border:1px solid #fde68a; }
+  .chip { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:999px; font-size:13px; border:1px solid var(--s3); background:#fff; color:var(--s9); cursor:pointer; user-select:none; }
+  .chip.on { background:var(--s8); color:#fff; border-color:var(--s8); }
+  .sum { display:flex; flex-wrap:wrap; gap:8px 22px; align-items:baseline; } .sum span { white-space:nowrap; } .sum b { font-size:18px; color:var(--s9); margin-right:3px; }
+  .steps { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; }
+  .steps span { padding:2px 9px; border-radius:999px; background:rgba(255,255,255,.18); color:rgba(255,255,255,.85); }
+  .steps span.on { background:#fff; color:var(--s9); font-weight:700; }
+  .dzbox { display:flex; align-items:center; gap:12px; border:2px dashed var(--s3); border-radius:12px; padding:16px 18px; background:var(--s0); color:var(--s9); cursor:pointer; font-size:13.5px; transition:border-color .15s, background .15s; }
+  .dzbox:hover, .dzbox.over { border-color:var(--s8); background:var(--s1); }
+  .dzbox i { font-size:26px; } .dzbox b { font-size:14.5px; }
+  .pv { border:1px solid var(--s2); border-radius:12px; background:#fff; padding:14px 16px; }
+  .pv h3 { font-weight:700; font-size:14.5px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .facts { display:flex; flex-wrap:wrap; gap:6px 18px; font-size:13px; color:var(--ink2); margin-top:6px; }
+  .facts b { color:var(--ink); }
+  .fulfil { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; padding:10px 12px; border-radius:10px; background:var(--s0); border:1px solid var(--s2); }
+  dialog { border:none; border-radius:14px; padding:0; width:min(1100px,96vw); max-height:88vh; box-shadow:0 30px 80px rgba(0,0,0,.35); }
+  dialog::backdrop { background:rgba(31,20,16,.45); }
+  .dh { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--s8); color:#fff; font-weight:700; position:sticky; top:0; z-index:5; }
+  .dh .x { margin-left:auto; background:transparent; border:0; color:#fff; font-size:18px; cursor:pointer; }
+  .db { padding:14px 16px; overflow:auto; max-height:calc(88vh - 52px); }
+  #toasts { position:fixed; right:18px; top:78px; z-index:99; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .toast { background:#1f1410; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.25); max-width:560px; white-space:pre-line; }
+  .toast.err { background:var(--bad); }
+  .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
+  a.lnk { color:var(--s9); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+</style>
+</head>
+<body>
+<header class="sh shadow-lg">
+  <div class="wrap mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
+    <div class="flex items-center gap-3">
+      <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='logo_shopee.png') }}" style="height:30px;width:auto" alt="蝦皮"></div>
+      <div>
+        <h1 class="text-lg font-bold leading-tight">蝦皮特選訂單管理系統</h1>
+        <div class="steps mt-1" title="白底的是已經可以用的功能">
+          <span class="on">訂單匯入與總覽</span><span>竹運出貨</span><span>竹運採購進貨</span><span>直送訂單</span><span>缺貨維護與通知</span><span>採購單產出</span>
+        </div>
+      </div>
+    </div>
+    <div class="flex-1"></div>
+    <span class="text-xs" style="color:#ffe3da"><i class="bi bi-person-check-fill"></i> {{ logged_in_user }}</span>
+    {% set hist_scope = 'shopee' %}{% set hist_color = '#fff' %}{% include '_history.html' %}
+    <a href="{{ url_for('portal.portal_page') }}" style="font-size:12px;color:rgba(255,255,255,.88);text-decoration:underline;text-underline-offset:3px;white-space:nowrap" title="回 YFS 訂單系統首頁">YFS 訂單系統</a>
+  </div>
+</header>
+
+<main class="wrap mx-auto px-5 py-5 space-y-4">
+  <!-- 上傳：蝦皮採購單、入庫單都丟這裡，看表頭自己認 -->
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">上傳蝦皮訂單</b>
+      <span class="kbd">蝦皮後台下載的採購單（PurchaseOrder_…）或入庫單（InboundOrder_…），系統依表頭自動判斷。可一次選多個檔。</span>
+    </div>
+    <label class="dzbox" id="dz"><i class="bi bi-cloud-arrow-up"></i>
+      <div><b>將檔案拖曳至此</b>，或點此選擇檔案<div class="kbd" style="color:var(--s9)">.xlsx；先看預覽，選好履約方式再確認匯入</div></div>
+      <input type="file" id="file" accept=".xlsx,.xls" multiple class="hidden">
+    </label>
+    <div id="previews" class="space-y-3"></div>
+  </section>
+
+  <!-- 訂單總覽（需求第四章） -->
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">訂單總覽</b>
+      <span id="pend-alert" class="badge b-diff hidden"></span>
+      <div class="flex-1"></div>
+      <label class="kbd">到貨日 <input type="date" id="f-from" class="inp"> ～ <input type="date" id="f-to" class="inp"></label>
+      <select id="f-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>瑪氏</option><option>紙潔</option></select>
+      <select id="f-fulfil" class="inp"><option value="">全部履約方式</option>{% for f in fulfils %}<option>{{ f }}</option>{% endfor %}</select>
+      <span class="chip" id="f-pending"><i class="bi bi-exclamation-circle"></i> 只看差異待確認</span>
+      <input id="f-q" class="inp" placeholder="搜尋 PO、PR、入庫單號、料號、品名" style="width:240px">
+    </div>
+    <div class="sum" id="sum"></div>
+    <div class="tbl-wrap"><table class="t" id="tbl"></table></div>
+  </section>
+
+  <!-- 上傳紀錄（需求 3.1：原始檔、上傳時間、上傳人員、匯入結果、錯誤資料） -->
+  <details class="card p-4" id="up-box">
+    <summary style="cursor:pointer;font-weight:700">上傳紀錄 <span class="kbd">（可下載原始檔）</span></summary>
+    <div class="tbl-wrap mt-3" style="max-height:420px"><table class="t" id="up-tbl"></table></div>
+  </details>
+</main>
+
+<dialog id="dlg-diff"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="dd-title">差異</span><button class="x" data-close="dlg-diff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db"><div id="dd-body"></div>
+    <div class="flex items-center gap-2 mt-3"><button id="dd-confirm" class="btn btn-p"><i class="bi bi-check2-circle"></i> 確認差異</button><span class="kbd">確認後這張單回到「已匯入」，才能往下處理。</span></div></div></dialog>
+<dialog id="dlg-fulfil" style="width:min(520px,96vw)"><div class="dh"><i class="bi bi-signpost-split"></i><span id="df-title">修改履約方式</span><button class="x" data-close="dlg-fulfil" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3"><div class="kbd" id="df-now"></div>
+    <div class="flex gap-2 flex-wrap" id="df-opts"></div>
+    <label class="block kbd">修改原因（必填）<input id="df-reason" class="inp" style="width:100%" placeholder="例如：竹運庫存不足，改由供應商直送"></label>
+    <button id="df-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div></dialog>
+<dialog id="dlg-ver"><div class="dh"><i class="bi bi-layers"></i><span id="dv-title">版本紀錄</span><button class="x" data-close="dlg-ver" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db"><div id="dv-body"></div></div></dialog>
+
+<div id="toasts"></div>
+<div class="ver">版本 {{ build_version }}</div>
+<script>const FULFILS = {{ fulfils | list | tojson }};</script>
+<script src="{{ url_for('static', filename='shopee.js') }}?v={{ build_version }}"></script>
+</body>
+</html>

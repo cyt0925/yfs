@@ -37,8 +37,8 @@ DONE_STATUSES = ("已完成", "已取消")
 
 CHANNELS = [
     # title／logo：首頁「各通路系統」卡片的標題與圖示（Jerry 2026-10-06 給的三個圖檔，縮成 160px 高放 static/）
-    {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": ""},
-    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理系統", "logo": "logo_shopee.png", "live": False, "status": "建置中"},
+    {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": "", "url": COUPANG_URL},
+    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理系統", "logo": "logo_shopee.png", "live": True, "status": "", "url": "/shopee"},
     {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中"},
 ]
 
@@ -139,6 +139,12 @@ def tasks(conn, today):
                         "title": f"寶僑 {nxt} 到貨，{len(missing)} 個倉尚未產出竹運出貨拋檔", "detail": "、".join(missing),
                         "url": "/zhuyun", "count": len(missing)})
 
+    sp = _shopee(conn, today)
+    if sp.get("diff_pos"):
+        out.append({"key": "shopee_diff", "level": "crit", "level_text": "待確認", "icon": "bi-arrow-left-right",
+                    "title": f"蝦皮特選重傳後有差異 {sp['diff_pos']} 張單", "detail": "確認差異後才能往下處理",
+                    "url": "/shopee", "count": int(sp["diff_pos"])})
+
     d14 = _iso(today - _dt.timedelta(days=14))
     n = _one(conn, """
         SELECT COUNT(DISTINCT o.po_number) FROM orders o JOIN po_headers h ON h.po_number = o.po_number
@@ -163,7 +169,8 @@ def change_stats(conn, today):
 
 # 最近的動作「系統」欄（Jerry 2026-10-06：「是否可以增加是從哪個系統上做修改的」）。
 # 訂單管理的紀錄在 edit_logs；其他工具都寫 mst_logs，看紀錄種類（field）的開頭分。
-_SYSTEM_BY_PREFIX = (("mars_", "瑪氏出貨"), ("zhuyun_", "竹運出貨拋檔"), ("purchase_", "採購表轉換"))
+_SYSTEM_BY_PREFIX = (("mars_", "瑪氏出貨"), ("zhuyun_", "竹運出貨拋檔"), ("purchase_", "採購表轉換"),
+                     ("shopee_", "蝦皮特選訂單管理系統"))
 
 
 def system_of(table, field, note=""):
@@ -192,12 +199,24 @@ def recent_actions(conn, limit=6):
     return rows[:limit]
 
 
+def _shopee(conn, today):
+    """蝦皮特選的數字；資料表還沒建好（商品主檔那組初始化失敗）時回空的，不拖垮首頁。"""
+    try:
+        from shopee.orders import portal_summary
+        return portal_summary(conn, _iso(today))
+    except Exception:  # noqa: BLE001
+        conn.rollback()
+        return {}
+
+
 def summary(conn, today):
     channels = []
     for c in CHANNELS:
         item = dict(c)
         if c["key"] == "coupang":
             item.update(coupang_summary(conn, today))
+        elif c["key"] == "shopee":
+            item.update(_shopee(conn, today), month_boxes=None)    # 蝦皮特選還沒有箱數（第三段才有出貨量）
         channels.append(item)
     return {"today": _iso(today), "now": db.now(), "channels": channels, "tasks": tasks(conn, today),
             "changes": change_stats(conn, today), "recent": recent_actions(conn)}

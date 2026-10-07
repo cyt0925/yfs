@@ -507,7 +507,8 @@ def main():
               and pg.eval_on_selector("#ch-coupang", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(224, 20, 34)"
               and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)"
               and pg.eval_on_selector("#ch-coupang .ch-go", "e => getComputedStyle(e).backgroundColor") == "rgb(224, 20, 34)")
-        check("蝦皮特選、PChome 卡片不放數字", "—" in pg.inner_text("#ch-shopee") and "建置中" in pg.inner_text("#ch-shopee") and "規劃中" in pg.inner_text("#ch-pchome"))
+        check("蝦皮特選卡片有「進入後台」連到 /shopee、本月出貨箱數先放 —；PChome 不放數字", pg.get_attribute("#ch-shopee .ch-go", "href") == "/shopee"
+              and "—" in pg.inner_text("#ch-shopee") and "規劃中" in pg.inner_text("#ch-pchome") and "—" in pg.inner_text("#ch-pchome"))
         pg.click("#nav-hist"); pg.wait_for_selector("#hs-dlg[open]", timeout=5000)
         check("左側「歷程紀錄」打開歷程視窗", pg.is_visible("#hs-dlg")); pg.click("#hs-close")
         pg.click("#nav a.sub:has-text('驗收單簽名')"); pg.wait_for_selector("#dlg-sign[open]", timeout=15000)
@@ -532,6 +533,40 @@ def main():
         pg.click("#menu"); pg.wait_for_timeout(350)
         check("手機上按左上角打開選單", pg.evaluate("document.querySelector('.side').getBoundingClientRect().left") >= 0)
         pg.set_viewport_size({"width": 1500, "height": 900})
+        print("\n【6e】蝦皮特選：上傳採購單、選履約方式、重傳差異、確認、改履約方式")
+        def shopee_po(rows, path):
+            hdr = ["PR ID", "PO ID", "Warehouse", "Expected Delivery Time", "Shopee SKU ID", "Supplier SKU ID", "Shopee SKU Name",
+                   "Shopee Requested Qty (unit)", "Selling Type", "EAN / UPC"]
+            wbs = openpyxl.Workbook(); wss = wbs.active; wss.append(hdr)
+            for sku, sup, name, qty in rows:
+                wss.append(["PRTWCOTWA202610019999", None, "TWA", "2026-10-19", sku, sup, name, str(qty), "Pcs", sup.split("_")[0]])
+            wbs.save(path)
+        sp1 = os.path.join(tempfile.gettempdir(), "ui_PurchaseOrder_1.xlsx"); sp2 = os.path.join(tempfile.gettempdir(), "ui_PurchaseOrder_2.xlsx")
+        shopee_po([("11_1", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 240), ("11_2", "4987176232878_RNN", "幫寶適 清新幫 箱購", 26)], sp1)
+        shopee_po([("11_1", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 200), ("11_2", "4987176232878_RNN", "幫寶適 清新幫 箱購", 26)], sp2)
+        pg.goto(f"{base}/shopee"); pg.wait_for_selector("#tbl thead", timeout=15000)
+        pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change")
+        pg.set_input_files("#file", sp1); pg.wait_for_selector(".pv .ok", timeout=15000)
+        check("上傳採購單 → 預覽：蝦皮採購單、新增 2 項、沒選履約方式不能按確認", "蝦皮採購單" in pg.inner_text(".pv") and "新增 2 項" in pg.inner_text(".pv").replace("\n", " ")
+              and pg.is_disabled(".pv .ok"), pg.inner_text(".pv")[:200])
+        pg.click(".pv .ff[data-f='竹運出貨']"); pg.click(".pv .ok"); pg.wait_for_selector("#tbl tr.og", timeout=10000); pg.wait_for_timeout(300)
+        row = pg.inner_text("#tbl tr.og >> nth=0")
+        check("匯入後總覽出現這張 PR：寶僑、觀音、竹運出貨、已匯入", "PRTWCOTWA202610019999" in row and "寶僑" in row and "觀音" in row and "竹運出貨" in row and "已匯入" in row, row[:200])
+        pg.click("#tbl tr.og >> nth=0"); pg.wait_for_selector("#tbl tr.sub", timeout=5000)
+        check("點那一列展開品項：單位 包／箱", "包" in pg.inner_text("#tbl tr.sub") and "箱" in pg.inner_text("#tbl tr.sub"))
+        pg.set_input_files("#file", sp2); pg.wait_for_selector(".pv .ok", timeout=15000)
+        check("重傳改過數量 → 預覽紅字列出差異 240 → 200", "跟上一版有 1 處不同" in pg.inner_text(".pv") and "200" in pg.inner_text(".pv"), pg.inner_text(".pv")[:300])
+        pg.click(".pv .ok"); pg.wait_for_timeout(800)
+        check("匯入後那張單變匯入差異待確認、有「確認差異」按鈕", "匯入差異待確認" in pg.inner_text("#tbl") and pg.is_visible("#tbl button.dd:has-text('確認差異')"))
+        pg.click("#tbl button.dd:has-text('確認差異')"); pg.wait_for_selector("#dd-body table", timeout=8000)
+        check("差異視窗：數量 240 → 200、-40、待確認", "240" in pg.inner_text("#dd-body") and "-40" in pg.inner_text("#dd-body") and "待確認" in pg.inner_text("#dd-body"))
+        pg.click("#dd-confirm"); pg.wait_for_timeout(800)
+        check("按確認差異 → 回到已匯入", "已匯入" in pg.inner_text("#tbl tr.og >> nth=0") and "匯入差異待確認" not in pg.inner_text("#tbl tr.og >> nth=0"))
+        pg.click("#tbl button.ff >> nth=0"); pg.wait_for_selector("#dlg-fulfil[open]", timeout=5000)
+        pg.click("#df-opts .chip[data-f='供應商直送']"); pg.fill("#df-reason", "竹運缺貨，改原廠直送"); pg.click("#df-save"); pg.wait_for_timeout(800)
+        check("改履約方式 → 總覽變供應商直送", "供應商直送" in pg.inner_text("#tbl tr.og >> nth=0"))
+        pg.click("#up-box summary"); pg.wait_for_timeout(300)
+        check("上傳紀錄看得到兩次上傳、可下載原始檔", pg.eval_on_selector_all("#up-tbl a.lnk", "els => els.length") >= 2)
         bad = [x for x in bad if ("/api/mars/splits/" not in x[1] or x[0] != 400) and not (x[1].endswith("/api/mars/emma") and x[0] == 409)]   # 故意填錯的 400、EMMA 先問的 409 不算
         b.close()
 
