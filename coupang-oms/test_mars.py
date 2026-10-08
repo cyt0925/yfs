@@ -493,6 +493,15 @@ def main():
     check("確認：改了 1 筆、下修檔一起回來", r.status_code == 200 and r.headers.get("X-Mars-Changed") == "1" and r.headers.get("X-Mars-Rows") == "1", str(r.headers.get("X-Mars-Changed")))
     after = next(o for o in c.get("/api/master/orders?month=2026-09&q=13000000699901").get_json()["rows"] if o["sku_id"] == it0["sku_id"])
     check("系統裡那筆訂單的出貨數量改成勇信實際出的、標人改過", after["qty_ship"] == row0["new_qty"] and after["qty_ship"] != before and after["qty_ship_overridden"], f"{before} → {after['qty_ship']}")
+    res_again = up(c, "/api/mars/shortage/compare", pdf, "假_勇信.pdf").get_json()
+    row_again = next(it for it in res_again["pos"][0]["splits"][0]["items"] if it["sku_id"] == it0["sku_id"])
+    check("確認過再跑一次：那筆照原本訂的箱數比、還是部分缺、下修檔還是有它（不會變成沒缺）", row_again["ordered"] == row0["ordered"] and row_again["qty_ship"] == before
+          and row_again["status"] == "partial" and row_again["new_qty"] == row0["new_qty"] and res_again["downgrade_rows"] == 1, str(row_again))
+    n_logs = len([l for l in c.get("/api/master/logs?q=13000000699901&limit=1000").get_json()["logs"] if l["field"] == "qty_ship"])
+    r = c.post("/api/mars/shortage/apply", json={"result": res_again})
+    n_logs2 = len([l for l in c.get("/api/master/logs?q=13000000699901&limit=1000").get_json()["logs"] if l["field"] == "qty_ship"])
+    check("再按一次確認：系統數量已經是對的所以改 0 筆，但下修檔照樣回來、不重複記歷程", r.status_code == 200 and r.headers.get("X-Mars-Changed") == "0" and r.headers.get("X-Mars-Rows") == "1"
+          and n_logs2 == n_logs, f"改 {r.headers.get('X-Mars-Changed')} 筆、{r.headers.get('X-Mars-Rows')} 列、歷程 {n_logs}→{n_logs2}")
     logs = c.get("/api/master/logs?q=13000000699901&limit=1000").get_json()["logs"]
     check("有記歷程：出貨數量、原因缺貨、說明寫勇信出幾箱", any(l["field"] == "qty_ship" and "勇信出" in json.dumps(l, ensure_ascii=False) and "缺貨" in json.dumps(l, ensure_ascii=False) for l in logs), str([l for l in logs if l["field"] == "qty_ship"][:1]))
     v = splits(c, "2026-09-29", "2026-09-30"); tb = next(x for x in v["splits"] if x["id"] == tgt["id"])

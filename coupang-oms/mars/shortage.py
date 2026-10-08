@@ -98,9 +98,22 @@ def _code_canon(conn):
     return canon
 
 
+def _orig_qty(v):
+    """歷程的舊值是文字（"32"、"32.0"），轉回數字；空的就當沒有。"""
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def compare(conn, pages, none_ids=()):
     """把 PDF 幾頁對回拆單表。none_ids＝人勾「勇信沒出這份」的拆單表 id，當 0 箱算。回傳給畫面看的結果；apply 再把這份結果送回來執行。"""
     canon = _code_canon(conn)
+    # 重跑也要看得到：已經因勇信缺貨改成 0 的品項，訂購量用改之前的（看歷程裡第一次「缺貨／勇信出…」那筆的舊值），
+    # 不然按過確認再跑一次，全部變「沒缺」、下修檔就少了那些（Jerry 2026-10-08 第二次跑拿到「沒有缺貨品項」）
+    orig = {}
+    for r in _rows(conn.execute("SELECT po_number, sku_id, old_value FROM mst_logs WHERE field = 'qty_ship' AND reason = '缺貨' AND note LIKE ? ORDER BY id", ("勇信出%",))):
+        orig.setdefault((r["po_number"], r["sku_id"]), r["old_value"])
     by_eip = {}
     for p in pages:
         if not p["eip_po"]:
@@ -140,10 +153,11 @@ def compare(conn, pages, none_ids=()):
             for ii, it in enumerate(items):
                 c = canon.get(it.get("mars_code") or "", it.get("mars_code") or "")
                 seen.add(c)
-                ordered = it.get("cases") or 0
+                box = it.get("box_file") or 0
+                qty0 = _orig_qty(orig.get((s["po_number"], it["sku_id"])))
+                ordered = round(qty0 / box, 4) if qty0 is not None and box else (it.get("cases") or 0)
                 shipped = left.get(c, 0) if last_of.get(c) == (gi, ii) else min(left.get(c, 0), ordered)
                 left[c] -= shipped
-                box = it.get("box_file") or 0
                 if shipped == ordered:
                     status = "ok"
                 elif shipped == 0:
@@ -155,7 +169,7 @@ def compare(conn, pages, none_ids=()):
                 new_qty = int(round(shipped * box)) if box else None
                 rows.append({"sku_id": it["sku_id"], "yf_sku": it.get("yf_sku"), "purchase_code": it.get("purchase_code"), "mars_code": c,
                              "product_name": it.get("product_name"), "unit": it.get("unit"), "box_file": box,
-                             "qty_ship": it.get("qty_ship"), "ordered": ordered, "shipped": shipped, "short": max(ordered - shipped, 0),
+                             "qty_ship": qty0 if qty0 is not None else it.get("qty_ship"), "ordered": ordered, "shipped": shipped, "short": max(ordered - shipped, 0),
                              "status": status, "new_qty": new_qty})
             entries.append({"split_id": s["id"], "eip_po": eip, "filename": s["filename"], "warehouse": s["warehouse"],
                             "delivery_date": s["delivery_date"], "category": s["category"], "unit": s["unit"],
