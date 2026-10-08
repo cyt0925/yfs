@@ -32,7 +32,7 @@ CODE_RE = re.compile(r"^5888(\d{8,9})\s*$")
 QTY_RE = re.compile(r"^(\d+)\s*C\s*$")
 EXP_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})\s*$")
 TOTAL_RE = re.compile(r"合計箱數[：:]\s*(\d+)")
-WH_RE = re.compile(r"永豐商店酷澎-([A-Za-z0-9]+)")
+WH_RE = re.compile(r"永豐商店\s*-?\s*酷澎\s*-\s*([A-Za-z0-9]+)")      # TAO3 寫「永豐商店酷澎-TAO3」，TAO5 寫「永豐商店-酷澎-TAO5」
 SHIP_RE = re.compile(r"指送日期[：:]\s*(\d{4})/(\d{2})/(\d{2})")
 
 
@@ -41,8 +41,31 @@ def _mars_code(code_tail):
     return code_tail[1:] if len(code_tail) == 9 and code_tail.startswith("0") else code_tail
 
 
+def _read_items(lines, items):
+    """把一頁的文字行接到 items 後面。cur 從上一頁最後一個品項接著讀（品項跨頁時，續頁開頭可能還是上一個品項的箱數、效期）。"""
+    cur = items[-1] if items else None
+    for ln in lines:
+        cm = CODE_RE.match(ln)
+        if cm:
+            cur = {"code": _mars_code(cm.group(1)), "raw_code": ln, "qty": None, "expiry": "", "name": ""}
+            items.append(cur); continue
+        if cur is None:
+            continue
+        qm = QTY_RE.match(ln)
+        if qm:
+            cur["qty"] = (cur["qty"] or 0) + int(qm.group(1)); continue      # 同商品分兩批效期：同一格裡會有兩個 5C／4C，加總
+        em = EXP_RE.match(ln)
+        if em:
+            d = f"{em.group(1)}-{em.group(2)}-{em.group(3)}"
+            cur["expiry"] = f"{cur['expiry']}、{d}" if cur["expiry"] else d; continue
+        if ln and not ln.isdigit() and not cur["name"] and not ln.startswith("備註") and cur["qty"] is None:
+            cur["name"] = re.sub(r"\s*\d+:\d+:\d+\s*$", "", ln)
+    return items
+
+
 def parse_yx_pdf(data, filename=""):
-    """一頁一張配送單 → [{eip_po, warehouse, ship_date, items:[{code, qty, expiry, name}], total, page, warnings}]"""
+    """一頁一張配送單 → [{eip_po, warehouse, ship_date, items:[{code, qty, expiry, name}], total, page, warnings}]
+    一張配送單品項多時會印成兩頁（「1 / 2 頁」）：第二頁沒有收貨單號，品項和「合計箱數」接回上一頁那張（TAO5 第 9～10 頁）。"""
     try:
         doc = pymupdf.open(stream=data, filetype="pdf")
     except Exception as exc:  # noqa: BLE001
@@ -52,37 +75,37 @@ def parse_yx_pdf(data, filename=""):
         text = page.get_text()
         lines = [ln.strip() for ln in text.splitlines()]
         m = PO_RE.search(text)
+        tot = TOTAL_RE.search(text)
         if not m:
+            prev = pages[-1] if pages else None
+            if prev and prev["eip_po"] and prev["total"] is None and prev["_last"] == pno - 1:
+                _read_items(lines, prev["items"])                      # 續頁：接回上一張
+                prev["total"] = int(tot.group(1)) if tot else None
+                prev["cont_pages"].append(pno); prev["_last"] = pno
+                continue
             if "勇信" in text or "配送明細表" in text or "配 送 明 細 表" in text:
                 pages.append({"page": pno, "eip_po": "", "items": [], "total": None, "warehouse": "", "ship_date": "",
-                              "warnings": [f"第 {pno} 頁找不到收貨單號"]})
+                              "warnings": [f"第 {pno} 頁找不到收貨單號"], "cont_pages": [], "_last": pno})
             continue
-        wh = WH_RE.search(text); sd = SHIP_RE.search(text); tot = TOTAL_RE.search(text)
-        items, cur = [], None
-        for ln in lines:
-            cm = CODE_RE.match(ln)
-            if cm:
-                cur = {"code": _mars_code(cm.group(1)), "raw_code": ln, "qty": None, "expiry": "", "name": ""}
-                items.append(cur); continue
-            if cur is None:
-                continue
-            qm = QTY_RE.match(ln)
-            if qm:
-                cur["qty"] = (cur["qty"] or 0) + int(qm.group(1)); continue      # 同商品分兩批效期：同一格裡會有兩個 5C／4C，加總
-            em = EXP_RE.match(ln)
-            if em:
-                d = f"{em.group(1)}-{em.group(2)}-{em.group(3)}"
-                cur["expiry"] = f"{cur['expiry']}、{d}" if cur["expiry"] else d; continue
-            if ln and not ln.isdigit() and not cur["name"] and not ln.startswith("備註") and cur["qty"] is None:
-                cur["name"] = re.sub(r"\s*\d+:\d+:\d+\s*$", "", ln)
-        warnings = [f"第 {pno} 頁 {it['raw_code']} 未讀取到配送數量" for it in items if it["qty"] is None]
-        total = int(tot.group(1)) if tot else None
-        got = sum(it["qty"] or 0 for it in items)
-        if total is not None and got != total:
-            warnings.append(f"第 {pno} 頁明細加總 {got} 箱與合計箱數 {total} 箱不符，請人工核對")
-        pages.append({"page": pno, "eip_po": m.group(1), "warehouse": wh.group(1) if wh else "",
+        wh = WH_RE.search(text); sd = SHIP_RE.search(text)
+        pages.append({"page": pno, "eip_po": m.group(1), "warehouse": wh.group(1).upper() if wh else "",
                       "ship_date": f"{sd.group(1)}-{sd.group(2)}-{sd.group(3)}" if sd else "",
-                      "items": items, "total": total, "warnings": warnings})
+                      "items": _read_items(lines, []), "total": int(tot.group(1)) if tot else None, "warnings": [],
+                      "cont_pages": [], "_last": pno})
+    for p in pages:
+        if not p["eip_po"]:
+            continue
+        label = f"第 {p['page']}" + (f"～{p['cont_pages'][-1]}" if p["cont_pages"] else "") + " 頁"
+        p["warnings"] += [f"{label} {it['raw_code']} 未讀取到配送數量" for it in p["items"] if it["qty"] is None]
+        got = sum(it["qty"] or 0 for it in p["items"])
+        if p["total"] is None:
+            p["warnings"].append(f"{label}找不到合計箱數，請人工核對明細是否完整")
+        elif got != p["total"]:
+            p["warnings"].append(f"{label}明細加總 {got} 箱與合計箱數 {p['total']} 箱不符，請人工核對")
+        if not p["warehouse"]:
+            p["warnings"].append(f"{label}讀不到倉別，改用系統中 {p['eip_po']} 的倉別")
+    for p in pages:
+        p.pop("_last", None)
     if not pages:
         raise ValueError(f"{filename}：此 PDF 不是勇信配送明細表（找不到收貨單號）；掃描圖檔的 PDF 無法讀取。")
     return pages
@@ -191,8 +214,10 @@ def compare(conn, pages, none_ids=()):
                     "missing_splits": [x["filename"] + ("" if x["eip_po"] else "（還沒填 EIP 單號）") for x in missing], "splits": sp})
     pos.sort(key=lambda p: (p["delivery_date"], p["po_number"]))
     # 有 EIP 單號、同倉同日、卻沒出現在這次表裡的：一個號碼一條（同一個號碼的幾份是同一張採購單，勾一個就一起算 0 箱），
-    # 人勾過的也留在清單裡、標 declared，才能取消（Jerry 2026-10-08：勾了一個整個框就不見，以為壞了）
-    whs = {p["warehouse"] for p in pages if p["warehouse"]}; dates = {p["ship_date"] for p in pages if p["ship_date"]}
+    # 人勾過的也留在清單裡、標 declared，才能取消（Jerry 2026-10-08：勾了一個整個框就不見，以為壞了）。
+    # PDF 讀不到倉別時用系統裡那個 EIP 單號的倉別，不然這份清單整個列不出來（Jerry 2026-10-08 TAO5：勇信早上就說不出的兩張沒得勾）
+    whs = {p["warehouse"] for p in pages if p["warehouse"]} | {splits[p["eip_po"]][0]["warehouse"] for p in pages if not p["warehouse"] and p["eip_po"] in splits}
+    dates = {p["ship_date"] for p in pages if p["ship_date"]}
     not_in = collections.OrderedDict()
     for s in all_split_rows:
         if (s["eip_po"] not in by_eip or s["eip_po"] in declared) and s["warehouse"] in whs and s["delivery_date"] in dates:
@@ -200,7 +225,7 @@ def compare(conn, pages, none_ids=()):
             g["split_ids"].append(s["id"]); g["filenames"].append(s["filename"])
     not_in = list(not_in.values())
     rows_all = [r for p in pos for y in p["splits"] for r in y["items"]]
-    summary = {"pages": len(pages), "eip_pos": len(by_eip), "pos": len(pos), "items": len(rows_all),
+    summary = {"pages": sum(1 + len(p.get("cont_pages") or []) for p in pages), "eip_pos": len(by_eip), "pos": len(pos), "items": len(rows_all),
                "ok": sum(1 for r in rows_all if r["status"] == "ok"), "partial": sum(1 for r in rows_all if r["status"] == "partial"),
                "none": sum(1 for r in rows_all if r["status"] == "none"), "over": sum(1 for r in rows_all if r["status"] == "over"),
                "full_pos": sum(1 for p in pos if p["full"]), "short_cases": sum(r["short"] for r in rows_all)}
@@ -299,7 +324,7 @@ def api_shortage_compare():
             ps = parse_yx_pdf(f.read(), f.filename)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
-        pages += ps; names.append({"filename": f.filename, "pages": len(ps)})
+        pages += ps; names.append({"filename": f.filename, "pages": sum(1 + len(p["cont_pages"]) for p in ps)})
     conn = get_conn()
     try:
         if conn.execute("SELECT COUNT(*) AS n FROM mst_mars_splits WHERE eip_po != ''").fetchone()["n"] == 0:

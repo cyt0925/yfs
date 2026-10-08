@@ -64,20 +64,24 @@ def special_sheet(rows):
     return buf.getvalue()
 
 
-def yx_pdf(pages):
-    """假的勇信配送明細表：pages = [(EIP單號, 倉, 指送日期 yyyy/mm/dd, [(瑪氏貨號, 箱數, 效期), ...])]，文字排法照真檔。"""
+def yx_pdf(pages, header="BMS100222-永豐商店酷澎-{wh}", split_at=None):
+    """假的勇信配送明細表：pages = [(EIP單號, 倉, 指送日期 yyyy/mm/dd, [(瑪氏貨號, 箱數, 效期), ...])]，文字排法照真檔。
+    header：倉別那行（TAO5 真檔是「BMS100227-永豐商店-酷澎-TAO5」）；split_at＝n：每張印到第 n 個品項就換頁，續頁沒有收貨單號（TAO5 第 9～10 頁）。"""
     import pymupdf
     doc = pymupdf.open()
-    for eip, wh, date, items in pages:
-        page = doc.new_page()
-        lines = ["桃園市大園區高鐵北路三段100號", "客戶單號：7816797526", f"BMS100222-永豐商店酷澎-{wh}", "出貨廠商名稱：A5888-台灣瑪氏股份有限公司",
-                 f"指送日期：{date}", "配 送 明 細 表(預排鮮度)", "產品編號", "產品名稱", "入數", "配送數量", f"收貨單號：{eip}-酷澎-T"]
-        for n, (code, qty, exp) in enumerate(items, start=1):
-            lines += [f"58880{code}", str(n), f"假品名 {code} 1:6:10", f"{qty}C  ", "625D1TAP01", exp]
-        lines += ["備註:箱麥/ 對點/酷澎嘜頭+驗收單", "單據金額:", f"合計箱數:{sum(q for _, q, _ in items)}", "客戶簽章:"]
-        y = 40
+    def put(lines):
+        page = doc.new_page(); y = 40
         for ln in lines:
             page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
+    for eip, wh, date, items in pages:
+        lines = ["桃園市大園區高鐵北路三段100號", "客戶單號：7816797526", header.format(wh=wh), "出貨廠商名稱：A5888-台灣瑪氏股份有限公司",
+                 f"指送日期：{date}", "配 送 明 細 表(預排鮮度)", "產品編號", "產品名稱", "入數", "配送數量", f"收貨單號：{eip}-酷澎-T"]
+        for n, (code, qty, exp) in enumerate(items, start=1):
+            if split_at and n == split_at + 1:
+                put(lines); lines = []
+            lines += [f"58880{code}", str(n), f"假品名 {code} 1:6:10", f"{qty}C  ", "625D1TAP01", exp]
+        lines += ["備註:箱麥/ 對點/酷澎嘜頭+驗收單", "單據金額:", f"合計箱數:{sum(q for _, q, _ in items)}", "客戶簽章:"]
+        put(lines)
     return doc.tobytes()
 
 
@@ -475,6 +479,9 @@ def main():
     pages = msx.parse_yx_pdf(pdf, "假.pdf")
     check("假 PDF 讀得出：2 頁、收貨單號、倉、日期、箱數、效期", len(pages) == 2 and pages[0]["eip_po"] == "PO202609305" and pages[0]["warehouse"] == "TAO3"
           and pages[0]["ship_date"] == "2026-09-29" and pages[0]["items"][0]["qty"] == int(it0["cases"]) - 1 and pages[0]["items"][0]["expiry"] == "2027-06-18" and not pages[0]["warnings"], str(pages[0])[:300])
+    cont = msx.parse_yx_pdf(yx_pdf([("PO202609305", "TAO3", "2026/09/29", [("10000001", 3, "2027/01/01"), ("10000002", 4, "2027/01/01"), ("10000003", 5, "2027/01/01")])], split_at=2), "續頁.pdf")
+    check("一張配送單印成兩頁（續頁沒有收貨單號）→ 接回同一張：3 個品項、合計 12 箱對得上、不提醒", len(cont) == 1 and cont[0]["cont_pages"] == [2] and [i["qty"] for i in cont[0]["items"]] == [3, 4, 5]
+          and cont[0]["total"] == 12 and not cont[0]["warnings"], str(cont)[:300])
     check("產品編號 58880＋貨號、配送數量 4C 的讀法", msx.QTY_RE.match("4C  ") and msx._mars_code("060019810") == "60019810" and msx._mars_code("10266398") == "10266398")
     r = up(c, "/api/mars/shortage/compare", pdf, "假_勇信.pdf"); res = r.get_json()
     check("比對：對到 1 張 PO，一個品項少 1 箱＝部分缺，其他沒缺；PO202609999 系統沒有 → 列未知", r.status_code == 200 and res["summary"]["pos"] == 1 and res["summary"]["partial"] == 1
@@ -515,6 +522,15 @@ def main():
     r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf"); res2 = r.get_json()
     check("表裡沒有我們的單：同倉同日有 EIP 單號的幾份列在「沒在表裡」（一個單號一條）、不判缺貨", res2["summary"]["pos"] == 0 and {i for x in res2["not_in_pdf"] for i in x["split_ids"]} == {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}
           and all(not x["declared"] for x in res2["not_in_pdf"]) and len(res2["not_in_pdf"]) == len({x["eip_po"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}), str(res2["not_in_pdf"]))
+    want = {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}
+    pdf2b = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])], header="BMS100227-永豐商店-酷澎-{wh}")
+    res2b = up(c, "/api/mars/shortage/compare", pdf2b, "假2b.pdf").get_json()
+    check("倉別那行寫「永豐商店-酷澎-TAO3」（TAO5 真檔的寫法）也讀得到倉，「沒在表裡」照樣列得出來", res2b["warehouses"] == ["TAO3"] and {i for x in res2b["not_in_pdf"] for i in x["split_ids"]} == want, str(res2b["warehouses"]) + str(res2b["not_in_pdf"])[:200])
+    one = next(x for x in v["splits"] if x["delivery_date"] == "2026-09-29" and x["eip_po"])
+    pdf2c = yx_pdf([(one["eip_po"], "TAO3", "2026/09/29", [(i["mars_code"], int(i["cases"]), "2027/01/01") for i in one["items"]])], header="BMS100227-看不懂的寫法")
+    res2c = up(c, "/api/mars/shortage/compare", pdf2c, "假2c.pdf").get_json()
+    check("PDF 完全讀不到倉別 → 用系統裡那個 EIP 單號的倉別，「沒在表裡」照樣列得出來、提醒讀不到倉別", res2c["warehouses"] == ["TAO3"] and {i for x in res2c["not_in_pdf"] for i in x["split_ids"]} == want - {x["id"] for x in v["splits"] if x["eip_po"] == one["eip_po"]}
+          and any("讀不到倉別" in w for w in res2c["page_warnings"]), str(res2c["warehouses"]) + str(res2c["page_warnings"]))
     r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf", none_ids=",".join(str(i) for i in ids_all)); res3 = r.get_json()
     p0 = res3["pos"][0]
     check("勾過的還留在「沒在表裡」清單、標已勾（才能取消），不會整個框消失", len(res3["not_in_pdf"]) == len(res2["not_in_pdf"]) and all(x["declared"] for x in res3["not_in_pdf"]), str(res3["not_in_pdf"]))
