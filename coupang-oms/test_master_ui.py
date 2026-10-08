@@ -383,7 +383,17 @@ def main():
         check("搜尋別天的 PO → 這期間沒有、出現「改成全部日期再找」", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 0 and "沒有符合" in pg.inner_text("#sp-table") and pg.is_visible("#q-all"))
         pg.click("#q-all"); pg.wait_for_selector("#sp-table tr.pog", timeout=10000); pg.wait_for_timeout(300)
         check("按下去 → 日期改成全部、找到那張 PO", pg.input_value("#d-from") < "2026-09-18" and "13000000600016" in pg.inner_text("#sp-table tr.pog") and pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == 1, f"{pg.input_value('#d-from')}～{pg.input_value('#d-to')}")
-        pg.fill("#q", ""); pg.click("#cal .day[data-date='2026-09-18']"); pg.wait_for_timeout(800)
+        pg.fill("#q", ""); pg.wait_for_timeout(400)
+        wh_col = lambda: pg.eval_on_selector_all("#sp-table tr.sp td:nth-child(6)", "els => els.map(e => e.innerText.trim())")   # noqa: E731
+        date_order = wh_col()
+        pg.select_option("#f-sort", "wh"); pg.wait_for_timeout(400)
+        whs_sorted, pos_seen = wh_col(), pg.eval_on_selector_all("#sp-table tr.pog", "els => els.map(e => (e.innerText.match(/PO\\s*(\\d{14})/) || [])[1] + '@' + (e.innerText.match(/\\d+\\/\\d+ 到貨/) || [''])[0])")
+        check("排序選「依倉別」→ 倉那欄由小到大、同一張 PO 還是只有一條標題列", len(set(whs_sorted)) > 1 and whs_sorted == sorted(whs_sorted, key=lambda w: (w.rstrip("0123456789"), int("0" + w[len(w.rstrip("0123456789")):])))
+              and whs_sorted != date_order and len(pos_seen) == len(set(pos_seen)), f"{whs_sorted} / 原本 {date_order} / 標題 {pos_seen}")
+        pg.reload(); pg.wait_for_selector("#sp-table tr.sp", timeout=15000); pg.wait_for_timeout(500)
+        check("重新整理後還記得依倉別排序", pg.input_value("#f-sort") == "wh")
+        pg.select_option("#f-sort", "date"); pg.wait_for_timeout(300)
+        pg.click("#cal .day[data-date='2026-09-18']"); pg.wait_for_timeout(800)
         check("清掉搜尋、點回 9/18 → 5 份都回來", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5 and "符合" not in pg.inner_text("#sum"))
         with pg.expect_download() as dl:
             pg.click("#sp-table button.eipf >> nth=1")

@@ -12,7 +12,7 @@ const md = d => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const STATUS = { new: "未產出", generated: "已產出，待填 EIP 採購單號", filled: "已回填", changed: "訂單已變更，請重新下載 EIP 採購單", changed_after_eip: "EIP 送出後訂單已變更", gone: "訂單已無此份" };
 let VIEW = null, OPEN = new Set(), CHECKED = new Set();
-let DATES = [], Q = "", NOEIP = false;        // 有瑪氏訂單的到貨日（搜尋全部日期用）、搜尋字、只看還沒填 EIP 單號的
+let DATES = [], Q = "", NOEIP = false, SORT = "date";        // 有瑪氏訂單的到貨日（搜尋全部日期用）、搜尋字、只看還沒填 EIP 單號的
 
 /* ── 商品總表 ── */
 async function loadStatus() {
@@ -121,6 +121,11 @@ async function previewOrders(files) {
 $("#q").addEventListener("input", () => { Q = $("#q").value.trim().toLowerCase(); if (VIEW) render(); });
 $("#q").addEventListener("keydown", e => { if (e.key === "Escape") { $("#q").value = ""; Q = ""; if (VIEW) render(); } });
 $("#f-noeip").addEventListener("click", () => { NOEIP = !NOEIP; $("#f-noeip").classList.toggle("on", NOEIP); if (VIEW) render(); });
+/* 排序：依到貨日（伺服器給的順序）或依倉別（同倉再照到貨日、酷澎 PO），同一張 PO 的幾份還是排在一起（Jerry 2026-10-08）。選過的記在這台電腦 */
+try { SORT = localStorage.getItem("mars_sort") === "wh" ? "wh" : "date"; } catch (e) { /* 無痕視窗等讀不到就用預設 */ }
+$("#f-sort").value = SORT;
+$("#f-sort").addEventListener("change", () => { SORT = $("#f-sort").value; try { localStorage.setItem("mars_sort", SORT); } catch (e) { /* 存不了就算了 */ } if (VIEW) render(); });
+const WH_CMP = new Intl.Collator("en", { numeric: true });   // TAO3 排在 TAO10 前面
 function matchSplit(r) {
   if (NOEIP && r.eip_po) return { ok: false };
   if (!Q) return { ok: true, byItem: false };
@@ -156,6 +161,7 @@ function render() {
 
   const matched = new Map(v.splits.map(r => [r.split_key, matchSplit(r)]));
   const shown = v.splits.filter(r => matched.get(r.split_key).ok);
+  if (SORT === "wh") shown.sort((a, b) => WH_CMP.compare(a.warehouse || "", b.warehouse || "") || (a.delivery_date || "").localeCompare(b.delivery_date || "") || (a.po_number || "").localeCompare(b.po_number || ""));
   if (Q || NOEIP) $("#sum").innerHTML += `<span>符合 <b style="color:var(--m8)">${shown.length}</b>／${v.splits.length} 份</span>`;
 
   let h = `<thead><tr><th><input type="checkbox" id="ck-all" title="全選"></th><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
