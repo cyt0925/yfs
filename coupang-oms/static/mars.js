@@ -12,10 +12,12 @@ const md = d => { const [, m, dd] = d.split("-"); return `${Number(m)}/${Number(
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const STATUS = { new: "未產出", generated: "已產出，待填 EIP 採購單號", filled: "已回填", changed: "訂單已變更，請重新下載 EIP 採購單", changed_after_eip: "EIP 送出後訂單已變更", gone: "訂單已無此份" };
 let VIEW = null, OPEN = new Set(), CHECKED = new Set();
+let DATES = [], Q = "", NOEIP = false;        // 有瑪氏訂單的到貨日（搜尋全部日期用）、搜尋字、只看還沒填 EIP 單號的
 
 /* ── 商品總表 ── */
 async function loadStatus() {
   const d = await api("/api/mars/status");
+  DATES = d.dates || [];
   const u = d.last_upload;
   $("#mp-status").innerHTML = u ? `上次上傳 ${esc(u.uploaded_at.slice(0, 16))} · ${esc(u.operator)} · ${esc(u.filename)} · <b style="color:var(--m8)">${d.codes}</b> 個料號`
     : `<span class="neg">尚未上傳</span>：拆單需依商品總表區分品類與中標，請先上傳 Alice 的「自動化_Mars整合商品資料」。`;
@@ -115,6 +117,19 @@ async function previewOrders(files) {
 
 /* ── 拆單 ── */
 ["#d-from", "#d-to"].forEach(s => $(s).addEventListener("change", loadSplits));
+/* 搜尋：在已載入的期間裡找，不用重新問伺服器；用空白隔開多個關鍵字，全部符合才列出。料號、品名在品項裡，符合的那份自動展開 */
+$("#q").addEventListener("input", () => { Q = $("#q").value.trim().toLowerCase(); if (VIEW) render(); });
+$("#q").addEventListener("keydown", e => { if (e.key === "Escape") { $("#q").value = ""; Q = ""; if (VIEW) render(); } });
+$("#f-noeip").addEventListener("click", () => { NOEIP = !NOEIP; $("#f-noeip").classList.toggle("on", NOEIP); if (VIEW) render(); });
+function matchSplit(r) {
+  if (NOEIP && r.eip_po) return { ok: false };
+  if (!Q) return { ok: true, byItem: false };
+  const words = Q.split(/\s+/).filter(Boolean);
+  const head = [r.po_number, r.eip_po, r.warehouse, r.filename, r.category, r.unit, r.label === "V" ? "需貼中標" : "不貼中標"].join("\n").toLowerCase();
+  const items = r.items.map(i => [i.yf_sku, i.purchase_code, i.product_name, i.mars_code].join("\n").toLowerCase());
+  const ok = words.every(w => head.includes(w) || items.some(t => t.includes(w)));
+  return { ok, byItem: ok && !words.every(w => head.includes(w)) };
+}
 async function loadSplits() {
   const f = $("#d-from").value, t = $("#d-to").value; if (!f || !t) return;
   if (CAL && f.slice(0, 7) !== CAL_MONTH && f.slice(0, 7) === t.slice(0, 7)) { CAL_MONTH = f.slice(0, 7); loadCalendar(); } else renderCalendar();
@@ -139,10 +154,14 @@ function render() {
   CHECKED = new Set([...CHECKED].filter(k => usable.includes(k)));
   $("#btn-emma-all").disabled = !usable.length;
 
+  const matched = new Map(v.splits.map(r => [r.split_key, matchSplit(r)]));
+  const shown = v.splits.filter(r => matched.get(r.split_key).ok);
+  if (Q || NOEIP) $("#sum").innerHTML += `<span>符合 <b style="color:var(--m8)">${shown.length}</b>／${v.splits.length} 份</span>`;
+
   let h = `<thead><tr><th><input type="checkbox" id="ck-all" title="全選"></th><th>狀態</th><th>拆單表檔名</th><th>到貨日</th><th>酷澎 PO</th><th>倉</th><th>品類</th>${v.split_by_unit ? "<th>單位</th>" : ""}<th>中標</th><th class="num">品項</th><th class="num">箱數</th><th style="min-width:150px">EIP 採購單號</th><th style="min-width:170px">約倉時間</th><th>下載</th></tr></thead><tbody>`;
   const ncol = v.split_by_unit ? 14 : 13;
   let lastPo = null, gi = 0;
-  for (const r of v.splits) {
+  for (const r of shown) {
     const key = r.split_key, warn = r.items.some(i => i.issues && i.issues.length);
     // 還沒產出的列也直接能填、能按：第一次動到時先把這一份存起來（ensureSplit）。只有箱數算不出整數的那份不行
     const blocked = r.blocking && r.blocking.length, ok = !blocked && r.status !== "gone" || r.id;
@@ -150,8 +169,8 @@ function render() {
     if (r.po_number !== lastPo) {
       lastPo = r.po_number; gi++;
       const same = v.splits.filter(x => x.po_number === r.po_number);
-      const filled = same.filter(x => x.eip_po).length;
-      h += `<tr class="pog"><td colspan="${ncol}"><i class="bi bi-receipt"></i> PO ${esc(r.po_number)}<span class="kbd">${md(r.delivery_date)} 到貨 · ${esc(r.warehouse)} · 拆成 ${same.length} 份 · ${fmt(same.reduce((a, x) => a + (x.cases_total || 0), 0))} 箱 · 已回填 ${filled}／${same.length}</span></td></tr>`;
+      const filled = same.filter(x => x.eip_po).length, hit = same.filter(x => matched.get(x.split_key).ok).length;
+      h += `<tr class="pog"><td colspan="${ncol}"><i class="bi bi-receipt"></i> PO ${esc(r.po_number)}<span class="kbd">${md(r.delivery_date)} 到貨 · ${esc(r.warehouse)} · 拆成 ${same.length} 份 · ${fmt(same.reduce((a, x) => a + (x.cases_total || 0), 0))} 箱 · 已回填 ${filled}／${same.length}${hit < same.length ? ` · 符合 ${hit} 份` : ""}</span></td></tr>`;
     }
     h += `<tr class="sp ${gi % 2 ? "g1" : "g0"}" data-k="${esc(key)}">
       <td>${ok ? `<input type="checkbox" class="ck" data-k="${esc(key)}" ${CHECKED.has(key) ? "checked" : ""} title="勾選後可合併下載 EMMA 匯入檔">` : ""}</td>
@@ -164,14 +183,19 @@ function render() {
       <td><input class="inp eip" data-k="${esc(key)}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}>${r.eip_mates && r.eip_mates.length ? `<div class="kbd" title="${esc(r.eip_mates.map(m => m.filename).join("\n"))}">與「${r.eip_mates.map(m => esc(m.unit)).join("、")}」同一張 EIP 採購單</div>` : ""}</td>
       <td><input class="inp slot" data-k="${esc(key)}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
       <td class="whitespace-nowrap">${ok ? `<button class="btn btn-o btn-sm emma" data-k="${esc(key)}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "下載 EMMA 匯入檔" : "下載 EMMA 匯入檔（尚未填 EIP 採購單號，出貨備註會留空）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <button class="btn btn-o btn-sm eipf" data-k="${esc(key)}" title="下載 EIP 採購單">EIP</button> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-k="${esc(key)}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>瑪氏採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd" title="此份有品項需先處理（見上方紅色提示）">先處理紅色提示</span>`}</td></tr>`;
-    if (OPEN.has(key)) {
+    if (OPEN.has(key) || matched.get(key).byItem) {
       h += `<tr class="sub"><td></td><td></td><td colspan="${v.split_by_unit ? 12 : 11}"><table class="t"><thead><tr><th>永豐料號</th><th>下採料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th>瑪氏貨號</th><th>採購單箱備註</th><th>注意事項</th></tr></thead><tbody>
         ${r.items.map(i => `<tr><td class="fn">${esc(i.yf_sku)}</td><td class="fn">${esc(i.purchase_code)}${i.purchase_code !== i.yf_sku ? ` <span class="badge st-changed" title="報價備註與永豐料號不同（組出商品）">組出</span>` : ""}</td><td>${esc(i.product_name)}</td><td class="num">${fmt(i.qty_ship)}${i.qty_overridden ? ` <span class="badge st-generated" title="已在商品主檔自動化的訂單明細修改出貨數量">我方修改</span>` : ""}</td><td>${esc(i.unit)}</td><td class="num">${fmt(i.box_file)}</td><td class="num"><b>${fmt(i.cases)}</b></td><td class="fn">${esc(i.mars_code)}</td><td>${esc(i.po_case_note)}</td><td style="color:var(--warn)">${(i.issues || []).map(esc).join("<br>")}</td></tr>`).join("")}
       </tbody></table></td></tr>`;
     }
   }
   if (!v.splits.length) h += `<tr><td colspan="${ncol}" class="muted" style="padding:24px;text-align:center">此期間沒有瑪氏訂單。請改選到貨日，或將訂單彙總表拖曳至上方匯入。</td></tr>`;
+  else if (!shown.length) {
+    const whole = DATES.length && ($("#d-from").value > DATES[0] || $("#d-to").value < DATES[DATES.length - 1]);
+    h += `<tr><td colspan="${ncol}" class="muted" style="padding:24px;text-align:center">此期間沒有符合的拆單表。${whole ? `<button class="btn btn-o btn-sm ml-2" id="q-all"><i class="bi bi-calendar-range"></i> 改成全部日期再找</button>` : ""}</td></tr>`;
+  }
   $("#sp-table").innerHTML = h + "</tbody>";
+  const qa = $("#q-all"); if (qa) qa.addEventListener("click", () => { $("#d-from").value = DATES[0]; $("#d-to").value = DATES[DATES.length - 1]; loadSplits(); });
   $("#sp-table").querySelectorAll("tr.sp").forEach(tr => tr.addEventListener("click", e => {
     if (e.target.closest("input, a, button")) return;
     const k = tr.dataset.k; OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k); render();

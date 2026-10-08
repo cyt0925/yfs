@@ -101,6 +101,7 @@
     <div class="flex items-center gap-3 flex-wrap mb-3">
       <b>2. 確認、下載</b>
       <div id="sum" class="sum"></div>
+      <input id="q" class="inp" placeholder="搜尋酷澎 PO、SKU、料號、品名、倉別" style="width:270px" title="可用空白隔開多個關鍵字，全部符合才列出">
       <div class="flex-1"></div>
       <button id="btn-all" class="btn btn-p"><i class="bi bi-download"></i> 全部下載（zip）</button>
     </div>
@@ -124,7 +125,15 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const fmt = n => n == null ? "" : Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const md = d => d || "日期不明";
 function toast(msg, kind) { const t = document.createElement("div"); t.className = "toast" + (kind === "err" ? " err" : ""); t.textContent = msg; $("#toasts").appendChild(t); setTimeout(() => t.remove(), kind === "err" ? 5000 : 2500); }
-let FILES = [], R = null;
+let FILES = [], R = null, Q = "";
+const PREVIEW = 60;                       // 沒搜尋時每組只顯示前 60 列；搜尋時列出全部符合的
+function matchRow(r, g) {
+  if (!Q) return true;
+  const t = [r.po, r.sku, r.yf_sku, r.name, g.warehouse, g.date].join("\n").toLowerCase();
+  return Q.split(/\s+/).filter(Boolean).every(w => t.includes(w));
+}
+$("#q").addEventListener("input", () => { Q = $("#q").value.trim().toLowerCase(); if (R) render(); });
+$("#q").addEventListener("keydown", e => { if (e.key === "Escape") { $("#q").value = ""; Q = ""; if (R) render(); } });
 
 /* 拖檔 */
 ["dragenter", "dragover"].forEach(ev => $("#dz").addEventListener(ev, e => { e.preventDefault(); $("#dz").classList.add("over"); }));
@@ -142,7 +151,8 @@ async function parse(files) {
 }
 function render() {
   const g = R.groups;
-  $("#sum").innerHTML = `<span><b>${g.length}</b> 組（到貨日與倉別）</span><span>寶僑 <b>${R.pg_rows}</b> 列</span><span><b>${g.reduce((a, x) => a + x.pos, 0)}</b> 張 PO</span><span><b>${fmt(g.reduce((a, x) => a + x.qty, 0))}</b> 件</span><span><b>${fmt(g.reduce((a, x) => a + x.cases, 0))}</b> 箱</span>`;
+  const hits = g.map(x => ({ g: x, rows: x.preview.filter(r => matchRow(r, x)) }));
+  $("#sum").innerHTML = `<span><b>${g.length}</b> 組（到貨日與倉別）</span><span>寶僑 <b>${R.pg_rows}</b> 列</span><span><b>${g.reduce((a, x) => a + x.pos, 0)}</b> 張 PO</span><span><b>${fmt(g.reduce((a, x) => a + x.qty, 0))}</b> 件</span><span><b>${fmt(g.reduce((a, x) => a + x.cases, 0))}</b> 箱</span>${Q ? `<span>符合 <b style="color:var(--p8)">${hits.reduce((a, h) => a + h.rows.length, 0)}</b> 列</span>` : ""}`;
   const al = [];
   const sk = Object.entries(R.skipped_lines || {});
   if (sk.length) al.push(`<div class="kbd">已略過非寶僑資料：${sk.map(([k, v]) => `${esc(k)} ${v} 列`).join("、")}。</div>`);
@@ -150,15 +160,16 @@ function render() {
   const iss = g.flatMap(x => x.issues.map(i => `${md(x.date)} ${esc(x.warehouse)}：${esc(i)}`));
   if (iss.length) al.push(`<div class="alert al-warn"><b>注意事項</b><br>${iss.join("<br>")}</div>`);
   $("#alerts").innerHTML = al.join("");
-  $("#groups").innerHTML = g.map(x => `<div class="grp">
+  $("#groups").innerHTML = (Q && !hits.some(h => h.rows.length) ? `<div class="kbd" style="padding:16px;text-align:center">沒有符合「${esc($("#q").value.trim())}」的資料。</div>` : "") +
+    hits.filter(h => !Q || h.rows.length).map(({ g: x, rows }) => `<div class="grp">
     <div class="gh"><b class="d">${md(x.date)} 到貨 · ${esc(x.warehouse)}</b><span class="kbd">${x.pos} 張 PO · ${x.rows} 個品項 · ${fmt(x.qty)} 件 · ${fmt(x.cases)} 箱 · 含稅金額 ${fmt(x.amount)} 元</span>
       <span class="kbd">收件人 ${esc(x.recipient)} · 手機 ${esc(x.phone)}（${esc(x.phone_from)}）</span>
       <div class="flex-1"></div>
       <div class="files"><span class="fn">${esc(x.throw_file)}</span><span class="fn">${esc(x.mapping_file)}</span></div>
       <button class="btn btn-o btn-sm dl" data-k="${esc(x.date)}|${esc(x.warehouse)}"><i class="bi bi-download"></i> 下載此組（2 個檔）</button></div>
     <div class="tbl-wrap"><table class="t"><thead><tr><th>酷澎 PO</th><th>SKU</th><th>永豐料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th class="num">單價</th><th>地址</th></tr></thead><tbody>
-      ${x.preview.map(r => `<tr><td class="fn">${esc(r.po)}</td><td class="fn">${esc(r.sku)}</td><td class="fn">${esc(r.yf_sku) || '<span class="neg">未填</span>'}</td><td>${esc(r.name)}</td><td class="num">${r.qty ? fmt(r.qty) : `<span class="neg">${fmt(r.qty ?? 0)}</span>`}</td><td>${esc(r.unit)}</td><td class="num">${r.box ? fmt(r.box) : '<span class="neg">未填</span>'}</td><td class="num"><b>${r.cases == null ? "" : fmt(r.cases)}</b></td><td class="num">${r.price == null ? '<span class="neg">未填</span>' : fmt(r.price)}</td><td class="kbd">${esc(r.address)}</td></tr>`).join("")}
-      ${x.rows > x.preview.length ? `<tr><td colspan="10" class="kbd">僅顯示前 ${x.preview.length} 列，其餘 ${x.rows - x.preview.length} 列請見下載檔案</td></tr>` : ""}
+      ${(Q ? rows : rows.slice(0, PREVIEW)).map(r => `<tr><td class="fn">${esc(r.po)}</td><td class="fn">${esc(r.sku)}</td><td class="fn">${esc(r.yf_sku) || '<span class="neg">未填</span>'}</td><td>${esc(r.name)}</td><td class="num">${r.qty ? fmt(r.qty) : `<span class="neg">${fmt(r.qty ?? 0)}</span>`}</td><td>${esc(r.unit)}</td><td class="num">${r.box ? fmt(r.box) : '<span class="neg">未填</span>'}</td><td class="num"><b>${r.cases == null ? "" : fmt(r.cases)}</b></td><td class="num">${r.price == null ? '<span class="neg">未填</span>' : fmt(r.price)}</td><td class="kbd">${esc(r.address)}</td></tr>`).join("")}
+      ${!Q && rows.length > PREVIEW ? `<tr><td colspan="10" class="kbd">僅顯示前 ${PREVIEW} 列，其餘 ${rows.length - PREVIEW} 列請見下載檔案；要找特定一列可用上方搜尋</td></tr>` : ""}
     </tbody></table></div></div>`).join("");
   $("#result").classList.remove("hidden");
   $("#groups").querySelectorAll(".dl").forEach(b => b.addEventListener("click", () => download(b.dataset.k)));

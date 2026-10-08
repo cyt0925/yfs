@@ -249,7 +249,7 @@ def _summary(groups, rows, warnings, settings, phones):
                     "preview": [{"po": r["po_number"], "sku": r["sku_id"], "yf_sku": r.get("yf_sku"), "name": (r.get("product_name") or "")[:40],
                                  "qty": _qty(r), "unit": r.get("unit"), "box": r.get("box_size"),
                                  "cases": math.ceil((_qty(r) or 0) / r["box_size"]) if r.get("box_size") else None,
-                                 "price": r.get("unit_price"), "address": r.get("address")} for r in rs[:60]]})
+                                 "price": r.get("unit_price"), "address": r.get("address")} for r in rs]})   # 全部列都回，畫面自己決定顯示幾列（搜尋要找得到每一列）
     return {"groups": out, "skipped_lines": dict(skipped), "warnings": warnings, "total_rows": len(rows),
             "pg_rows": sum(len(g["rows"]) for g in groups)}
 
