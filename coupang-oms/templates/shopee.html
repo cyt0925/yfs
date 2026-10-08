@@ -50,6 +50,15 @@
   .steps { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; }
   .steps span { padding:2px 9px; border-radius:999px; background:rgba(255,255,255,.18); color:rgba(255,255,255,.85); }
   .steps span.on { background:#fff; color:var(--s9); font-weight:700; }
+  .steps span.tab { cursor:pointer; background:rgba(255,255,255,.3); color:#fff; } .steps span.tab:hover { background:rgba(255,255,255,.45); }
+  .steps span.tab.on { background:#fff; color:var(--s9); } .steps span.off { opacity:.6; }
+  table.t tr.og.blk td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
+  table.t tr.og.lock td { color:var(--muted); }
+  .ck { width:16px; height:16px; accent-color:var(--s8); cursor:pointer; vertical-align:middle; } .ck:disabled { cursor:not-allowed; }
+  .prob { color:var(--bad); font-size:12px; } .prob + .prob { margin-top:2px; }
+  .lst { display:flex; flex-wrap:wrap; gap:10px; }
+  .lst .it { border:1px solid var(--line2); border-radius:10px; padding:8px 12px; font-size:13px; background:#fff; min-width:220px; }
+  .lst .it b { font-size:14px; }
   .dzbox { display:flex; align-items:center; gap:12px; border:2px dashed var(--s3); border-radius:12px; padding:16px 18px; background:var(--s0); color:var(--s9); cursor:pointer; font-size:13.5px; transition:border-color .15s, background .15s; }
   .dzbox:hover, .dzbox.over { border-color:var(--s8); background:var(--s1); }
   .dzbox i { font-size:26px; } .dzbox b { font-size:14.5px; }
@@ -77,8 +86,8 @@
       <img src="{{ url_for('static', filename='logo_shopee.png') }}" width="44" height="36" style="height:36px;width:auto;flex:none" alt="蝦皮特選圖示">
       <div>
         <h1 class="text-lg font-bold leading-tight">蝦皮特選訂單管理系統</h1>
-        <div class="steps mt-1" title="白底的是已經可以用的功能">
-          <span class="on">訂單匯入與總覽</span><span>竹運出貨</span><span>竹運採購進貨</span><span>直送訂單</span><span>缺貨維護與通知</span><span>採購單產出</span>
+        <div class="steps mt-1" id="tabs" title="點選切換；淡色的功能尚未開放">
+          <span class="tab on" data-tab="orders">訂單匯入與總覽</span><span class="off">竹運出貨</span><span class="tab" data-tab="buy" data-f="竹運採購進貨">竹運採購進貨</span><span class="tab" data-tab="buy" data-f="供應商直送">直送訂單</span><span class="off">缺貨維護與通知</span><span class="tab" data-tab="eip">採購單產出</span>
         </div>
       </div>
     </div>
@@ -89,7 +98,8 @@
   </div>
 </header>
 
-<main class="wrap mx-auto px-5 py-5 space-y-4">
+<main class="wrap mx-auto px-5 py-5">
+<div id="pane-orders" class="space-y-4">
   <!-- 上傳：蝦皮採購單、入庫單都丟這裡，看表頭自己認 -->
   <section class="card p-4 space-y-3">
     <div class="flex items-center gap-3 flex-wrap">
@@ -124,6 +134,55 @@
     <summary style="cursor:pointer;font-weight:700">上傳紀錄 <span class="kbd">（可下載原始檔）</span></summary>
     <div class="tbl-wrap mt-3" style="max-height:420px"><table class="t" id="up-tbl"></table></div>
   </details>
+</div>
+
+<!-- 竹運採購進貨／直送訂單（需求第六、七、十章）：同一塊畫面，依上方頁籤切換履約方式 -->
+<div id="pane-buy" class="space-y-4 hidden">
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">價格本（轉換率）</b>
+      <span class="kbd">寶僑「PG價格本整合」、紙潔「紙潔價格本整合」，依「料號3」（永豐料號＋單位代碼）對應箱入數。上傳後該線別整份更新。</span>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <div id="conv-st" class="lst"></div>
+      <label class="dzbox" id="dz-conv" style="padding:10px 16px"><i class="bi bi-cloud-arrow-up" style="font-size:22px"></i>
+        <div><b>上傳價格本</b><div class="kbd" style="color:var(--s9)">拖曳或點此選擇 .xlsx</div></div>
+        <input type="file" id="conv-file" accept=".xlsx" class="hidden"></label>
+    </div>
+  </section>
+
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px" id="b-title">竹運採購進貨</b>
+      <span class="kbd" id="b-hint"></span>
+      <div class="flex-1"></div>
+      <label class="kbd">到貨日 <input type="date" id="b-from" class="inp"> ～ <input type="date" id="b-to" class="inp"></label>
+      <select id="b-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>紙潔</option><option>瑪氏</option></select>
+      <span class="chip on" id="b-todo"><i class="bi bi-funnel"></i> 隱藏已回填單號</span>
+    </div>
+    <div class="sum" id="b-sum"></div>
+    <div class="tbl-wrap"><table class="t" id="b-tbl"></table></div>
+    <div id="b-err"></div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <button id="b-go" class="btn btn-p" disabled><i class="bi bi-file-earmark-zip"></i> 產出 EIP 採購單</button>
+      <span class="kbd" id="b-go-hint">請勾選要產出的訂單。</span>
+    </div>
+  </section>
+</div>
+
+<!-- 採購單產出：產過的 EIP 檔、回填 EIP 單號 -->
+<div id="pane-eip" class="space-y-4 hidden">
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">EIP 採購單</b>
+      <span class="kbd">上傳 EIP 後請回填採購單號；回填後該批訂單即鎖定，不會重複產出。如需重新產出，請先清除單號。</span>
+      <div class="flex-1"></div>
+      <label class="kbd">到貨日 <input type="date" id="e-from" class="inp"> ～ <input type="date" id="e-to" class="inp"></label>
+      <span class="chip" id="e-todo"><i class="bi bi-funnel"></i> 只看未回填</span>
+    </div>
+    <div class="tbl-wrap"><table class="t" id="e-tbl"></table></div>
+  </section>
+</div>
 </main>
 
 <dialog id="dlg-diff"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="dd-title">差異</span><button class="x" data-close="dlg-diff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
@@ -134,6 +193,17 @@
     <div class="flex gap-2 flex-wrap" id="df-opts"></div>
     <label class="block kbd">修改原因（必填）<input id="df-reason" class="inp" style="width:100%" placeholder="例如：竹運庫存不足，改由供應商直送"></label>
     <button id="df-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div></dialog>
+<dialog id="dlg-adj" style="width:min(580px,96vw)"><div class="dh"><i class="bi bi-calculator"></i><span id="da-title">修改下採數量</span><button class="x" data-close="dlg-adj" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div class="alert al-warn" id="da-why"></div>
+    <div class="facts" id="da-facts"></div>
+    <div class="flex items-center gap-2 flex-wrap kbd">快速填入：<span class="chip" id="da-down"></span><span class="chip" id="da-up"></span></div>
+    <label class="block kbd">修改後數量（須為轉換率的倍數）<input id="da-qty" class="inp" inputmode="numeric" style="width:100%"></label>
+    <label class="block kbd">修改原因（必填）<input id="da-reason" class="inp" style="width:100%" placeholder="例如：與業務確認改為整箱出貨"></label>
+    <div class="kbd" id="da-who"></div>
+    <div class="flex items-center gap-2 flex-wrap"><button id="da-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button>
+      <button id="da-clear" class="btn btn-o hidden"><i class="bi bi-arrow-counterclockwise"></i> 取消修改，回到原始數量</button></div>
+  </div></dialog>
 <dialog id="dlg-ver"><div class="dh"><i class="bi bi-layers"></i><span id="dv-title">版本紀錄</span><button class="x" data-close="dlg-ver" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div id="dv-body"></div></div></dialog>
 

@@ -303,6 +303,8 @@ def api_orders():
         items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {where} ORDER BY expected_date, warehouse, id", params))
         pending_all = conn.execute("SELECT COUNT(DISTINCT CASE WHEN po_id != '' THEN po_id ELSE pr_id END) AS n FROM shp_orders "
                                    "WHERE diff_pending = 1").fetchone()["n"]
+        from .purchase import po_status_map            # 第二段：採購單產出狀態
+        po_st = po_status_map(conn, [i["id"] for i in items if not i["removed"]])
     finally:
         conn.close()
     groups = {}
@@ -321,14 +323,18 @@ def api_orders():
         its = g["items"]
         alive = [i for i in its if not i["removed"]]
         pending = any(i["diff_pending"] for i in its)
+        fulfil_txt = "、".join(sorted(x for x in g.pop("fulfils") if x)) or "未選"
         g.update(
-            fulfil="、".join(sorted(x for x in g.pop("fulfils") if x)) or "未選",
+            fulfil=fulfil_txt,
             line="、".join(sorted(x for x in g.pop("lines") if x)),
             item_count=len(alive), removed_count=len(its) - len(alive),
             qty_original=sum(i["qty_original"] or 0 for i in its), qty=sum(i["qty"] or 0 for i in alive),
             inbound_count=sum(1 for i in alive if i["inbound_ids"]),
             status=ST_DIFF if pending else ST_IMPORTED, diff_pending=pending,
-            notify_status="未通知", po_status="未產出",
+            notify_status="未通知",
+            po_status=("不需產出" if fulfil_txt == "竹運出貨" else
+                       "已回填" if alive and all(po_st.get(i["id"]) == "已回填" for i in alive) else
+                       "已產出" if any(i["id"] in po_st for i in alive) else "未產出"),
         )
         out.append(g)
     out.sort(key=lambda g: (not g["diff_pending"], g["expected_date"], g["warehouse"], g["order_no"]))

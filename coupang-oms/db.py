@@ -562,7 +562,8 @@ _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "SIGN_BATCHES", "SIGNED_DOCS",
                      "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES",
                      "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
-                     "SHP_UPLOADS", "SHP_ORDERS")   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
+                     "SHP_UPLOADS", "SHP_ORDERS",   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
+                     "SHP_EIP")                     # 產 EIP 採購單：存檔要拿 id 掛品項
 
 
 def _wants_returning_id(sql):
@@ -1065,6 +1066,56 @@ CREATE TABLE IF NOT EXISTS shp_diffs (
     uploaded_at  TEXT DEFAULT '',
     confirmed_by TEXT DEFAULT '',
     confirmed_at TEXT DEFAULT ''
+);
+
+-- 蝦皮特選第二段：各線別價格本（料號3＝料號＋單位代碼 → 箱入數＝轉換率）。上傳時同一線別整份覆蓋
+CREATE TABLE IF NOT EXISTS shp_conv (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    code3       TEXT NOT NULL UNIQUE,     -- 4987176232878C／1022248C
+    line        TEXT DEFAULT '',          -- 寶僑／紙潔（看料號長相分）
+    base_code   TEXT DEFAULT '',
+    unit_code   TEXT DEFAULT '',
+    unit_name   TEXT DEFAULT '',
+    box_qty     INTEGER,                  -- 箱入數；價格本空白就是 NULL（換算不了）
+    name        TEXT DEFAULT '',
+    source_file TEXT DEFAULT '',
+    updated_by  TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT ''
+);
+
+-- 數量除不盡轉換率時人改的下採數量（需求 10.5：原始數量、轉換率、修改後數量、原因、人員、時間）
+CREATE TABLE IF NOT EXISTS shp_qty_adj (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL UNIQUE,
+    qty_before  INTEGER,
+    qty_after   INTEGER,
+    conv        INTEGER,
+    reason      TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT ''
+);
+
+-- 產出的 EIP 採購單：一個檔一筆（線別、履約方式、到貨日、倉、箱單位／小單位），存當時的內容才能重新下載、回填 EIP 單號
+CREATE TABLE IF NOT EXISTS shp_eip (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch         TEXT DEFAULT '',
+    line          TEXT DEFAULT '',
+    fulfil        TEXT DEFAULT '',
+    warehouse     TEXT DEFAULT '',
+    expected_date TEXT DEFAULT '',
+    unit_group    TEXT DEFAULT '',        -- 箱單位／小單位（寶僑分兩個檔）；紙潔一律換成箱、空白
+    filename      TEXT DEFAULT '',
+    rows_json     TEXT DEFAULT '[]',
+    eip_po        TEXT DEFAULT '',
+    created_by    TEXT DEFAULT '',
+    created_at    TEXT DEFAULT '',
+    updated_by    TEXT DEFAULT '',
+    updated_at    TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS shp_eip_items (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    eip_id    INTEGER NOT NULL,
+    order_id  INTEGER NOT NULL
 );
 """
 
