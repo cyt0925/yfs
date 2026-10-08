@@ -345,8 +345,9 @@ function renderYx() {
   let h = `<div class="sum text-sm mb-2"><span><b>${s.pages}</b> 頁</span><span>對到 <b>${s.pos}</b> 張 PO</span><span><b>${s.items}</b> 個品項</span><span>沒缺 <b style="color:var(--ok)">${s.ok}</b> 項</span><span>部分缺 <b style="color:var(--warn)">${s.partial}</b> 項</span><span>全缺 <b style="color:var(--bad)">${s.none}</b> 項</span>${s.over ? `<span>出貨超量 <b style="color:var(--bad)">${s.over}</b> 項</span>` : ""}<span>短缺 <b>${fmt(s.short_cases)}</b> 箱</span>${s.full_pos ? `<span>整張不出 <b style="color:var(--bad)">${s.full_pos}</b> 張</span>` : ""}</div>`;
   const al = [];
   if (r.unknown.length) al.push(`<div class="alert al-bad"><b>勇信配送明細表中有 ${r.unknown.length} 張採購單在系統中找不到</b>（可能未回填 EIP 採購單號，或不是本系統拆的單）：${r.unknown.map(u => `${esc(u.eip_po)}（第 ${u.pages.join("、")} 頁，${u.cases} 箱）`).join("、")}</div>`);
-  if (r.not_in_pdf.length) al.push(`<div class="alert al-warn"><b>${r.not_in_pdf.length} 份同倉、同日的拆單表不在這次的勇信配送明細表中</b>，暫不判定缺貨。確定勇信整份未出貨的，請勾選，系統會以 0 箱計算：<br>${r.not_in_pdf.map(x => `<label class="block"><input type="checkbox" class="yx-none" data-id="${x.split_id}"> ${esc(x.eip_po)} <span class="fn">${esc(x.filename)}</span></label>`).join("")}</div>`);
-  if (r.none_ids && r.none_ids.length) al.push(`<div class="kbd">已勾選 ${r.none_ids.length} 份未出貨，以 0 箱計算（下方標示為全缺）。</div>`);
+  if (r.not_in_pdf.length) al.push(`<div class="alert al-warn"><b>${r.not_in_pdf.length} 張同倉、同日的 EIP 採購單不在這次的勇信配送明細表中</b>，暫不判定缺貨。確定勇信整張未出貨的，請勾選，系統會以 0 箱計算（同一個單號的幾份一起算）：<br>${r.not_in_pdf.map(x => `<label class="block"><input type="checkbox" class="yx-none" data-ids="${x.split_ids.join(",")}" ${x.declared ? "checked" : ""}> <b>${esc(x.eip_po)}</b>${x.declared ? ` <span class="badge st-gone">以 0 箱計算</span>` : ""} <span class="fn">${x.filenames.map(esc).join("、")}</span></label>`).join("")}</div>`);
+  const nDeclared = r.not_in_pdf.filter(x => x.declared).length;
+  if (nDeclared) al.push(`<div class="kbd">已勾選 ${nDeclared} 張未出貨，以 0 箱計算（下方標示為全缺）；取消勾選就不算。</div>`);
   const extras = r.pos.flatMap(p => p.splits.flatMap(y => y.extra.map(x => `${esc(y.eip_po)}：勇信多出 ${esc(x.mars_code)} ${esc(x.name)} ${x.cases} 箱（未訂購）`)));
   if (extras.length) al.push(`<div class="alert al-warn"><b>勇信配送明細表中有未訂購的料號</b>（系統不處理，請人工確認）：<br>${extras.join("<br>")}</div>`);
   if (r.page_warnings.length) al.push(`<div class="alert al-warn">${r.page_warnings.map(esc).join("<br>")}</div>`);
@@ -370,7 +371,7 @@ function renderYx() {
     <span class="kbd">修改會記入歷程紀錄（原因：缺貨）；已送 EIP 的拆單也會一併更新。</span></div>`;
   $("#yx-result").innerHTML = h; $("#yx-result").classList.remove("hidden");
   $("#yx-clear").addEventListener("click", () => { YX = null; YX_FILES = []; YX_NONE = new Set(); $("#yx-result").classList.add("hidden"); $("#yx-result").innerHTML = ""; });
-  $("#yx-result").querySelectorAll("input.yx-none").forEach(c => c.addEventListener("change", () => { const id = Number(c.dataset.id); c.checked ? YX_NONE.add(id) : YX_NONE.delete(id); compareYx(YX_FILES, true); }));
+  $("#yx-result").querySelectorAll("input.yx-none").forEach(c => c.addEventListener("change", () => { c.dataset.ids.split(",").map(Number).forEach(id => c.checked ? YX_NONE.add(id) : YX_NONE.delete(id)); compareYx(YX_FILES, true); }));
   $("#yx-file-only").addEventListener("click", () => downloadBlob("/api/mars/shortage/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ result: YX, only_file: true }) }, "酷澎下修.xlsx", "酷澎下修檔已下載（系統數量未修改）"));
   $("#yx-apply").addEventListener("click", async () => {
     if (!confirm(`確定將 ${nChange} 筆出貨數量改為勇信實際出貨量？${s.full_pos ? `\n其中 ${s.full_pos} 張 PO 整張不出貨，將全部改為 0。` : ""}`)) return;

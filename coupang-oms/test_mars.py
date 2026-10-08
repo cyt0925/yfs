@@ -504,9 +504,11 @@ def main():
     ids_all = [x["id"] for x in v["splits"]]
     pdf2 = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])])
     r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf"); res2 = r.get_json()
-    check("表裡沒有我們的單：同倉同日有 EIP 單號的幾份列在「沒在表裡」、不判缺貨", res2["summary"]["pos"] == 0 and {x["split_id"] for x in res2["not_in_pdf"]} == {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}, str(res2["not_in_pdf"]))
+    check("表裡沒有我們的單：同倉同日有 EIP 單號的幾份列在「沒在表裡」（一個單號一條）、不判缺貨", res2["summary"]["pos"] == 0 and {i for x in res2["not_in_pdf"] for i in x["split_ids"]} == {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}
+          and all(not x["declared"] for x in res2["not_in_pdf"]) and len(res2["not_in_pdf"]) == len({x["eip_po"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}), str(res2["not_in_pdf"]))
     r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf", none_ids=",".join(str(i) for i in ids_all)); res3 = r.get_json()
     p0 = res3["pos"][0]
+    check("勾過的還留在「沒在表裡」清單、標已勾（才能取消），不會整個框消失", len(res3["not_in_pdf"]) == len(res2["not_in_pdf"]) and all(x["declared"] for x in res3["not_in_pdf"]), str(res3["not_in_pdf"]))
     check("勾「勇信沒出」那張 PO 的每一份 → 整張不出、有訂的品項全缺", res3["summary"]["pos"] == 1 and p0["full"] and all(it["status"] == "none" for y in p0["splits"] for it in y["items"] if it["ordered"]) and not p0["missing_splits"], str(res3["summary"]) + str(p0["missing_splits"]))
     rows = msx.downgrade_rows(res3)
     check("整張不出的下修檔：每個品項都列、第一支 1 其他 0、評論寫「PO此單不出，如有不便，請見諒。」", len(rows) == sum(len(y["items"]) for y in p0["splits"]) and rows[0]["qty"] == 1 and all(r_["qty"] == 0 for r_ in rows[1:])

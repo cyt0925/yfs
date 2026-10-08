@@ -460,7 +460,14 @@ def main():
         for ln in lines:
             page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
         yxp = os.path.join(tempfile.gettempdir(), "ui_勇信.pdf"); doc.save(yxp)
+        pg.fill("#sp-table input.eip >> nth=1", "PO202609902"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)     # 第二份填一個 PDF 裡沒有的號碼，測黃框
         pg.set_input_files("#yx-file", yxp); pg.wait_for_selector("#yx-result:not(.hidden)", timeout=20000); pg.wait_for_timeout(400)
+        check("黃框：PO202609902 同倉同日卻不在 PDF 裡 → 一個單號一個勾、列出檔名", "PO202609902" in pg.inner_text("#yx-result") and pg.eval_on_selector_all("#yx-result input.yx-none", "els => els.length") == 1
+              and "訂單系統拆單表_" in pg.inner_text("#yx-result .al-warn"), pg.inner_text("#yx-result .al-warn")[:160])
+        pg.check("#yx-result input.yx-none"); pg.wait_for_timeout(900)
+        check("勾了 → 黃框還在、勾勾保持打勾、標「以 0 箱計算」、確認鈕的筆數變多", pg.is_checked("#yx-result input.yx-none") and "以 0 箱計算" in pg.inner_text("#yx-result") and "改 1 筆" not in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
+        pg.uncheck("#yx-result input.yx-none"); pg.wait_for_timeout(900)
+        check("取消勾選 → 回到沒勾、改 1 筆", not pg.is_checked("#yx-result input.yx-none") and "改 1 筆" in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
         check("上傳勇信 PDF → 比對表：1 張 PO、有一筆部分缺、確認鈕寫改 1 筆", "對到 1 張 PO" in pg.inner_text("#yx-result").replace("\n", "") and pg.eval_on_selector_all("#yx-result .st-changed", "els => els.length") >= 1
               and "改 1 筆" in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
         pg.once("dialog", lambda d: d.accept())

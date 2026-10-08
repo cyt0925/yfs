@@ -176,10 +176,15 @@ def compare(conn, pages, none_ids=()):
                     "full_note": "整張 PO 全部沒出" if full else ("所有品項出貨皆為 0，但此 PO 尚有拆單不在勇信配送明細表中，暫以部分缺貨處理" if every_zero and missing else ""),
                     "missing_splits": [x["filename"] + ("" if x["eip_po"] else "（還沒填 EIP 單號）") for x in missing], "splits": sp})
     pos.sort(key=lambda p: (p["delivery_date"], p["po_number"]))
-    # 有 EIP 單號、同倉同日、卻沒出現在這次表裡的
+    # 有 EIP 單號、同倉同日、卻沒出現在這次表裡的：一個號碼一條（同一個號碼的幾份是同一張採購單，勾一個就一起算 0 箱），
+    # 人勾過的也留在清單裡、標 declared，才能取消（Jerry 2026-10-08：勾了一個整個框就不見，以為壞了）
     whs = {p["warehouse"] for p in pages if p["warehouse"]}; dates = {p["ship_date"] for p in pages if p["ship_date"]}
-    not_in = [{"split_id": s["id"], "eip_po": s["eip_po"], "filename": s["filename"]} for s in all_split_rows
-              if s["eip_po"] not in by_eip and s["warehouse"] in whs and s["delivery_date"] in dates]
+    not_in = collections.OrderedDict()
+    for s in all_split_rows:
+        if (s["eip_po"] not in by_eip or s["eip_po"] in declared) and s["warehouse"] in whs and s["delivery_date"] in dates:
+            g = not_in.setdefault(s["eip_po"], {"eip_po": s["eip_po"], "split_ids": [], "filenames": [], "declared": s["eip_po"] in declared})
+            g["split_ids"].append(s["id"]); g["filenames"].append(s["filename"])
+    not_in = list(not_in.values())
     rows_all = [r for p in pos for y in p["splits"] for r in y["items"]]
     summary = {"pages": len(pages), "eip_pos": len(by_eip), "pos": len(pos), "items": len(rows_all),
                "ok": sum(1 for r in rows_all if r["status"] == "ok"), "partial": sum(1 for r in rows_all if r["status"] == "partial"),
