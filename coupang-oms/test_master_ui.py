@@ -460,14 +460,21 @@ def main():
         for ln in lines:
             page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
         yxp = os.path.join(tempfile.gettempdir(), "ui_勇信.pdf"); doc.save(yxp)
-        pg.fill("#sp-table input.eip >> nth=1", "PO202609902"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)     # 第二份填一個 PDF 裡沒有的號碼，測黃框
+        # 主管 2026-10-08：核不到就是缺。第二份填一個 PDF 裡沒有的號碼 → 那份算全缺；其他沒填號碼的列紅框（無法核對）
+        pg.fill("#sp-table input.eip >> nth=1", "PO202609902"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
         pg.set_input_files("#yx-file", yxp); pg.wait_for_selector("#yx-result:not(.hidden)", timeout=20000); pg.wait_for_timeout(400)
-        check("黃框：PO202609902 同倉同日卻不在 PDF 裡 → 一個單號一個勾、列出檔名", "PO202609902" in pg.inner_text("#yx-result") and pg.eval_on_selector_all("#yx-result input.yx-none", "els => els.length") == 1
-              and "訂單系統拆單表_" in pg.inner_text("#yx-result .al-warn"), pg.inner_text("#yx-result .al-warn")[:160])
-        pg.check("#yx-result input.yx-none"); pg.wait_for_timeout(900)
-        check("勾了 → 黃框還在、勾勾保持打勾、標「以 0 箱計算」、確認鈕的筆數變多", pg.is_checked("#yx-result input.yx-none") and "以 0 箱計算" in pg.inner_text("#yx-result") and "改 1 筆" not in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
-        pg.uncheck("#yx-result input.yx-none"); pg.wait_for_timeout(900)
-        check("取消勾選 → 回到沒勾、改 1 筆", not pg.is_checked("#yx-result input.yx-none") and "改 1 筆" in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
+        row = pg.inner_text("#yx-result tr:has(input.yx-scope)") if pg.query_selector("#yx-result input.yx-scope") else ""
+        check("「這次要出的訂單」：那天那個倉的 PO 一列、預設勾、寫表上有幾份、表上沒有幾份算全缺、幾份還沒填 EIP 單號", pg.eval_on_selector_all("#yx-result input.yx-scope", "els => els.length") == 1
+              and pg.is_checked("#yx-result input.yx-scope") and "表上有 1 份" in row and "表上沒有 1 份，算全缺" in row and "還沒填 EIP 單號" in row, row)
+        check("沒填 EIP 單號的份數列在紅框（無法核對、不改）、PO202609902 那份在比對表標表上沒有", "還沒填 EIP 採購單號，無法跟勇信配送明細表核對" in pg.inner_text("#yx-result .al-bad")
+              and "表上沒有" in pg.inner_text("#yx-result table.t >> nth=1") and "改 1 筆" not in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
+        pg.uncheck("#yx-result input.yx-scope"); pg.wait_for_timeout(900)
+        check("取消勾選（這次不出）→ 那列寫這次不核、比對表沒有、確認鈕鎖住", not pg.is_checked("#yx-result input.yx-scope") and "這次不核" in pg.inner_text("#yx-result") and pg.is_disabled("#yx-apply"))
+        pg.check("#yx-result input.yx-scope"); pg.wait_for_timeout(900)
+        check("再勾回來 → 又核了", pg.is_checked("#yx-result input.yx-scope") and not pg.is_disabled("#yx-apply"))
+        pg.click("#yx-clear")
+        pg.fill("#sp-table input.eip >> nth=1", ""); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)          # 清掉 902，下面照原本只測部分缺那一筆
+        pg.set_input_files("#yx-file", yxp); pg.wait_for_selector("#yx-result:not(.hidden)", timeout=20000); pg.wait_for_timeout(400)
         check("上傳勇信 PDF → 比對表：1 張 PO、有一筆部分缺、確認鈕寫改 1 筆", "對到 1 張 PO" in pg.inner_text("#yx-result").replace("\n", "") and pg.eval_on_selector_all("#yx-result .st-changed", "els => els.length") >= 1
               and "改 1 筆" in pg.inner_text("#yx-apply"), pg.inner_text("#yx-apply"))
         pg.once("dialog", lambda d: d.accept())

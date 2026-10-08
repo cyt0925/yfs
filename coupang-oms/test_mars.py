@@ -488,7 +488,9 @@ def main():
           and res["summary"]["ok"] == len(others) and [u["eip_po"] for u in res["unknown"]] == ["PO202609999"], str(res["summary"]) + str(res["unknown"]))
     row0 = next(it for it in res["pos"][0]["splits"][0]["items"] if it["sku_id"] == it0["sku_id"])
     check("部分缺的那筆：缺 1 箱、改成的出貨數量＝勇信箱數×箱入數", row0["status"] == "partial" and row0["short"] == 1 and row0["new_qty"] == (int(it0["cases"]) - 1) * it0["box_file"] and not res["pos"][0]["full"], str(row0))
-    check("這張 PO 還有別份沒在表裡 → 列出來、不算整張不出", len(res["pos"][0]["missing_splits"]) == len(v["splits"]) - 1 and res["downgrade_rows"] == 1, str(res["pos"][0]["missing_splits"]))
+    no_eip_929 = [x for x in v["splits"] if x["delivery_date"] == "2026-09-29" and not x["eip_po"]]
+    check("這張 PO 同倉同日還有沒填 EIP 單號的份 → 列出來、無法核對（不當成缺）、不算整張不出", len(res["pos"][0]["missing_splits"]) == len(no_eip_929) >= 1
+          and len(res["no_eip"]) == len(no_eip_929) and res["downgrade_rows"] == 1 and res["scope"][0]["no_eip"] == len(no_eip_929), str(res["pos"][0]["missing_splits"]))
     r = c.post("/api/mars/shortage/apply", json={"result": res, "only_file": True})
     wd = openpyxl.load_workbook(io.BytesIO(r.data))["issueReport"]
     check("只下載下修檔：套酷澎範本，第 1 列代碼不動、第 2 列表頭、第 3 列起一列一個缺的品項（SKU、酷澎 PO、變更數量、原因 4）",
@@ -517,24 +519,30 @@ def main():
     for i, x in enumerate([x for x in v["splits"] if not x["eip_po"]]):
         put(x["id"], {"eip_po": f"PO20260931{i}"})
     v = splits(c, "2026-09-29", "2026-09-30")
-    ids_all = [x["id"] for x in v["splits"]]
-    pdf2 = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])])
-    r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf"); res2 = r.get_json()
-    check("表裡沒有我們的單：同倉同日有 EIP 單號的幾份列在「沒在表裡」（一個單號一條）、不判缺貨", res2["summary"]["pos"] == 0 and {i for x in res2["not_in_pdf"] for i in x["split_ids"]} == {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}
-          and all(not x["declared"] for x in res2["not_in_pdf"]) and len(res2["not_in_pdf"]) == len({x["eip_po"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}), str(res2["not_in_pdf"]))
-    want = {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"}
+    po = "13000000699901"
+    # 主管 2026-10-08：核不到就是缺。勇信表上沒有我們的單 → 那天那個倉的 PO 預設全核、全部算缺（不用再一份一份勾）
+    pdf2 = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")]), ("PO202609998", "TAO3", "2026/09/30", [("99999999", 2, "2027/01/01")])])
+    res3 = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf").get_json()
+    p0 = res3["pos"][0]
+    check("表上沒有我們的單：PDF 那兩天 TAO3 的 PO 預設全核、每一份都標表上沒有、整張不出、有訂的品項全缺", res3["summary"]["pos"] == 1 and p0["full"]
+          and all(y["not_in_pdf"] for y in p0["splits"]) and len(p0["splits"]) == len(v["splits"]) and all(it["status"] == "none" for y in p0["splits"] for it in y["items"] if it["ordered"])
+          and not p0["missing_splits"] and [x["po_number"] for x in res3["scope"]] == [po] and res3["scope"][0]["not_in_pdf"] == len(v["splits"]) and not res3["scope"][0]["skipped"], str(res3["summary"]) + str(res3["scope"]))
+    res_skip = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf", skip_pos=po).get_json()
+    check("取消勾選那張 PO（這次不出）→ 不核、不改、不進下修檔，清單裡還在、標這次不核", res_skip["summary"]["pos"] == 0 and res_skip["scope"][0]["skipped"]
+          and res_skip["skip_pos"] == [po] and msx.downgrade_rows(res_skip) == [], str(res_skip["scope"]))
+    pdf_929 = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])])
+    res_929 = up(c, "/api/mars/shortage/compare", pdf_929, "假2a.pdf").get_json()
+    check("只傳 9/29 的表：只核 9/29 那幾份；同一張 PO 9/30 還有份 → 全缺但不算整張不出", res_929["summary"]["pos"] == 1 and not res_929["pos"][0]["full"]
+          and {y["split_id"] for y in res_929["pos"][0]["splits"]} == {x["id"] for x in v["splits"] if x["delivery_date"] == "2026-09-29"} and "別天或別倉" in res_929["pos"][0]["full_note"], res_929["pos"][0]["full_note"])
     pdf2b = yx_pdf([("PO202609999", "TAO3", "2026/09/29", [("99999999", 3, "2027/01/01")])], header="BMS100227-永豐商店-酷澎-{wh}")
     res2b = up(c, "/api/mars/shortage/compare", pdf2b, "假2b.pdf").get_json()
-    check("倉別那行寫「永豐商店-酷澎-TAO3」（TAO5 真檔的寫法）也讀得到倉，「沒在表裡」照樣列得出來", res2b["warehouses"] == ["TAO3"] and {i for x in res2b["not_in_pdf"] for i in x["split_ids"]} == want, str(res2b["warehouses"]) + str(res2b["not_in_pdf"])[:200])
+    check("倉別那行寫「永豐商店-酷澎-TAO3」（TAO5 真檔的寫法）也讀得到倉，那天那個倉的 PO 照樣核得到", res2b["warehouses"] == ["TAO3"] and [x["po_number"] for x in res2b["scope"]] == [po], str(res2b["warehouses"]) + str(res2b["scope"])[:200])
     one = next(x for x in v["splits"] if x["delivery_date"] == "2026-09-29" and x["eip_po"])
     pdf2c = yx_pdf([(one["eip_po"], "TAO3", "2026/09/29", [(i["mars_code"], int(i["cases"]), "2027/01/01") for i in one["items"]])], header="BMS100227-看不懂的寫法")
     res2c = up(c, "/api/mars/shortage/compare", pdf2c, "假2c.pdf").get_json()
-    check("PDF 完全讀不到倉別 → 用系統裡那個 EIP 單號的倉別，「沒在表裡」照樣列得出來、提醒讀不到倉別", res2c["warehouses"] == ["TAO3"] and {i for x in res2c["not_in_pdf"] for i in x["split_ids"]} == want - {x["id"] for x in v["splits"] if x["eip_po"] == one["eip_po"]}
-          and any("讀不到倉別" in w for w in res2c["page_warnings"]), str(res2c["warehouses"]) + str(res2c["page_warnings"]))
-    r = up(c, "/api/mars/shortage/compare", pdf2, "假2.pdf", none_ids=",".join(str(i) for i in ids_all)); res3 = r.get_json()
-    p0 = res3["pos"][0]
-    check("勾過的還留在「沒在表裡」清單、標已勾（才能取消），不會整個框消失", len(res3["not_in_pdf"]) == len(res2["not_in_pdf"]) and all(x["declared"] for x in res3["not_in_pdf"]), str(res3["not_in_pdf"]))
-    check("勾「勇信沒出」那張 PO 的每一份 → 整張不出、有訂的品項全缺", res3["summary"]["pos"] == 1 and p0["full"] and all(it["status"] == "none" for y in p0["splits"] for it in y["items"] if it["ordered"]) and not p0["missing_splits"], str(res3["summary"]) + str(p0["missing_splits"]))
+    sc = res2c["scope"][0] if res2c["scope"] else {}
+    check("PDF 完全讀不到倉別 → 用系統裡那個 EIP 單號的倉別，表上有的那份沒缺、同倉同日其他份算缺、提醒讀不到倉別", res2c["warehouses"] == ["TAO3"] and sc.get("in_pdf") == sum(1 for x in v["splits"] if x["eip_po"] == one["eip_po"])
+          and sc.get("not_in_pdf") == sum(1 for x in v["splits"] if x["delivery_date"] == "2026-09-29") - sc.get("in_pdf", 0) and any("讀不到倉別" in w for w in res2c["page_warnings"]), str(res2c["warehouses"]) + str(sc) + str(res2c["page_warnings"]))
     rows = msx.downgrade_rows(res3)
     check("整張不出的下修檔：每個品項都列、第一支 1 其他 0、評論寫「PO此單不出，如有不便，請見諒。」", len(rows) == sum(len(y["items"]) for y in p0["splits"]) and rows[0]["qty"] == 1 and all(r_["qty"] == 0 for r_ in rows[1:])
           and all(r_["comment"] == "13000000699901此單不出，如有不便，請見諒。" for r_ in rows), str(rows[:2]))

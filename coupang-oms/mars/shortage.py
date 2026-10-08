@@ -11,8 +11,9 @@
   評論「{酷澎PO}此單不出，如有不便，請見諒。」；系統裡一律改 0（畫面提醒）。
 - 下修檔變更數量＝實際要出的數量＝勇信箱數×箱入數（酷澎的單位），請求原因固定「4. 供應商庫存不足」，只列有缺的品項。
   套酷澎給的範本 purchase_templates/coupang_downgrade.xlsx，第 1 列那串代碼不能動。
-- 只傳了某個倉的表：別的倉、別的日子的採購單不判缺貨，只提醒「這幾份沒在這次的表裡」。整份沒出的採購單不會出現在勇信的表上，
-  所以「全缺」要人在提醒清單裡勾「勇信沒出這份」（none_ids），系統才把它當 0 箱算進去；那張 PO 的每一份都是 0 才算整張不出。
+- 範圍（主管 2026-10-08）：PDF 的指送日期＋倉別，系統裡那天那個倉的每一張酷澎 PO 都是「這次要出的訂單」，預設全部核對，
+  **核不到就是缺**（整張缺的單勇信不會印在表上）。人可以取消勾選這次不出的 PO（skip_pos）。別的倉、別的日子不判缺貨。
+  還沒填 EIP 單號的那份對不到 PDF，不當成缺，列出來要人先補。那張 PO 的每一份都是 0（而且沒有沒填號碼的）才算整張不出。
 - 確認後：系統訂單出貨數量改成實際出貨量（記歷程，原因「缺貨」）、已送 EIP 的拆單快照一起改，之後 EMMA 檔、採購單都跟著變。
 """
 import datetime as _dt
@@ -129,9 +130,45 @@ def _orig_qty(v):
         return None
 
 
-def compare(conn, pages, none_ids=()):
-    """把 PDF 幾頁對回拆單表。none_ids＝人勾「勇信沒出這份」的拆單表 id，當 0 箱算。回傳給畫面看的結果；apply 再把這份結果送回來執行。"""
+def _item_rows(s, items, canon, orig, take):
+    """一份拆單的品項 → 比對列。take(貨號, 第幾個品項, 訂購箱數) 回傳勇信出了幾箱。"""
+    rows = []
+    for ii, it in enumerate(items):
+        c = canon.get(it.get("mars_code") or "", it.get("mars_code") or "")
+        box = it.get("box_file") or 0
+        qty0 = _orig_qty(orig.get((s["po_number"], it["sku_id"])))
+        ordered = round(qty0 / box, 4) if qty0 is not None and box else (it.get("cases") or 0)
+        shipped = take(c, ii, ordered)
+        if shipped == ordered:
+            status = "ok"
+        elif shipped == 0:
+            status = "none"
+        elif shipped < ordered:
+            status = "partial"
+        else:
+            status = "over"
+        rows.append({"sku_id": it["sku_id"], "yf_sku": it.get("yf_sku"), "purchase_code": it.get("purchase_code"), "mars_code": c,
+                     "product_name": it.get("product_name"), "unit": it.get("unit"), "box_file": box,
+                     "qty_ship": qty0 if qty0 is not None else it.get("qty_ship"), "ordered": ordered, "shipped": shipped,
+                     "short": max(ordered - shipped, 0), "status": status, "new_qty": int(round(shipped * box)) if box else None})
+    return rows
+
+
+def _entry(s, eip, pages, rows, not_in_pdf=False):
+    return {"split_id": s["id"], "eip_po": eip, "filename": s["filename"], "warehouse": s["warehouse"],
+            "delivery_date": s["delivery_date"], "category": s["category"], "unit": s["unit"], "label": s["label"],
+            "pages": pages, "items": rows, "extra": [], "not_in_pdf": not_in_pdf}
+
+
+def compare(conn, pages, skip_pos=()):
+    """把 PDF 幾頁對回拆單表。回傳給畫面看的結果；apply 再把這份結果送回來執行。
+
+    範圍（主管 2026-10-08）：PDF 的指送日期＋倉別，系統裡那天那個倉的每一張酷澎 PO 都是「這次要出的訂單」，預設全部核對，
+    **核不到就是缺**——整張缺的單勇信根本不會印在這份表上（早上就說不出的那批下午的表也不會有），不能等人記得去勾。
+    人可以取消勾選「這次不出」的 PO（skip_pos），那張就整張不核、不改、不進下修檔。
+    還沒填 EIP 單號的那份對不到 PDF，不能當成缺（Jerry 2026-10-08 TAO3：號碼沒填齊，其實有出），列出來要人先補。"""
     canon = _code_canon(conn)
+    skip = {str(x) for x in skip_pos}
     # 重跑也要看得到：已經因勇信缺貨改成 0 的品項，訂購量用改之前的（看歷程裡第一次「缺貨／勇信出…」那筆的舊值），
     # 不然按過確認再跑一次，全部變「沒缺」、下修檔就少了那些（Jerry 2026-10-08 第二次跑拿到「沒有缺貨品項」）
     orig = {}
@@ -141,95 +178,86 @@ def compare(conn, pages, none_ids=()):
     for p in pages:
         if not p["eip_po"]:
             continue
-        d = by_eip.setdefault(p["eip_po"], {"qty": collections.Counter(), "pages": [], "warehouse": p["warehouse"], "ship_date": p["ship_date"], "names": {}})
+        d = by_eip.setdefault(p["eip_po"], {"qty": collections.Counter(), "pages": [], "names": {}})
         d["pages"].append(p["page"])
         for it in p["items"]:
             c = canon.get(it["code"], it["code"])
             d["qty"][c] += it["qty"] or 0
             d["names"].setdefault(c, it["name"])
+    all_splits = _rows(conn.execute("SELECT * FROM mst_mars_splits ORDER BY id"))
     # 一個 EIP 採購單號可能對到好幾份拆單（盒、包同一張 EIP 採購單，Shanin 2026-10-07）
-    splits = collections.OrderedDict()
-    for s in _rows(conn.execute("SELECT * FROM mst_mars_splits WHERE eip_po != '' ORDER BY id")):
-        splits.setdefault(s["eip_po"], []).append(s)
-    all_split_rows = [s for group in splits.values() for s in group]
-    declared = set()
-    for s in all_split_rows:
-        if s["id"] in set(none_ids) and s["eip_po"] not in by_eip:
-            by_eip[s["eip_po"]] = {"qty": collections.Counter(), "pages": [], "warehouse": s["warehouse"], "ship_date": s["delivery_date"], "names": {}}
-            declared.add(s["eip_po"])
-    unknown = [{"eip_po": k, "pages": v["pages"], "cases": sum(v["qty"].values())} for k, v in by_eip.items() if k not in splits]
-    matched = {}     # 酷澎 PO → [split rows]
+    eip_splits = collections.OrderedDict()
+    for x in all_splits:
+        if x["eip_po"]:
+            eip_splits.setdefault(x["eip_po"], []).append(x)
+    unknown = [{"eip_po": k, "pages": v["pages"], "cases": sum(v["qty"].values())} for k, v in by_eip.items() if k not in eip_splits]
+    # PDF 讀不到倉別時用系統裡那個 EIP 單號的倉別（Jerry 2026-10-08 TAO5）
+    whs = {p["warehouse"] for p in pages if p["warehouse"]} | {eip_splits[p["eip_po"]][0]["warehouse"] for p in pages if not p["warehouse"] and p["eip_po"] in eip_splits}
+    dates = {p["ship_date"] for p in pages if p["ship_date"]}
+
+    # PDF 上有的號碼：同一個號碼的幾份合起來比，勇信出的箱數照順序分給各份的同一個貨號，最後一個拿剩下的（多出來的才看得到超量）
+    found = {}           # 拆單 id → 比對結果
     for eip, d in by_eip.items():
-        group = splits.get(eip)
+        group = eip_splits.get(eip)
         if not group:
             continue
-        # 同一個號碼的幾份合起來比：勇信出的箱數照順序分給各份的同一個貨號，最後一個拿剩下的（多出來的才看得到超量）
-        loaded = [(s, json.loads(s["items_json"] or "[]")) for s in group]
+        loaded = [(x, json.loads(x["items_json"] or "[]")) for x in group]
         last_of = {}
         for gi, (_, its) in enumerate(loaded):
             for ii, it in enumerate(its):
                 last_of[canon.get(it.get("mars_code") or "", it.get("mars_code") or "")] = (gi, ii)
-        left = collections.Counter(d["qty"])
-        seen = set(); entries = []
-        for gi, (s, items) in enumerate(loaded):
-            rows = []
-            for ii, it in enumerate(items):
-                c = canon.get(it.get("mars_code") or "", it.get("mars_code") or "")
+        left = collections.Counter(d["qty"]); seen = set(); entries = []
+        for gi, (x, items) in enumerate(loaded):
+            def take(c, ii, ordered, gi=gi):
                 seen.add(c)
-                box = it.get("box_file") or 0
-                qty0 = _orig_qty(orig.get((s["po_number"], it["sku_id"])))
-                ordered = round(qty0 / box, 4) if qty0 is not None and box else (it.get("cases") or 0)
-                shipped = left.get(c, 0) if last_of.get(c) == (gi, ii) else min(left.get(c, 0), ordered)
-                left[c] -= shipped
-                if shipped == ordered:
-                    status = "ok"
-                elif shipped == 0:
-                    status = "none"
-                elif shipped < ordered:
-                    status = "partial"
-                else:
-                    status = "over"
-                new_qty = int(round(shipped * box)) if box else None
-                rows.append({"sku_id": it["sku_id"], "yf_sku": it.get("yf_sku"), "purchase_code": it.get("purchase_code"), "mars_code": c,
-                             "product_name": it.get("product_name"), "unit": it.get("unit"), "box_file": box,
-                             "qty_ship": qty0 if qty0 is not None else it.get("qty_ship"), "ordered": ordered, "shipped": shipped, "short": max(ordered - shipped, 0),
-                             "status": status, "new_qty": new_qty})
-            entries.append({"split_id": s["id"], "eip_po": eip, "filename": s["filename"], "warehouse": s["warehouse"],
-                            "delivery_date": s["delivery_date"], "category": s["category"], "unit": s["unit"],
-                            "label": s["label"], "pages": d["pages"], "items": rows, "extra": [],
-                            "declared_none": eip in declared})
+                got = left.get(c, 0) if last_of.get(c) == (gi, ii) else min(left.get(c, 0), ordered)
+                left[c] -= got
+                return got
+            e = _entry(x, eip, d["pages"], _item_rows(x, items, canon, orig, take))
+            entries.append(e); found[x["id"]] = e
         # 勇信有出、但這個號碼的拆單都沒訂的貨號，掛在第一份
         entries[0]["extra"] = [{"mars_code": c, "name": d["names"].get(c, ""), "cases": q} for c, q in d["qty"].items() if c not in seen and q]
-        for e, (s, _) in zip(entries, loaded):
-            matched.setdefault(s["po_number"], []).append(e)
-    # 整張酷澎 PO 全缺：那張 PO 所有有 EIP 單號的份都在表裡，而且每個品項都 0
-    pos = []
-    for po, sp in matched.items():
-        all_splits = _rows(conn.execute("SELECT id, eip_po, filename FROM mst_mars_splits WHERE po_number = ?", (po,)))
-        missing = [x for x in all_splits if x["id"] not in {y["split_id"] for y in sp}]
-        every_zero = all(r["shipped"] == 0 for y in sp for r in y["items"]) and any(r["ordered"] for y in sp for r in y["items"])
-        full = every_zero and not missing
+
+    # 這次要核的訂單：PDF 那天那個倉的每一張酷澎 PO，加上 PDF 上號碼對到的
+    in_scope = lambda x: x["warehouse"] in whs and x["delivery_date"] in dates   # noqa: E731
+    po_splits = collections.OrderedDict()
+    for x in all_splits:
+        if in_scope(x) or x["id"] in found:
+            po_splits.setdefault(x["po_number"], []).append(x)
+    pos, scope, no_eip_all = [], [], []
+    for po, sp in po_splits.items():
+        in_pdf = [x for x in sp if x["id"] in found]
+        no_eip = [x for x in sp if x["id"] not in found and not x["eip_po"]]
+        absent = [x for x in sp if x["id"] not in found and x["eip_po"]]
+        scope.append({"po_number": po, "warehouse": sp[0]["warehouse"], "delivery_date": sp[0]["delivery_date"], "files": len(sp),
+                      "cases": round(sum(x["cases_total"] or 0 for x in sp), 2), "in_pdf": len(in_pdf), "not_in_pdf": len(absent),
+                      "no_eip": len(no_eip), "eip_pos": sorted({x["eip_po"] for x in sp if x["eip_po"]}), "skipped": po in skip})
+        if po in skip:
+            continue
+        no_eip_all += [{"po_number": po, "filename": x["filename"]} for x in no_eip]
+        entries = [found[x["id"]] for x in in_pdf]
+        for x in absent:                 # 有號碼、勇信表上沒有 → 核不到就是缺（0 箱）
+            entries.append(_entry(x, x["eip_po"], [], _item_rows(x, json.loads(x["items_json"] or "[]"), canon, orig, lambda c, ii, o: 0), True))
+        if not entries:
+            continue
+        every_zero = all(r["shipped"] == 0 for y in entries for r in y["items"]) and any(r["ordered"] for y in entries for r in y["items"])
+        elsewhere = [x for x in all_splits if x["po_number"] == po and x["id"] not in {y["id"] for y in sp}]   # 同一張 PO 別天、別倉的份
+        full = every_zero and not no_eip and not elsewhere
         pos.append({"po_number": po, "warehouse": sp[0]["warehouse"], "delivery_date": sp[0]["delivery_date"], "full": full,
-                    "full_note": "整張 PO 全部沒出" if full else ("所有品項出貨皆為 0，但此 PO 尚有拆單不在勇信配送明細表中，暫以部分缺貨處理" if every_zero and missing else ""),
-                    "missing_splits": [x["filename"] + ("" if x["eip_po"] else "（還沒填 EIP 單號）") for x in missing], "splits": sp})
+                    "full_note": "整張 PO 全部沒出" if full else ("所有品項出貨皆為 0，但此 PO 尚有拆單還沒填 EIP 單號，暫以部分缺貨處理" if every_zero and no_eip
+                                                              else ("所有品項出貨皆為 0，但此 PO 另有別天或別倉的拆單，暫以部分缺貨處理" if every_zero and elsewhere else "")),
+                    "missing_splits": [x["filename"] + "（還沒填 EIP 單號）" for x in no_eip], "splits": entries})
     pos.sort(key=lambda p: (p["delivery_date"], p["po_number"]))
-    # 有 EIP 單號、同倉同日、卻沒出現在這次表裡的：一個號碼一條（同一個號碼的幾份是同一張採購單，勾一個就一起算 0 箱），
-    # 人勾過的也留在清單裡、標 declared，才能取消（Jerry 2026-10-08：勾了一個整個框就不見，以為壞了）。
-    # PDF 讀不到倉別時用系統裡那個 EIP 單號的倉別，不然這份清單整個列不出來（Jerry 2026-10-08 TAO5：勇信早上就說不出的兩張沒得勾）
-    whs = {p["warehouse"] for p in pages if p["warehouse"]} | {splits[p["eip_po"]][0]["warehouse"] for p in pages if not p["warehouse"] and p["eip_po"] in splits}
-    dates = {p["ship_date"] for p in pages if p["ship_date"]}
-    not_in = collections.OrderedDict()
-    for s in all_split_rows:
-        if (s["eip_po"] not in by_eip or s["eip_po"] in declared) and s["warehouse"] in whs and s["delivery_date"] in dates:
-            g = not_in.setdefault(s["eip_po"], {"eip_po": s["eip_po"], "split_ids": [], "filenames": [], "declared": s["eip_po"] in declared})
-            g["split_ids"].append(s["id"]); g["filenames"].append(s["filename"])
-    not_in = list(not_in.values())
+    scope.sort(key=lambda p: (p["delivery_date"], p["warehouse"], p["po_number"]))
     rows_all = [r for p in pos for y in p["splits"] for r in y["items"]]
     summary = {"pages": sum(1 + len(p.get("cont_pages") or []) for p in pages), "eip_pos": len(by_eip), "pos": len(pos), "items": len(rows_all),
                "ok": sum(1 for r in rows_all if r["status"] == "ok"), "partial": sum(1 for r in rows_all if r["status"] == "partial"),
                "none": sum(1 for r in rows_all if r["status"] == "none"), "over": sum(1 for r in rows_all if r["status"] == "over"),
-               "full_pos": sum(1 for p in pos if p["full"]), "short_cases": sum(r["short"] for r in rows_all)}
-    return {"pos": pos, "unknown": unknown, "not_in_pdf": not_in, "none_ids": sorted(set(none_ids)), "page_warnings": [w for p in pages for w in p["warnings"]],
+               "full_pos": sum(1 for p in pos if p["full"]), "short_cases": sum(r["short"] for r in rows_all),
+               "scope_pos": len(scope), "skipped_pos": sum(1 for p in scope if p["skipped"]),
+               "absent_files": sum(1 for p in pos for y in p["splits"] if y["not_in_pdf"]), "no_eip_files": len(no_eip_all)}
+    return {"pos": pos, "unknown": unknown, "scope": scope, "skip_pos": sorted(skip), "no_eip": no_eip_all,
+            "page_warnings": [w for p in pages for w in p["warnings"]],
             "warehouses": sorted(whs), "ship_dates": sorted(dates), "summary": summary}
 
 
@@ -329,8 +357,8 @@ def api_shortage_compare():
     try:
         if conn.execute("SELECT COUNT(*) AS n FROM mst_mars_splits WHERE eip_po != ''").fetchone()["n"] == 0:
             return jsonify({"error": "目前沒有拆單表填入 EIP 採購單號，無法比對。"}), 400
-        none_ids = [int(x) for x in re.split(r"[,\s]+", request.form.get("none_ids", "")) if x.strip().isdigit()]
-        result = compare(conn, pages, none_ids)
+        skip_pos = [x.strip() for x in re.split(r"[,\s]+", request.form.get("skip_pos", "")) if x.strip()]
+        result = compare(conn, pages, skip_pos)
     finally:
         conn.close()
     result["files"] = names
