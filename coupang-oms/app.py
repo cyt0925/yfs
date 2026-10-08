@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-08.9"
+BUILD_VERSION = "2026-10-08.10"
 
 app = Flask(__name__)
 
@@ -942,6 +942,45 @@ def api_preview_signature():
                      mimetype=row["mime"] or "image/png")
 
 
+def _mars_ship_qty(po_number):
+    """驗收單缺貨劃線用：這張 PO 是瑪氏的話，回 {SKU: 系統裡現在的出貨數量}（勇信缺貨確認後就是實際要出的）；
+    不是瑪氏（Jerry 2026-10-08：先只做瑪氏）或系統裡沒有這張單回 None，那份就照舊只簽名。"""
+    conn = get_conn()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT sku_id, qty_ship, line FROM mst_orders WHERE po_number = ?", (po_number,)).fetchall()]
+    except Exception:  # noqa: BLE001 — 商品主檔模組沒啟用（沒有這張表）就當作不劃
+        return None
+    finally:
+        conn.close()
+    if not any((r.get("line") or "") == "瑪氏" for r in rows):
+        return None
+    return {str(r["sku_id"]): r["qty_ship"] for r in rows if r.get("qty_ship") is not None}
+
+
+def _shortage_note(info):
+    items = (info or {}).get("items") or []
+    strike = sum(1 for i in items if i["kind"] == "strike")
+    reduce = len(items) - strike
+    return "、".join(x for x in (f"整列劃掉 {strike} 品" if strike else "", f"改數量 {reduce} 品" if reduce else "") if x)
+
+
+@app.route("/api/sign/shortage-preview", methods=["POST"])
+def api_sign_shortage_preview():
+    """簽名前先看：這幾份驗收單照系統出貨數量，哪幾品會被劃掉、改數量。不存任何東西。"""
+    out = []
+    for upload in [u for u in request.files.getlist("files") if u and u.filename]:
+        raw = upload.read()
+        info = {"po_number": "", "applies": False, "items": [], "missing": [], "rows": 0}
+        if upload.filename.lower().endswith(".pdf") and len(raw) <= MAX_SIGN_PDF_BYTES:
+            try:
+                _, info = pdfsign.mark_shortage(raw, _mars_ship_qty)
+            except pdfsign.SignError:
+                pass
+        out.append({"filename": upload.filename, **info})
+    return jsonify({"files": out})
+
+
 @app.route("/api/sign/run", methods=["POST"])
 def api_sign_run():
     """一次簽一批。每份檔案各自回報結果，某一份失敗不影響其他份——
@@ -951,6 +990,7 @@ def api_sign_run():
     uploads = [u for u in uploads if u and u.filename]
     if not uploads:
         return jsonify({"error": "沒有收到任何 PDF。"}), 400
+    mark = request.form.get("mark_shortage") == "1"          # 瑪氏驗收單照系統出貨數量劃掉缺貨品項
 
     conn = get_conn()
     try:
@@ -1007,24 +1047,31 @@ def api_sign_run():
                 fail_total += 1
                 continue
 
+            short = None
+            if mark:
+                try:
+                    raw, short = pdfsign.mark_shortage(raw, _mars_ship_qty)
+                except pdfsign.SignError:
+                    short = None                              # 壞檔：下面簽名那一步會講原因
             try:
                 out, count, po_number = pdfsign.sign_pdf(raw, signature, geo)
             except pdfsign.SignError as exc:
                 record_failure(name, str(exc))
                 fail_total += 1
                 continue
+            note = _shortage_note(short)
 
             doc_cur = conn.execute(
                 """INSERT INTO signed_docs
                    (batch_id, operator, po_number, filename, sign_count,
                     status, message, pdf_b64, byte_size, created_at)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (batch_id, me, po_number, name, count, "ok", "",
+                (batch_id, me, po_number, name, count, "ok", f"缺貨劃線：{note}" if note else "",
                  base64.b64encode(out).decode("ascii"), len(out), stamp))
             results.append({
                 "filename": name, "status": "ok", "sign_count": count,
                 "po_number": po_number, "doc_id": doc_cur.lastrowid,
-                "byte_size": len(out),
+                "byte_size": len(out), "shortage": short, "shortage_note": note,
             })
             signed_total += count
 

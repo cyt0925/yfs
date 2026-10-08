@@ -100,6 +100,136 @@ def sign_pdf(pdf_bytes, signature_bytes, geometry=None):
         doc.close()
 
 
+
+# ── 驗收單缺貨劃線（Jerry 2026-10-08，先只做瑪氏）──────────────────────
+# 送勇信的驗收單，缺貨的品項原本是人手在 PDF 上改：整筆不出就整列畫一條粗線，部分下修就把原本的出貨數量塗黑、
+# 旁邊寫新的數量（兩聯都改，合計不改）。系統裡的出貨數量在「瑪氏出貨 ⑤ 勇信缺貨」按確認後就是對的，簽名時照它畫。
+
+SKU_HEADER = "SKU No."
+QTY_HEADER = "出貨數量"
+NAME_HEADER = "品名"
+
+
+def _digits(text):
+    return re.sub(r"\D", "", text or "")
+
+
+def find_item_rows(doc):
+    """找出驗收單「3.商品資訊」每一列：[{page, no, sku, name, qty, row_rect, qty_rect, table_rect}]。
+    兩聯都會各列一次（同一個 no 出現兩次）。表格跨頁時，續頁沒有表頭，用上一頁表格的欄位位置認。
+    品名太長時一列會被表格線切成兩段（第二段 No 是空的），接回上一列。"""
+    out, cols = [], None
+    for pno, page in enumerate(doc):
+        try:
+            tables = page.find_tables().tables
+        except Exception:  # noqa: BLE001 — 這頁認不出表格就跳過，不影響簽名
+            continue
+        for t in tables:
+            data = t.extract()
+            if not data:
+                continue
+            head = [(c or "").replace("\n", "") for c in data[0]]
+            xs = [round(c[0]) for c in t.rows[0].cells if c]
+            if SKU_HEADER in head and QTY_HEADER in head:
+                cols = {"sku": head.index(SKU_HEADER), "qty": head.index(QTY_HEADER),
+                        "name": head.index(NAME_HEADER) if NAME_HEADER in head else None, "n": len(head), "xs": xs}
+                start = 1
+            elif cols and len(head) == cols["n"] and len(xs) == len(cols["xs"]) and all(abs(a - b) <= 3 for a, b in zip(xs, cols["xs"])):
+                start = 0                                            # 續頁：欄位位置跟上一頁一樣
+            else:
+                continue
+            cur = None
+            for ri in range(start, len(data)):
+                cells, rects = data[ri], t.rows[ri].cells
+                first = (cells[0] or "").strip()
+                if any((c_ or "").strip().startswith("合計") for c_ in cells):   # 合計那列（不一定在第一格）
+                    break
+                rect = pymupdf.Rect(t.bbox[0], min(c[1] for c in rects if c), t.bbox[2], max(c[3] for c in rects if c))
+                if first.isdigit():
+                    cur = {"page": pno, "no": int(first), "sku": "", "name": "", "qty_text": "", "row_rect": rect,
+                           "qty_cell": None, "table_rect": pymupdf.Rect(t.bbox)}
+                    out.append(cur)
+                elif cur is None:
+                    continue
+                else:
+                    cur["row_rect"] = cur["row_rect"] | rect           # 被切成兩段的同一列
+                cur["sku"] += _digits(cells[cols["sku"]])
+                if cols["name"] is not None:
+                    cur["name"] += (cells[cols["name"]] or "").replace("\n", "")
+                q = (cells[cols["qty"]] or "").strip()
+                if q:
+                    cur["qty_text"] += q
+                    qc = pymupdf.Rect(rects[cols["qty"]])
+                    cur["qty_cell"] = qc if cur["qty_cell"] is None else cur["qty_cell"] | qc
+    for r in out:
+        r["qty"] = int(_digits(r["qty_text"])) if _digits(r["qty_text"]) else None
+        r["qty_rect"] = None
+        if r["qty_cell"] is not None:                                   # 數字本身的範圍（塗黑用）
+            words = [w for w in doc[r["page"]].get_text("words", clip=r["qty_cell"]) if _digits(w[4])]
+            if words:
+                r["qty_rect"] = pymupdf.Rect(min(w[0] for w in words), min(w[1] for w in words), max(w[2] for w in words), max(w[3] for w in words))
+    return out
+
+
+def shortage_plan(rows, new_qty):
+    """哪幾列要改：new_qty＝{SKU: 系統裡現在的出貨數量}。系統比驗收單少才改；0＝整列劃掉，其他＝塗掉原數量寫新的。
+    回傳 (要畫的列, 一品一筆的清單, 驗收單上有、系統裡找不到的 SKU)。"""
+    marks, items, missing, seen = [], [], [], set()
+    for r in rows:
+        new = new_qty.get(r["sku"])
+        if new is None:
+            if r["sku"] and r["sku"] not in seen:
+                missing.append(r["sku"])
+        elif r["qty"] is not None and new < r["qty"]:
+            kind = "strike" if new == 0 else "reduce"
+            marks.append(dict(r, new_qty=new, kind=kind))
+            if (r["no"], r["sku"]) not in seen:
+                items.append({"no": r["no"], "sku": r["sku"], "name": r["name"], "pdf_qty": r["qty"], "new_qty": new, "kind": kind})
+        seen.add((r["no"], r["sku"])); seen.add(r["sku"])
+    return marks, items, missing
+
+
+def draw_marks(doc, marks):
+    """照 Jerry 給的手改範例畫：整筆不出＝整列一條 3pt 黑線；部分下修＝原數量塗黑、右邊寫新數量。"""
+    for m in marks:
+        page = doc[m["page"]]
+        if m["kind"] == "strike":
+            y = (m["row_rect"].y0 + m["row_rect"].y1) / 2
+            page.draw_line((m["table_rect"].x0 + 6, y), (m["table_rect"].x1 - 30, y), color=(0, 0, 0), width=3)
+        else:
+            box = m["qty_rect"] or m["qty_cell"]
+            if box is None:
+                continue
+            box = pymupdf.Rect(box.x0 - 1.5, box.y0 - 1, box.x1 + 1.5, box.y1 + 1)
+            page.draw_rect(box, color=(0, 0, 0), fill=(0, 0, 0), width=0)
+            page.insert_text((box.x1 + 2, box.y1 - 1.5), str(m["new_qty"]), fontsize=11, fontname="helv", color=(0, 0, 0))
+
+
+def mark_shortage(pdf_bytes, lookup):
+    """在驗收單上劃缺貨。lookup(PO 單號) → {SKU: 系統出貨數量}，不是要劃的單（例如不是瑪氏）回 None。
+    回傳 (新的 bytes, 結果)。結果：po_number、applies（這張有沒有要比對）、items、missing。"""
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    except Exception as exc:  # noqa: BLE001
+        raise SignError(f"打不開這個 PDF（{exc}）") from exc
+    try:
+        po = extract_po_number("\n".join(p.get_text() for p in doc))
+        new_qty = lookup(po) if po else None
+        info = {"po_number": po, "applies": new_qty is not None, "items": [], "missing": [], "rows": 0}
+        if new_qty is None:
+            return pdf_bytes, info
+        rows = find_item_rows(doc)
+        marks, info["items"], info["missing"] = shortage_plan(rows, new_qty)
+        info["rows"] = len({(r["no"], r["sku"]) for r in rows})
+        if not marks:
+            return pdf_bytes, info
+        draw_marks(doc, marks)
+        out = io.BytesIO()
+        doc.save(out)
+        return out.getvalue(), info
+    finally:
+        doc.close()
+
 # DPI 用來把 PDF 座標（點，pt）跟畫面上顯示的圖片像素互換。校正時
 # 前端會秀出這張渲染圖，管理員拖曳簽名框、存檔前再依這個 DPI 換算回
 # pt——渲染跟簽名蓋章用的是同一套點/像素換算比例，拖出來的位置才會
