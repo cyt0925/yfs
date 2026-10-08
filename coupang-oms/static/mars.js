@@ -336,9 +336,12 @@ async function compareYx(files, keepSkip) {
   if (!files.length) { toast("請拖曳勇信配送明細表 PDF", "err"); return; }
   YX_FILES = files; if (!keepSkip) YX_SKIP = new Set();
   const fd = new FormData(); files.forEach(f => fd.append("file", f)); fd.append("skip_pos", [...YX_SKIP].join(","));
-  $("#yx-msg").innerHTML = `<span class="muted">讀取 PDF 並比對中…</span>`; $("#yx-result").classList.add("hidden");
+  // 勾勾重算時不要把結果區先藏起來：藏起來頁面會變短、瀏覽器就跳回上面（Jerry 2026-10-08）。畫面位置、清單捲到哪都記住，重畫後放回去
+  const y = window.scrollY, inner = [...$("#yx-result").querySelectorAll(".tbl-wrap")].map(w => w.scrollTop);
+  $("#yx-msg").innerHTML = `<span class="muted">讀取 PDF 並比對中…</span>`; if (!keepSkip) $("#yx-result").classList.add("hidden");
   try { YX = await api("/api/mars/shortage/compare", { method: "POST", body: fd }); } catch (e) { $("#yx-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; return; }
   $("#yx-msg").innerHTML = ""; renderYx();
+  if (keepSkip) { $("#yx-result").querySelectorAll(".tbl-wrap").forEach((w, i) => { w.scrollTop = inner[i] || 0; }); window.scrollTo(0, y); }
 }
 function renderYx() {
   const r = YX, s = r.summary;
