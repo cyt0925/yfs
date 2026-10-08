@@ -455,6 +455,26 @@ def _items_of(s):
     return json.loads(s["items_json"] or "[]")
 
 
+def merge_members(conn, s):
+    """跟 s 填同一個 EIP 採購單號（同一張酷澎 PO、同倉、同到貨日）的幾份，照箱、盒、包排。沒填號碼就只有自己。"""
+    if not s.get("eip_po"):
+        return [s]
+    rows = _rows(conn.execute("SELECT * FROM mst_mars_splits WHERE eip_po = ? AND po_number = ? AND delivery_date = ? AND warehouse = ?",
+                              (s["eip_po"], s["po_number"], s["delivery_date"], s["warehouse"])))
+    order = lambda u: UNITS.index(u) if u in UNITS else len(UNITS)  # noqa: E731
+    return sorted(rows, key=lambda x: (order(x["unit"] or "箱"), x["id"])) or [s]
+
+
+def merged_split(members):
+    """同一張 EIP 採購單的幾份合成一張瑪氏採購單用的表頭（Jerry 2026-10-08，同事要的：盒、包同一張 EIP 採購單時瑪氏採購單也合一張）。
+    單位寫「盒+包」（檔名、嘜頭用；盒包都是箱嘜）；約倉時間取第一個有填的。品類或中標不同不能合，回傳 (None, 原因)。"""
+    first = members[0]
+    if len({m["category"] for m in members}) > 1 or len({m["label"] or "" for m in members}) > 1:
+        return None, "這幾份的品類或中標不同，無法合併成一張瑪氏採購單（品類、效期要求、中標只能寫一種）。"
+    slot = next((m["slot_time"] for m in members if (m.get("slot_time") or "").strip()), "")
+    return dict(first, unit="+".join(m["unit"] or "箱" for m in members), slot_time=slot), ""
+
+
 # ── 路由 ─────────────────────────────────────────────────────────────────────
 @mars_bp.route("/api/mars/po/settings")
 def api_po_settings():
@@ -566,7 +586,8 @@ def api_warehouses_import():
 
 @mars_bp.route("/api/mars/splits/<int:split_id>/po")
 def api_split_po(split_id):
-    """一份拆單表 → 一張瑪氏採購單。差什麼就 400 講清楚。"""
+    """一份拆單表 → 一張瑪氏採購單。差什麼就 400 講清楚。
+    ?merge=1：跟這份填同一個 EIP 採購單號的幾份（盒、包）合成一張。"""
     conn = get_conn()
     try:
         s = _row(conn.execute("SELECT * FROM mst_mars_splits WHERE id = ?", (split_id,)))
@@ -574,9 +595,17 @@ def api_split_po(split_id):
             return jsonify({"error": "找不到此份拆單表，可能已重新拆單，請重新整理頁面。"}), 404
         st = load_settings(conn)
         wh = warehouse_info(conn, s["warehouse"], st)
+        members = merge_members(conn, s) if request.args.get("merge") else [s]
     finally:
         conn.close()
-    items = _items_of(s)
+    if len(members) > 1:
+        merged, why = merged_split(members)
+        if merged is None:
+            return jsonify({"error": why}), 400
+        s = merged
+        items = [i for m in members for i in _items_of(m)]
+    else:
+        items = _items_of(s)
     miss = po_missing(s, items, wh, st)
     if miss:
         return jsonify({"error": "此份無法產出瑪氏採購單：" + "；".join(miss), "missing": miss}), 400
@@ -631,4 +660,4 @@ def api_po_zip():
 __all__ = ["DEFAULT_SETTINGS", "TW_HOLIDAYS", "BUILTIN_HOLIDAYS", "holiday_name", "load_settings", "save_settings", "parse_holiday", "order_date", "warehouse_rows", "warehouse_info",
            "save_warehouse", "format_phone", "parse_warehouse_sheet", "import_warehouses", "special_text", "po_rows", "po_missing", "po_hints", "po_filename", "po_file",
            "api_po_settings", "api_po_settings_save", "api_warehouse_save", "api_warehouse_add", "api_warehouse_delete", "api_warehouses_import",
-           "api_split_po", "api_po_zip"]
+           "api_split_po", "api_po_zip", "merge_members", "merged_split"]

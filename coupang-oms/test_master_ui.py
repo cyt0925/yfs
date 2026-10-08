@@ -9,6 +9,7 @@
 需要：pip install playwright && playwright install chromium（CI 會自動裝）。
 資料：samples/master/fake/ 的假資料（商品、條碼、PO 全是編的）。
 """
+import datetime
 import glob
 import io
 import openpyxl
@@ -409,6 +410,28 @@ def main():
         check("單號格式不對 → 格子變紅、不存", pg.eval_on_selector("#sp-table input.eip", "e => e.classList.contains('bad')"))
         pg.fill("#sp-table input.eip >> nth=0", "PO202609901"); pg.keyboard.press("Enter"); pg.wait_for_timeout(900)
         check("填對 → 狀態「已回填」", pg.eval_on_selector_all("#sp-table .st-filled", "els => els.length") == 1)
+        check("只有一份用這個 EIP 單號 → 沒有「合併」鈕", pg.eval_on_selector_all("#sp-table button.po-merge", "els => els.length") == 0)
+        # 照訂單彙總表的表頭做一份只有兩列瑪氏的檔（跟 test_mars 的 special_sheet 同做法；不 import test_mars，它一載入就會換資料庫）
+        wbm = openpyxl.load_workbook(os.path.join(FAKE, "假_訂單彙總表_9月_第一次.xlsx")); wsm = wbm.worksheets[0]
+        hdr = [x.value for x in wsm[1]]; wsm.delete_rows(2, wsm.max_row)
+        for sku, bc, yf, nm, q, u, bx in [("910000000000011", "4710000000011", "M69072565", "喵愛餡 盒", 24, "盒", 12),
+                                          ("910000000000012", "4710000000012", "M80676511", "喵喵鮮 包", 48, "包", 24)]:
+            row = {"訂單類型": "一般", "線別": "瑪氏", "PO單號": "13000000583199", "到貨倉別": "TAO3", "地址": "桃園市大園區中山南路472號",
+                   "交付日期": datetime.datetime(2026, 10, 12), "NO": 1, "品牌": "測試", "酷澎下單單價(含稅)": 100, "SKU ID": sku, "條碼(國條)": bc,
+                   "永豐料號": yf, "品名": nm, "下單數量(酷澎單位)": q, "出貨數量": q, "單位": u, "箱入數": bx}
+            wsm.append([row.get(h) for h in hdr])
+        bm = io.BytesIO(); wbm.save(bm)
+        pv = tc.post("/api/master/import/preview", data={"file": (io.BytesIO(bm.getvalue()), "盒包合併.xlsx")}, content_type="multipart/form-data").get_json()
+        check("另匯一張 10/12 的單：盒、包同品類同中標（測合併瑪氏採購單）", tc.post("/api/master/import/commit", json={"batch_id": pv["batch_id"], "add_missing_products": True}).status_code == 200)
+        pg.fill("#d-from", "2026-10-12"); pg.fill("#d-to", "2026-10-12"); pg.dispatch_event("#d-to", "change"); pg.wait_for_selector("#sp-table tr.sp", timeout=10000); pg.wait_for_timeout(500)
+        pg.fill("#sp-table input.eip >> nth=0", "PO202610903"); pg.keyboard.press("Enter"); pg.wait_for_timeout(1200)
+        n_merge = pg.eval_on_selector_all("#sp-table button.po-merge", "els => els.length")
+        check("盒那列填 PO202610903 → 包一起填上、兩列都多一顆「合併」", n_merge == 2 and pg.eval_on_selector_all("#sp-table input.eip", "els => els.map(e => e.value)") == ["PO202610903", "PO202610903"], str(n_merge))
+        with pg.expect_download() as dl:
+            pg.click("#sp-table button.po-merge >> nth=1")
+        check("按「合併」→ 下載一張瑪氏採購單，檔名 PO202610903 開頭、單位寫(盒+包)", dl.value.suggested_filename.startswith("PO202610903永豐Mars採購單") and dl.value.suggested_filename.endswith("(盒+包).xlsx"), dl.value.suggested_filename)
+        pg.click("#cal .day[data-date='2026-09-18']") if pg.query_selector("#cal .day[data-date='2026-09-18']") else None
+        pg.fill("#d-from", "2026-09-18"); pg.fill("#d-to", "2026-09-18"); pg.dispatch_event("#d-to", "change"); pg.wait_for_timeout(900)
         pg.click("#f-noeip"); pg.wait_for_timeout(300)
         check("「只看還沒填 EIP 單號的」→ 剩 4 份、填了的那份不見", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 4 and pg.eval_on_selector_all("#sp-table .st-filled", "els => els.length") == 0 and "符合 4／5" in pg.inner_text("#sum"), pg.inner_text("#sum"))
         pg.click("#f-noeip"); pg.wait_for_timeout(300)

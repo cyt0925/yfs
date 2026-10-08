@@ -171,6 +171,10 @@ function render() {
     const key = r.split_key, warn = r.items.some(i => i.issues && i.issues.length);
     // 還沒產出的列也直接能填、能按：第一次動到時先把這一份存起來（ensureSplit）。只有箱數算不出整數的那份不行
     const blocked = r.blocking && r.blocking.length, ok = !blocked && r.status !== "gone" || r.id;
+    // 同一個 EIP 採購單號的幾份（盒、包同一張）：多一顆「合併」，產一張瑪氏採購單（Jerry 2026-10-08，同事要的）
+    // 品類或中標不同的不能合（表頭只能寫一種），那種就不出現這顆
+    const sameEip = r.eip_po ? v.splits.filter(x => x.eip_po === r.eip_po && x.po_number === r.po_number && x.delivery_date === r.delivery_date && x.warehouse === r.warehouse
+      && x.category === r.category && (x.label || "") === (r.label || "")) : [];
     const dis = blocked && !r.id ? "disabled title=\"此份有品項需先處理（見上方紅色提示）\"" : "";
     if (r.po_number !== lastPo) {
       lastPo = r.po_number; gi++;
@@ -188,7 +192,7 @@ function render() {
       <td class="num">${r.item_count}${warn ? ` <i class="bi bi-exclamation-triangle-fill" style="color:var(--warn)" title="有品項需注意，點選展開查看"></i>` : ""}</td><td class="num"><b>${fmt(r.cases_total)}</b></td>
       <td><input class="inp eip" data-k="${esc(key)}" value="${esc(r.eip_po)}" placeholder="PO202609…" ${dis}>${r.eip_mates && r.eip_mates.length ? `<div class="kbd" title="${esc(r.eip_mates.map(m => m.filename).join("\n"))}">與「${r.eip_mates.map(m => esc(m.unit)).join("、")}」同一張 EIP 採購單</div>` : ""}</td>
       <td><input class="inp slot" data-k="${esc(key)}" value="${esc(r.slot_time)}" placeholder="例如 12:30~15:30（1台車）" ${dis}></td>
-      <td class="whitespace-nowrap">${ok ? `<button class="btn btn-o btn-sm emma" data-k="${esc(key)}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "下載 EMMA 匯入檔" : "下載 EMMA 匯入檔（尚未填 EIP 採購單號，出貨備註會留空）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <button class="btn btn-o btn-sm eipf" data-k="${esc(key)}" title="下載 EIP 採購單">EIP</button> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-k="${esc(key)}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>瑪氏採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>` : `<span class="kbd" title="此份有品項需先處理（見上方紅色提示）">先處理紅色提示</span>`}</td></tr>`;
+      <td class="whitespace-nowrap">${ok ? `<button class="btn btn-o btn-sm emma" data-k="${esc(key)}" data-eip="${r.eip_po ? 1 : 0}" title="${r.eip_po ? "下載 EMMA 匯入檔" : "下載 EMMA 匯入檔（尚未填 EIP 採購單號，出貨備註會留空）"}">EMMA${r.eip_po ? "" : ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>`}</button> <button class="btn btn-o btn-sm eipf" data-k="${esc(key)}" title="下載 EIP 採購單">EIP</button> <button class="btn btn-sm po ${r.po_missing.length ? "btn-o" : "btn-p"}" data-k="${esc(key)}" ${r.po_missing.length ? `disabled title="${esc(r.po_missing.join("；"))}"` : `title="${esc([r.po_filename, ...(r.po_hints || [])].join("\n"))}"`}>瑪氏採購單${r.po_hints && r.po_hints.length ? ` <i class="bi bi-exclamation-circle" style="opacity:.8"></i>` : ""}</button>${sameEip.length > 1 ? ` <button class="btn btn-o btn-sm po-merge" data-k="${esc(key)}" title="${esc(`與${sameEip.filter(x => x !== r).map(x => `「${x.unit}」`).join("、")}同一張 EIP 採購單（${r.eip_po}），合併成一張瑪氏採購單下載`)}"><i class="bi bi-union"></i> 合併</button>` : ""}` : `<span class="kbd" title="此份有品項需先處理（見上方紅色提示）">先處理紅色提示</span>`}</td></tr>`;
     if (OPEN.has(key) || matched.get(key).byItem) {
       h += `<tr class="sub"><td></td><td></td><td colspan="${v.split_by_unit ? 12 : 11}"><table class="t"><thead><tr><th>永豐料號</th><th>下採料號</th><th>品名</th><th class="num">出貨數量</th><th>單位</th><th class="num">箱入數</th><th class="num">箱數</th><th>瑪氏貨號</th><th>採購單箱備註</th><th>注意事項</th></tr></thead><tbody>
         ${r.items.map(i => `<tr><td class="fn">${esc(i.yf_sku)}</td><td class="fn">${esc(i.purchase_code)}${i.purchase_code !== i.yf_sku ? ` <span class="badge st-changed" title="報價備註與永豐料號不同（組出商品）">組出</span>` : ""}</td><td>${esc(i.product_name)}</td><td class="num">${fmt(i.qty_ship)}${i.qty_overridden ? ` <span class="badge st-generated" title="已在商品主檔自動化的訂單明細修改出貨數量">我方修改</span>` : ""}</td><td>${esc(i.unit)}</td><td class="num">${fmt(i.box_file)}</td><td class="num"><b>${fmt(i.cases)}</b></td><td class="fn">${esc(i.mars_code)}</td><td>${esc(i.po_case_note)}</td><td style="color:var(--warn)">${(i.issues || []).map(esc).join("<br>")}</td></tr>`).join("")}
@@ -209,6 +213,10 @@ function render() {
   $("#sp-table").querySelectorAll("button.po").forEach(b => b.addEventListener("click", async () => {
     const id = await ensureSplit(b.dataset.k); if (!id) return;
     await downloadBlob(`/api/mars/splits/${id}/po`, {}, "瑪氏採購單.xlsx", "瑪氏採購單已下載");
+  }));
+  $("#sp-table").querySelectorAll("button.po-merge").forEach(b => b.addEventListener("click", async () => {
+    const id = await ensureSplit(b.dataset.k); if (!id) return;
+    await downloadBlob(`/api/mars/splits/${id}/po?merge=1`, {}, "瑪氏採購單.xlsx", "合併的瑪氏採購單已下載");
   }));
   $("#sp-table").querySelectorAll("button.emma").forEach(b => b.addEventListener("click", async () => {
     if (b.dataset.eip !== "1" && !confirm("此份尚未填 EIP 採購單號，EMMA 匯入檔的出貨備註會留空。確定要下載？")) return;

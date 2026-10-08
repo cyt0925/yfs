@@ -589,6 +589,18 @@ def main():
     v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
     check("在盒那列填 PO202610128 → 包一起填上、箱不動、不跳提醒", r.status_code == 200 and len(d["mates_updated"]) == 1 and not d["warning"]
           and by_u["包"]["eip_po"] == "PO202610128" and by_u["箱"]["eip_po"] == "", str(d))
+    # 合併瑪氏採購單（Jerry 2026-10-08，同事要的）：同一個 EIP 單號的盒、包合成一張；原本一份一張的照舊
+    r = c.get(f"/api/mars/splits/{by_u['包']['id']}/po?merge=1")
+    wsm = openpyxl.load_workbook(io.BytesIO(r.data)).active
+    codes_m = [wsm.cell(rr, 1).value for rr in range(12, 16) if wsm.cell(rr, 1).value]
+    check("在包那列按「合併」→ 一張瑪氏採購單：C5 是 PO202610128、盒和包的料號各一列、檔名單位寫(盒+包)、嘜頭是箱嘜", r.status_code == 200 and wsm["C5"].value == "PO202610128"
+          and sorted(codes_m) == ["M69072565", "M80676511"] and "(盒+包).xlsx" in unquote(r.headers.get("Content-Disposition", "")) and wsm["F5"].value.split("\n")[1 if by_u["包"]["label"] == "V" else 0].startswith("箱嘜"),
+          f"{codes_m} {unquote(r.headers.get('Content-Disposition', ''))}")
+    r1 = c.get(f"/api/mars/splits/{by_u['包']['id']}/po")
+    ws1 = openpyxl.load_workbook(io.BytesIO(r1.data)).active
+    check("原本的「瑪氏採購單」鈕照舊只有包那份", [ws1.cell(rr, 1).value for rr in range(12, 14) if ws1.cell(rr, 1).value] == ["M80676511"] and "(包).xlsx" in unquote(r1.headers.get("Content-Disposition", "")))
+    m_bad, why = mp.merged_split([dict(by_u["盒"], category="PET"), dict(by_u["包"], category="CHO")])
+    check("品類或中標不同 → 不能合併、講原因", m_bad is None and "品類或中標不同" in why, why)
     r = put(by_u["箱"]["id"], {"eip_po": "PO202610128"}); d = r.get_json()
     check("箱那份也填同一個號碼 → 可以存，但提醒依規則應分開", r.status_code == 200 and "應分開" in d["warning"], str(d))
     put(by_u["箱"]["id"], {"eip_po": ""})
