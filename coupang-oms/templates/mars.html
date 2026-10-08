@@ -91,7 +91,7 @@
       <div style="background:#fff;border-radius:10px;padding:4px 8px"><img src="{{ url_for('static', filename='line_mars.png') }}" style="height:30px;width:auto" alt="瑪氏"></div>
       <div>
         <h1 class="text-lg font-bold leading-tight">瑪氏出貨</h1>
-        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span class="on">③ 瑪氏採購單</span><span class="on">④ EMMA 匯入檔</span><span class="on">⑤ 勇信缺貨</span></div>
+        <div class="steps mt-1"><span class="on">① 拆單</span><span class="on">② 回填 EIP 採購單號</span><span class="on">③ 瑪氏採購單</span><span class="on">④ EMMA 匯入檔</span><span class="on">⑤ 勇信缺貨</span><span class="on">⑥ 驗收單劃線</span></div>
       </div>
     </div>
     <div class="flex-1"></div>
@@ -187,6 +187,18 @@
       <input type="file" id="yx-file" accept=".pdf" class="hidden" multiple></label>
     <div id="yx-msg" class="text-sm mt-2"></div>
     <div id="yx-result" class="hidden mt-3"></div>
+  </section>
+
+  <!-- ⑥ 驗收單缺貨劃線：簽好名的驗收單 PDF → 照系統出貨數量劃線（Jerry 2026-10-08） -->
+  <section class="card p-4 dz" id="dz-rc">
+    <div>
+      <b>驗收單缺貨劃線</b>
+      <div class="text-sm muted mt-1">上傳簽好名的酷澎驗收單 PDF，依系統出貨數量（勇信缺貨確認後的數量）修改：整筆不出貨的品項整列畫線，部分出貨的把原出貨數量塗黑、旁邊寫實際數量。兩聯都會改，合計不改。只處理瑪氏的驗收單。</div>
+    </div>
+    <label class="dzbox mt-3"><i class="bi bi-file-earmark-pdf"></i><div><b>將簽好名的驗收單 PDF 拖曳至此</b>，或點選檔案<div class="kbd">可一次上傳多份；先列出會修改的品項，確認後再下載</div></div>
+      <input type="file" id="rc-file" accept=".pdf" class="hidden" multiple></label>
+    <div id="rc-msg" class="text-sm mt-2"></div>
+    <div id="rc-result" class="hidden mt-3"></div>
   </section>
 
   <!-- ③ 採購單設定：各倉資料、特殊需求文字、假日 -->

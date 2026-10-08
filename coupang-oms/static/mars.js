@@ -341,6 +341,36 @@ $("#btn-emma-all").addEventListener("click", async () => {
   emmaMerge({ from: $("#d-from").value, to: $("#d-to").value });
 });
 
+/* ── ⑥ 驗收單缺貨劃線（Jerry 2026-10-08）：先預覽會改哪幾品，按下載才產檔 ── */
+let RC_FILES = [];
+$("#rc-file").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) previewRc(fs); });
+dropzone($("#dz-rc"), fs => previewRc(fs), { re: /\.pdf$/i, msg: "請拖曳驗收單 PDF" });
+async function previewRc(files) {
+  RC_FILES = files;
+  const fd = new FormData(); files.forEach(f => fd.append("file", f));
+  $("#rc-msg").innerHTML = `<span class="muted">讀取驗收單中…</span>`; $("#rc-result").classList.add("hidden");
+  let d;
+  try { d = await api("/api/mars/receipts/preview", { method: "POST", body: fd }); } catch (e) { $("#rc-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; return; }
+  $("#rc-msg").innerHTML = "";
+  const marked = d.files.filter(f => f.note).length;
+  let h = d.files.map(f => {
+    const items = f.items.map(i => `<div class="kbd" style="padding-left:18px">No.${i.no}　${esc(i.name)}　<b>${fmt(i.pdf_qty)}</b> → ${i.kind === "strike" ? `<b style="color:var(--bad)">整列劃掉</b>` : `<b style="color:var(--bad)">${fmt(i.new_qty)}</b>`}</div>`).join("");
+    const status = f.error ? `<span class="neg">${esc(f.error)}，原檔不變</span>`
+      : !f.applies ? `<span class="muted">不是瑪氏的驗收單（或系統中沒有此 PO），原檔不變</span>`
+      : f.note ? `<b style="color:var(--bad)">${esc(f.note)}</b>` : `<span style="color:var(--ok)">數量與系統一致，不需劃線</span>`;
+    const miss = f.missing && f.missing.length ? `<div class="kbd" style="padding-left:18px;color:var(--warn)">有 ${f.missing.length} 個 SKU 在系統中找不到，不會修改：${f.missing.map(esc).join("、")}</div>` : "";
+    return `<div class="mb-2"><span class="fn">${esc(f.filename)}</span>${f.po_number ? ` · <span class="fn">${esc(f.po_number)}</span>` : ""} · ${status}${items}${miss}</div>`;
+  }).join("");
+  h += `<div class="flex items-center gap-2 mt-3 flex-wrap"><button id="rc-go" class="btn btn-p" ${marked ? "" : "disabled"}><i class="bi bi-download"></i> 下載劃好線的驗收單（${marked} 份要修改${d.files.length > marked ? `，其他 ${d.files.length - marked} 份原檔照附` : ""}）</button>
+    <button id="rc-clear" class="btn btn-o">清除並重新上傳</button></div>`;
+  $("#rc-result").innerHTML = h; $("#rc-result").classList.remove("hidden");
+  $("#rc-clear").addEventListener("click", () => { RC_FILES = []; $("#rc-result").classList.add("hidden"); $("#rc-result").innerHTML = ""; });
+  $("#rc-go").addEventListener("click", async () => {
+    const fd2 = new FormData(); RC_FILES.forEach(f => fd2.append("file", f));
+    await downloadBlob("/api/mars/receipts/mark", { method: "POST", body: fd2 }, RC_FILES.length > 1 ? "驗收單缺貨劃線.zip" : RC_FILES[0].name, `已下載 ${marked} 份劃好線的驗收單`);
+  });
+}
+
 /* ── ⑤ 勇信缺貨 ── */
 let YX = null, YX_FILES = [], YX_SKIP = new Set();       // YX_SKIP＝取消勾選（這次不出）的酷澎 PO
 const YX_ST = { ok: ["沒缺", "st-filled"], partial: ["部分缺", "st-changed"], none: ["全缺", "st-gone"], over: ["出貨超量（異常）", "st-changed_after_eip"] };

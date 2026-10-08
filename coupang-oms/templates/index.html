@@ -484,14 +484,6 @@
       </div>
     </label>
 
-    <!-- 瑪氏驗收單缺貨劃線（Jerry 2026-10-08）：選了檔就先列出會劃掉／改數量的品項，簽名時一起畫 -->
-    <div id="sign-short" class="hidden border rounded-lg p-3 space-y-2">
-      <label class="flex items-center gap-2 font-semibold"><input id="sign-mark" type="checkbox" class="w-4 h-4" checked>
-        依系統出貨數量劃掉缺貨品項（瑪氏驗收單）</label>
-      <p class="text-[11px] text-ink-400">整筆不出貨的品項整列畫線；部分出貨的把原出貨數量塗黑、旁邊寫實際數量。兩聯都會改，合計不改。數量以瑪氏出貨「勇信缺貨」確認後的出貨數量為準。</p>
-      <div id="sign-short-list" class="text-xs space-y-2 max-h-64 overflow-auto"></div>
-    </div>
-
     <div id="sign-result" class="hidden space-y-3"></div>
   </div>
 
@@ -1958,7 +1950,6 @@ $("#btn-sign").addEventListener("click", async () => {
   renderSignatureBlock();
   $("#sign-sig-file").value = "";
   $("#sign-files").value = "";
-  $("#sign-short").classList.add("hidden"); $("#sign-short-list").innerHTML = ""; $("#sign-mark").checked = true;
   $("#sign-result").classList.add("hidden");
   $("#sign-result").innerHTML = "";
   $("#sign-banner").classList.add("hidden");
@@ -2126,31 +2117,6 @@ $("#btn-sop-print").addEventListener("click", () => {
   win.onload = () => win.print();
 });
 
-// 選了驗收單就先問系統：哪幾份是瑪氏、哪幾品會被劃掉或改數量（不存任何東西）
-$("#sign-files").addEventListener("change", async () => {
-  const files = $("#sign-files").files;
-  $("#sign-short").classList.add("hidden"); $("#sign-short-list").innerHTML = "";
-  if (!files.length) return;
-  const fd = new FormData();
-  for (const f of files) fd.append("files", f);
-  let data;
-  try { data = await (await fetch("/api/sign/shortage-preview", { method: "POST", body: fd })).json(); } catch (e) { return; }
-  const mars = (data.files || []).filter(f => f.applies);
-  if (!mars.length) return;
-  const others = data.files.length - mars.length;
-  $("#sign-short-list").innerHTML = mars.map(f => {
-    const strike = f.items.filter(i => i.kind === "strike").length, reduce = f.items.length - strike;
-    const head = `<div class="font-semibold"><span class="font-mono">${esc(f.po_number)}</span>　${f.items.length
-      ? [strike ? `整列劃掉 ${strike} 品` : "", reduce ? `改數量 ${reduce} 品` : ""].filter(Boolean).join("、")
-      : `<span class="text-ink-400">數量與系統一致，不需劃線</span>`}</div>`;
-    const list = f.items.map(i => `<div class="pl-5 text-ink-600">No.${i.no}　${esc(i.name)}　<b>${i.pdf_qty}</b> → ${i.kind === "strike"
-      ? `<b class="text-red-700">整列劃掉</b>` : `<b class="text-red-700">${i.new_qty}</b>`}</div>`).join("");
-    const miss = f.missing.length ? `<div class="pl-5 text-amber-800">有 ${f.missing.length} 個 SKU 在系統中找不到，不會修改：${f.missing.map(esc).join("、")}</div>` : "";
-    return `<div>${head}${list}${miss}</div>`;
-  }).join("") + (others ? `<div class="text-ink-400">其他 ${others} 份不是瑪氏的驗收單，只簽名、不劃線。</div>` : "");
-  $("#sign-short").classList.remove("hidden");
-});
-
 $("#btn-sign-run").addEventListener("click", async () => {
   const files = $("#sign-files").files;
   if (!files.length) { showBanner("#sign-banner", "請先選要簽名的 PDF。", "warn"); return; }
@@ -2162,7 +2128,6 @@ $("#btn-sign-run").addEventListener("click", async () => {
 
   const fd = new FormData();
   for (const f of files) fd.append("files", f);
-  fd.append("mark_shortage", $("#sign-mark").checked ? "1" : "0");
   try {
     const res = await fetch("/api/sign/run", { method: "POST", body: fd });
     const data = await res.json();
@@ -2176,7 +2141,7 @@ $("#btn-sign-run").addEventListener("click", async () => {
            <span class="truncate"><i class="bi bi-check-circle-fill text-emerald-600"></i>
              ${esc(r.filename)}
              ${r.po_number ? `<span class="text-ink-400 font-mono text-xs">${esc(r.po_number)}</span>` : ""}</span>
-           <span class="text-xs text-ink-500 whitespace-nowrap">${r.shortage_note ? `<span class="text-red-700">${esc(r.shortage_note)}</span>　` : ""}簽名 ${r.sign_count} 處
+           <span class="text-xs text-ink-500 whitespace-nowrap">簽名 ${r.sign_count} 處
              <a href="/api/sign/docs/${r.doc_id}/download" class="text-brand-600 hover:underline ml-2">下載</a></span>
          </div>`
       : `<div class="flex items-center justify-between border-b py-1.5 gap-2">

@@ -617,7 +617,7 @@ def main():
     r = put(by_u["包"]["id"], {"eip_po": ""}); v = splits(c, "2026-10-12"); by_u = {x["unit"]: x for x in v["splits"]}
     check("在包那列清掉號碼 → 盒一起清掉", r.status_code == 200 and by_u["盒"]["eip_po"] == "" and by_u["包"]["eip_po"] == "")
 
-    print("\n【8g】瑪氏驗收單缺貨劃線（簽名時照系統出貨數量劃掉、改數量）")
+    print("\n【8g】⑥ 驗收單缺貨劃線（簽好名的驗收單照系統出貨數量劃掉、改數量）")
     import pdfsign
     import pymupdf
     po_g = "13000000699901"
@@ -670,26 +670,28 @@ def main():
     found = pdfsign.find_item_rows(pymupdf.open(stream=pdf_g, filetype="pdf"))
     check("讀驗收單表格：兩聯各讀到每一列、SKU 兩行接起來、續頁沒表頭那列也讀到", len(found) == 2 * len(rows_g)
           and [(r_["no"], r_["sku"], r_["qty"]) for r_ in found[:len(rows_g)]] == [(n, k, q) for n, k, _, q in rows_g], str([(r_["page"], r_["no"], r_["sku"], r_["qty"]) for r_ in found]))
-    r = c.post("/api/sign/shortage-preview", data={"files": [(io.BytesIO(pdf_g), "PO_DELIVERY_INVOICE_g.pdf"), (io.BytesIO(receipt_pdf("13000000999999", rows_g[:1])), "別張.pdf")]}, content_type="multipart/form-data")
+    r = c.post("/api/mars/receipts/preview", data={"file": [(io.BytesIO(pdf_g), "signed_PO_DELIVERY_INVOICE_g.pdf"), (io.BytesIO(receipt_pdf("13000000999999", rows_g[:1])), "別張.pdf")]}, content_type="multipart/form-data")
     pv_ = r.get_json()["files"]
     kinds = {i["sku"]: (i["kind"], i["pdf_qty"], i["new_qty"]) for i in pv_[0]["items"]}
-    check("簽名前預覽：瑪氏那張要比、整筆不出的整列劃掉、部分出的改成系統數量、一樣的不動、系統沒有的 SKU 列出來；不是瑪氏的不比",
+    check("先預覽：瑪氏那張要比、整筆不出的整列劃掉、部分出的改成系統數量、一樣的不動、系統沒有的 SKU 列出來；不是瑪氏的不比",
           pv_[0]["applies"] and kinds == {zero: ("strike", 24, 0), pos_[0]: ("reduce", int(cur[pos_[0]]) + 12, cur[pos_[0]])} and pv_[0]["missing"] == ["999999999999999"]
-          and not pv_[1]["applies"], str(pv_))
-    sp = pymupdf.open(); spg = sp.new_page(width=130, height=44); spg.draw_line((10, 30), (120, 20), width=2)
-    c.post("/api/sign/signature", data={"file": (io.BytesIO(spg.get_pixmap(dpi=150).tobytes("png")), "sig.png")}, content_type="multipart/form-data")
-    r = c.post("/api/sign/run", data={"files": (io.BytesIO(pdf_g), "PO_DELIVERY_INVOICE_g.pdf"), "mark_shortage": "1"}, content_type="multipart/form-data")
-    res_g = r.get_json()["results"][0]
-    signed = pymupdf.open(stream=c.get(f"/api/sign/docs/{res_g['doc_id']}/download").data, filetype="pdf")
-    thick = [d for pg in signed for d in pg.get_drawings() if (d.get("width") or 0) >= 2.5]
-    blacks = [d for pg in signed for d in pg.get_drawings() if d.get("fill") == (0.0, 0.0, 0.0)]
-    txt = "".join(pg.get_text() for pg in signed)
-    check("簽名時一起劃：兩聯各畫一條粗線、各塗黑一格、寫上新數量；結果寫整列劃掉 1 品、改數量 1 品", res_g["status"] == "ok" and len(thick) == 2 and len(blacks) == 2
-          and txt.count(str(cur[pos_[0]])) >= 2 and res_g["shortage_note"] == "整列劃掉 1 品、改數量 1 品", f"{res_g.get('shortage_note')} 粗線 {len(thick)} 黑格 {len(blacks)}")
-    r = c.post("/api/sign/run", data={"files": (io.BytesIO(pdf_g), "PO_DELIVERY_INVOICE_g.pdf"), "mark_shortage": "0"}, content_type="multipart/form-data")
-    res_n = r.get_json()["results"][0]
-    signed_n = pymupdf.open(stream=c.get(f"/api/sign/docs/{res_n['doc_id']}/download").data, filetype="pdf")
-    check("取消勾選 → 只簽名、不劃線", not res_n["shortage_note"] and not [d for pg in signed_n for d in pg.get_drawings() if (d.get("width") or 0) >= 2.5])
+          and pv_[0]["note"] == "整列劃掉 1 品、改數量 1 品" and not pv_[1]["applies"] and not pv_[1]["note"], str(pv_))
+    r = c.post("/api/mars/receipts/mark", data={"file": (io.BytesIO(pdf_g), "signed_PO_DELIVERY_INVOICE_g.pdf")}, content_type="multipart/form-data")
+    marked = pymupdf.open(stream=r.data, filetype="pdf")
+    thick = [d for pg in marked for d in pg.get_drawings() if (d.get("width") or 0) >= 2.5]
+    blacks = [d for pg in marked for d in pg.get_drawings() if d.get("fill") == (0.0, 0.0, 0.0)]
+    txt = "".join(pg.get_text() for pg in marked)
+    check("下載一份 → 直接回 PDF、檔名照原檔；兩聯各畫一條粗線、各塗黑一格、寫上新數量", r.status_code == 200 and r.mimetype == "application/pdf"
+          and "signed_PO_DELIVERY_INVOICE_g.pdf" in unquote(r.headers.get("Content-Disposition", "")) and len(thick) == 2 and len(blacks) == 2
+          and txt.count(str(cur[pos_[0]])) >= 2 and r.headers.get("X-Mars-Receipt-Marked") == "1", f"粗線 {len(thick)} 黑格 {len(blacks)} {r.headers.get('Content-Disposition')}")
+    other = receipt_pdf("13000000999999", rows_g[:1])
+    r = c.post("/api/mars/receipts/mark", data={"file": [(io.BytesIO(pdf_g), "a.pdf"), (io.BytesIO(other), "b.pdf")]}, content_type="multipart/form-data")
+    z = zipfile.ZipFile(io.BytesIO(r.data))
+    check("下載多份 → zip、每份檔名照原檔；不是瑪氏的那份原檔照附（一模一樣）", sorted(z.namelist()) == ["a.pdf", "b.pdf"] and z.read("b.pdf") == other
+          and r.headers.get("X-Mars-Receipt-Files") == "2" and r.headers.get("X-Mars-Receipt-Marked") == "1", str(z.namelist()))
+    logs = c.get(f"/api/master/logs?q={po_g}&limit=1000").get_json()["logs"]
+    check("有劃到的記一筆歷程（驗收單缺貨劃線、寫劃掉幾品）", any(l["field"] == "mars_receipt" and "整列劃掉 1 品" in (l["new_value"] or "") for l in logs), str([l for l in logs if l["field"] == "mars_receipt"][:1]))
+    check("壞檔、不是 PDF → 預覽寫原因、原檔不變", c.post("/api/mars/receipts/preview", data={"file": (io.BytesIO(b"x"), "x.txt")}, content_type="multipart/form-data").get_json()["files"][0]["error"] == "不是 PDF 檔")
 
     print("\n【9】清除資料")
     app_module._write_users(app_module.get_users(), {"Jerry", "小真"})

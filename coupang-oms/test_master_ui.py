@@ -13,6 +13,7 @@ import datetime
 import glob
 import io
 import openpyxl
+import pymupdf
 import os
 import socket
 import sys
@@ -368,7 +369,7 @@ def main():
         check("月曆：9 月有訂單的天亮起來、格子裡有箱數和 PO 數", pg.eval_on_selector_all("#cal .day.has", "els => els.length") >= 2 and "箱" in pg.inner_text("#cal .day.has >> nth=0") and "PO" in pg.inner_text("#cal .day.has >> nth=0"), pg.inner_text("#cal .day.has >> nth=0")[:60])
         pg.click("#cal .day[data-date='2026-09-18']"); pg.wait_for_timeout(800)
         check("點月曆 9/18 → 起訖都變 9/18、那格變深色", pg.input_value("#d-from") == "2026-09-18" and pg.input_value("#d-to") == "2026-09-18" and pg.eval_on_selector("#cal .day[data-date='2026-09-18']", "e => e.classList.contains('on')"))
-        check("四個上傳處都有看得見的虛線拖曳框", pg.eval_on_selector_all(".dzbox", "els => els.length") == 4)
+        check("五個上傳處都有看得見的虛線拖曳框（多了 ⑥ 驗收單）", pg.eval_on_selector_all(".dzbox", "els => els.length") == 5)
         check("9/18：5 份拆單表、都是「還沒產出」，但單號格子和每列按鈕已經能用、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
               and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and not pg.is_disabled("#sp-table input.eip")
               and pg.eval_on_selector_all("#sp-table button.eipf", "els => els.length") == 5
@@ -518,6 +519,33 @@ def main():
         check("確認 → 下載 酷澎下修_0918交貨-TAO1.xlsx、比對區收起來、寫已確認", dl.value.suggested_filename == "酷澎下修_0918交貨-TAO1.xlsx", dl.value.suggested_filename)
         pg.wait_for_timeout(900)
         check("確認後訊息寫系統數量已更新", "已確認" in pg.inner_text("#yx-msg"), pg.inner_text("#yx-msg"))
+        # ⑥ 驗收單缺貨劃線（Jerry 2026-10-08）：那張 PO 的驗收單照系統出貨數量劃線；做一張假的驗收單（表格照真檔欄寬）
+        po_r = sp0["po_number"]
+        cur_r = {o["sku_id"]: o["qty_ship"] for o in tc.get(f"/api/master/orders?month=2026-09&q={po_r}").get_json()["rows"]}
+        rows_r = [(n, sku, f"假品名{n}", int(q) + (6 if n == 1 else 0)) for n, (sku, q) in enumerate([kv for kv in cur_r.items() if kv[1]], start=1)][:3]
+        doc = pymupdf.open(); page = doc.new_page(width=595, height=842)
+        page.insert_text((60, 120), f"採購單號 {po_r}", fontname="china-t", fontsize=9)
+        xs = [37, 62, 114, 167, 271, 313, 355, 400, 480, 559]; ys = [380]
+        for i, t_ in enumerate(["No", "SKU No.", "條碼", "品名", "出貨數量", "實際數量", "管理", "允收效期", "差異原因"]):
+            page.insert_text((xs[i] + 2, 393), t_, fontname="china-t", fontsize=7)
+        ys.append(400)
+        for no, sku, nm, q in rows_r:
+            top = ys[-1]
+            page.insert_text((xs[0] + 8, top + 16), str(no), fontsize=8); page.insert_text((xs[1] + 2, top + 11), sku[:11], fontsize=7)
+            page.insert_text((xs[1] + 2, top + 21), sku[11:], fontsize=7); page.insert_text((xs[3] + 2, top + 16), nm, fontname="china-t", fontsize=7)
+            page.insert_text((xs[4] + 14, top + 16), str(q), fontsize=8); ys.append(top + 28)
+        page.insert_text((xs[0] + 5, ys[-1] + 13), "合計", fontname="china-t", fontsize=8); ys.append(ys[-1] + 20)
+        for yy in ys:
+            page.draw_line((xs[0], yy), (xs[-1], yy), width=0.6)
+        for xx in xs:
+            page.draw_line((xx, ys[0]), (xx, ys[-1]), width=0.6)
+        rcp = os.path.join(tempfile.gettempdir(), f"signed_PO_DELIVERY_INVOICE_{po_r}.pdf"); doc.save(rcp)
+        pg.set_input_files("#rc-file", rcp); pg.wait_for_selector("#rc-result:not(.hidden)", timeout=15000); pg.wait_for_timeout(300)
+        check("⑥ 丟簽好名的驗收單 → 先列出：改數量 1 品、原本幾個 → 系統幾個", "改數量 1 品" in pg.inner_text("#rc-result") and f"{rows_r[0][3]} → {cur_r[rows_r[0][1]]}" in pg.inner_text("#rc-result").replace(",", ""),
+              pg.inner_text("#rc-result")[:200])
+        with pg.expect_download() as dl:
+            pg.click("#rc-go")
+        check("按下載 → 一份就直接是 PDF、檔名照原檔", dl.value.suggested_filename == os.path.basename(rcp), dl.value.suggested_filename)
         pg.click("#hs-open"); pg.wait_for_selector("#hs-table tbody tr", timeout=10000); pg.wait_for_timeout(300)
         check("瑪氏頁「歷程」視窗：看得到剛才的 EIP 單號、勇信缺貨改數量", "EIP 採購單號" in pg.inner_text("#hs-table") and "出貨數量" in pg.inner_text("#hs-table") and "勇信出" in pg.inner_text("#hs-table"), pg.inner_text("#hs-count"))
         pg.fill("#hs-q", "PO202609901"); pg.click("#hs-go"); pg.wait_for_timeout(500)
