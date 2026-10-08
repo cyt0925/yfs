@@ -210,7 +210,7 @@
           <label class="block">送貨聯絡人（F8，倉庫未填時使用） <input id="ps-contact" class="inp"></label>
           <label class="block">需貼中標時的特殊需求第一行 <input id="ps-label" class="inp"></label>
           <label class="block">有採購單箱備註時的特殊需求最後一行 <input id="ps-white" class="inp"></label>
-          <label class="block">特殊需求固定文字（一行一條；<code>{約倉時間}</code> 代入該份的約倉時間，<code>{約倉開始}</code> 代入其中第一個時間，<code>{倉庫加註}</code> 代入該倉的特殊需求加註）<textarea id="ps-special" class="inp" rows="5"></textarea></label>
+          <label class="block">特殊需求固定文字（一行一條；<code>{嘜頭}</code> 箱單位代入「板嘜」、盒與包代入「箱嘜」，<code>{約倉時間}</code> 代入該份的約倉時間，<code>{約倉開始}</code> 代入其中第一個時間，<code>{倉庫加註}</code> 代入該倉的特殊需求加註）<textarea id="ps-special" class="inp" rows="5"></textarea></label>
           <div>台灣國定假日已內建（<span id="ps-builtin-years"></span>），下單日往前推算時會自動略過，不需填寫。<span id="ps-builtin-warn" class="badge st-changed hidden"></span> <a href="#" id="ps-builtin-show" class="kbd" style="text-decoration:underline">查看清單</a><div id="ps-builtin-list" class="kbd hidden mt-1" style="columns:3;font-size:11px"></div></div>
           <label class="block">額外假日（國定假日以外的公司休假日；一行一個，格式如 2026-09-25 或 9/25）<textarea id="ps-holidays" class="inp" rows="2"></textarea></label>
           <div>EMMA 匯入檔固定欄位<div class="grid gap-2 mt-1" style="grid-template-columns:2fr 1fr 1fr 1fr 1.4fr"><label class="kbd">收件人<input id="ps-em-recipient" class="inp"></label><label class="kbd">客編<input id="ps-em-customer" class="inp"></label><label class="kbd">BillTo<input id="ps-em-billto" class="inp"></label><label class="kbd">ShipTo<input id="ps-em-shipto" class="inp"></label><label class="kbd">付款方式<input id="ps-em-payment" class="inp"></label></div></div>

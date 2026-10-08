@@ -42,9 +42,9 @@ DEFAULT_SETTINGS = {
     "contact_default": "酷澎",            # F8 沒填時
     "label_line": "需貼中盒標",           # 這份要貼中標時，特殊需求第一行
     "white_line": "指定品需加工貼小白標",  # 有品項有採購單箱備註時，特殊需求最後一行
-    # 特殊需求固定文字，一行一條；{約倉時間} 換成那份填的約倉時間，{約倉開始} 換成約倉時間裡第一個 HH:MM，
-    # {倉庫加註} 換成倉庫資料裡那個倉的特殊需求加註（沒填整行不放）
-    "special_text": "箱嘜，需當面對點數量\n{倉庫加註}\n酷澎嘜頭+驗收單\n進倉時間{約倉時間}\n*請在{約倉開始}前抵達，以免被算遲到，謝謝",
+    # 特殊需求固定文字，一行一條；{嘜頭} 箱單位那份換成「板嘜」、盒包換成「箱嘜」，{約倉時間} 換成那份填的約倉時間，
+    # {約倉開始} 換成約倉時間裡第一個 HH:MM，{倉庫加註} 換成倉庫資料裡那個倉的特殊需求加註（沒填整行不放）
+    "special_text": "{嘜頭}，需當面對點數量\n{倉庫加註}\n酷澎嘜頭+驗收單\n進倉時間{約倉時間}\n*請在{約倉開始}前抵達，以免被算遲到，謝謝",
     "holidays": [],                       # 扣掉的假日，YYYY-MM-DD
 }
 # 台灣國定假日（人事行政總處「政府行政機關辦公日曆表」），下單日往前推時自動跳過；設定裡的「假日」是額外再加的。
@@ -317,11 +317,21 @@ def save_warehouse(conn, code, payload, operator):
 
 
 # ── 一份採購單 ───────────────────────────────────────────────────────────────
+def mark_word(unit):
+    """箱單位那份貼板嘜、盒和包貼箱嘜（Jerry 2026-10-08：箱單位產出的瑪氏採購單寫成箱嘜是錯的）。"""
+    return "板嘜" if (unit or "") == "箱" else "箱嘜"
+
+
 def special_text(settings, s, items, wh=None):
     slot = (s.get("slot_time") or "").strip()
     m = TIME_RE.search(slot)
     note = ((wh or {}).get("special_note") or "").strip()
+    mark = mark_word(s.get("unit"))
     text = settings["special_text"]
+    if "{嘜頭}" in text:
+        text = text.replace("{嘜頭}", mark)
+    else:                                             # 以前存的設定直接寫「箱嘜」（沒有記號）：照這份的單位換掉，不用重新改設定
+        text = re.sub("箱嘜|板嘜", mark, text)
     if note and "{倉庫加註}" not in text:            # 自己改過固定文字、沒放這個記號：加註插在第一行後面
         first, _, rest = text.partition("\n")
         text = first + "\n{倉庫加註}" + ("\n" + rest if rest else "")

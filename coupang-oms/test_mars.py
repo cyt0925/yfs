@@ -376,7 +376,7 @@ def main():
     r = c.get(f"/api/mars/splits/{s2['id']}/po")
     f5_noslot = openpyxl.load_workbook(io.BytesIO(r.data)).active["F5"].value.split("\n")
     check("約倉時間沒填也能下載：特殊需求裡進倉時間、幾點前抵達那兩行整行省略", r.status_code == 200 and not any("進倉時間" in x or "抵達" in x for x in f5_noslot)
-          and "箱嘜，需當面對點數量" in f5_noslot, str(f5_noslot))
+          and f"{mp.mark_word(s2['unit'])}，需當面對點數量" in f5_noslot, str(f5_noslot))
     r9 = next(x for x in v["splits"] if x["delivery_date"] == "2026-09-29")
     check("沒填 EIP 單號還是擋：400 講清楚", c.get(f"/api/mars/splits/{r9['id']}/po").status_code == 400)
     put(s2["id"], {"slot_time": "12:30~15:30（1台車）"})
@@ -392,7 +392,7 @@ def main():
     f5 = ws["F5"].value.split("\n")
     exp_first = ["需貼中盒標"] if f2["label"] == "V" else []
     check("F5 特殊需求：（要貼中標才有）需貼中盒標 → 固定文字第一行 → 這個倉的加註 → 固定文字 → 進倉時間＝約倉時間 → 請在 12:30 前抵達",
-          f5[:len(exp_first)] == exp_first and f5[len(exp_first):len(exp_first) + 3] == ["箱嘜，需當面對點數量", "司機需加入TAO3 line領取排隊號碼", "酷澎嘜頭+驗收單"]
+          f5[:len(exp_first)] == exp_first and f5[len(exp_first):len(exp_first) + 3] == [f"{mp.mark_word(f2['unit'])}，需當面對點數量", "司機需加入TAO3 line領取排隊號碼", "酷澎嘜頭+驗收單"]
           and f5[len(exp_first) + 3] == "進倉時間12:30~15:30（1台車）" and f5[len(exp_first) + 4] == "*請在12:30前抵達，以免被算遲到，謝謝", str(f5))
     rows = [[ws.cell(rr, cc).value for cc in range(1, 14)] for rr in range(12, 12 + len(f2["items"]))]
     codes_in = {r_[0] for r_ in rows}
@@ -423,6 +423,12 @@ def main():
     check("有採購單箱備註 → 特殊需求最後一行「指定品需加工貼小白標」；約倉時間裡沒有 HH:MM 就整段代入；倉庫沒加註那行不放", txt.endswith("指定品需加工貼小白標") and "進倉時間下午2點" in txt and "*請在下午2點前抵達" in txt and "{倉庫加註}" not in txt and "\n\n" not in txt, txt)
     txt2 = mp.special_text(dict(st, special_text="A\nB"), fake_s, fake_items, {"special_note": "加註"})
     check("自己改過固定文字沒放記號：加註插在第一行後面", txt2.split("\n")[:3] == ["A", "加註", "B"], txt2)
+    # 嘜頭（Jerry 2026-10-08）：箱單位板嘜、盒包箱嘜；以前存的設定直接寫「箱嘜」也照單位換
+    t_box, t_inner, t_pack = (mp.special_text(st, dict(fake_s, unit=u), fake_items).split("\n")[0] for u in ("箱", "盒", "包"))
+    check("特殊需求第一行：箱單位「板嘜，需當面對點數量」、盒和包「箱嘜，需當面對點數量」", (t_box, t_inner, t_pack) == ("板嘜，需當面對點數量", "箱嘜，需當面對點數量", "箱嘜，需當面對點數量"), f"{t_box}／{t_inner}／{t_pack}")
+    old_saved = dict(st, special_text="箱嘜，需當面對點數量\n酷澎嘜頭+驗收單")
+    check("以前存的設定寫死「箱嘜」：箱單位那份照樣換成板嘜，盒照舊；「酷澎嘜頭」不受影響", mp.special_text(old_saved, dict(fake_s, unit="箱"), []).split("\n") == ["板嘜，需當面對點數量", "酷澎嘜頭+驗收單"]
+          and mp.special_text(old_saved, dict(fake_s, unit="盒"), []).split("\n")[0] == "箱嘜，需當面對點數量", mp.special_text(old_saved, dict(fake_s, unit="箱"), []))
 
     print("\n【8d】EMMA 匯入檔（酷澎訂單匯入）")
     import mars.emma as me
