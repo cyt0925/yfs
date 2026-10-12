@@ -363,7 +363,7 @@ function renderGroups() {
         <button type="button" class="p-toggle-detail g-link text-[11px] hover:underline mt-0.5" data-idx="${idx}">
           展開料號明細</button>
       </td>
-      <td class="px-2 py-2 text-right align-top">${fmtNum(g.item_count)}</td>
+      <td class="px-2 py-2 text-right align-top">${fmtNum(g.item_count)}${g.merged_count ? `<div class="text-[10px] text-[#8a6d3f] whitespace-nowrap" title="同一料號的多列已合併，數量加總">已合併 ${g.merged_count} 個料號</div>` : ""}</td>
       <td class="px-2 py-2 text-right align-top">${fmtNum(g.qty_total)}</td>
       <td class="px-2 py-2 align-top">
         <input type="text" class="p-field-warehouse border border-[#e0cfae] rounded px-2 py-1 text-xs w-full" data-idx="${idx}" value="${g.warehouse || ""}">
@@ -382,8 +382,9 @@ function renderGroups() {
     detailTr.dataset.detailFor = idx;
     detailTr.innerHTML = `<td></td><td colspan="6" class="px-3 py-2">
       <table class="text-xs w-full max-w-md">
-        <thead><tr class="text-[#8a6d3f]"><th class="text-left font-medium">料號</th><th class="text-right font-medium">數量</th></tr></thead>
-        <tbody>${g.rows.map(r => `<tr><td class="font-mono py-0.5">${r.material_no}</td><td class="text-right py-0.5">${fmtNum(r.qty)}</td></tr>`).join("")}</tbody>
+        <thead><tr class="text-[#8a6d3f]"><th class="text-left font-medium">料號</th><th class="text-right font-medium">數量</th><th></th></tr></thead>
+        <tbody>${g.rows.map(r => `<tr><td class="font-mono py-0.5">${r.material_no}</td><td class="text-right py-0.5">${fmtNum(r.qty)}</td>
+          <td class="text-[11px] text-[#8a6d3f] pl-5 py-0.5 whitespace-nowrap">${r.parts ? `${r.parts.map(fmtNum).join("＋")}，合併 ${r.parts.length} 列` : ""}</td></tr>`).join("")}</tbody>
       </table>
     </td>`;
     tbody.appendChild(detailTr);

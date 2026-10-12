@@ -495,6 +495,7 @@ def parse_import_file(line_key, file_bytes, filename=""):
             # 三個線別的匯入檔名都遵守同一個「MMDD到貨」慣例。
             date_guess = _guess_date_from_filename(filename)
 
+        out_rows = _merge_same_material(grows)
         result.append({
             "key": str(key),
             "po_numbers": po_numbers,
@@ -502,11 +503,38 @@ def parse_import_file(line_key, file_bytes, filename=""):
             "address_mismatch": len(addresses) > 1,
             "warehouse_guess": warehouse_guess,
             "date_guess": date_guess,
-            "item_count": len(grows),
+            "item_count": len(out_rows),
+            "source_rows": len(grows),
+            "merged_count": sum(1 for r in out_rows if "parts" in r),
             "qty_total": sum(r["qty"] for r in grows),
-            "rows": [{"material_no": r["material_no"], "qty": r["qty"]} for r in grows],
+            "rows": out_rows,
         })
     return result
+
+
+def _merge_same_material(grows):
+    """同一張 PO 裡同一個料號合成一列、數量加總（Jerry 2026-10-12）。
+
+    酷澎會把兩個不同的商品（例如「箱裝」和「原廠公司貨」）對到同一個永豐料號，
+    訂單匯入檔就有兩列；採購表要一個料號一列（309＋46＝355 箱）。合併後放在
+    第一次出現的位置；parts 留每一列原本的數量，預覽畫面標「合併 N 列」用。
+    只在同一組（同一張 PO）裡合併：勾好幾張 PO 合成一個檔時，不同 PO 的同料號
+    不合，因為每一列的備註要寫自己那張 PO 的單號。"""
+    merged = {}
+    for r in grows:
+        m = merged.get(r["material_no"])
+        if m is None:
+            merged[r["material_no"]] = {"material_no": r["material_no"], "qty": r["qty"], "_parts": [r["qty"]]}
+        else:
+            m["qty"] += r["qty"]
+            m["_parts"].append(r["qty"])
+    out = []
+    for m in merged.values():
+        parts = m.pop("_parts")
+        if len(parts) > 1:
+            m["parts"] = parts
+        out.append(m)
+    return out
 
 
 def build_remark(line_key, po_numbers, date_mmdd, warehouse):

@@ -380,6 +380,35 @@ def main():
     check("合併檔的檔名不放 PO 單號（放第一張會誤導成只有那一張）",
           "13000000493049" not in "酷澎XP&G_產品採購表上傳_0905到貨.xls")
 
+    print("\n【5.5b】同一張 PO 同一個料號有兩列 → 合成一列、數量加總（Jerry 2026-10-12：309＋46＝355 箱）")
+    import openpyxl
+    wbd = openpyxl.Workbook(); wsd = wbd.active
+    wsd.append(["訂單編號", "收件人", "收件地址", "料號", "品名", "單位", "數量2826", "單價", "出貨備註"])
+    note = "1015從PG出貨至TXRC8"
+    for po, mat, qty in (("13000000576900", "4987176179258", 18), ("13000000576900", "4987176232861", 309),
+                         ("13000000576900", "4987176232885", 452), ("13000000576900", "4987176232861", 46),
+                         ("13000000576900", "4987176232885", 136), ("13000000576901", "4987176232861", 10)):
+        wsd.append([po, "酷澎股份有限公司", "桃園市楊梅區環東路200號C區4樓", mat, "", "箱", qty, 1231, note])
+    bd = io.BytesIO(); wbd.save(bd)
+    for line in ("pg", "paper"):
+        res = client.post("/api/purchase/parse", data={"line": line, "file": (io.BytesIO(bd.getvalue()), "酷澎_1015到貨.xlsx")},
+                          content_type="multipart/form-data")
+        gs = {g["key"]: g for g in res.get_json()["groups"]}
+        g = gs["13000000576900"]
+        check(f"{line}：5 列變 3 個料號、第一次出現的位置不變、數量 355／588、標出合併幾列",
+              [(r["material_no"], r["qty"], r.get("parts")) for r in g["rows"]] == [
+                  ("4987176179258", 18, None), ("4987176232861", 355, [309, 46]), ("4987176232885", 588, [452, 136])]
+              and g["item_count"] == 3 and g["source_rows"] == 5 and g["merged_count"] == 2 and g["qty_total"] == 961, str(g["rows"]))
+        _, xr = read_xls_main_sheet(export(client, line, [g]).data)
+        check(f"{line}：匯出的採購表一個料號一列，項目 1～3", [(r[0], r[1], r[6]) for r in xr[1:] if r[1]] == [
+            (1, "4987176179258", 18), (2, "4987176232861", 355), (3, "4987176232885", 588)], str(xr[1:4]))
+    both = [dict(r, remark=g_["remark"]) for g_ in (gs["13000000576900"], gs["13000000576901"]) for r in g_["rows"]]
+    _, xr = read_xls_main_sheet(export(client, "pg", [{"rows": both, "remark": "", "filename": "合併.xls"}]).data)
+    check("好幾張 PO 合成一個檔：不同 PO 的同一個料號不合（備註要寫各自的單號）",
+          [r[1] for r in xr[1:] if r[1]].count("4987176232861") == 2, str([r[1] for r in xr[1:] if r[1]]))
+    page = client.get("/purchase").get_data(as_text=True)
+    check("預覽畫面會標「已合併幾個料號」「合併幾列」", "已合併 ${g.merged_count} 個料號" in page and "合併 ${r.parts.length} 列" in page)
+
     print("\n【5.6】build_filename：各線別的檔名長相")
     check("P&G 合併匯出（沒有單一 PO）檔名不帶單號",
           purchase.build_filename("pg", [], "0905", "TXRC8")
