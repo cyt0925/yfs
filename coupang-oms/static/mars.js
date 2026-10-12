@@ -357,7 +357,7 @@ async function previewRc(files) {
     const items = f.items.map(i => `<div class="kbd" style="padding-left:18px">No.${i.no}　${esc(i.name)}　<b>${fmt(i.pdf_qty)}</b> → ${i.kind === "strike" ? `<b style="color:var(--bad)">整列劃掉</b>` : `<b style="color:var(--bad)">${fmt(i.new_qty)}</b>`}</div>`).join("");
     const status = f.error ? `<span class="neg">${esc(f.error)}，原檔不變</span>`
       : !f.applies ? `<span class="muted">不是瑪氏的驗收單（或系統中沒有此 PO），原檔不變</span>`
-      : f.note ? `<b style="color:var(--bad)">${esc(f.note)}</b>` : `<span style="color:var(--ok)">數量與系統一致，不需劃線</span>`;
+      : f.note ? `<b style="color:var(--bad)">${esc(f.note)}</b>` : `<span style="color:var(--ok)">數量與系統一致，不需劃線</span><span class="kbd">　若勇信缺貨尚未按確認，請先確認後再重新上傳（系統出貨數量於確認後才會更新）。</span>`;
     const miss = f.missing && f.missing.length ? `<div class="kbd" style="padding-left:18px;color:var(--warn)">有 ${f.missing.length} 個 SKU 在系統中找不到，不會修改：${f.missing.map(esc).join("、")}</div>` : "";
     return `<div class="mb-2"><span class="fn">${esc(f.filename)}</span>${f.po_number ? ` · <span class="fn">${esc(f.po_number)}</span>` : ""} · ${status}${items}${miss}</div>`;
   }).join("");
