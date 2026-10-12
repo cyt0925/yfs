@@ -59,6 +59,9 @@
   .lst { display:flex; flex-wrap:wrap; gap:10px; }
   .lst .it { border:1px solid var(--line2); border-radius:10px; padding:8px 12px; font-size:13px; background:#fff; min-width:220px; }
   .lst .it b { font-size:14px; }
+  .lst .it.old { border-color:#fde68a; background:#fffbeb; }
+  table.t tr.no td { color:var(--muted); background:#faf7f6; }
+  .set { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; font-size:13px; padding:10px 12px; border-radius:10px; background:var(--s0); border:1px solid var(--s2); }
   .dzbox { display:flex; align-items:center; gap:12px; border:2px dashed var(--s3); border-radius:12px; padding:16px 18px; background:var(--s0); color:var(--s9); cursor:pointer; font-size:13.5px; transition:border-color .15s, background .15s; }
   .dzbox:hover, .dzbox.over { border-color:var(--s8); background:var(--s1); }
   .dzbox i { font-size:26px; } .dzbox b { font-size:14.5px; }
@@ -87,7 +90,7 @@
       <div>
         <h1 class="text-lg font-bold leading-tight">蝦皮特選訂單管理系統</h1>
         <div class="steps mt-1" id="tabs" title="點選切換；淡色的功能尚未開放">
-          <span class="tab on" data-tab="orders">訂單匯入與總覽</span><span class="off">竹運出貨</span><span class="tab" data-tab="buy" data-f="竹運採購進貨">竹運採購進貨</span><span class="tab" data-tab="buy" data-f="供應商直送">直送訂單</span><span class="off">缺貨維護與通知</span><span class="tab" data-tab="eip">採購單產出</span>
+          <span class="tab on" data-tab="orders">訂單匯入與總覽</span><span class="tab" data-tab="zhu">竹運出貨</span><span class="tab" data-tab="buy" data-f="竹運採購進貨">竹運採購進貨</span><span class="tab" data-tab="buy" data-f="供應商直送">直送訂單</span><span class="off">缺貨維護與通知</span><span class="tab" data-tab="eip">採購單產出</span>
         </div>
       </div>
     </div>
@@ -133,6 +136,53 @@
   <details class="card p-4" id="up-box">
     <summary style="cursor:pointer;font-weight:700">上傳紀錄 <span class="kbd">（可下載原始檔）</span></summary>
     <div class="tbl-wrap mt-3" style="max-height:420px"><table class="t" id="up-tbl"></table></div>
+  </details>
+</div>
+
+<!-- 竹運出貨（需求第五章）：判斷邏輯照 Alice 的「核對竹運出貨效期及庫存 V5」 -->
+<div id="pane-zhu" class="space-y-4 hidden">
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">庫存資料</b>
+      <span class="kbd">EC 即時庫存（訂單系統下載）、竹運庫存效期表（竹運後台下載）每次出貨前請上傳最新的；竹運商品主檔（竹運後台「產品基本資料」，提供商品年限）有新品時再更新。系統依表頭自動判斷。</span>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <div id="stock-st" class="lst"></div>
+      <label class="dzbox" id="dz-stock" style="padding:10px 16px"><i class="bi bi-cloud-arrow-up" style="font-size:22px"></i>
+        <div><b>上傳庫存資料</b><div class="kbd" style="color:var(--s9)">拖曳或點此選擇，可一次選多個檔</div></div>
+        <input type="file" id="stock-file" accept=".xls,.xlsx,.xlsm" multiple class="hidden"></label>
+    </div>
+    <div class="set">
+      <label>效期標準
+        <select id="s-rule" class="inp"><option value="shopee">蝦皮進倉規範（總效期 90 天內 2/3、365 天內 2/5、其他 1/3）</option><option value="custom">自訂比例</option></select></label>
+      <label id="s-ratio-box">比例 <input id="s-ratio" class="inp" style="width:70px" placeholder="0.66"></label>
+      <label>出貨方式
+        <select id="s-mode" class="inp"><option value="single">單一效期（同一品只出一個效期）</option><option value="mixed">可混合效期</option></select></label>
+      <span class="kbd">合格：效期 ≥ 到貨日＋商品年限×比例。EC 可用量與合格效期量都足夠才全數出貨；依到貨日由早到晚分配庫存。</span>
+    </div>
+  </section>
+
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">竹運出貨訂單</b>
+      <div class="flex-1"></div>
+      <label class="kbd">到貨日 <input type="date" id="z-from" class="inp"> ～ <input type="date" id="z-to" class="inp"></label>
+      <select id="z-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>紙潔</option><option>瑪氏</option></select>
+      <span class="chip on" id="z-hide"><i class="bi bi-funnel"></i> 隱藏已產出</span>
+    </div>
+    <div class="sum" id="z-sum"></div>
+    <div class="tbl-wrap"><table class="t" id="z-tbl"></table></div>
+    <div id="z-err"></div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <button id="z-go" class="btn btn-p" disabled><i class="bi bi-file-earmark-zip"></i> 產出拋單檔</button>
+      <span class="kbd" id="z-go-hint">請勾選要產出的訂單。</span>
+    </div>
+  </section>
+
+  <details class="card p-4" id="dwh-box">
+    <summary style="cursor:pointer;font-weight:700">拋單檔收件資料 <span class="kbd">（各倉的姓名、地址、電話）</span></summary>
+    <div class="kbd mt-2">觀音依拋單檔範例；其他倉依蝦皮供應商進倉規範。</div>
+    <div class="tbl-wrap mt-3" style="max-height:none"><table class="t" id="dwh-tbl"></table></div>
   </details>
 </div>
 
@@ -209,6 +259,17 @@
     <div class="kbd" id="da-who"></div>
     <div class="flex items-center gap-2 flex-wrap"><button id="da-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button>
       <button id="da-clear" class="btn btn-o hidden"><i class="bi bi-arrow-counterclockwise"></i> 取消修改，回到原始數量</button></div>
+  </div></dialog>
+<dialog id="dlg-ship" style="width:min(980px,96vw)"><div class="dh"><i class="bi bi-box-seam"></i><span id="ds-title">效期批次與出貨量</span><button class="x" data-close="dlg-ship" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div class="facts" id="ds-facts"></div>
+    <div class="tbl-wrap" style="max-height:340px"><table class="t" id="ds-lots"></table></div>
+    <div class="flex items-center gap-3 flex-wrap"><span>本次出貨量 <b id="ds-total" style="font-size:18px">0</b></span><span class="kbd" id="ds-cap"></span>
+      <span class="chip" id="ds-zero">改成 0（刪單）</span></div>
+    <label class="block kbd">調整原因（必填）<input id="ds-reason" class="inp" style="width:100%" placeholder="例如：低於 12 件會被拒收，刪單"></label>
+    <div class="kbd" id="ds-who"></div>
+    <div class="flex items-center gap-2 flex-wrap"><button id="ds-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button>
+      <button id="ds-clear" class="btn btn-o hidden"><i class="bi bi-arrow-counterclockwise"></i> 回到系統建議</button></div>
   </div></dialog>
 <dialog id="dlg-ver"><div class="dh"><i class="bi bi-layers"></i><span id="dv-title">版本紀錄</span><button class="x" data-close="dlg-ver" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div id="dv-body"></div></div></dialog>

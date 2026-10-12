@@ -1,5 +1,6 @@
 /* 蝦皮特選訂單管理系統（/shopee）
    訂單匯入與總覽：上傳預覽 → 確認匯入、訂單總覽、差異確認、改履約方式、版本紀錄、上傳紀錄
+   竹運出貨：EC 庫存、竹運效期表、商品主檔 → 出貨量、效期批次、缺貨 → 訂單系統拋單檔＋下修刪單清單
    竹運採購進貨／直送訂單：價格本、勾選訂單 → 產出 EIP 採購單＋採購下採明細（除不盡轉換率要先改數量）
    採購單產出：產過的 EIP 檔、回填 EIP 單號；瑪氏回填後下載瑪氏採購單、蝦皮倉資料 */
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -101,7 +102,7 @@ function render() {
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td>
       <td><span class="badge ${g.fulfil === "未選" ? "b-warn" : "b-s"}">${esc(g.fulfil)}</span></td>
       <td class="num">${g.item_count}${g.removed_count ? `<div class="kbd neg">移除 ${g.removed_count}</div>` : ""}</td>
-      <td class="num">${fmt(g.qty_original)}</td><td class="num"><b>${fmt(g.qty)}</b></td><td class="num muted">—</td><td class="num muted">—</td>
+      <td class="num">${fmt(g.qty_original)}</td><td class="num"><b>${fmt(g.qty)}</b></td><td class="num ${g.qty_ship == null ? "muted" : ""}">${fmt(g.qty_ship)}</td><td class="num ${g.qty_short ? "neg" : g.qty_short == null ? "muted" : ""}">${fmt(g.qty_short)}</td>
       <td><span class="badge ${g.diff_pending ? "b-diff" : "b-ok"}">${esc(g.status)}</span></td>
       <td><span class="badge b-dim">${esc(g.notify_status)}</span></td><td><span class="badge b-dim">${esc(g.po_status)}</span></td>
       <td class="whitespace-nowrap">${g.diff_pending ? `<button class="btn btn-p btn-sm dd" data-k="${esc(k)}"><i class="bi bi-arrow-left-right"></i> 確認差異</button>` : `<button class="btn btn-o btn-sm dd" data-k="${esc(k)}">差異紀錄</button>`}
@@ -185,9 +186,10 @@ let TAB = "orders", BUY_F = "竹運採購進貨";
 function showTab(tab, f) {
   TAB = tab; if (f) BUY_F = f;
   $$("#tabs .tab").forEach(t => t.classList.toggle("on", t.dataset.tab === tab && (tab !== "buy" || t.dataset.f === BUY_F)));
-  ["orders", "buy", "eip"].forEach(k => $(`#pane-${k}`).classList.toggle("hidden", k !== tab));
+  ["orders", "zhu", "buy", "eip"].forEach(k => $(`#pane-${k}`).classList.toggle("hidden", k !== tab));
   try { localStorage.setItem("shopee_tab", JSON.stringify([tab, BUY_F])); } catch (e) { /* 無痕視窗存不了就算了 */ }
   if (tab === "orders") { loadOrders(); loadUploads(); }
+  else if (tab === "zhu") { ZSEL.clear(); $("#z-err").innerHTML = ""; loadStock(); loadShip(); }
   else if (tab === "buy") { BSEL.clear(); BOPEN.clear(); $("#b-err").innerHTML = ""; loadConv(); loadPlan(); }
   else loadEips();
 }
@@ -395,6 +397,177 @@ async function saveEip(id) {
   } catch (err) { toast(err.message, "err"); }
 }
 
+/* ── 竹運出貨：庫存資料、設定 ─────────────────────────────── */
+const KIND_ORDER = ["ec", "lots", "life"], KIND_LABEL = { ec: "EC 即時庫存", lots: "竹運庫存效期表", life: "竹運商品主檔" };
+async function loadStock() {
+  let d; try { d = await api("/api/shopee/stock"); } catch (err) { $("#stock-st").innerHTML = `<span class="neg">${esc(err.message)}</span>`; return; }
+  $("#stock-st").innerHTML = KIND_ORDER.map(k => {
+    const x = d.stock[k];
+    if (!x) return `<div class="it"><b>${KIND_LABEL[k]}</b> <span class="badge b-warn">尚未上傳</span></div>`;
+    const old = k !== "life" && !x.today;
+    return `<div class="it ${old ? "old" : ""}"><b>${KIND_LABEL[k]}</b> <span class="kbd">${fmt(x.rows_total)} 列</span>${old ? ` <span class="badge b-warn">不是今天的檔</span>` : ""}
+      <div class="kbd" title="${esc(x.filename)}">${esc((x.uploaded_at || "").slice(0, 16).replace("T", " "))}　${esc(x.uploaded_by)}${x.file_date ? `　結餘日期 ${esc(x.file_date)}` : ""}</div></div>`;
+  }).join("");
+  const st = d.settings; $("#s-rule").value = st.rule; $("#s-mode").value = st.mode; $("#s-ratio").value = st.ratio;
+  $("#s-ratio-box").classList.toggle("hidden", st.rule !== "custom");
+}
+const dzs = $("#dz-stock");
+dzs.addEventListener("click", e => { if (e.target.id !== "stock-file") $("#stock-file").click(); });
+["dragenter", "dragover"].forEach(ev => dzs.addEventListener(ev, e => { e.preventDefault(); dzs.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => dzs.addEventListener(ev, e => { e.preventDefault(); dzs.classList.remove("over"); }));
+dzs.addEventListener("drop", e => { const fs = [...e.dataTransfer.files].filter(f => /\.xls[xm]?$/i.test(f.name)); fs.length ? uploadStock(fs) : toast("請拖曳 Excel 檔", "err"); });
+$("#stock-file").addEventListener("change", () => { const fs = [...$("#stock-file").files]; $("#stock-file").value = ""; if (fs.length) uploadStock(fs); });
+async function uploadStock(files) {
+  for (const f of files) {
+    const fd = new FormData(); fd.append("file", f);
+    try { const r = await api("/api/shopee/stock/import", { method: "POST", body: fd });
+      toast(`已更新${r.label}：${f.name}（${fmt(r.rows)} 列）` + (r.notes.length ? `\n${r.notes.join("\n")}` : ""));
+    } catch (err) { toast(err.message, "err"); }
+  }
+  loadStock(); loadShip();
+}
+async function saveShipSet(body) {
+  try { await api("/api/shopee/ship/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); loadStock(); loadShip(); }
+  catch (err) { toast(err.message, "err"); loadStock(); }
+}
+$("#s-rule").addEventListener("change", () => saveShipSet({ rule: $("#s-rule").value }));
+$("#s-mode").addEventListener("change", () => saveShipSet({ mode: $("#s-mode").value }));
+$("#s-ratio").addEventListener("change", () => saveShipSet({ ratio: $("#s-ratio").value.trim() }));
+
+/* ── 竹運出貨：訂單、出貨量、效期批次 ─────────────────────── */
+let SHIP = { orders: [] }; const ZOPEN = new Set(), ZSEL = new Set();
+$("#z-from").value = iso(new Date());
+["#z-from", "#z-to", "#z-line"].forEach(s => $(s).addEventListener("change", () => { ZSEL.clear(); loadShip(); }));
+$("#z-hide").addEventListener("click", () => { $("#z-hide").classList.toggle("on"); renderShip(); });
+const zq = () => ({ from: $("#z-from").value, to: $("#z-to").value, line: $("#z-line").value });
+const zPick = g => g.dispatch_status !== "已產出" && !g.blocking;
+async function loadShip() {
+  try { SHIP = await api(`/api/shopee/ship/plan?${new URLSearchParams(zq())}`); } catch (err) { $("#z-tbl").innerHTML = `<tr><td class="muted" style="padding:20px">${esc(err.message)}</td></tr>`; return; }
+  const ok = new Set(SHIP.orders.filter(zPick).map(g => g.order_no));
+  [...ZSEL].forEach(k => { if (!ok.has(k)) ZSEL.delete(k); });
+  renderShip();
+}
+function renderShip() {
+  const hide = $("#z-hide").classList.contains("on");
+  const list = SHIP.orders.filter(g => !(hide && g.dispatch_status === "已產出"));
+  const picks = list.filter(zPick), all = picks.length && picks.every(g => ZSEL.has(g.order_no));
+  $("#z-sum").innerHTML = `<span><b>${list.length}</b> 張訂單</span><span><b>${fmt(list.reduce((a, g) => a + g.qty, 0))}</b> 訂購</span>`
+    + `<span><b>${fmt(list.reduce((a, g) => a + g.ship, 0))}</b> 可出貨</span><span><b style="color:var(--bad)">${fmt(list.reduce((a, g) => a + g.short, 0))}</b> 缺貨</span>`
+    + (list.some(g => g.blocking) ? `<span><b style="color:var(--bad)">${list.filter(g => g.blocking).length}</b> 張需先處理</span>` : "");
+  let h = `<thead><tr><th><input type="checkbox" class="ck" id="z-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選可產出的訂單"></th>
+    <th>訂單編號</th><th>線別</th><th>到貨日</th><th>倉別</th><th class="num">品項</th><th class="num">訂購量</th><th class="num">出貨量</th><th class="num">缺貨量</th><th>檢查結果</th><th>拋單檔</th></tr></thead><tbody>`;
+  for (const g of list) {
+    const k = g.order_no, done = g.dispatch_status === "已產出";
+    const st = done ? `<span class="badge b-dim">—</span>` : g.blocking ? `<span class="badge b-diff">${g.blocking} 項需處理</span>`
+      : `<span class="badge ${g.short ? "b-warn" : "b-ok"}">${g.short ? (g.deleted ? `缺貨（刪單 ${g.deleted} 品）` : "部分缺貨") : "可全數出貨"}</span>${g.warnings ? ` <span class="badge b-warn">${g.warnings} 項提醒</span>` : ""}`;
+    h += `<tr class="og ${g.blocking && !done ? "blk" : ""} ${done ? "lock" : ""}" data-k="${esc(k)}">
+      <td><input type="checkbox" class="ck z-ck" data-k="${esc(k)}" ${ZSEL.has(k) ? "checked" : ""} ${zPick(g) ? "" : "disabled"}></td>
+      <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
+      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="num">${g.items.length}</td>
+      <td class="num">${fmt(g.qty)}</td><td class="num"><b>${fmt(g.ship)}</b></td><td class="num ${g.short ? "neg" : ""}">${fmt(g.short)}</td><td>${st}</td>
+      <td class="nw">${done ? `<span class="badge b-s">已產出</span> <span class="kbd">${esc((g.dispatch_at || "").slice(5, 16).replace("T", " "))}</span> <button class="btn btn-o btn-sm z-undo" data-k="${esc(k)}">取消產出</button>`
+        : `<span class="badge b-dim">${esc(g.dispatch_status)}</span>`}</td></tr>`;
+    if (ZOPEN.has(k)) h += shipItems(g);
+  }
+  if (!list.length) h += `<tr><td colspan="11" class="muted" style="padding:24px;text-align:center">此條件下沒有竹運出貨的訂單。請調整到貨日，或在「訂單匯入與總覽」匯入時選擇竹運出貨。</td></tr>`;
+  $("#z-tbl").innerHTML = h + "</tbody>";
+  $$("#z-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; const k = tr.dataset.k; ZOPEN.has(k) ? ZOPEN.delete(k) : ZOPEN.add(k); renderShip(); }));
+  $$("#z-tbl input.z-ck").forEach(c => c.addEventListener("change", () => { c.checked ? ZSEL.add(c.dataset.k) : ZSEL.delete(c.dataset.k); renderShip(); }));
+  const za = $("#z-all"); if (za) za.addEventListener("change", () => { picks.forEach(g => za.checked ? ZSEL.add(g.order_no) : ZSEL.delete(g.order_no)); renderShip(); });
+  $$("#z-tbl button.z-lot").forEach(b => b.addEventListener("click", () => openShip(Number(b.dataset.id))));
+  $$("#z-tbl button.z-undo").forEach(b => b.addEventListener("click", () => undoShip(b.dataset.k)));
+  const n = ZSEL.size; $("#z-go").disabled = !n;
+  $("#z-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出訂單系統拋單檔（一天一倉一個檔）＋下修刪單清單（zip）。` : "請勾選要產出的訂單；有「需處理」的訂單請先點開修正。";
+}
+function shipItems(g) {
+  return `<tr class="sub"><td colspan="11"><table class="t"><thead><tr><th>廠商料號</th><th>品名</th><th>單位</th><th class="num">訂購量</th><th class="num">EC 可用</th><th class="num">竹運帳面</th>
+    <th class="num">符合效期</th><th class="num">出貨量</th><th class="num">缺貨</th><th>效期</th><th>狀態</th><th></th></tr></thead><tbody>
+    ${g.items.map(x => `<tr class="${x.qty && !x.final ? "no" : ""}"><td class="fn">${esc(x.supplier_sku_id)}</td><td>${esc((x.name || "").slice(0, 40))}</td><td class="nw">${esc(x.unit)}</td>
+      <td class="num">${fmt(x.qty)}</td><td class="num">${x.dispatch ? "—" : fmt(x.ec)}${!x.dispatch && x.ec < x.qty ? `<div class="kbd neg nw">不足 ${fmt(x.qty - x.ec)}</div>` : ""}</td><td class="num">${x.dispatch ? "—" : fmt(x.book)}</td><td class="num">${x.dispatch ? "—" : fmt(x.qualified)}</td>
+      <td class="num"><b>${fmt(x.final)}</b>${x.adj ? `<div class="kbd">已修改</div>` : ""}</td><td class="num ${x.short ? "neg" : ""}">${fmt(x.short)}${x.reasons.length ? `<div class="kbd nw">${esc(x.reasons.join("、"))}</div>` : ""}</td>
+      <td class="nw kbd">${x.alloc.map(a => `${esc(a.exp)}×${fmt(a.qty)}`).join("<br>") || "—"}</td>
+      <td>${x.problems.map(t => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(t)}</div>`).join("")}${x.warnings.map(t => `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(t)}</div>`).join("")}${!x.problems.length ? (x.qty && !x.final ? `<span class="badge b-diff">刪單</span>` : x.short ? `<span class="badge b-warn">下修</span>` : !x.warnings.length ? `<span class="badge b-ok">正常</span>` : "") : ""}</td>
+      <td class="nw">${!x.dispatch && x.life && x.lots.length ? `<button class="btn ${x.warnings.length ? "btn-p" : "btn-o"} btn-sm z-lot" data-id="${x.order_id}"><i class="bi bi-box-seam"></i> 批次／修改</button>` : ""}</td></tr>`).join("")}
+    </tbody></table></td></tr>`;
+}
+
+let SHIPX = null;
+function openShip(id) {
+  let x = null; for (const g of SHIP.orders) { x = g.items.find(i => i.order_id === id); if (x) break; }
+  if (!x) return; SHIPX = x;
+  $("#ds-title").textContent = `${x.supplier_sku_id} 效期批次與出貨量`;
+  $("#ds-facts").innerHTML = `<span>${esc((x.name || "").slice(0, 46))}</span><span>訂購量 <b>${fmt(x.qty)}</b> ${esc(x.unit)}</span><span>EC 可用 <b>${fmt(x.ec)}</b>${x.ec < x.qty ? `（不足 ${fmt(x.qty - x.ec)}）` : "（足夠）"}</span>
+    <span>竹運帳面 <b>${fmt(x.book)}</b></span><span>符合效期 <b>${fmt(x.qualified)}</b></span><span>系統建議 <b>${fmt(x.suggest)}</b></span>
+    <span>商品年限 <b>${fmt(x.life)}</b> 天（${esc(x.life_src)}）</span><span>效期標準 <b>${esc(x.ratio_text)}</b>，效期需在 <b>${esc(x.threshold)}</b> 以後</span>`;
+  const sel = {}; x.alloc.forEach(a => { sel[a.exp] = a.qty; });
+  $("#ds-lots").innerHTML = `<thead><tr><th>效期</th><th>製造日期</th><th class="num">到貨時剩餘天數</th><th class="num">剩餘比例</th><th>符合</th><th class="num">可出貨量</th><th class="num">建議順位</th><th>選用</th><th class="num">本次數量</th></tr></thead><tbody>
+    ${x.lots.map(l => `<tr class="${l.ok ? "" : "no"}"><td class="nw">${esc(l.exp)}</td><td class="nw kbd">${esc(l.mfg) || "—"}</td><td class="num">${fmt(l.days)}</td>
+      <td class="num">${l.pct == null ? "—" : Math.round(l.pct * 100) + "%"}</td><td>${l.ok ? `<span class="badge b-ok">符合</span>` : `<span class="badge b-diff">不符合</span>`}</td>
+      <td class="num">${fmt(l.qty)}</td><td class="num">${l.rank || "—"}</td>
+      <td>${l.ok && l.qty > 0 ? `<input type="checkbox" class="ck ds-ck" data-exp="${esc(l.exp)}" ${sel[l.exp] ? "checked" : ""}>` : ""}</td>
+      <td class="num">${l.ok && l.qty > 0 ? `<input class="inp ds-q" data-exp="${esc(l.exp)}" data-max="${l.qty}" value="${sel[l.exp] || ""}" style="width:80px;text-align:right" inputmode="numeric">` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="9" class="muted" style="padding:14px">竹運庫存效期表裡沒有這個品號的庫存。</td></tr>`}</tbody>`;
+  $$("#ds-lots .ds-ck").forEach(c => c.addEventListener("change", () => {
+    const q = $(`#ds-lots .ds-q[data-exp="${c.dataset.exp}"]`);
+    if (c.checked && !q.value) { const used = dsTotal(); q.value = Math.max(0, Math.min(Number(q.dataset.max), Math.min(x.qty, x.ec) - used)); }
+    if (!c.checked) q.value = ""; dsSum();
+  }));
+  $$("#ds-lots .ds-q").forEach(q => q.addEventListener("input", () => { $(`#ds-lots .ds-ck[data-exp="${q.dataset.exp}"]`).checked = !!Number(q.value); dsSum(); }));
+  $("#ds-cap").textContent = `最多 ${fmt(Math.min(x.qty, x.ec || 0, x.qualified))}（訂購量、EC 可用、符合效期取最小）`;
+  $("#ds-reason").value = x.adj ? x.adj.reason : ""; $("#ds-who").textContent = x.adj ? `上次修改：${x.adj.operator}　${(x.adj.updated_at || "").slice(0, 16).replace("T", " ")}` : "";
+  $("#ds-clear").classList.toggle("hidden", !x.adj); dsSum(); $("#dlg-ship").showModal();
+}
+const dsTotal = () => $$("#ds-lots .ds-q").reduce((a, q) => a + (Number(q.value) || 0), 0);
+function dsSum() { $("#ds-total").textContent = fmt(dsTotal()); }
+$("#ds-zero").addEventListener("click", () => { $$("#ds-lots .ds-q").forEach(q => { q.value = ""; }); $$("#ds-lots .ds-ck").forEach(c => { c.checked = false; }); dsSum(); $("#ds-reason").focus(); });
+$("#ds-save").addEventListener("click", async () => {
+  const lots = $$("#ds-lots .ds-q").filter(q => Number(q.value) > 0).map(q => ({ exp: q.dataset.exp, qty: Number(q.value) }));
+  try { const r = await post("/api/shopee/ship/adjust", { order_id: SHIPX.order_id, lots, reason: $("#ds-reason").value.trim(), ...zq() });
+    toast(`${SHIPX.supplier_sku_id} 出貨量已改為 ${fmt(r.qty)}`); $("#dlg-ship").close(); loadShip();
+  } catch (err) { toast(err.message, "err"); }
+});
+$("#ds-clear").addEventListener("click", async () => {
+  try { await post("/api/shopee/ship/adjust", { order_id: SHIPX.order_id, clear: true }); toast(`${SHIPX.supplier_sku_id} 已回到系統建議`); $("#dlg-ship").close(); loadShip(); }
+  catch (err) { toast(err.message, "err"); }
+});
+async function undoShip(no) {
+  if (!confirm(`取消 ${no} 的拋單檔產出？\n取消後會照目前的庫存重新判斷。拋單檔已匯入訂單系統的話，請記得到訂單系統刪除。`)) return;
+  try { await post("/api/shopee/ship/undo", { order_no: no }); toast(`已取消 ${no} 的拋單檔產出`); loadShip(); } catch (err) { toast(err.message, "err"); }
+}
+$("#z-go").addEventListener("click", async () => {
+  const nos = [...ZSEL]; if (!nos.length) return;
+  const b = $("#z-go"); b.disabled = true; $("#z-err").innerHTML = "";
+  try {
+    const res = await fetch("/api/shopee/ship/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_nos: nos, ...zq() }) });
+    if (!res.ok) {
+      let d = {}; try { d = await res.json(); } catch (e) {}
+      $("#z-err").innerHTML = `<div class="alert al-bad"><b>${esc(d.error || `伺服器錯誤（${res.status}）`)}</b>${(d.details || []).length ? `<div class="mt-1">${d.details.map(esc).join("<br>")}</div>` : ""}</div>`;
+      return;
+    }
+    const blob = await res.blob(); const m = (res.headers.get("Content-Disposition") || "").match(/filename\*=UTF-8''([^;]+)/);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : "蝦皮特選竹運出貨.zip"; document.body.appendChild(a); a.click(); a.remove();
+    const sh = Number(res.headers.get("X-Shopee-Short") || 0);
+    toast(`已產出拋單檔${sh ? `，另有 ${sh} 品缺貨列在下修刪單清單` : ""}。`);
+    ZSEL.clear(); loadShip();
+  } catch (err) { toast(err.message, "err"); }
+  finally { b.disabled = !ZSEL.size; }
+});
+
+/* ── 拋單檔收件資料 ───────────────────────────────────────── */
+async function loadDwh() {
+  let d; try { d = await api("/api/shopee/dispatch_wh"); } catch (err) { return; }
+  $("#dwh-tbl").innerHTML = `<thead><tr><th>倉別</th><th>姓名</th><th>地址</th><th>電話</th><th></th></tr></thead><tbody>
+    ${d.warehouses.map(w => `<tr data-code="${esc(w.code)}"><td class="nw"><b>${esc(w.short)}</b> <span class="kbd">${esc(w.code)}</span></td>
+      <td><input class="inp dwh-f" data-k="name" value="${esc(w.name)}" style="width:130px"></td><td><input class="inp dwh-f" data-k="address" value="${esc(w.address)}" style="width:360px"></td>
+      <td><input class="inp dwh-f" data-k="phone" value="${esc(w.phone)}" style="width:165px"></td><td><button class="btn btn-o btn-sm dwh-save">儲存</button></td></tr>`).join("")}</tbody>`;
+  $$("#dwh-tbl button.dwh-save").forEach(b => b.addEventListener("click", async () => {
+    const tr = b.closest("tr"), body = {}; tr.querySelectorAll("input.dwh-f").forEach(i => { body[i.dataset.k] = i.value.trim(); });
+    try { const r = await api(`/api/shopee/dispatch_wh/${tr.dataset.code}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      toast(r.changed ? `已更新 ${tr.querySelector("b").textContent} 的收件資料` : "內容沒有變更"); } catch (err) { toast(err.message, "err"); }
+  }));
+}
+$("#dwh-box").addEventListener("toggle", () => { if ($("#dwh-box").open) loadDwh(); });
+
 let START = ["orders", "竹運採購進貨"];
-try { const v = JSON.parse(localStorage.getItem("shopee_tab") || "null"); if (Array.isArray(v) && ["orders", "buy", "eip"].includes(v[0])) START = v; } catch (e) { /* 讀不到就從總覽開始 */ }
+try { const v = JSON.parse(localStorage.getItem("shopee_tab") || "null"); if (Array.isArray(v) && ["orders", "zhu", "buy", "eip"].includes(v[0])) START = v; } catch (e) { /* 讀不到就從總覽開始 */ }
 showTab(START[0], START[1] === "供應商直送" ? "供應商直送" : "竹運採購進貨");

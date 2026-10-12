@@ -563,7 +563,7 @@ _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES",
                      "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
                      "SHP_UPLOADS", "SHP_ORDERS",   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
-                     "SHP_EIP")                     # 產 EIP 採購單：存檔要拿 id 掛品項
+                     "SHP_EIP", "SHP_DISPATCH")                     # 產 EIP 採購單：存檔要拿 id 掛品項
 
 
 def _wants_returning_id(sql):
@@ -1116,6 +1116,54 @@ CREATE TABLE IF NOT EXISTS shp_eip_items (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     eip_id    INTEGER NOT NULL,
     order_id  INTEGER NOT NULL
+);
+
+-- 蝦皮特選竹運出貨（需求第五章）：EC 即時庫存、竹運庫存效期表、竹運商品主檔各存最新一份。
+-- 一萬多列一列一筆寫進正式站資料庫太慢，整理好（EC 只留有量的、效期表依品號＋效期加總）存成一包 JSON。
+CREATE TABLE IF NOT EXISTS shp_stock (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL UNIQUE,         -- ec／lots／life
+    filename    TEXT DEFAULT '',
+    file_date   TEXT DEFAULT '',              -- 檔案裡的結餘日期（EC 有）
+    rows_total  INTEGER DEFAULT 0,
+    data_json   TEXT DEFAULT '{}',
+    uploaded_by TEXT DEFAULT '',
+    uploaded_at TEXT NOT NULL
+);
+
+-- 人工改的出貨量與選用效期批次（沒改就用系統建議，不存）
+CREATE TABLE IF NOT EXISTS shp_ship (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL UNIQUE,
+    qty_before  INTEGER,                      -- 改的時候的蝦皮數量；之後蝦皮數量變了，這筆修改就不算
+    qty_final   INTEGER NOT NULL,
+    lots_json   TEXT DEFAULT '[]',            -- [{"exp": "2029-05-02", "qty": 41}]
+    reason      TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    updated_at  TEXT NOT NULL
+);
+
+-- 產出的訂單系統拋單檔（一天一倉一線別一個檔），品項當時的出貨量、效期、缺貨存快照
+CREATE TABLE IF NOT EXISTS shp_dispatch (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch         TEXT DEFAULT '',
+    line          TEXT DEFAULT '',
+    warehouse     TEXT DEFAULT '',
+    expected_date TEXT DEFAULT '',
+    filename      TEXT DEFAULT '',
+    rows_json     TEXT DEFAULT '[]',
+    created_by    TEXT DEFAULT '',
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shp_dispatch_items (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    dispatch_id   INTEGER NOT NULL,
+    order_id      INTEGER NOT NULL,
+    qty_order     INTEGER DEFAULT 0,
+    qty_ship      INTEGER DEFAULT 0,
+    lots_json     TEXT DEFAULT '[]',
+    short_reasons TEXT DEFAULT ''
 );
 """
 

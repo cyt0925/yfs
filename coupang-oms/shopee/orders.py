@@ -305,6 +305,8 @@ def api_orders():
                                    "WHERE diff_pending = 1").fetchone()["n"]
         from .purchase import po_status_map            # 第二段：採購單產出狀態
         po_st = po_status_map(conn, [i["id"] for i in items if not i["removed"]])
+        from .ship import ship_status_map              # 竹運出貨：產過拋單檔的出貨量、缺貨量
+        ship_st = ship_status_map(conn, [i["id"] for i in items if not i["removed"]])
     finally:
         conn.close()
     groups = {}
@@ -324,7 +326,10 @@ def api_orders():
         alive = [i for i in its if not i["removed"]]
         pending = any(i["diff_pending"] for i in its)
         fulfil_txt = "、".join(sorted(x for x in g.pop("fulfils") if x)) or "未選"
+        shipped = [ship_st[i["id"]] for i in alive if i["id"] in ship_st]
         g.update(
+            qty_ship=sum(x["qty_ship"] or 0 for x in shipped) if shipped else None,
+            qty_short=sum(max((x["qty_order"] or 0) - (x["qty_ship"] or 0), 0) for x in shipped) if shipped else None,
             fulfil=fulfil_txt,
             line="、".join(sorted(x for x in g.pop("lines") if x)),
             item_count=len(alive), removed_count=len(its) - len(alive),

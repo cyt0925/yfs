@@ -716,6 +716,17 @@ def main():
         except Exception:  # noqa: BLE001
             pass
         check("回總覽：採購單產出狀態「已產出」（還有一個檔沒回填）", "已產出" in pg.inner_text("#tbl tr.og >> nth=0"), pg.inner_text("#tbl tr.og >> nth=0"))
+        print("\n【6e-3】蝦皮特選竹運出貨：頁籤、庫存資料、設定")
+        pg.click("#tabs .tab[data-tab='zhu']"); pg.wait_for_selector("#pane-zhu:not(.hidden) #stock-st .it", timeout=10000); pg.wait_for_timeout(300)
+        check("竹運出貨頁籤：三種庫存資料都顯示尚未上傳、有效期標準與出貨方式", pg.inner_text("#stock-st").count("尚未上傳") == 3
+              and pg.input_value("#s-rule") == "shopee" and pg.input_value("#s-mode") == "single", pg.inner_text("#stock-st"))
+        pg.select_option("#s-rule", "custom"); pg.wait_for_timeout(600)
+        check("選自訂比例 → 出現比例欄、帶 0.66", pg.is_visible("#s-ratio") and pg.input_value("#s-ratio") == "0.66")
+        pg.select_option("#s-rule", "shopee"); pg.wait_for_timeout(600)
+        check("改回蝦皮進倉規範 → 比例欄收起來", pg.is_hidden("#s-ratio"))
+        pg.fill("#z-from", "2026-01-01"); pg.dispatch_event("#z-from", "change"); pg.wait_for_timeout(600)
+        check("沒有竹運出貨的單時寫提示", "沒有竹運出貨的訂單" in pg.inner_text("#z-tbl"), pg.inner_text("#z-tbl")[:100])
+        pg.click("#tabs .tab[data-tab='orders']"); pg.wait_for_selector("#pane-orders:not(.hidden) #tbl tr.og", timeout=10000)
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#tbl thead"), ("/master", "#dd-line-btn"),
                             ("/mars", "#sp-table thead"), ("/zhuyun", "#dz"), ("/purchase", "#ac-btn")]:

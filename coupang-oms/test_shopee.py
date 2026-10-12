@@ -2,6 +2,7 @@
 第一段：上傳採購單／入庫單、重傳差異、版本、確認、改履約方式、總覽。
 第二段：價格本、竹運採購進貨／供應商直送產 EIP 採購單＋採購下採明細、除不盡改數量、回填 EIP 單號。
 瑪氏直送：瑪氏 EIP 採購單（單位數量照蝦皮、依品類／單位／中標分檔）、回填後產瑪氏制式採購單、蝦皮倉資料。
+竹運出貨：EC 庫存＋竹運效期表＋商品主檔 → 效期判斷、逐列扣庫存、批次與人工出貨量 → 訂單系統拋單檔＋下修刪單清單。
 
 測試檔照蝦皮後台下載檔的表頭用程式造（真的業務檔不放進 repo）。
 執行：python test_shopee.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -496,6 +497,148 @@ def stage2(c, preview, orders):
     check("改高鐵南的 ship-to：存好、只記有改的那一欄", r.get_json()["changed"] == 1 and whs["TWG"]["ship_to"] == "17600001" and whs["TWG"]["edited"]
           and len(logs) == 1 and logs[0]["new_value"] == "17600001", str(logs))
     check("沒有的倉 → 404", c.put("/api/shopee/warehouses/XXX", json={"ship_to": "1"}).status_code == 404)
+    ship_tests(c, preview, orders, up)
+
+
+def ship_tests(c, preview, orders, up):
+    import xlwt
+    from shopee.ship import ratio_for, DEFAULT_SET
+    print("\n【13】竹運出貨：照 Alice 的核對檔判斷效期與庫存，逐列扣庫存，產拋單檔＋下修刪單清單")
+    page = c.get("/shopee").get_data(as_text=True)
+    check("竹運出貨頁籤打開了、有庫存上傳、設定、清單、批次視窗", all(x in page for x in ('data-tab="zhu"', 'id="dz-stock"', 'id="s-rule"', 'id="z-tbl"', 'id="dlg-ship"')))
+    st = dict(DEFAULT_SET)
+    check("效期比例照蝦皮進倉規範：90 天內 2/3、365 天內 2/5、其他 1/3；自訂就用自訂", ratio_for(90, st)[1] == "2/3" and ratio_for(300, st)[1] == "2/5"
+          and ratio_for(1095, st)[1] == "1/3" and ratio_for(1095, dict(st, rule="custom", ratio=0.66))[0] == 0.66)
+    def imp_in(rows, po, date="2026-10-20"):
+        pv = preview(inbound_xlsx(rows, po, date=date), "InboundOrder_z.xlsx").get_json()
+        return c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "竹運出貨"}).get_json()
+    imp_in([("INZA01", "z1", "4987176377708_CNN", "幫寶適 安睡褲", 81), ("INZA02", "z2", "6903148224090_VNN", "好自在 衛生棉", 144),
+            ("INZA03", "z3", "4987176372093_TNN", "好自在 雲枕組", 12), ("INZA04", "z4", "4902430056519_PNN", "歐蕾 護膚霜", 102),
+            ("INZA05", "z5", "4987176386700_CNN", "幫寶適 新品", 12), ("INZA06", "z6", "4987176000000_CNN", "主檔沒有的品", 10)], "POTWCTWA26101500H")
+    imp_in([("INZB01", "z7", "4987176377708_CNN", "幫寶適 安睡褲", 80)], "POTWCTWA26101500J")
+    q = {"from": "2026-10-20", "to": "2026-10-20"}
+    def plan():
+        return c.get("/api/shopee/ship/plan", query_string=q).get_json()
+    def it(pl, no, sup):
+        return next(x for g in pl["orders"] if g["order_no"] == no for x in g["items"] if x["supplier_sku_id"] == sup)
+    pl = plan()
+    check("還沒上傳庫存 → 每品都擋下來，說要先上傳 EC 即時庫存、竹運庫存效期表", all(x["blocking"] for g in pl["orders"] for x in g["items"])
+          and "EC 即時庫存" in it(pl, "POTWCTWA26101500H", "4987176377708_CNN")["problems"][0], str(it(pl, "POTWCTWA26101500H", "4987176377708_CNN")["problems"]))
+    wbx = xlwt.Workbook(); sh = wbx.add_sheet("全商品")
+    for j, h in enumerate(["結餘日期", "料號", "單位", "品名", "EC可用量"]):
+        sh.write(0, j, h)
+    for i, row in enumerate([("2026/10/19", "4987176377708", "包", "安睡褲", 132), ("2026/10/19", "6903148224090", "袋", "衛生棉", 187),
+                             ("2026/10/19", "4987176372093", "組", "雲枕組", 1), ("2026/10/19", "4902430056519", "瓶", "護膚霜", 100),
+                             ("2026/10/19", "4987176000000", "包", "沒主檔", 50), ("2026/10/19", "4987176377708", "箱", "安睡褲箱", 9)], start=1):
+        for j, v in enumerate(row):
+            sh.write(i, j, v)
+    bx = io.BytesIO(); wbx.save(bx)
+    r = up("/api/shopee/stock/import", bx.getvalue(), "全商品_20261019.xls").get_json()
+    check("上傳 EC 即時庫存（舊版 .xls）：認得、記結餘日期", r.get("kind") == "ec" and r["stock"]["ec"]["file_date"] == "2026/10/19" and r["stock"]["ec"]["today"], str(r))
+    wbl = openpyxl.Workbook(); ws = wbl.active; ws.title = "sheet1"
+    ws.append(["儲區", "客戶品號", "儲位", "可出貨量", "庫存量", "效期", "製造日期"])
+    for row in (("良品區", "4987176377708C", "A1", 100, 100, "20290522", "20260523"), ("良品區", "4987176377708C", "A2", 38, 38, "20290522", ""),
+                ("良品區", "4987176377708C", "A3", 41, 41, "20290502", ""), ("不良品區", "4987176377708C", "X1", 500, 500, "20300101", ""),
+                ("良品區", "6903148224090V", "B1", 96, 96, "20290724", ""), ("良品區", "6903148224090V", "B2", 91, 91, "20290601", ""),
+                ("良品區", "4987176372093T", "C1", 2, 2, "20271217", ""), ("良品區", "4902430056519P", "D1", 50, 50, "20270601", ""),
+                ("良品區", "4902430056519P", "D2", 20, 20, "20290101", ""), ("良品區", "4987176000000C", "E1", 50, 50, "20290101", "")):
+        ws.append(list(row))
+    bl = io.BytesIO(); wbl.save(bl)
+    r = up("/api/shopee/stock/import", bl.getvalue(), "效期表.xlsx").get_json()
+    check("上傳竹運庫存效期表：認得、不良品區不算", r.get("kind") == "lots" and "非良品區 1 列不計" in r["notes"], str(r))
+    def master(extra=()):
+        wbm = openpyxl.Workbook(); wbm.active.title = "全商品"; wbm.active.append(["料號", "單位", "EC可用量"])
+        wsm = wbm.create_sheet("商品主檔"); wsm.append(["客戶品號", "商品名稱", "國際條碼", "供應商代碼", "單位", "長", "寬", "高", "重", "箱入數", "商品年限(日)"])
+        for code in ("4987176377708C", "6903148224090V", "4987176372093T", "4902430056519P") + tuple(extra):
+            wsm.append([code, "", "", "", "", "", "", "", "", 1, 1095])
+        wsm.append(["9999999999999C", "年限空白", "", "", "", "", "", "", "", 1, ""])
+        bm = io.BytesIO(); wbm.save(bm)
+        return bm.getvalue()
+    r = up("/api/shopee/stock/import", master(), "核對竹運出貨效期及庫存V5.xlsm").get_json()
+    check("上傳 Alice 的核對檔：只匯入商品主檔、年限空白的列出來", r.get("kind") == "life" and r["items"] == 4
+          and any("只匯入商品主檔" in n for n in r["notes"]) and any("空白" in n for n in r["notes"]), str(r))
+    wb_ = openpyxl.Workbook(); wb_.active.append(["隨便", "一個"]); b_ = io.BytesIO(); wb_.save(b_)
+    r = up("/api/shopee/stock/import", b_.getvalue(), "x.xlsx")
+    check("認不出的檔 → 400、說要哪些欄位", r.status_code == 400 and "EC可用量" in r.get_json()["error"])
+    pl = plan()
+    H, J = "POTWCTWA26101500H", "POTWCTWA26101500J"
+    a = it(pl, H, "4987176377708_CNN")
+    check("同效期不同儲位加總（138）；單一效期挑最早、量又夠的那批（2029-05-22 出 81）；合格基準＝到貨日＋1095×1/3",
+          a["final"] == 81 and a["alloc"] == [{"exp": "2029-05-22", "qty": 81}] and a["threshold"] == "2027-10-20" and a["ratio_text"] == "1/3"
+          and a["book"] == 179 and not a["blocking"], str({k: a[k] for k in ("final", "alloc", "threshold", "book")}))
+    b_it = it(pl, H, "6903148224090_VNN")
+    check("單一效期都不夠 → 先出量最多那批 96，缺 48，提醒合併效期最多可出 144", b_it["final"] == 96 and b_it["short"] == 48
+          and b_it["alloc"] == [{"exp": "2029-07-24", "qty": 96}] and any("最多可出 144" in w for w in b_it["warnings"]), str(b_it["warnings"]))
+    c_it = it(pl, H, "4987176372093_TNN")
+    check("EC 只剩 1 → 出 1、提醒少於 12 件蝦皮會拒收", c_it["final"] == 1 and any("少於 12 件" in w for w in c_it["warnings"]), str(c_it["warnings"]))
+    d = it(pl, H, "4902430056519_PNN")
+    check("有一批效期不合格（2027-06-01）：只出合格的 20，缺貨原因效期不足＋庫存不足", d["final"] == 20 and d["qualified"] == 20 and d["book"] == 70
+          and d["reasons"] == ["效期不足", "庫存不足"] and [l["ok"] for l in d["lots"]] == [False, True], str(d["reasons"]))
+    e_ = it(pl, H, "4987176386700_CNN")
+    check("完全沒貨、主檔也沒有 → 不擋，算庫存不足、出 0", e_["final"] == 0 and e_["reasons"] == ["庫存不足"] and not e_["blocking"], str(e_["problems"]))
+    f_ = it(pl, H, "4987176000000_CNN")
+    check("有貨但商品主檔沒有年限 → 擋下來要補主檔（不當成 0 天）", f_["blocking"] and "商品主檔" in f_["problems"][0], str(f_["problems"]))
+    j = it(pl, J, "4987176377708_CNN")
+    check("逐列扣庫存：後面那張單只剩 EC 51、2029-05-22 剩 57 → 出 51、缺 29", j["ec"] == 51 and j["final"] == 51 and j["short"] == 29
+          and j["alloc"] == [{"exp": "2029-05-22", "qty": 51}], str({k: j[k] for k in ("ec", "final", "alloc")}))
+    r = c.post("/api/shopee/ship/generate", json={"order_nos": [H, J], **q})
+    check("有要處理的（主檔沒年限）→ 整批不產、列出原因", r.status_code == 400 and any("4987176000000_CNN" in x for x in r.get_json()["details"]), str(r.get_json()))
+    up("/api/shopee/stock/import", master(("4987176000000C",)), "產品基本資料.xlsx")
+    adj = lambda body: c.post("/api/shopee/ship/adjust", json={**q, **body})  # noqa: E731
+    r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": ""})
+    check("改出貨量沒寫原因 → 400", r.status_code == 400 and "原因" in r.get_json()["error"])
+    r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-06-01", "qty": 92}], "reason": "x"})
+    check("選的數量超過那批剩的 → 400", r.status_code == 400 and "只剩 91" in r.get_json()["error"], r.get_json()["error"])
+    r = adj({"order_id": d["order_id"], "lots": [{"exp": "2027-06-01", "qty": 10}], "reason": "x"})
+    check("選效期不合格的批次 → 400", r.status_code == 400 and "不符合" in r.get_json()["error"])
+    r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": "業務確認兩個效期分開入庫"})
+    r2 = adj({"order_id": c_it["order_id"], "lots": [], "reason": "低於 12 件會被拒收，刪單"})
+    pl = plan()
+    b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
+    logs = [l for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"] if l["field"] == "shopee_ship_qty"]
+    check("人工合併兩個效期 → 出 144、不缺；記人員、原因、提醒入庫單要依效期拆", r.status_code == 200 and b_it["final"] == 144 and not b_it["short"]
+          and b_it["adj"]["reason"] == "業務確認兩個效期分開入庫" and any("依效期拆開" in w for w in b_it["warnings"]) and logs, str(b_it["warnings"]))
+    check("改成 0 → 刪單，缺 12", r2.status_code == 200 and c_it["final"] == 0 and c_it["short"] == 12)
+    r = c.put("/api/shopee/ship/settings", json={"rule": "custom", "ratio": "abc"})
+    check("效期比例亂填 → 400", r.status_code == 400)
+    c.put("/api/shopee/ship/settings", json={"rule": "custom", "ratio": "66"})
+    d2 = it(plan(), H, "4902430056519_PNN")
+    check("改成自訂比例 66（當 0.66）→ 基準日＝到貨日＋722 天", d2["ratio_text"] == "自訂 0.66" and d2["threshold"] == "2028-10-11", str((d2["ratio_text"], d2["threshold"])))
+    c.put("/api/shopee/ship/settings", json={"rule": "shopee"})
+    r = c.post("/api/shopee/ship/generate", json={"order_nos": [H, J], **q})
+    z = zipfile.ZipFile(io.BytesIO(r.data)) if r.status_code == 200 else None
+    names = sorted(z.namelist()) if z else []
+    check("產出 zip：拋單檔（一天一倉一線別）＋下修刪單清單", names == ["指定到貨日20261020蝦皮(觀音)_PG.xlsx", "蝦皮特選下修刪單清單_1020.xlsx"], str(names))
+    if len(names) == 2:
+        rows = list(openpyxl.load_workbook(io.BytesIO(z.read(names[0]))).active.iter_rows(values_only=True))
+        check("拋單檔照範例：表頭、訂單單號＝入庫單號、蝦皮-觀音、範例地址電話、料號＝國條、出貨量 0 的不放", rows[0] == ("訂單單號", "姓名", "地址", "電話", "手機", "出貨備註", "料號", "產品名稱", "單位", "數量")
+              and rows[1][:4] == ("INZA01", "蝦皮-觀音", "桃園市觀音區寶倉街108號C棟1樓", "(03)262-6560") and rows[1][6:] == ("4987176377708", "幫寶適 安睡褲", "包", 81)
+              and sorted((r_[0], r_[9]) for r_ in rows[1:]) == [("INZA01", 81), ("INZA02", 144), ("INZA04", 20), ("INZA06", 10), ("INZB01", 51)], str(rows[1:]))
+        srows = list(openpyxl.load_workbook(io.BytesIO(z.read(names[1]))).active.iter_rows(values_only=True))
+        acts = {(r_[5], r_[0], r_[10], r_[11], r_[12]) for r_ in srows[1:]}
+        check("下修刪單清單：刪單／下修、下修數量、缺貨原因、調整原因", ("4987176372093_TNN", "刪單", 12, "庫存不足", "低於 12 件會被拒收，刪單") in acts
+              and ("4902430056519_PNN", "下修", 82, "效期不足、庫存不足", None) in acts and ("4987176386700_CNN", "刪單", 12, "庫存不足", None) in acts
+              and ("4987176377708_CNN", "下修", 29, "庫存不足", None) in acts and len(srows) == 5, str(acts))
+    pl = plan()
+    check("產出後兩張都「已產出」、品項照快照（不再分配庫存）", all(g["dispatch_status"] == "已產出" for g in pl["orders"])
+          and it(pl, H, "6903148224090_VNN")["final"] == 144 and it(pl, H, "6903148224090_VNN")["dispatch"])
+    ov = next(g for g in orders()["orders"] if g["order_no"] == H)
+    check("訂單總覽的出貨量、缺貨量帶出來", ov["qty_ship"] == 255 and ov["qty_short"] == 106, str((ov["qty_ship"], ov["qty_short"])))
+    check("再產一次同樣的單 → 400（要先取消產出）", c.post("/api/shopee/ship/generate", json={"order_nos": [H, J], **q}).status_code == 400)
+    r = c.post("/api/shopee/ship/adjust", json={**q, "order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}], "reason": "x"})
+    check("已產出的不能改出貨量 → 400", r.status_code == 400 and "取消產出" in r.get_json()["error"])
+    r = c.post("/api/shopee/ship/undo", json={"order_no": J})
+    pl = plan()
+    check("取消產出：那張回到未產出、重新照庫存判斷（前面那張已產出不再扣 → 這次可出 80）", r.get_json()["removed"] == 1
+          and next(g for g in pl["orders"] if g["order_no"] == J)["dispatch_status"] == "未產出" and it(pl, J, "4987176377708_CNN")["final"] == 80,
+          str(it(pl, J, "4987176377708_CNN")["final"]))
+    logs = c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"]
+    check("歷程記下上傳庫存、產出拋單檔、取消產出", any(l["field"] == "shopee_stock" for l in logs)
+          and any(l["field"] == "shopee_ship" and "出貨" in (l["new_value"] or "") for l in logs) and any(l["field"] == "shopee_ship" and l["new_value"] == "未產出" for l in logs))
+    w = {x["code"]: x for x in c.get("/api/shopee/dispatch_wh").get_json()["warehouses"]}
+    r = c.put("/api/shopee/dispatch_wh/TWA", json={"phone": "03-2600500#5924"})
+    check("拋單檔收件資料：7 個倉、觀音照範例，可以改", len(w) == 7 and w["TWA"]["phone"] == "(03)262-6560" and r.get_json()["changed"] == 1
+          and {x["code"]: x for x in c.get("/api/shopee/dispatch_wh").get_json()["warehouses"]}["TWA"]["phone"] == "03-2600500#5924")
 
 
 if __name__ == "__main__":
