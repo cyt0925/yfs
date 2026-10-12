@@ -1,6 +1,6 @@
 """蝦皮特選第二段：竹運採購進貨、供應商直送 → EIP 採購單＋採購下採明細（需求第六、七、十章）。
 
-先做寶僑、紙潔；瑪氏直送（EIP＋瑪氏制式採購單）之後再做。
+寶僑、紙潔 2026-10-08 做；瑪氏直送 2026-10-12 做（EIP 在這裡，瑪氏制式採購單在 mars_po.py）。
 - 轉換率（箱入數）從各線別的價格本來：PG價格本整合.xlsx「價格本整合」、紙潔價格本整合.xlsx「紙品價格本」「潔品價格本」，
   都是「料號3＝料號＋單位代碼」配一個箱入數，跟蝦皮 Supplier SKU（1022248_CNN → 1022248C）對得起來。上傳時同一線別整份覆蓋。
 - 寶僑（Jerry 2026-10-07 看範例檔定的，跟需求 10.1／10.2 對得起來）：轉換率 1 放「箱單位」檔、不是 1 放「小單位」檔；
@@ -13,6 +13,10 @@
   同一個料號同一個單位合成一列。
 - 數量除不盡轉換率（需求 10.5）：不自動進位或捨去，列為異常，要人填修改後數量和原因才能產出；改的紀錄留原始數量、轉換率、人員、時間。
 - 差異還沒確認的單、已回填 EIP 單號的單不能產（要重產先清掉單號）。
+- 瑪氏（需求 10.4，Jerry 2026-10-12「照建議」）：只做供應商直送。單位、數量照蝦皮（不換箱），備註
+  「MARS入倉20261013台灣瑪氏送蝦皮特選-觀音」，套瑪氏的 EIP 範本（mars_template.xls，跟酷澎瑪氏同一份）。
+  商品資料用瑪氏出貨的商品總表（mst_mars_products，永豐料號＋單位），轉換率＝箱入數，除不盡一樣要改數量。
+  一份瑪氏採購單對一張 EIP：依倉、到貨日、品類、單位、中標拆（需求 11.3），不出採購下採明細。
 """
 import datetime as _dt
 import os
@@ -23,15 +27,20 @@ import xlrd
 from openpyxl.styles import Font, PatternFill
 from xlutils.copy import copy as xl_copy
 
+from mars.common import cat_code
+
 from .common import *  # noqa: F401,F403
 from .orders import order_no
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "purchase_templates", "pg_template.xls")
 WIPE_ROWS = 249                       # 範本「產品採購單」原本有資料到第 249 列，全部清掉再寫
+MARS_TEMPLATE = os.path.join(os.path.dirname(TEMPLATE), "mars_template.xls")   # 瑪氏 EIP 範本（工作表「產品領用單」）
+MARS_WIPE_ROWS = 60
 EIP_PO_RE = re.compile(r"^PO\d{9}$")  # EIP 採購單號：PO202610003
 BUY_FULFILS = ("竹運採購進貨", "供應商直送")
 FULFIL_SHORT = {"竹運採購進貨": "竹運進貨", "供應商直送": "直送"}
-SUPPORTED = ("寶僑", "紙潔")
+SUPPORTED = ("寶僑", "紙潔", "瑪氏")
+MARS = "瑪氏"
 
 
 # ── 價格本 ───────────────────────────────────────────────────────────────────
@@ -83,6 +92,7 @@ def parse_conv(data, filename=""):
 
 
 def conv_status(conn):
+    """各線別轉換率的來源狀態。瑪氏用瑪氏出貨頁上傳的商品總表（不在這裡傳）。"""
     st = {}
     for r in _rows(conn.execute("SELECT line, COUNT(*) AS n, SUM(CASE WHEN box_qty IS NULL THEN 1 ELSE 0 END) AS blank, "
                                 "MAX(updated_at) AS at FROM shp_conv GROUP BY line")):
@@ -90,6 +100,11 @@ def conv_status(conn):
     for r in _rows(conn.execute("SELECT line, source_file, updated_by FROM shp_conv WHERE updated_at IN (SELECT MAX(updated_at) FROM shp_conv GROUP BY line)")):
         if r["line"] in st:
             st[r["line"]].update(file=r["source_file"], by=r["updated_by"])
+    n = conn.execute("SELECT COUNT(*) AS n FROM mst_mars_products").fetchone()["n"]
+    if n:
+        last = _row(conn.execute("SELECT * FROM mst_mars_uploads ORDER BY id DESC LIMIT 1"))
+        st[MARS] = {"count": n, "blank": 0, "updated_at": (last or {}).get("uploaded_at", ""), "file": (last or {}).get("filename", ""),
+                    "by": (last or {}).get("operator", ""), "external": True}
     return st
 
 
@@ -150,6 +165,31 @@ def _conv_map(conn, codes):
     return {r["code3"]: r for r in _rows(conn.execute(f"SELECT * FROM shp_conv WHERE code3 IN ({marks})", list(codes)))}
 
 
+def _mars_map(conn, items):
+    """瑪氏品項 → 商品總表那列，用（永豐料號, 單位）對。"""
+    codes = sorted({i["base_code"] for i in items if i["line"] == MARS and i["base_code"]})
+    if not codes:
+        return {}
+    marks = ",".join("?" * len(codes))
+    return {(r["yf_sku"], r["unit"]): r for r in _rows(conn.execute(f"SELECT * FROM mst_mars_products WHERE yf_sku IN ({marks})", codes))}
+
+
+def conv_for_item(conn, it):
+    """改數量時用：這個品項的轉換率來源（瑪氏是商品總表，其他是價格本）。"""
+    if it["line"] == MARS:
+        return _row(conn.execute("SELECT * FROM mst_mars_products WHERE yf_sku = ? AND unit = ?", (it["base_code"], it["unit_name"])))
+    return _row(conn.execute("SELECT * FROM shp_conv WHERE code3 = ?", ((it["base_code"] or "") + (it["unit_code"] or ""),)))
+
+
+def box_of(conv):
+    """箱入數轉整數（瑪氏商品總表存成小數 24.0）；沒有或不是正數回 None。"""
+    try:
+        v = float(conv["box_qty"]) if conv and conv["box_qty"] not in (None, "") else 0
+    except (TypeError, ValueError):
+        return None
+    return int(v) if v > 0 and v.is_integer() else (v if v > 0 else None)
+
+
 def _adj_map(conn, ids):
     if not ids:
         return {}
@@ -173,7 +213,7 @@ def item_plan(it, conv, adj, eip):
     """一個品項要怎麼下：換算、寫進哪個檔、有什麼問題。"""
     line, fulfil = it["line"], it["fulfil"]
     code3 = (it["base_code"] or "") + (it["unit_code"] or "")
-    box = conv["box_qty"] if conv else None
+    box = box_of(conv)
     qty = it["qty"] or 0
     use = adj["qty_after"] if adj and adj["qty_before"] == qty else qty      # 蝦皮數量又變了，之前改的就不算
     p = {"order_id": it["id"], "supplier_sku_id": it["supplier_sku_id"], "code": it["base_code"], "code3": code3,
@@ -181,7 +221,11 @@ def item_plan(it, conv, adj, eip):
          "conv": box, "adj": adj if adj and adj["qty_before"] == qty else None, "problems": [], "blocking": False,
          "eip": eip, "unit_group": "", "out_unit": "", "out_qty": None, "remark": "", "rem": 0}
     if line not in SUPPORTED:
-        p["problems"].append("瑪氏直送的 EIP 採購單與瑪氏制式採購單之後做" if line == "瑪氏" else "認不出線別")
+        p["problems"].append("認不出線別")
+        p["blocking"] = True
+        return p
+    if line == MARS and fulfil != "供應商直送":
+        p["problems"].append("瑪氏目前只開放供應商直送")
         p["blocking"] = True
         return p
     if it["diff_pending"]:
@@ -191,11 +235,13 @@ def item_plan(it, conv, adj, eip):
         p["problems"].append(f"已回填 EIP 單號 {eip['eip_po']}；要重新產出請先到「採購單產出」清掉單號")
         p["blocking"] = True
     if conv is None:
-        p["problems"].append(f"價格本找不到 {code3}，請更新{line}價格本")
+        p["problems"].append(f"瑪氏商品總表找不到 {it['base_code']}（{p['unit']}），請至瑪氏出貨頁更新商品總表" if line == MARS
+                             else f"價格本找不到 {code3}，請更新{line}價格本")
         p["blocking"] = True
         return p
     if not box:
-        p["problems"].append(f"價格本 {code3} 沒有箱入數，請補上後重新上傳")
+        p["problems"].append(f"瑪氏商品總表 {it['base_code']}（{p['unit']}）沒有箱入數" if line == MARS
+                             else f"價格本 {code3} 沒有箱入數，請補上後重新上傳")
         p["blocking"] = True
         return p
     p["rem"] = use % box
@@ -209,6 +255,16 @@ def item_plan(it, conv, adj, eip):
         else:
             p["out_unit"], p["out_qty"] = p["unit"], use
         p["remark"] = "蝦皮特選"
+    elif line == MARS:                               # 瑪氏：單位、數量照蝦皮，不換箱（需求 10.4）；箱數給瑪氏採購單用
+        cat = cat_code(conv["category"])
+        lab = "V" if (conv["inner_label"] or "").strip().upper() == "V" else ""
+        p["unit_group"] = f"{p['unit']}_{cat or '品類不明'}_{'需貼中標' if lab else '不貼中標'}"
+        p["out_unit"], p["out_qty"] = p["unit"], use
+        p["remark"] = f"MARS入倉{(it['expected_date'] or '').replace('-', '')}台灣瑪氏送蝦皮特選-{wh_name(it['warehouse'])}"
+        p["cases"] = use // box if not p["rem"] else round(use / box, 2)
+        p["mars"] = {"category": cat, "label": lab, "mars_code": conv["mars_code"] or "", "mars_name": conv["name"] or "",
+                     "price": conv["price"], "pcs_per_case": conv["pcs_per_case"], "inner_per_case": conv["inner_per_case"],
+                     "note": conv["note"] or "", "po_case_note": conv["po_case_note"] or ""}
     else:                                            # 紙潔：一律換成箱（需求 10.3）
         p["out_unit"], p["out_qty"] = "箱", use // box if not p["rem"] else round(use / box, 2)
     return p
@@ -231,14 +287,16 @@ def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None):
         want = set(order_nos)
         items = [i for i in items if order_no(i) in want]
     ids = [i["id"] for i in items]
-    convs = _conv_map(conn, {(i["base_code"] or "") + (i["unit_code"] or "") for i in items})
+    convs = _conv_map(conn, {(i["base_code"] or "") + (i["unit_code"] or "") for i in items if i["line"] != MARS})
+    mars = _mars_map(conn, items)
     adjs, eips = _adj_map(conn, ids), _eip_map(conn, ids)
     groups = collections.OrderedDict()
     for it in items:
         no = order_no(it)
         g = groups.setdefault(no, {"order_no": no, "pr_id": it["pr_id"], "po_id": it["po_id"], "line": it["line"], "warehouse": it["warehouse"],
                                    "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": []})
-        g["items"].append(item_plan(it, convs.get((it["base_code"] or "") + (it["unit_code"] or "")), adjs.get(it["id"]), eips.get(it["id"])))
+        conv = mars.get((it["base_code"], it["unit_name"])) if it["line"] == MARS else convs.get((it["base_code"] or "") + (it["unit_code"] or ""))
+        g["items"].append(item_plan(it, conv, adjs.get(it["id"]), eips.get(it["id"])))
     out = []
     for g in groups.values():
         its = g["items"]
@@ -293,10 +351,10 @@ def api_purchase_adjust():
             qty = int(str(raw).replace(",", ""))
         except ValueError:
             return jsonify({"error": "修改後數量請填整數。"}), 400
-        conv = _row(conn.execute("SELECT * FROM shp_conv WHERE code3 = ?", ((it["base_code"] or "") + (it["unit_code"] or ""),)))
-        box = conv["box_qty"] if conv else None
+        box = box_of(conv_for_item(conn, it))
         if not box:
-            return jsonify({"error": "價格本沒有這個品項的箱入數，無法判斷，請先更新價格本。"}), 400
+            return jsonify({"error": "瑪氏商品總表沒有這個品項的箱入數，無法判斷，請先更新商品總表。" if it["line"] == MARS
+                            else "價格本沒有這個品項的箱入數，無法判斷，請先更新價格本。"}), 400
         if qty < 0 or qty % box:
             return jsonify({"error": f"修改後數量 {qty} 仍除不盡轉換率 {box}，請改成 {box} 的倍數（例如 {it['qty'] // box * box} 或 {(it['qty'] // box + 1) * box}）。"}), 400
         if not reason:
@@ -326,18 +384,24 @@ def _merge_rows(plans):
         if r is None:
             r = rows[k] = {"code": p["code"], "name": p["name"], "unit": p["out_unit"], "qty": 0, "in_unit": p["unit"], "in_qty": 0,
                            "conv": p["conv"], "remark": p["remark"]}
+            if p.get("mars"):                        # 瑪氏採購單要的商品總表欄位一起存，之後照這份產
+                r.update(p["mars"], cases=0)
         r["qty"] += p["out_qty"]
         r["in_qty"] += p["use_qty"]
+        if "cases" in r:
+            r["cases"] += p.get("cases") or 0
     return list(rows.values())
 
 
-def eip_xls(rows, with_conv):
-    """套公司 EIP 範本（purchase_templates/pg_template.xls，跟蝦皮範例「產品採購單」同一張表）。
+def eip_xls(rows, line):
+    """套公司 EIP 範本（purchase_templates/pg_template.xls，跟蝦皮範例「產品採購單」同一張表；瑪氏用 mars_template.xls）。
     寶僑照蝦皮範例：第 10 欄標題清空、放轉換率。"""
-    rb = xlrd.open_workbook(TEMPLATE, formatting_info=True)
+    with_conv = line == "寶僑"
+    template, wipe = (MARS_TEMPLATE, MARS_WIPE_ROWS) if line == MARS else (TEMPLATE, WIPE_ROWS)
+    rb = xlrd.open_workbook(template, formatting_info=True)
     wb = xl_copy(rb)
     ws = wb.get_sheet(0)
-    for r in range(1, max(WIPE_ROWS, len(rows) + 1)):
+    for r in range(1, max(wipe, len(rows) + 1)):
         for c in range(10):
             ws.write(r, c, "")
     if with_conv:
@@ -421,7 +485,8 @@ def api_purchase_generate():
             for p in g["items"]:
                 p["_date"], p["_wh"] = g["expected_date"], g["warehouse"]
                 files.setdefault(key + (p["unit_group"],), []).append(p)
-                details.setdefault(key, []).append(p)
+                if g["line"] != MARS:                # 瑪氏出瑪氏制式採購單，不出下採明細（需求第七章產出表）
+                    details.setdefault(key, []).append(p)
         ids = [p["order_id"] for g in orders for p in g["items"]]
         marks = ",".join("?" * len(ids))
         # 之前產過、還沒回填單號的：從舊的那張拿掉（舊的那張空了就刪），這次重產為準
@@ -443,7 +508,7 @@ def api_purchase_generate():
                 dates, whs = sorted({p["_date"] for p in ps}), sorted({p["_wh"] for p in ps})
                 date, whc = dates[0], "、".join(whs)
                 name = eip_filename(line, fulfil, dates, whs, ug)
-                zf.writestr(name, eip_xls(rows, line == "寶僑"))
+                zf.writestr(name, eip_xls(rows, line))
                 names.append(name)
                 cur = conn.execute("INSERT INTO shp_eip (batch, line, fulfil, warehouse, expected_date, unit_group, filename, rows_json, eip_po, created_by, created_at, updated_by, updated_at) "
                                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (batch, line, fulfil, whc, date, ug, name, json.dumps(rows, ensure_ascii=False), "", operator, stamp, operator, stamp))
@@ -493,6 +558,7 @@ def api_eips():
         rows = json.loads(e["rows_json"] or "[]")
         out.append({k: e[k] for k in ("id", "line", "fulfil", "warehouse", "expected_date", "unit_group", "filename", "eip_po", "created_by", "created_at", "updated_by", "updated_at")}
                    | {"warehouse_name": "、".join(wh_name(w) for w in (e["warehouse"] or "").split("、") if w), "rows": len(rows), "qty": sum(r["qty"] for r in rows),
+                      "mars": e["line"] == MARS,
                       "orders": sorted(set(links.get(e["id"], [])))})
     return jsonify({"eips": out})
 
@@ -533,7 +599,7 @@ def api_eip_file(eid):
     if e is None:
         return jsonify({"error": "找不到這張 EIP 採購單。"}), 404
     name = e["filename"] if not e["eip_po"] else e["filename"].replace(".xls", f"({e['eip_po']}).xls")
-    return send_file(io.BytesIO(eip_xls(json.loads(e["rows_json"] or "[]"), e["line"] == "寶僑")), as_attachment=True, download_name=name,
+    return send_file(io.BytesIO(eip_xls(json.loads(e["rows_json"] or "[]"), e["line"])), as_attachment=True, download_name=name,
                      mimetype="application/vnd.ms-excel")
 
 
@@ -542,5 +608,5 @@ def po_status_map(conn, ids):
     return {k: ("已回填" if v["eip_po"] else "已產出") for k, v in _eip_map(conn, ids).items()}
 
 
-__all__ = ["parse_conv", "conv_status", "item_plan", "build_plan", "eip_xls", "detail_xlsx", "eip_filename", "detail_filename", "po_status_map",
+__all__ = ["parse_conv", "conv_status", "conv_for_item", "box_of", "item_plan", "build_plan", "eip_xls", "detail_xlsx", "eip_filename", "detail_filename", "po_status_map",
            "api_conv", "api_conv_import", "api_purchase_plan", "api_purchase_adjust", "api_purchase_generate", "api_eips", "api_eip_update", "api_eip_file"]

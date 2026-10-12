@@ -701,6 +701,15 @@ def main():
         check("單號格式不對 → 紅色提示", "PO 加 9 碼數字" in pg.inner_text("#toasts"), pg.inner_text("#toasts"))
         pg.fill("#e-tbl input.e-po >> nth=0", "PO202610003"); pg.press("#e-tbl input.e-po >> nth=0", "Enter"); pg.wait_for_timeout(600)
         check("回填 PO202610003 → 存好、記下回填人", pg.input_value("#e-tbl input.e-po >> nth=0") == "PO202610003" and "Jerry" in pg.inner_text("#e-tbl tr >> nth=1"))
+        pg.click("#wh-box summary"); pg.wait_for_selector("#wh-tbl tbody tr", timeout=10000)
+        check("蝦皮倉資料：7 個倉、觀音帶出需求書的入倉倉別和 ship-to", pg.eval_on_selector_all("#wh-tbl tbody tr", "els => els.length") == 7
+              and pg.input_value("#wh-tbl tr[data-code='TWA'] input[data-k='name']") == "永豐商店蝦皮特選-觀音倉(TWA)"
+              and pg.input_value("#wh-tbl tr[data-code='TWA'] input[data-k='ship_to']") == "17617040")
+        pg.fill("#wh-tbl tr[data-code='TWG'] input[data-k='ship_to']", "17600001"); pg.click("#wh-tbl tr[data-code='TWG'] button.wh-save"); pg.wait_for_timeout(500)
+        check("改高鐵南 ship-to 按儲存 → 提示已更新", "已更新" in pg.inner_text("#toasts"), pg.inner_text("#toasts"))
+        check("沒有瑪氏 EIP 時不顯示「下載瑪氏採購單」", pg.is_hidden("#e-mars"))
+        pg.click("#tabs .tab[data-f='供應商直送']"); pg.wait_for_function("document.querySelector('#conv-st').innerText.includes('瑪氏')", timeout=10000)
+        check("價格本區塊列出瑪氏（商品總表在瑪氏出貨上傳）", "瑪氏出貨" in pg.inner_text("#conv-st"), pg.inner_text("#conv-st"))
         pg.click("#tabs .tab[data-tab='orders']"); pg.wait_for_selector("#pane-orders:not(.hidden) #tbl tr.og", timeout=10000)
         try:   # 切回總覽會重新讀資料，舊的表先留在畫面上；等新資料畫好再看（CI 機器慢，不等會讀到舊的）
             pg.wait_for_function("(document.querySelector('#tbl tr.og') || {}).innerText?.includes('已產出')", timeout=10000)

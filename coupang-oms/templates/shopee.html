@@ -179,9 +179,15 @@
       <div class="flex-1"></div>
       <label class="kbd">到貨日 <input type="date" id="e-from" class="inp"> ～ <input type="date" id="e-to" class="inp"></label>
       <span class="chip" id="e-todo"><i class="bi bi-funnel"></i> 只看未回填</span>
+      <button class="btn btn-o hidden" id="e-mars" title="到貨日範圍內、已回填 EIP 採購單號的瑪氏採購單"><i class="bi bi-file-earmark-zip"></i> 下載瑪氏採購單</button>
     </div>
     <div class="tbl-wrap"><table class="t" id="e-tbl"></table></div>
   </section>
+  <details class="card p-4" id="wh-box">
+    <summary style="cursor:pointer;font-weight:700">蝦皮倉資料 <span class="kbd">（瑪氏採購單的入倉倉別、地址、電話、Ship-to、送貨聯絡人）</span></summary>
+    <div class="kbd mt-2">觀音、安南三依需求書；其他倉的地址、電話依蝦皮供應商進倉規範，Ship-to 尚未提供。修改後，之後下載的瑪氏採購單即套用新資料。</div>
+    <div class="tbl-wrap mt-3" style="max-height:none"><table class="t" id="wh-tbl"></table></div>
+  </details>
 </div>
 </main>
 

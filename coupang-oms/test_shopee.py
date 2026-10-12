@@ -1,6 +1,7 @@
 """蝦皮特選寄倉訂單系統（/shopee）端到端測試。
 第一段：上傳採購單／入庫單、重傳差異、版本、確認、改履約方式、總覽。
 第二段：價格本、竹運採購進貨／供應商直送產 EIP 採購單＋採購下採明細、除不盡改數量、回填 EIP 單號。
+瑪氏直送：瑪氏 EIP 採購單（單位數量照蝦皮、依品類／單位／中標分檔）、回填後產瑪氏制式採購單、蝦皮倉資料。
 
 測試檔照蝦皮後台下載檔的表頭用程式造（真的業務檔不放進 repo）。
 執行：python test_shopee.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -398,9 +399,10 @@ def stage2(c, preview, orders):
     E, N = pl["POTWCTWA26100800E"], pl["POTWCTWA26100514N"]
     check("價格本沒有的、箱入數空白的 → 擋下來並說要更新哪個價格本", E["blocking"] == 2 and "請更新紙潔價格本" in item(E, "1088888_PNN")["problems"][0]
           and "沒有箱入數" in item(E, "1099999_PNN")["problems"][0], str([p["problems"] for p in E["items"]]))
-    check("瑪氏直送：先列出但不能勾（之後做）", not N["supported"] and "瑪氏" in N["items"][0]["problems"][0])
+    check("瑪氏商品總表還沒有這些料號 → 擋下來、說要到瑪氏出貨頁更新商品總表", N["supported"] and N["blocking"] == 2
+          and "瑪氏商品總表找不到" in N["items"][0]["problems"][0], str(N["items"][0]["problems"]))
     r = gen("供應商直送", ["POTWCTWA26100800C", "POTWCTWA26100514N"])
-    check("勾到瑪氏 → 400", r.status_code == 400)
+    check("勾到被擋的瑪氏單 → 400", r.status_code == 400)
     r = gen("供應商直送", ["POTWCTWA26100800C", "POTWCTWG26100800D"])
     z = zipfile.ZipFile(io.BytesIO(r.data)) if r.status_code == 200 else None
     names = sorted(z.namelist()) if z else []
@@ -419,6 +421,81 @@ def stage2(c, preview, orders):
         head, rows = xls_rows(z.read("產品採購表上傳-寶僑直送_1023到高鐵南-箱單位.xls"))
         check("寶僑直送箱單位：箱 10", [(r_[3], r_[6]) for r_ in rows] == [("箱", 10)], str(rows))
     check("瑪氏出貨頁的歷程不會混進蝦皮特選的紀錄", not any(l["field"].startswith("shopee_") for l in c.get("/api/master/logs?scope=mars&limit=500").get_json()["logs"]))
+
+    print("\n【12】瑪氏直送：EIP 單位數量照蝦皮、依品類／單位／中標分檔；回填後產瑪氏採購單（需求 10.4、第十一章）")
+    cn = db.get_conn()
+    for row in (("M60003196", "盒", "60003196", "Petcare", "希寶 誘惑泥 55入", 794.29, 24, 24, "Q", 24, "V", "", ""),
+                ("M10281171", "箱", "10281171", "Petcare", "偉嘉 貓罐頭 箱購", 500.0, 1, 24, "R", 1, "", "11/22 轉貨號", "需加工貼小白標")):
+        cn.execute("INSERT INTO mst_mars_products (yf_sku, unit, mars_code, category, name, price, inner_per_case, pcs_per_case, unit_code, box_qty, "
+                   "inner_label, note, po_case_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+    cn.commit(); cn.close()
+    check("價格本區塊多一個瑪氏（用瑪氏出貨的商品總表）", c.get("/api/shopee/conv").get_json()["lines"].get("瑪氏", {}).get("count") == 2)
+    imp(purchase_xlsx([("84_1", "M60003196_QMN", "希寶 誘惑泥 55入", 50, "Pcs")], po="POTWCTWX26101100F", pr="PRTWCOTWX202610110001", wh="TWX", date="2026-10-14"),
+        "供應商直送")
+    imp(purchase_xlsx([("85_1", "M60003196_QMN", "希寶 誘惑泥 55入", 48, "Pcs")], po="POTWCTWA26101100G", pr="PRTWCOTWA202610110002", date="2026-10-14"),
+        "竹運採購進貨")
+    pl = plan("供應商直送")
+    N, F = pl["POTWCTWA26100514N"], pl["POTWCTWX26101100F"]
+    a, b_ = item(N, "M60003196_QMN"), item(N, "M10281171_RMN")
+    check("瑪氏：單位數量照蝦皮（48 盒、18 箱），箱數 2／18，依品類、單位、中標分檔，備註 MARS入倉＋到貨日＋倉",
+          not N["blocking"] and (a["out_unit"], a["out_qty"], a["cases"], a["unit_group"]) == ("盒", 48, 2, "盒_PET_需貼中標")
+          and (b_["out_unit"], b_["out_qty"], b_["cases"], b_["unit_group"]) == ("箱", 18, 18, "箱_PET_不貼中標")
+          and a["remark"] == "MARS入倉20261013台灣瑪氏送蝦皮特選-觀音", str(a)[:300])
+    f1 = item(F, "M60003196_QMN")
+    check("50 盒除以箱入數 24 除不盡 → 擋下來", F["blocking"] == 1 and f1["rem"] == 2 and "除不盡" in f1["problems"][0], str(f1["problems"]))
+    r = c.post("/api/shopee/purchase/adjust", json={"order_id": f1["order_id"], "qty": 48, "reason": "瑪氏整箱出貨"})
+    check("瑪氏也能改數量（轉換率用商品總表的箱入數）", r.status_code == 200 and not plan("供應商直送")["POTWCTWX26101100F"]["blocking"], str(r.get_json()))
+    g_ = plan("竹運採購進貨")["POTWCTWA26101100G"]
+    check("瑪氏的竹運採購進貨 → 擋下來（目前只開放供應商直送）", g_["blocking"] and "只開放供應商直送" in g_["items"][0]["problems"][0], str(g_["items"][0]["problems"]))
+    r = gen("供應商直送", ["POTWCTWA26100514N", "POTWCTWX26101100F"])
+    z = zipfile.ZipFile(io.BytesIO(r.data)) if r.status_code == 200 else None
+    names = sorted(z.namelist()) if z else []
+    check("產出：一份＝一倉一到貨日一品類一單位一中標，共 3 個 EIP 檔、沒有採購下採明細", names == sorted([
+        "產品採購表上傳-瑪氏直送_1013到觀音-盒_PET_需貼中標.xls", "產品採購表上傳-瑪氏直送_1013到觀音-箱_PET_不貼中標.xls",
+        "產品採購表上傳-瑪氏直送_1014到安南三-盒_PET_需貼中標.xls"]), str(names))
+    if len(names) == 3:
+        wb_ = xlrd.open_workbook(file_contents=z.read("產品採購表上傳-瑪氏直送_1013到觀音-盒_PET_需貼中標.xls"))
+        _, rows = xls_rows(z.read("產品採購表上傳-瑪氏直送_1013到觀音-盒_PET_需貼中標.xls"))
+        check("瑪氏 EIP：套瑪氏範本（產品領用單）、料號、單位盒、數量 48、備註", wb_.sheet_names()[0] == "產品領用單"
+              and [(r_[1], r_[3], r_[6], r_[8]) for r_ in rows] == [("M60003196", "盒", 48, "MARS入倉20261013台灣瑪氏送蝦皮特選-觀音")], str(rows))
+    eips = {e["filename"]: e for e in c.get("/api/shopee/eips").get_json()["eips"] if e["line"] == "瑪氏"}
+    box_ = eips.get("產品採購表上傳-瑪氏直送_1013到觀音-盒_PET_需貼中標.xls", {})
+    case_ = eips.get("產品採購表上傳-瑪氏直送_1013到觀音-箱_PET_不貼中標.xls", {})
+    check("採購單產出清單標出瑪氏", box_.get("mars") and case_.get("mars"))
+    r = c.get(f"/api/shopee/eips/{box_['id']}/mars_po")
+    check("還沒回填 EIP 採購單號 → 不能產瑪氏採購單（400）", r.status_code == 400 and "回填" in r.get_json()["error"])
+    check("沒回填的不能打包下載（400）", c.get("/api/shopee/mars_po.zip").status_code == 400)
+    c.put(f"/api/shopee/eips/{box_['id']}", json={"eip_po": "PO202610101"})
+    c.put(f"/api/shopee/eips/{case_['id']}", json={"eip_po": "PO202610102"})
+    r = c.get(f"/api/shopee/eips/{box_['id']}/mars_po")
+    import datetime as _dt
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).active if r.status_code == 200 else None
+    check("瑪氏採購單檔名：EIP 採購單號＋到貨日＋倉＋單位＋品類＋中標", "PO202610101" in r.headers.get("Content-Disposition", "")
+          and "_1013_" in __import__("urllib.parse").parse.unquote(r.headers.get("Content-Disposition", "")), r.headers.get("Content-Disposition"))
+    if ws:
+        check("表頭：下單日 10/8（往前 2 個工作天，跳過 10/9 補假和週末）、配送日 10/13、EIP 採購單號、觀音倉資料、1/2效期以上、品類",
+              ws["C3"].value == _dt.datetime(2026, 10, 8) and ws["F3"].value == _dt.datetime(2026, 10, 13) and ws["C5"].value == "PO202610101"
+              and ws["C6"].value == "永豐商店蝦皮特選-觀音倉(TWA)" and ws["F6"].value == "1/2效期以上" and ws["F7"].value == 17617040
+              and ws["F8"].value == "進貨組" and ws["B9"].value == "Petcare寵物", str([ws[k].value for k in ("C3", "F3", "C5", "C6", "F6", "F7", "F8", "B9")]))
+        check("作業備註：蝦皮特選嘜頭＋採購單、需貼中盒標（盒單位不寫貼板嘜）", ws["F5"].value == "蝦皮特選嘜頭(入庫通知單)+採購單\n需貼中盒標", repr(ws["F5"].value))
+        check("明細：永豐料號、瑪氏貨號、單位需求 48、採購數量 2 箱、中標 V、每箱數", [ws.cell(12, k).value for k in (1, 2, 4, 5, 8, 10, 11)]
+              == ["M60003196", "60003196", 48, 2, "V", 24, 24], str([ws.cell(12, k).value for k in range(1, 14)]))
+    ws = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/shopee/eips/{case_['id']}/mars_po").data)).active
+    check("箱單位那份：作業備註加貼板嘜、指定品需加工貼小白標；備註、小白標欄照商品總表",
+          ws["F5"].value == "蝦皮特選嘜頭(入庫通知單)+採購單\n貼板嘜\n指定品需加工貼小白標" and ws.cell(12, 12).value == "11/22 轉貨號"
+          and ws.cell(12, 13).value == "需加工貼小白標" and ws.cell(12, 5).value == 18, repr(ws["F5"].value))
+    r = c.get("/api/shopee/mars_po.zip")
+    zn = sorted(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) if r.status_code == 200 else []
+    check("打包下載只放已回填的 2 份", zn == ["PO202610101永豐Mars採購單_1013_觀音_盒_PET_需貼中標.xlsx", "PO202610102永豐Mars採購單_1013_觀音_箱_PET_不貼中標.xlsx"], str(zn))
+    whs = {w["code"]: w for w in c.get("/api/shopee/warehouses").get_json()["warehouses"]}
+    check("蝦皮倉資料：觀音、安南三照需求書，其他倉 ship-to 空著", whs["TWX"]["ship_to"] == "17647732" and whs["TWX"]["contact"] == "曾小姐"
+          and whs["TWG"]["address"].startswith("桃園市中壢區") and whs["TWG"]["ship_to"] == "", str(whs["TWG"]))
+    r = c.put("/api/shopee/warehouses/TWG", json={"ship_to": "17600001", "contact": "高鐵南進貨組"})
+    whs = {w["code"]: w for w in c.get("/api/shopee/warehouses").get_json()["warehouses"]}
+    logs = [l for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"] if l["field"] == "shopee_wh"]
+    check("改高鐵南的 ship-to：存好、只記有改的那一欄", r.get_json()["changed"] == 1 and whs["TWG"]["ship_to"] == "17600001" and whs["TWG"]["edited"]
+          and len(logs) == 1 and logs[0]["new_value"] == "17600001", str(logs))
+    check("沒有的倉 → 404", c.put("/api/shopee/warehouses/XXX", json={"ship_to": "1"}).status_code == 404)
 
 
 if __name__ == "__main__":
