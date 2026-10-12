@@ -702,6 +702,10 @@ def main():
         pg.fill("#e-tbl input.e-po >> nth=0", "PO202610003"); pg.press("#e-tbl input.e-po >> nth=0", "Enter"); pg.wait_for_timeout(600)
         check("回填 PO202610003 → 存好、記下回填人", pg.input_value("#e-tbl input.e-po >> nth=0") == "PO202610003" and "Jerry" in pg.inner_text("#e-tbl tr >> nth=1"))
         pg.click("#tabs .tab[data-tab='orders']"); pg.wait_for_selector("#pane-orders:not(.hidden) #tbl tr.og", timeout=10000)
+        try:   # 切回總覽會重新讀資料，舊的表先留在畫面上；等新資料畫好再看（CI 機器慢，不等會讀到舊的）
+            pg.wait_for_function("(document.querySelector('#tbl tr.og') || {}).innerText?.includes('已產出')", timeout=10000)
+        except Exception:  # noqa: BLE001
+            pass
         check("回總覽：採購單產出狀態「已產出」（還有一個檔沒回填）", "已產出" in pg.inner_text("#tbl tr.og >> nth=0"), pg.inner_text("#tbl tr.og >> nth=0"))
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#tbl thead"), ("/master", "#dd-line-btn"),
