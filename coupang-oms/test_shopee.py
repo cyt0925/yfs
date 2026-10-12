@@ -3,6 +3,7 @@
 第二段：價格本、竹運採購進貨／供應商直送產 EIP 採購單＋採購下採明細、除不盡改數量、回填 EIP 單號。
 瑪氏直送：瑪氏 EIP 採購單（單位數量照蝦皮、依品類／單位／中標分檔）、回填後產瑪氏制式採購單、蝦皮倉資料。
 竹運出貨：EC 庫存＋竹運效期表＋商品主檔 → 效期判斷、逐列扣庫存、批次與人工出貨量 → 訂單系統拋單檔＋下修刪單清單。
+缺貨維護與通知：寶僑兩次、紙潔一次人工填缺貨；竹運出貨缺貨自動帶入；LINE 通知文字＋Excel 明細；通知過鎖住。
 
 測試檔照蝦皮後台下載檔的表頭用程式造（真的業務檔不放進 repo）。
 執行：python test_shopee.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -498,6 +499,7 @@ def stage2(c, preview, orders):
           and len(logs) == 1 and logs[0]["new_value"] == "17600001", str(logs))
     check("沒有的倉 → 404", c.put("/api/shopee/warehouses/XXX", json={"ship_to": "1"}).status_code == 404)
     ship_tests(c, preview, orders, up)
+    short_tests(c, orders)
 
 
 def ship_tests(c, preview, orders, up):
@@ -639,6 +641,85 @@ def ship_tests(c, preview, orders, up):
     r = c.put("/api/shopee/dispatch_wh/TWA", json={"phone": "03-2600500#5924"})
     check("拋單檔收件資料：7 個倉、觀音照範例，可以改", len(w) == 7 and w["TWA"]["phone"] == "(03)262-6560" and r.get_json()["changed"] == 1
           and {x["code"]: x for x in c.get("/api/shopee/dispatch_wh").get_json()["warehouses"]}["TWA"]["phone"] == "03-2600500#5924")
+
+
+def short_tests(c, orders):
+    print("\n【14】缺貨維護與通知：寶僑兩次、紙潔一次、竹運出貨自動帶入，產 LINE 文字＋Excel，通知過鎖住")
+    page = c.get("/shopee").get_data(as_text=True)
+    check("缺貨維護與通知頁籤打開了、有清單、填缺貨視窗、通知視窗", all(x in page for x in ('data-tab="short"', 'id="k-tbl"', 'id="dlg-short"', 'id="dlg-notify"')))
+    def plan():
+        return {g["order_no"]: g for g in c.get("/api/shopee/short/plan", query_string={"from": "2026-01-01"}).get_json()["orders"]}
+    def it(pl, no, sup):
+        return next(x for x in pl[no]["items"] if x["supplier_sku_id"] == sup)
+    save = lambda body: c.post("/api/shopee/short/save", json=body)  # noqa: E731
+    L, H, C, D = "POTWCTWA26100514L", "POTWCTWA26101500H", "POTWCTWA26100800C", "POTWCTWG26100800D"
+    pl = plan()
+    check("清單只有寶僑、紙潔（瑪氏不在這裡）", all(g["line"] in ("寶僑", "紙潔") for g in pl.values()) and "POTWCTWA26100514N" not in pl)
+    h = it(pl, H, "4902430056519_PNN")
+    check("竹運出貨產過拋單檔的缺貨自動帶進來、待通知（不用再填、這裡不能改）", pl[H]["status"] == "待通知" and h["rounds"][0]["source"] == "竹運出貨"
+          and h["final"] == 20 and h["cut"] == 82 and h["rounds"][0]["reasons"] == ["效期不足", "庫存不足"] and h["edit_round"] is None, str(h["rounds"]))
+    a = it(pl, L, "4987176232878_CNN")
+    check("寶僑竹運採購進貨：還沒缺貨 → 原始訂購量就是目前蝦皮數量 190、可以填第 1 次", a["orig"] == 190 and a["final"] == 190 and a["edit_round"] == 1
+          and a["max_rounds"] == 2 and pl[L]["status"] == "未通知", str(a)[:200])
+    oid = a["order_id"]
+    check("缺貨數量超過可出貨量 → 400", save({"order_id": oid, "short": 999, "reasons": ["庫存不足"]}).status_code == 400)
+    check("沒勾原因 → 400", save({"order_id": oid, "short": 40, "reasons": []}).status_code == 400)
+    check("竹運出貨的品項不能在這裡填 → 400", save({"order_id": h["order_id"], "short": 1, "reasons": ["庫存不足"]}).status_code == 400)
+    r = save({"order_id": oid, "short": 40, "reasons": ["庫存不足"], "note": "採購 10/12 來信缺貨"})
+    r2 = save({"order_id": oid, "short": 50, "reasons": ["庫存不足", "效期不足"], "note": "採購 10/12 來信缺貨（更正）"})
+    a = it(plan(), L, "4987176232878_CNN")
+    check("填第 1 次缺 40，還沒通知前改成缺 50 → 還是第 1 次、190 → 140、兩個原因", r.status_code == 200 and r2.get_json()["round"] == 1 and len(a["rounds"]) == 1
+          and (a["rounds"][0]["before"], a["rounds"][0]["after"]) == (190, 140) and a["rounds"][0]["reasons"] == ["庫存不足", "效期不足"] and a["pending"], str(a["rounds"]))
+    ov = next(g for g in orders()["orders"] if g["order_no"] == L)
+    check("訂單總覽：通知狀態「待通知」、可出貨量、缺貨量帶出來", ov["notify_status"] == "待通知" and ov["qty_short"] == 50, str((ov["notify_status"], ov["qty_ship"], ov["qty_short"])))
+    r = c.post("/api/shopee/short/notify", json={"order_nos": [L, H]})
+    n = c.get(f"/api/shopee/short/notify/{r.get_json()['id']}").get_json() if r.status_code == 200 else {}
+    ms = n.get("messages", [])
+    mL = next((m for m in ms if "PR ID：PRTWCOTWA202610010001" in m), "")
+    check("照 Alice 的 LINE 機器人格式：一張 PR 一種處理一則（L 下修 1 則、H 刪單 1 則＋下修 1 則）", r.status_code == 200 and len(ms) == 3
+          and [m.split("\n")[0] for m in ms if "POTWCTWA26101500H" in m] == ["【蝦皮缺貨刪單通知｜首次通知】", "【蝦皮缺貨下修通知｜首次通知】"], str([m.split("\n")[:3] for m in ms]))
+    check("下修那則：賣場 P&G、PR ID、預計到貨日、到貨倉別、PO ID、蝦皮SKU ID、料號品名、訂購／可出貨／缺貨、處理方式", mL.split("\n")[:7] == [
+        "【蝦皮缺貨下修通知｜首次通知】", "賣場：P&G", "PR ID：PRTWCOTWA202610010001", "預計到貨日：2026-10-20", "到貨倉別：TWA", "", "下修SKU（1項）："]
+          and "1. PO ID：POTWCTWA26100514L" in mL and "蝦皮SKU ID：41511463369_285962283475" in mL and "4987176232878_CNN 幫寶適 清新幫 拉拉褲(XXL)26片" in mL
+          and "訂購190／可出貨140／缺貨50" in mL and "處理方式：下修至140" in mL and mL.endswith("請協助下修訂單數量，完成後請回覆，謝謝。"), mL)
+    mH = next((m for m in ms if m.startswith("【蝦皮缺貨刪單通知") and "POTWCTWA26101500H" in m), "")
+    check("刪單那則：刪單SKU 2 項、PO ID、不寫數量、結尾請協助處理刪單", "刪單SKU（2項）：" in mH and "4987176372093_TNN" in mH and "4987176386700_CNN" in mH
+          and "訂購" not in mH and mH.endswith("請協助處理刪單，完成後請回覆，謝謝。"), mH)
+    pl = plan()
+    a, h = it(pl, L, "4987176232878_CNN"), it(pl, H, "4902430056519_PNN")
+    check("通知後：鎖住、狀態「已通知（第 1 次）」、竹運出貨那幾筆也存下來了", not a["pending"] and a["notified_round"] == 1 and a["rounds"][0]["notified"]
+          and pl[L]["status"] == "已通知（第 1 次）" and h["rounds"][0]["saved"] and not h["pending"], str(pl[L]["status"]))
+    check("沒有待通知的單 → 400", c.post("/api/shopee/short/notify", json={"order_nos": [L]}).status_code == 400)
+    check("寶僑通知過第 1 次 → 可以填第 2 次（拋單時又缺）", a["edit_round"] == 2 and a["prev_final"] == 140)
+    r = save({"order_id": oid, "short": 20, "reasons": ["庫存不足"], "note": "拋單時又缺"})
+    a = it(plan(), L, "4987176232878_CNN")
+    check("第 2 次：140 → 120，第 1 次的紀錄還在、累計下修 70", r.get_json()["round"] == 2 and [(x["round"], x["before"], x["after"]) for x in a["rounds"]] == [(1, 190, 140), (2, 140, 120)]
+          and a["cut"] == 70 and a["rounds"][0]["notified"], str(a["rounds"]))
+    r = c.post("/api/shopee/short/notify", json={"order_nos": [L]})
+    t = c.get(f"/api/shopee/short/notify/{r.get_json()['id']}").get_json()["messages"][0]
+    check("第 2 次的通知：第二次通知、缺貨寫累計、下修至 120", t.startswith("【蝦皮缺貨下修通知｜第二次通知】") and "訂購190／可出貨120／缺貨70" in t
+          and "處理方式：下修至120" in t, t)
+    r = save({"order_id": oid, "short": 1, "reasons": ["庫存不足"]})
+    check("寶僑兩次都通知過 → 不能再填（400）", r.status_code == 400 and "2 次" in r.get_json()["error"], r.get_json()["error"])
+    cc = it(plan(), C, "1022257_PNN")
+    save({"order_id": cc["order_id"], "short": cc["final"], "reasons": ["效期不足"], "note": "Teams 通知"})
+    r = c.post("/api/shopee/short/notify", json={"order_nos": [C]})
+    nid = r.get_json()["id"]
+    x = c.get(f"/api/shopee/short/notify/{nid}/xlsx")
+    wb_ = openpyxl.load_workbook(io.BytesIO(x.data)) if x.status_code == 200 else None
+    check("明細 Excel：下修明細、刪單明細、最終可出貨量清單三頁；紙潔整筆缺在刪單明細", wb_ and wb_.sheetnames == ["下修明細", "刪單明細", "最終可出貨量清單"]
+          and [r_[6] for r_ in wb_["刪單明細"].iter_rows(min_row=2, values_only=True)] == ["1022257_PNN"]
+          and list(wb_["刪單明細"].iter_rows(values_only=True))[0][10:15] == ("原始訂購量", "最終可出貨量", "下修數量", "缺貨原因", "下修次數"))
+    check("紙潔通知過一次 → 不能再填（400）", save({"order_id": cc["order_id"], "short": 1, "reasons": ["庫存不足"]}).status_code == 400)
+    dd = it(plan(), D, "4987176232878_CNN")
+    save({"order_id": dd["order_id"], "short": 10, "reasons": ["庫存不足"]})
+    r = save({"order_id": dd["order_id"], "short": 0})
+    check("還沒通知的那次填 0 → 取消", r.get_json().get("cleared") and not it(plan(), D, "4987176232878_CNN")["rounds"])
+    ov = next(g for g in orders()["orders"] if g["order_no"] == L)
+    check("訂單總覽：已通知（第 2 次）", ov["notify_status"] == "已通知（第 2 次）", ov["notify_status"])
+    notes = c.get("/api/shopee/short/plan").get_json()["notifies"]
+    logs = c.get("/api/master/logs?scope=shopee&limit=800").get_json()["logs"]
+    check("通知紀錄 3 筆、歷程記下填缺貨和通知", len(notes) == 3 and any(l["field"] == "shopee_short" for l in logs) and any(l["field"] == "shopee_notify" for l in logs))
 
 
 if __name__ == "__main__":

@@ -307,6 +307,8 @@ def api_orders():
         po_st = po_status_map(conn, [i["id"] for i in items if not i["removed"]])
         from .ship import ship_status_map              # 竹運出貨：產過拋單檔的出貨量、缺貨量
         ship_st = ship_status_map(conn, [i["id"] for i in items if not i["removed"]])
+        from .short import notify_status_map           # 缺貨維護：下修後的可出貨量、通知狀態
+        short_st = notify_status_map(conn, [i["id"] for i in items if not i["removed"]])
     finally:
         conn.close()
     groups = {}
@@ -326,17 +328,29 @@ def api_orders():
         alive = [i for i in its if not i["removed"]]
         pending = any(i["diff_pending"] for i in its)
         fulfil_txt = "、".join(sorted(x for x in g.pop("fulfils") if x)) or "未選"
-        shipped = [ship_st[i["id"]] for i in alive if i["id"] in ship_st]
+        known = any(i["id"] in ship_st or i["id"] in short_st for i in alive)
+
+        def final_of(i):
+            if i["id"] in short_st:
+                return short_st[i["id"]]["final"]
+            return ship_st[i["id"]]["qty_ship"] if i["id"] in ship_st else (i["qty"] or 0)
+        def orig_of(i):                              # 原始訂購量＝我們第一次下修前的蝦皮數量
+            if i["id"] in short_st:
+                return short_st[i["id"]]["orig"]
+            return ship_st[i["id"]]["qty_order"] if i["id"] in ship_st else (i["qty"] or 0)
+        pend = any(short_st.get(i["id"], {}).get("pending") or (i["id"] in ship_st and i["id"] not in short_st
+                   and (ship_st[i["id"]]["qty_order"] or 0) > (ship_st[i["id"]]["qty_ship"] or 0)) for i in alive)
+        told = max((short_st[i["id"]]["round"] for i in alive if i["id"] in short_st), default=0)
         g.update(
-            qty_ship=sum(x["qty_ship"] or 0 for x in shipped) if shipped else None,
-            qty_short=sum(max((x["qty_order"] or 0) - (x["qty_ship"] or 0), 0) for x in shipped) if shipped else None,
+            qty_ship=sum(final_of(i) for i in alive) if known else None,
+            qty_short=sum(max(orig_of(i) - final_of(i), 0) for i in alive) if known else None,
             fulfil=fulfil_txt,
             line="、".join(sorted(x for x in g.pop("lines") if x)),
             item_count=len(alive), removed_count=len(its) - len(alive),
             qty_original=sum(i["qty_original"] or 0 for i in its), qty=sum(i["qty"] or 0 for i in alive),
             inbound_count=sum(1 for i in alive if i["inbound_ids"]),
             status=ST_DIFF if pending else ST_IMPORTED, diff_pending=pending,
-            notify_status="未通知",
+            notify_status="待通知" if pend else f"已通知（第 {told} 次）" if told else "未通知",
             po_status=("不需產出" if fulfil_txt == "竹運出貨" else
                        "已回填" if alive and all(po_st.get(i["id"]) == "已回填" for i in alive) else
                        "已產出" if any(i["id"] in po_st for i in alive) else "未產出"),

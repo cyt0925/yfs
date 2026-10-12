@@ -90,7 +90,7 @@
       <div>
         <h1 class="text-lg font-bold leading-tight">蝦皮特選訂單管理系統</h1>
         <div class="steps mt-1" id="tabs" title="點選切換；淡色的功能尚未開放">
-          <span class="tab on" data-tab="orders">訂單匯入與總覽</span><span class="tab" data-tab="zhu">竹運出貨</span><span class="tab" data-tab="buy" data-f="竹運採購進貨">竹運採購進貨</span><span class="tab" data-tab="buy" data-f="供應商直送">直送訂單</span><span class="off">缺貨維護與通知</span><span class="tab" data-tab="eip">採購單產出</span>
+          <span class="tab on" data-tab="orders">訂單匯入與總覽</span><span class="tab" data-tab="zhu">竹運出貨</span><span class="tab" data-tab="buy" data-f="竹運採購進貨">竹運採購進貨</span><span class="tab" data-tab="buy" data-f="供應商直送">直送訂單</span><span class="tab" data-tab="short">缺貨維護與通知</span><span class="tab" data-tab="eip">採購單產出</span>
         </div>
       </div>
     </div>
@@ -186,6 +186,31 @@
   </details>
 </div>
 
+<!-- 缺貨維護與通知（需求第八章）：寶僑兩次、紙潔一次人工填；竹運出貨自動帶入；用 LINE 通知蝦皮 -->
+<div id="pane-short" class="space-y-4 hidden">
+  <section class="card p-4 space-y-3">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">缺貨維護</b>
+      <span class="kbd">寶僑最多兩次（採購來信缺貨、拋單時缺貨）、紙潔一次（Teams 通知缺貨）；竹運出貨的缺貨於產出拋單檔後自動帶入。通知過的那一次即鎖定。</span>
+      <div class="flex-1"></div>
+      <label class="kbd">到貨日 <input type="date" id="k-from" class="inp"> ～ <input type="date" id="k-to" class="inp"></label>
+      <select id="k-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>紙潔</option></select>
+      <select id="k-fulfil" class="inp"><option value="">全部履約方式</option><option>竹運出貨</option><option>竹運採購進貨</option><option>供應商直送</option></select>
+      <span class="chip" id="k-only"><i class="bi bi-funnel"></i> 只看有缺貨</span>
+    </div>
+    <div class="sum" id="k-sum"></div>
+    <div class="tbl-wrap"><table class="t" id="k-tbl"></table></div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <button id="k-go" class="btn btn-p" disabled><i class="bi bi-chat-dots"></i> 產生蝦皮通知（LINE）</button>
+      <span class="kbd" id="k-go-hint">請勾選有「待通知」的訂單。</span>
+    </div>
+  </section>
+  <details class="card p-4" id="k-hist-box">
+    <summary style="cursor:pointer;font-weight:700">通知紀錄 <span class="kbd">（可再複製文字、下載明細）</span></summary>
+    <div class="tbl-wrap mt-3" style="max-height:360px"><table class="t" id="k-hist"></table></div>
+  </details>
+</div>
+
 <!-- 竹運採購進貨／直送訂單（需求第六、七、十章）：同一塊畫面，依上方頁籤切換履約方式 -->
 <div id="pane-buy" class="space-y-4 hidden">
   <section class="card p-4 space-y-3">
@@ -270,6 +295,26 @@
     <div class="kbd" id="ds-who"></div>
     <div class="flex items-center gap-2 flex-wrap"><button id="ds-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button>
       <button id="ds-clear" class="btn btn-o hidden"><i class="bi bi-arrow-counterclockwise"></i> 回到系統建議</button></div>
+  </div></dialog>
+<dialog id="dlg-short" style="width:min(760px,96vw)"><div class="dh"><i class="bi bi-dash-circle"></i><span id="dk-title">填寫缺貨</span><button class="x" data-close="dlg-short" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div class="facts" id="dk-facts"></div>
+    <div class="tbl-wrap" id="dk-hist-wrap"><table class="t" id="dk-hist"></table></div>
+    <div id="dk-form" class="space-y-3">
+      <div class="flex items-center gap-3 flex-wrap"><b id="dk-round"></b><span class="kbd" id="dk-prev"></span></div>
+      <div class="flex items-center gap-2 flex-wrap"><label class="kbd">這次缺貨數量 <input id="dk-short" class="inp" inputmode="numeric" style="width:100px;text-align:right"></label>
+        <span class="chip" id="dk-all">整筆缺（刪單）</span><span class="kbd" id="dk-after"></span></div>
+      <div class="flex items-center gap-3 flex-wrap kbd">缺貨原因（可複選）<label><input type="checkbox" class="ck dk-r" value="庫存不足"> 庫存不足</label><label><input type="checkbox" class="ck dk-r" value="效期不足"> 效期不足</label></div>
+      <label class="block kbd">說明<input id="dk-note" class="inp" style="width:100%" placeholder="例如：採購 10/12 來信缺貨"></label>
+      <div class="flex items-center gap-2 flex-wrap"><button id="dk-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button><span class="kbd">缺貨數量填 0 並儲存＝取消這一次。</span></div>
+    </div>
+    <div id="dk-lock" class="alert al-warn hidden"></div>
+  </div></dialog>
+<dialog id="dlg-notify" style="width:min(720px,96vw)"><div class="dh"><i class="bi bi-chat-dots"></i><span id="dn-title">蝦皮缺貨下修通知</span><button class="x" data-close="dlg-notify" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div class="flex items-center gap-2 flex-wrap"><span class="kbd">一張 PR、一種處理（刪單／下修）一則，逐則複製貼到 LINE 給蝦皮窗口；明細可另外下載 Excel。</span>
+      <div class="flex-1"></div><a id="dn-xlsx" class="btn btn-o btn-sm"><i class="bi bi-file-earmark-excel"></i> 下載明細 Excel</a></div>
+    <div id="dn-msgs" class="space-y-3"></div>
   </div></dialog>
 <dialog id="dlg-ver"><div class="dh"><i class="bi bi-layers"></i><span id="dv-title">版本紀錄</span><button class="x" data-close="dlg-ver" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div id="dv-body"></div></div></dialog>

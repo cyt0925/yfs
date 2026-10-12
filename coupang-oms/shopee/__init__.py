@@ -11,13 +11,15 @@
 竹運出貨（2026-10-12）：
   ship.py     EC 即時庫存、竹運庫存效期表、竹運商品主檔上傳；照 Alice 的「核對竹運出貨效期及庫存 V5」判斷可出貨量、
               選效期批次、人工改出貨量；產訂單系統拋單檔＋下修刪單清單
-後面一段（缺貨維護與通知）還沒做。
+缺貨維護與通知（2026-10-12）：
+  short.py    寶僑（兩次）、紙潔（一次）人工填缺貨；竹運出貨的缺貨自動帶入；產 LINE 通知文字＋Excel 明細，通知過的那次鎖住
+瑪氏用勇信效期表自動核對缺貨還沒做。
 判讀依據、Jerry 定的規則、還沒問清楚的事寫在 docs/蝦皮特選_設計筆記.md。
 """
 from flask import Blueprint
 
 shopee_bp = Blueprint("shopee", __name__)
 
-from . import mars_po, orders, purchase, ship  # noqa: E402,F401 — 讓路由生效
+from . import mars_po, orders, purchase, ship, short  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["shopee_bp"]

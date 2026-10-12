@@ -563,7 +563,7 @@ _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES",
                      "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
                      "SHP_UPLOADS", "SHP_ORDERS",   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
-                     "SHP_EIP", "SHP_DISPATCH")                     # 產 EIP 採購單：存檔要拿 id 掛品項
+                     "SHP_EIP", "SHP_DISPATCH", "SHP_NOTIFY")                     # 產 EIP 採購單：存檔要拿 id 掛品項
 
 
 def _wants_returning_id(sql):
@@ -1164,6 +1164,34 @@ CREATE TABLE IF NOT EXISTS shp_dispatch_items (
     qty_ship      INTEGER DEFAULT 0,
     lots_json     TEXT DEFAULT '[]',
     short_reasons TEXT DEFAULT ''
+);
+-- 缺貨維護（需求第八章）：一個品項一次下修一筆（寶僑最多兩次、紙潔一次；竹運出貨的缺貨通知時從拋單檔快照帶進來）。
+-- 通知過的那一次就鎖住，之後再缺要開下一次，第一次的紀錄不能蓋掉。
+CREATE TABLE IF NOT EXISTS shp_short (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL,
+    round       INTEGER NOT NULL,             -- 第幾次下修
+    source      TEXT DEFAULT '人工',          -- 人工／竹運出貨／勇信
+    qty_before  INTEGER NOT NULL,             -- 這次之前的可出貨量
+    qty_after   INTEGER NOT NULL,             -- 這次之後的可出貨量（0＝刪單）
+    reasons     TEXT DEFAULT '',              -- 庫存不足、效期不足
+    note        TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    updated_at  TEXT NOT NULL,
+    notify_id   INTEGER,                      -- 哪一次通知蝦皮帶出去的；空＝待通知
+    UNIQUE(order_id, round)
+);
+
+-- 每一次產生的蝦皮通知（LINE 文字＋明細），可以再複製、再下載
+CREATE TABLE IF NOT EXISTS shp_notify (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    text        TEXT DEFAULT '',
+    messages_json TEXT DEFAULT '[]',          -- 一則一則的 LINE 訊息（照 Alice 的 LINE 機器人格式，一張 PR 一種處理一則）
+    rows_json   TEXT DEFAULT '[]',
+    orders      INTEGER DEFAULT 0,
+    items       INTEGER DEFAULT 0,
+    created_by  TEXT DEFAULT '',
+    created_at  TEXT NOT NULL
 );
 """
 
