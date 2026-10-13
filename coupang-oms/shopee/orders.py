@@ -294,23 +294,23 @@ def _order_filter(args):
     return " AND ".join(where), params
 
 
-@shopee_bp.route("/api/shopee/orders")
-def api_orders():
-    """訂單總覽：一張單（PO，還沒有 PO 就用 PR）一列，底下是品項。"""
-    where, params = _order_filter(request.args)
-    conn = get_conn()
-    try:
-        items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {where} ORDER BY expected_date, warehouse, id", params))
-        pending_all = conn.execute("SELECT COUNT(DISTINCT CASE WHEN po_id != '' THEN po_id ELSE pr_id END) AS n FROM shp_orders "
-                                   "WHERE diff_pending = 1").fetchone()["n"]
-        from .purchase import po_status_map            # 第二段：採購單產出狀態
-        po_st = po_status_map(conn, [i["id"] for i in items if not i["removed"]])
-        from .ship import ship_status_map              # 竹運出貨：產過拋單檔的出貨量、缺貨量
-        ship_st = ship_status_map(conn, [i["id"] for i in items if not i["removed"]])
-        from .short import notify_status_map           # 缺貨維護：下修後的可出貨量、通知狀態
-        short_st = notify_status_map(conn, [i["id"] for i in items if not i["removed"]])
-    finally:
-        conn.close()
+# 作業流程（Jerry 2026-10-13 改版：六個頁籤合成一個畫面，用「下一步」帶人做事）。一張單可能同時卡在兩步
+# （例如寶僑 EIP 還沒回填、採購就來信缺貨），所以每張單列出所有待辦，畫面上的格子各自計數；「下一步」顯示第一個。
+STAGES = (("diff", "差異待確認", "確認差異"), ("buy", "待產採購單", "產出 EIP 採購單"), ("ship", "待產拋單檔", "產出拋單檔"),
+          ("eip", "待回填 EIP 採購單號", "回填 EIP 採購單號"), ("notify", "待通知蝦皮", "通知蝦皮"))
+BUY_FULFILS = ("竹運採購進貨", "供應商直送")
+
+
+def overview(conn, args):
+    """訂單總覽：一張單（PO，還沒有 PO 就用 PR）一列，底下是品項；每張單算出還有哪些待辦（todo）。"""
+    where, params = _order_filter(args)
+    items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {where} ORDER BY expected_date, warehouse, id", params))
+    from .purchase import po_status_map            # 第二段：採購單產出狀態
+    po_st = po_status_map(conn, [i["id"] for i in items if not i["removed"]])
+    from .ship import ship_status_map              # 竹運出貨：產過拋單檔的出貨量、缺貨量
+    ship_st = ship_status_map(conn, [i["id"] for i in items if not i["removed"]])
+    from .short import notify_status_map           # 缺貨維護：下修後的可出貨量、通知狀態
+    short_st = notify_status_map(conn, [i["id"] for i in items if not i["removed"]])
     groups = {}
     for it in items:
         no = order_no(it)
@@ -355,9 +355,31 @@ def api_orders():
                        "已回填" if alive and all(po_st.get(i["id"]) == "已回填" for i in alive) else
                        "已產出" if any(i["id"] in po_st for i in alive) else "未產出"),
         )
+        buy = [i for i in alive if i["fulfil"] in BUY_FULFILS and (i["qty"] or 0) > 0]
+        todo = {"diff": pending,
+                "buy": any(i["id"] not in po_st for i in buy),
+                "ship": any(i["fulfil"] == "竹運出貨" and (i["qty"] or 0) > 0 and i["id"] not in ship_st for i in alive),
+                "eip": any(po_st.get(i["id"]) == "已產出" for i in buy),
+                "notify": pend}
+        g["todo"] = [k for k, _l, _a in STAGES if todo[k]]
+        g["next"] = next((a for k, _l, a in STAGES if todo[k]), "")
         out.append(g)
     out.sort(key=lambda g: (not g["diff_pending"], g["expected_date"], g["warehouse"], g["order_no"]))
-    return jsonify({"orders": out, "pending_orders": pending_all,
+    return out
+
+
+@shopee_bp.route("/api/shopee/orders")
+def api_orders():
+    conn = get_conn()
+    try:
+        out = overview(conn, request.args)
+        pending_all = conn.execute("SELECT COUNT(DISTINCT CASE WHEN po_id != '' THEN po_id ELSE pr_id END) AS n FROM shp_orders "
+                                   "WHERE diff_pending = 1").fetchone()["n"]
+    finally:
+        conn.close()
+    stages = [{"key": k, "label": lab, "count": sum(1 for g in out if k in g["todo"])} for k, lab, _a in STAGES]
+    stages.append({"key": "done", "label": "已處理", "count": sum(1 for g in out if not g["todo"])})
+    return jsonify({"orders": out, "pending_orders": pending_all, "stages": stages,
                     "summary": {"orders": len(out), "items": sum(g["item_count"] for g in out), "qty": sum(g["qty"] for g in out),
                                 "pending": sum(1 for g in out if g["diff_pending"])}})
 

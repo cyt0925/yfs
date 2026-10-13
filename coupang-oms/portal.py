@@ -143,7 +143,7 @@ def tasks(conn, today):
     if sp.get("diff_pos"):
         out.append({"key": "shopee_diff", "level": "crit", "level_text": "待確認", "icon": "bi-arrow-left-right",
                     "title": f"蝦皮特選重傳後有差異 {sp['diff_pos']} 張單", "detail": "確認差異後才能往下處理",
-                    "url": "/shopee", "count": int(sp["diff_pos"])})
+                    "url": "/shopee#diff", "count": int(sp["diff_pos"])})   # 直接打開「差異待確認」那一步
 
     d14 = _iso(today - _dt.timedelta(days=14))
     n = _one(conn, """

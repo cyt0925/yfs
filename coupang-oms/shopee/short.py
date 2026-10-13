@@ -142,6 +142,17 @@ def api_short_plan():
     return jsonify({"orders": orders, "notifies": notes, "reasons": list(REASONS)})
 
 
+@shopee_bp.route("/api/shopee/short/notifies")
+def api_short_notifies():
+    """通知紀錄（資料與設定頁用）。"""
+    conn = get_conn()
+    try:
+        notes = _rows(conn.execute("SELECT id, orders, items, created_by, created_at FROM shp_notify ORDER BY id DESC LIMIT 50"))
+    finally:
+        conn.close()
+    return jsonify({"notifies": notes})
+
+
 @shopee_bp.route("/api/shopee/short/save", methods=["POST"])
 def api_short_save():
     """填這次缺多少（需求 8.2、8.3）。short＝0 而且這次還沒通知＝取消這次。"""
@@ -321,4 +332,4 @@ def api_short_notify_xlsx(nid):
 
 
 __all__ = ["short_item", "build_short", "notify_status", "notify_status_map", "line_messages", "notify_rows", "notify_xlsx", "api_short_plan",
-           "api_short_save", "api_short_notify", "api_short_notify_get", "api_short_notify_xlsx"]
+           "api_short_notifies", "api_short_save", "api_short_notify", "api_short_notify_get", "api_short_notify_xlsx"]

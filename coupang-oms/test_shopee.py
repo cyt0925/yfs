@@ -141,7 +141,9 @@ def main():
 
     print("\n【0】頁面、首頁卡片、選單")
     page = c.get("/shopee").get_data(as_text=True)
-    check("蝦皮特選頁打得開、蝦皮橘、有拖曳框和訂單總覽", "蝦皮特選訂單管理系統" in page and "#ee4d2d" in page and 'id="dz"' in page and 'id="tbl"' in page)
+    check("蝦皮特選頁打得開、蝦皮橘、一個上傳入口、作業流程格子、訂單清單，沒有舊的六個頁籤（Jerry 2026-10-13 改版）",
+          "蝦皮特選訂單管理系統" in page and "#ee4d2d" in page and 'id="dz"' in page and 'id="stages"' in page and 'id="tbl"' in page
+          and 'id="tabs"' not in page and 'data-tab="zhu"' not in page and page.count('class="dzbox"') == 1 and 'id="btn-set"' in page and 'id="view-set"' in page)
     home = c.get("/").get_data(as_text=True)
     check("首頁左側選單的蝦皮特選連到 /shopee", 'href="/shopee"' in home)
     ch = next(x for x in c.get("/api/portal/summary").get_json()["channels"] if x["key"] == "shopee")
@@ -213,6 +215,9 @@ def main():
     check("總覽：訂單編號換成 PO、PR 還留著、匯入差異待確認、目前數量 226、原始訂購量還是 482、移除 1 項",
           g["order_no"] == "POTWCTWA26100514L" and g["pr_id"] == "PRTWCOTWA202610010001" and g["status"] == "匯入差異待確認"
           and g["qty"] == 226 and g["qty_original"] == 482 and g["removed_count"] == 1 and o["pending_orders"] == 1, str(g)[:300])
+    st = {x["key"]: x["count"] for x in o["stages"]}
+    check("作業流程：差異待確認的單排第一步，「下一步」寫確認差異，格子數字對得上", g["todo"][:1] == ["diff"] and g["next"] == "確認差異"
+          and st["diff"] == 1 and [x["key"] for x in o["stages"]] == ["diff", "buy", "ship", "eip", "notify", "done"], str((g["todo"], st)))
     it = next(i for i in g["items"] if i["supplier_sku_id"] == "4987176232878_CNN")
     vs = c.get(f"/api/shopee/versions/{it['id']}").get_json()["versions"]
     check("版本紀錄：舊版不刪，第 1、2 版都在（內容一樣的那次重傳不另記一版），第 1 版數量 240、最新版 200", [v["version"] for v in vs] == [2, 1]
@@ -222,7 +227,7 @@ def main():
         x["order_no"] == "POTWCTWA26100514L" and x["supplier_sku_id"] and x["field_label"] and x["uploaded_by"] == "Jerry" and x["uploaded_at"]
         and not x["confirmed"] for x in dd), str(dd[0]) if dd else "")
     t = c.get("/api/portal/summary").get_json()["tasks"]
-    check("首頁今日事項出現「蝦皮特選重傳後有差異 1 張單」", any(x["key"] == "shopee_diff" and x["count"] == 1 and x["url"] == "/shopee" for x in t))
+    check("首頁今日事項出現「蝦皮特選重傳後有差異 1 張單」", any(x["key"] == "shopee_diff" and x["count"] == 1 and x["url"] == "/shopee#diff" for x in t))
     check("篩「只看差異待確認」只剩這張", [x["order_no"] for x in orders(pending="1")["orders"]] == ["POTWCTWA26100514L"])
 
     print("\n【5】確認差異")
@@ -312,8 +317,8 @@ def stage2(c, preview, orders):
 
     print("\n【9】價格本（轉換率）")
     page = c.get("/shopee").get_data(as_text=True)
-    check("頁籤：訂單匯入與總覽、竹運採購進貨、直送訂單、採購單產出；價格本上傳、修改數量視窗", all(x in page for x in (
-        'data-tab="orders"', 'data-f="竹運採購進貨"', 'data-f="供應商直送"', 'data-tab="eip"', 'id="dz-conv"', 'id="b-tbl"', 'id="e-tbl"', 'id="dlg-adj"')))
+    check("待產採購單、待回填 EIP 採購單號兩步的清單；價格本狀態在資料與設定；修改數量視窗", all(x in page for x in (
+        'id="st-buy"', 'id="b-tbl"', 'id="st-eip"', 'id="e-tbl"', 'id="conv-st"', 'id="dlg-adj"')))
     pg = price_xlsx({"價格本整合": [("4987176232878C", "包", "幫寶適 清新幫 拉拉褲", 4), ("4987176232878R", "箱", "幫寶適 清新幫 拉拉褲 箱購", 1),
                                    ("6903148358214C", "包", "幫寶適 極上守護 拉拉褲", 3)]})
     r = up("/api/shopee/conv/import", pg, "PG價格本整合.xlsx").get_json()
@@ -523,6 +528,7 @@ def stage2(c, preview, orders):
     ship_tests(c, preview, orders, up)
     short_tests(c, orders)
     yx_tests(c, orders)
+    flow_tests(c, orders)
 
 
 def ship_tests(c, preview, orders, up):
@@ -530,7 +536,7 @@ def ship_tests(c, preview, orders, up):
     from shopee.ship import ratio_for, DEFAULT_SET
     print("\n【13】竹運出貨：照 Alice 的核對檔判斷效期與庫存，逐列扣庫存，產拋單檔＋下修刪單清單")
     page = c.get("/shopee").get_data(as_text=True)
-    check("竹運出貨頁籤打開了、有庫存上傳、設定、清單、批次視窗", all(x in page for x in ('data-tab="zhu"', 'id="dz-stock"', 'id="s-rule"', 'id="z-tbl"', 'id="dlg-ship"')))
+    check("待產拋單檔這一步的清單、庫存狀態與效期標準在資料與設定、批次視窗", all(x in page for x in ('id="st-ship"', 'id="stock-st"', 'id="s-rule"', 'id="z-tbl"', 'id="dlg-ship"')))
     st = dict(DEFAULT_SET)
     check("效期比例照蝦皮進倉規範：90 天內 2/3、365 天內 2/5、其他 1/3；自訂就用自訂", ratio_for(90, st)[1] == "2/3" and ratio_for(300, st)[1] == "2/5"
           and ratio_for(1095, st)[1] == "1/3" and ratio_for(1095, dict(st, rule="custom", ratio=0.66))[0] == 0.66)
@@ -669,7 +675,7 @@ def ship_tests(c, preview, orders, up):
 def short_tests(c, orders):
     print("\n【14】缺貨維護與通知：寶僑兩次、紙潔一次、竹運出貨自動帶入，產 LINE 文字＋Excel，通知過鎖住")
     page = c.get("/shopee").get_data(as_text=True)
-    check("缺貨維護與通知頁籤打開了、有清單、填缺貨視窗、通知視窗", all(x in page for x in ('data-tab="short"', 'id="k-tbl"', 'id="dlg-short"', 'id="dlg-notify"')))
+    check("待通知蝦皮這一步的清單、填缺貨視窗、通知視窗", all(x in page for x in ('id="st-notify"', 'id="k-tbl"', 'id="dlg-short"', 'id="dlg-notify"')))
     def plan():
         return {g["order_no"]: g for g in c.get("/api/shopee/short/plan", query_string={"from": "2026-01-01"}).get_json()["orders"]}
     def it(pl, no, sup):
@@ -754,7 +760,7 @@ def yx_tests(c, orders):
     print("\n【15】瑪氏缺貨：勇信配送明細表對回瑪氏 EIP，逐品比箱數，寫成缺貨紀錄，再產 LINE 通知（需求 8.1）")
     N = "POTWCTWA26100514N"
     page = c.get("/shopee").get_data(as_text=True)
-    check("缺貨維護與通知頁籤有勇信配送明細表上傳區、比對結果區", 'id="yx-file"' in page and 'id="yx-out"' in page and '<option>瑪氏</option>' in page)
+    check("勇信配送明細表從同一個上傳入口進來（收 PDF），比對結果在視窗裡看", 'accept=".xlsx,.xls,.xlsm,.pdf"' in page and 'id="dlg-yx"' in page and 'id="yx-out"' in page)
     eips = {e["eip_po"]: e for e in c.get("/api/shopee/eips").get_json()["eips"] if e["line"] == "瑪氏" and e["eip_po"]}
     e101, e102 = eips["PO202610101"]["id"], eips["PO202610102"]["id"]
     cn = db.get_conn()
@@ -846,6 +852,40 @@ def yx_tests(c, orders):
     check("訂單總覽看得到瑪氏的通知狀態、歷程記下勇信核對", ov["notify_status"].startswith(("已通知", "待通知"))
           and any(l["field"] == "shopee_yx" for l in logs) and any(l["field"] == "shopee_short" and "勇信核對" in (l.get("note") or "") for l in logs),
           ov["notify_status"])
+
+
+
+def flow_tests(c, orders):
+    print("\n【16】改版：作業流程格子（每張單的下一步）、一個上傳入口自動認檔（Jerry 2026-10-13）")
+    o = orders()
+    by = {g["order_no"]: g for g in o["orders"]}
+    st = {x["key"]: x["count"] for x in o["stages"]}
+    check("瑪氏竹運採購進貨（擋下來的）→ 待產採購單", by["POTWCTWA26101100G"]["todo"] == ["buy"] and by["POTWCTWA26101100G"]["next"] == "產出 EIP 採購單",
+          str(by["POTWCTWA26101100G"]["todo"]))
+    check("竹運出貨還沒產拋單檔 → 待產拋單檔", by["POTWCTWA26101500J"]["todo"] == ["ship"], str(by["POTWCTWA26101500J"]["todo"]))
+    check("竹運出貨產過拋單檔、缺貨也通知過 → 沒有待辦（已處理）", by["POTWCTWA26101500H"]["todo"] == [] and by["POTWCTWA26101500H"]["next"] == "",
+          str(by["POTWCTWA26101500H"]["todo"]))
+    check("瑪氏直送產過 EIP、還沒回填 → 待回填 EIP 採購單號", by["POTWCTWX26101100F"]["todo"] == ["eip"], str(by["POTWCTWX26101100F"]["todo"]))
+    check("格子數字＝有這項待辦的訂單數；已處理＝沒有待辦的", all(st[k] == sum(1 for g in o["orders"] if k in g["todo"]) for k in ("diff", "buy", "ship", "eip", "notify"))
+          and st["done"] == sum(1 for g in o["orders"] if not g["todo"]), str(st))
+
+    def drop(data, name):
+        return c.post("/api/shopee/drop", data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data")
+    r = drop(purchase_xlsx([("91_1", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 30, "Pcs")], pr="PRTWCOTWA202610300001", date="2026-10-30"), "PurchaseOrder_x.xlsx")
+    check("上傳入口：蝦皮採購單 → 認成蝦皮訂單，回預覽（要選履約方式）", r.status_code == 200 and r.headers.get("X-Shopee-Kind") == "orders"
+          and r.get_json()["needs_fulfil"] and r.get_json()["kind_text"] == "採購單", str(r.headers.get("X-Shopee-Kind")))
+    c.post("/api/shopee/import/cancel", json={"upload_id": r.get_json()["upload_id"]})
+    r = drop(price_xlsx({"價格本整合": [("4987176232878C", "包", "幫寶適 清新幫 拉拉褲", 3), ("4987176232878R", "箱", "幫寶適 清新幫 箱購", 1)]}), "PG價格本整合.xlsx")
+    check("上傳入口：價格本 → 認成價格本，直接更新", r.status_code == 200 and r.headers.get("X-Shopee-Kind") == "conv" and "寶僑" in r.get_json()["lines"],
+          str((r.status_code, r.headers.get("X-Shopee-Kind"), r.get_json())))
+    r = drop(yx_pdf([("PO202610101", "2026/10/13", [("60003196", 2, "2027/06/01")])]), "勇信.pdf")
+    check("上傳入口：PDF → 認成勇信配送明細表，回比對結果", r.status_code == 200 and r.headers.get("X-Shopee-Kind") == "yx" and r.get_json()["eips"],
+          str(r.headers.get("X-Shopee-Kind")))
+    wb = openpyxl.Workbook(); wb.active.append(["隨便", "一個", "表"]); buf = io.BytesIO(); wb.save(buf)
+    r = drop(buf.getvalue(), "不知道是什麼.xlsx")
+    check("上傳入口：認不出來的 → 400，說可以上傳哪幾種", r.status_code == 400 and "認不出" in r.get_json()["error"] and "勇信配送明細表" in r.get_json()["error"],
+          str(r.get_json()))
+    check("通知紀錄可以單獨讀（資料與設定頁用）", isinstance(c.get("/api/shopee/short/notifies").get_json()["notifies"], list))
 
 
 if __name__ == "__main__":
