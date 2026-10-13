@@ -70,7 +70,7 @@ def log(msg):
     print(msg, flush=True)
 
 
-def get(url, params=None, tries=3):
+def get(url, params=None, tries=3, quiet=False):
     last = None
     for i in range(tries):
         try:
@@ -80,13 +80,15 @@ def get(url, params=None, tries=3):
                 time.sleep(0.12)
                 return r.json()
             if r.status_code in (400, 404):
-                ERRORS.append(f"{r.status_code} {url}")
+                if not quiet:
+                    ERRORS.append(f"{r.status_code} {url}")
                 return None
             last = f"http {r.status_code}"
         except Exception as e:  # noqa: BLE001
             last = repr(e)
         time.sleep(1.5 * (i + 1))
-    ERRORS.append(f"fail {url} {last}")
+    if not quiet:
+        ERRORS.append(f"fail {url} {last}")
     return None
 
 
@@ -559,7 +561,8 @@ def _score_val(c):
     return num(s)
 
 
-def parse_schedule(data, team_id, lg):
+def parse_schedule(data, team_id, lg, comp=None):
+    """把球隊賽程裡已完成的比賽整理成近況列。comp 是賽事代號（足球跨賽事合併時用）。"""
     rows = []
     for ev in (data or {}).get("events") or []:
         comp = (ev.get("competitions") or [{}])[0]
@@ -592,11 +595,44 @@ def parse_schedule(data, team_id, lg):
             opp_logo=ot.get("logo") or ((ot.get("logos") or [{}])[0].get("href") if ot.get("logos") else None),
             home=(me.get("homeAway") == "home"),
             pf=pf, pa=pa, result=res,
+            comp=(LEAGUE_ZH.get(comp, comp) if comp and lg["sport"] == "soccer" else None),
         ))
     rows.sort(key=lambda r: r["ts"])
-    for r in rows:
-        r.pop("ts", None)
     return rows
+
+
+# 足球：一支球隊同時踢國內聯賽和歐戰，近況要跨賽事合併才有意義
+SOCCER_FORM_LEAGUES = ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "ned.1", "por.1", "tur.1", "bel.1", "sco.1",
+                       "nor.1", "aut.1", "sui.1", "gre.1", "den.1", "cze.1", "ukr.1", "swe.1", "pol.1", "cro.1",
+                       "srb.1", "hun.1", "aze.1", "svk.1", "cyp.1", "kaz.1", "isr.1"]
+SOCCER_CUPS = ["uefa.champions", "uefa.europa", "uefa.europa.conf"]
+_SOCCER_TEAM_LEAGUE = None   # team_id -> 國內聯賽
+_SOCCER_TEAM_CUPS = None     # team_id -> {盃賽}
+
+
+def _standings_team_ids(data):
+    children = (data or {}).get("children") or []
+    if not children and (data or {}).get("standings"):
+        children = [dict(standings=data["standings"])]
+    for ch in children:
+        for e in ((ch.get("standings") or {}).get("entries")) or []:
+            tid = str((e.get("team") or {}).get("id") or "")
+            if tid:
+                yield tid
+
+
+def soccer_team_index():
+    global _SOCCER_TEAM_LEAGUE, _SOCCER_TEAM_CUPS
+    if _SOCCER_TEAM_LEAGUE is not None:
+        return
+    _SOCCER_TEAM_LEAGUE, _SOCCER_TEAM_CUPS = {}, {}
+    for lgk in SOCCER_FORM_LEAGUES:
+        for tid in _standings_team_ids(get(f"{SITE_V2}/soccer/{lgk}/standings", quiet=True)):
+            _SOCCER_TEAM_LEAGUE.setdefault(tid, lgk)
+    for cup in SOCCER_CUPS:
+        for tid in _standings_team_ids(get(f"{SITE_V2}/soccer/{cup}/standings", quiet=True)):
+            _SOCCER_TEAM_CUPS.setdefault(tid, set()).add(cup)
+    log(f"足球球隊索引：國內聯賽 {len(_SOCCER_TEAM_LEAGUE)} 隊、歐戰 {len(_SOCCER_TEAM_CUPS)} 隊")
 
 
 def fetch_form(lg, team):
@@ -605,8 +641,30 @@ def fetch_form(lg, team):
     data = get(f"{SITE}/{lg['path']}/teams/{team['id']}/schedule")
     if data and data.get("events"):
         keep_raw(f"schedule_event_{lg['key']}", data["events"][0])
-    rows = parse_schedule(data, team["id"], lg)
+    rows = parse_schedule(data, team["id"], lg, comp=lg["key"])
     note = None
+    if lg["sport"] == "soccer":
+        soccer_team_index()
+        others = set()
+        dom = _SOCCER_TEAM_LEAGUE.get(team["id"])
+        if dom and dom != lg["key"]:
+            others.add(dom)
+        for cup in _SOCCER_TEAM_CUPS.get(team["id"], ()):
+            if cup != lg["key"]:
+                others.add(cup)
+        for other in sorted(others):
+            d2 = get(f"{SITE}/soccer/{other}/teams/{team['id']}/schedule", quiet=True)
+            rows += parse_schedule(d2, team["id"], lg, comp=other)
+        seen, merged = set(), []
+        for r in sorted(rows, key=lambda r: r["ts"]):
+            k = (round(r["ts"] / 3600), r["opp"])
+            if k in seen:
+                continue
+            seen.add(k)
+            merged.append(r)
+        rows = merged
+        if others:
+            note = "含國內聯賽與歐戰"
     if not rows and lg["sport"] in ("basketball", "hockey", "football"):
         data = get(f"{SITE}/{lg['path']}/teams/{team['id']}/schedule", params={"seasontype": 1})
         rows = parse_schedule(data, team["id"], lg)
@@ -614,6 +672,8 @@ def fetch_form(lg, team):
             note = "季前賽"
     if not rows:
         return
+    for r in rows:
+        r.pop("ts", None)
     last = rows[-10:]
     team["form"] = last
     team["form_note"] = note

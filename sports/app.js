@@ -264,7 +264,7 @@
   function formCol(t) {
     const f = (t.form || []).slice(-10).reverse();
     if (!f.length) return `<div class="rows"><span class="badge muted">${t.form_str ? "近況：" + esc(t.form_str) : "本季尚無完成的比賽"}</span></div>`;
-    return `<div class="rows">${f.map((r) => `<div class="frow"><span class="dot ${r.result}">${r.result === "W" ? "勝" : r.result === "L" ? "敗" : "和"}</span><span class="d">${esc(r.date)}</span><span>${esc(r.opp_zh || r.opp || "")}<span class="ha">${r.home ? "主" : "客"}</span></span><span class="s">${r.pf}-${r.pa}</span></div>`).join("")}</div>
+    return `<div class="rows">${f.map((r) => `<div class="frow"><span class="dot ${r.result}">${r.result === "W" ? "勝" : r.result === "L" ? "敗" : "和"}</span><span class="d">${esc(r.date)}</span><span>${esc(r.opp_zh || r.opp || "")}<span class="ha">${r.home ? "主" : "客"}${r.comp ? " · " + esc(r.comp) : ""}</span></span><span class="s">${r.pf}-${r.pa}</span></div>`).join("")}</div>
       ${t.avg_for5 != null ? `<div class="meta"><span>近 5 場平均得 ${t.avg_for5}</span><span>失 ${t.avg_against5}</span><span>總分 ${t.avg_total5}</span>${t.form_note ? `<span>${esc(t.form_note)}</span>` : ""}</div>` : ""}`;
   }
 
