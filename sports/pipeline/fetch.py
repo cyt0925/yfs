@@ -948,6 +948,21 @@ def build_suggestion(g, lg):
             lean = "小"
             reasons.append(f"兩隊近 5 場平均總分 {exp:.1f}，低於盤口 {o['total']}，可考慮小分")
         res["totals"] = dict(lean=lean, line=o["total"], expected=round(exp, 1))
+    # 台灣運彩盤口：用國際盤的公平勝率去算台灣賠率的期望值
+    tw = g.get("tw") or {}
+    ml = tw.get("ml") or {}
+    if res["pick"] and ml.get(res["pick"]) and o.get(f"prob_{res['pick']}"):
+        dec_tw = ml[res["pick"]]
+        p = o[f"prob_{res['pick']}"]
+        ev = p * dec_tw - 1
+        res["tw_ev"] = round(ev * 100)
+        res["tw_dec"] = dec_tw
+        if ev >= 0.02:
+            reasons.append(f"台灣運彩不讓分賠率 {dec_tw}，以國際盤勝率算期望值 +{ev * 100:.0f}%，划算")
+        elif ev <= -0.10:
+            cautions.append(f"台灣運彩不讓分賠率 {dec_tw} 偏低，期望值 {ev * 100:.0f}%，考慮改玩讓分或縮小注碼")
+        else:
+            reasons.append(f"台灣運彩不讓分賠率 {dec_tw}，期望值 {ev * 100:+.0f}%，普通")
     res["reasons"] = reasons
     res["cautions"] = cautions
     return res
@@ -1038,6 +1053,23 @@ def main():
             traceback.print_exc()
 
     all_games.sort(key=lambda g: (g["start"], g["league"]))
+    # 台灣運彩盤口（抓不到就全部沒有，不影響其他）
+    tw_count = 0
+    try:
+        from taiwan_odds import attach_taiwan_odds
+        tw_count = attach_taiwan_odds(all_games, ERRORS, log)
+    except Exception as e:  # noqa: BLE001
+        ERRORS.append(f"台灣盤口失敗: {e!r}")
+        log(f"台灣盤口失敗：{e!r}")
+    log(f"台灣盤口：配對到 {tw_count} 場")
+    for g in all_games:
+        lg = LEAGUES_BY_KEY[g["league"]]
+        try:
+            g["suggestion"] = build_suggestion(g, lg)
+        except Exception as e:  # noqa: BLE001
+            ERRORS.append(f"{lg['key']} 建議 {g['id']} 失敗: {e!r}")
+            g["suggestion"] = dict(pick=None, pick_label=None, play="觀望", confidence="低",
+                                   summary="資料不完整，先觀望", reasons=[], cautions=[], totals=None)
     feed, hot = aggregate(all_games)
     out = dict(
         generated_at=now_tw.isoformat(timespec="minutes"),
@@ -1125,12 +1157,6 @@ def process_league(lg, dates, lo, hi, all_games, standings):
                 if len(picked) >= 4:
                     break
             g["news"] = picked
-            try:
-                g["suggestion"] = build_suggestion(g, lg)
-            except Exception as e:  # noqa: BLE001
-                ERRORS.append(f"{lg['key']} 建議 {g['id']} 失敗: {e!r}")
-                g["suggestion"] = dict(pick=None, pick_label=None, play="觀望", confidence="低",
-                                       summary="資料不完整，先觀望", reasons=[], cautions=[], totals=None)
         all_games.extend(keep)
         if not lg.get("tennis"):
             try:

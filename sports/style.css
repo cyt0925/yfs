@@ -137,7 +137,16 @@ main,aside{min-width:0}
 .bar > span{display:block;height:100%;background:var(--violet-2);border-radius:4px}
 .obtn.fav .bar > span{background:var(--lime)}
 :root[data-theme="light"] .obtn.fav .bar > span{background:var(--violet-deep)}
-.oline{display:flex;justify-content:center;gap:14px;padding:2px 14px 6px;color:var(--muted);font-size:.78rem;font-family:var(--num)}
+.oline{display:flex;justify-content:center;gap:14px;padding:2px 14px 6px;color:var(--muted);font-size:.78rem;font-family:var(--num);flex-wrap:wrap}
+.tw{margin:4px 14px 0;padding:8px 10px;border-radius:var(--radius-s);background:var(--lime-wash);border:1px solid rgba(199,242,60,.25)}
+:root[data-theme="light"] .tw{border-color:rgba(134,184,0,.35)}
+.tw-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.tw-head small{color:var(--muted);font-size:.72rem;margin-left:auto}
+.tw-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.twc{text-align:center;min-width:0}
+.twc .ol{display:block;font-size:.7rem;color:var(--muted)}
+.twc b{display:block;font-family:var(--num);font-size:1rem;color:var(--ink)}
+.twc small{display:block;font-family:var(--num);font-size:.72rem;color:var(--ink-2)}
 
 /* 標籤 */
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.2;white-space:nowrap}

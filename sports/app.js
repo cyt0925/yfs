@@ -218,9 +218,23 @@
     const line = [];
     if (o.spread != null) line.push(`讓分 ${esc(o.details || (o.spread > 0 ? "+" : "") + o.spread)}`);
     if (o.total != null) line.push(`大小分 ${o.total}`);
-    if (o.provider) line.push(esc(o.provider));
+    if (o.provider) line.push(`國際盤 ${esc(o.provider)}`);
     if (line.length) html += `<div class="oline">${line.join("　·　")}</div>`;
-    return html;
+    return html + twRow(g);
+  }
+
+  function twRow(g) {
+    const tw = g.tw;
+    if (!tw) return "";
+    const f = (v) => (v == null ? "–" : typeof v === "number" ? v.toFixed(2) : esc(v));
+    const sp = tw.spread || {}, ml = tw.ml || {}, tt = tw.total || {};
+    const cells = [];
+    if (sp.line != null) cells.push(`<div class="twc"><span class="ol">讓分</span><b>${esc(sp.line)}</b><small>${f(sp.away)} / ${f(sp.home)}</small></div>`);
+    if (ml.home != null || ml.away != null) cells.push(`<div class="twc"><span class="ol">不讓分</span><b>${f(ml.away)}${ml.draw != null ? " / " + f(ml.draw) : ""} / ${f(ml.home)}</b><small>${g.tennis ? "" : "客" + (ml.draw != null ? " / 和" : "") + " / 主"}</small></div>`);
+    if (tt.line != null) cells.push(`<div class="twc"><span class="ol">大小</span><b>${esc(tt.line)}</b><small>大 ${f(tt.over)} 小 ${f(tt.under)}</small></div>`);
+    if (!cells.length) return "";
+    const ev = g.suggestion && g.suggestion.tw_ev != null ? `<span class="badge ${g.suggestion.tw_ev >= 2 ? "ok" : g.suggestion.tw_ev <= -10 ? "maybe" : "muted"}">期望值 ${g.suggestion.tw_ev > 0 ? "+" : ""}${g.suggestion.tw_ev}%</span>` : "";
+    return `<div class="tw"><div class="tw-head"><span class="badge lime">台灣運彩</span>${ev}<small>${esc(tw.source || "")}${tw.updated ? " · " + esc(String(tw.updated).slice(11, 16)) + " 更新" : ""}</small></div><div class="tw-grid">${cells.join("")}</div></div>`;
   }
 
   function sugRow(g) {
