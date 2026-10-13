@@ -165,6 +165,8 @@ h2{margin:0}
 .dt{font-weight:900;font-size:.95rem;margin:14px 0 8px;display:flex;align-items:center;gap:6px;color:var(--ink)}
 .dt svg{color:var(--violet-2)}
 .two-col{display:grid;grid-template-columns:1fr;gap:12px}
+.two-col > div{min-width:0}
+.prow{overflow:hidden}
 @media (min-width:700px){.two-col{grid-template-columns:1fr 1fr;gap:10px}}
 .col-title{display:flex;align-items:center;gap:6px;font-weight:700;font-size:.85rem;color:var(--ink-2);margin-bottom:6px}
 .col-title img{width:20px;height:20px;object-fit:contain}
