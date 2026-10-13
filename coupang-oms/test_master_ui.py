@@ -376,6 +376,9 @@ def main():
               and pg.eval_on_selector_all("#sp-table tr.pog", "els => els.length") == 1 and "拆成 5 份" in pg.inner_text("#sp-table tr.pog"))
         pg.click("#sp-table tr.sp >> nth=0"); pg.wait_for_timeout(300)
         check("點一列展開看品項（下採料號、箱數）", pg.eval_on_selector_all("#sp-table tr.sub", "els => els.length") == 1 and "下採料號" in pg.inner_text("#sp-table tr.sub"))
+        # Jerry 2026-10-13：畫面上標清楚哪個是原廠的料號、哪個是 EIP 用的（只改畫面，匯出不動）
+        sub_head = pg.eval_on_selector_all("#sp-table tr.sub thead th", "els => els.map(e => e.innerText.trim())")
+        check("展開的品項表頭標示「永豐料號（原廠）」「下採料號（EIP）」", sub_head[:2] == ["永豐料號（原廠）", "下採料號（EIP）"], str(sub_head[:3]))
         # 搜尋（Jerry 2026-10-08：「你居然沒有做查詢功能」）：打料號 → 只剩有那個料號的幾份、而且自動展開；找別天的 PO → 沒有，按一下改成全部日期
         sku = pg.inner_text("#sp-table tr.sub td.fn >> nth=0").strip()
         pg.fill("#q", sku); pg.wait_for_timeout(400)
