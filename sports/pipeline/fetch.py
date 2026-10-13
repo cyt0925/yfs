@@ -955,14 +955,17 @@ def build_suggestion(g, lg):
         dec_tw = ml[res["pick"]]
         p = o[f"prob_{res['pick']}"]
         ev = p * dec_tw - 1
+        # 台灣運彩抽水約一成多，期望值 -8% 到 -14% 是「正常」；比這好算划算，比這差才提醒
         res["tw_ev"] = round(ev * 100)
         res["tw_dec"] = dec_tw
-        if ev >= 0.02:
-            reasons.append(f"台灣運彩不讓分賠率 {dec_tw}，以國際盤勝率算期望值 +{ev * 100:.0f}%，划算")
-        elif ev <= -0.10:
-            cautions.append(f"台灣運彩不讓分賠率 {dec_tw} 偏低，期望值 {ev * 100:.0f}%，考慮改玩讓分或縮小注碼")
+        if ev >= -0.04:
+            res["tw_value"] = "划算"
+            reasons.append(f"台灣運彩不讓分賠率 {dec_tw}，以國際盤勝率算期望值 {ev * 100:+.0f}%，比平常划算")
+        elif ev <= -0.15:
+            res["tw_value"] = "偏差"
+            cautions.append(f"台灣運彩不讓分賠率 {dec_tw} 偏低，期望值 {ev * 100:.0f}%，比平常差，考慮改玩讓分或縮小注碼")
         else:
-            reasons.append(f"台灣運彩不讓分賠率 {dec_tw}，期望值 {ev * 100:+.0f}%，普通")
+            res["tw_value"] = "正常"
     res["reasons"] = reasons
     res["cautions"] = cautions
     return res

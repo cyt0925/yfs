@@ -43,7 +43,11 @@ ALIASES = {
     4: {"阿森納": "兵工廠", "拜仁": "拜仁慕尼黑", "巴黎": "巴黎聖日耳曼", "巴黎聖日爾曼": "巴黎聖日耳曼",
         "馬競": "馬德里競技", "皇馬": "皇家馬德里", "國米": "國際米蘭", "尤文": "尤文圖斯", "多特": "多特蒙德",
         "比亞雷亞爾": "比利亞雷亞爾", "維京足球會": "維京", "PSV恩荷芬": "PSV", "RB萊比錫": "萊比錫",
-        "薩巴赫馬薩齊爾": "薩巴赫", "斯拉維亞": "布拉格斯拉維亞", "紐卡索": "紐卡索", "愛華頓": "艾佛頓",
+        "薩巴赫馬薩齊爾": "薩巴赫", "斯拉維亞": "布拉格斯拉維亞", "葡萄牙體育": "里斯本競技", "士砵亭": "里斯本競技",
+        "博德格林特": "博德閃耀", "頓涅茨克礦工": "頓內次克礦工", "飛燕諾": "費耶諾德", "波爾圖": "波圖", "阿積士": "阿賈克斯",
+        "賓菲加": "本菲卡", "卡拉巴克": "卡拉巴赫", "聯合聖吉羅斯": "聖吉羅斯聯", "紐卡斯爾": "紐卡索", "紐卡素": "紐卡索",
+        "加拉塔沙雷": "加拉塔薩雷", "費倫巴治": "費內巴切", "奧林比亞高斯": "奧林匹亞科斯", "LASK林茨": "林茨",
+        "比利亞雷爾": "比利亞雷亞爾", "皇家馬德里": "皇家馬德里", "馬德里體育會": "馬德里競技", "紐卡索": "紐卡索", "愛華頓": "艾佛頓",
         "熱刺": "熱刺", "車路士": "切爾西", "阿士東維拉": "阿斯頓維拉", "曼徹斯特聯": "曼聯", "曼徹斯特城": "曼城"},
 }
 
@@ -119,7 +123,8 @@ def _cell(td):
 
 
 def parse_scale_page(text):
-    """解析 /predict/scale 頁。每場比賽是兩列（客、主）或三列（足球多一列和局）。"""
+    """解析 /predict/scale 頁。每場比賽兩列（客、主），足球多一列和局。
+    不靠欄位 class 判斷玩法，而是看每格的方向文字：客/主＋有線＝讓分、客/主沒線＝不讓分、和＝和局、大/小＝大小。"""
     soup = BeautifulSoup(text, "html.parser")
     table = soup.select_one("table.predictgame-table")
     if not table:
@@ -135,50 +140,82 @@ def parse_scale_page(text):
             cur = dict(gameid=tr.get("gameid"), no=h3.get_text(strip=True) if h3 else None,
                        time=(h4.get_text(strip=True) if h4 else ""), rows=[])
             games.append(cur)
-        if cur is None or team_td is None:
+        if cur is None:
             continue
-        a = team_td.find("a")
-        name = (a or team_td).get_text(strip=True)
-        tid = None
-        if a and a.get("href"):
-            m = re.search(r"teamid=(\d+)", a["href"])
-            tid = m.group(1) if m else None
-        row = dict(name=name, teamid=tid)
-        row["spread"] = _cell(tr.select_one("td.td-bank-bet01"))
-        row["ml"] = _cell(tr.select_one("td.td-bank-bet03"))
-        row["total"] = _cell(tr.select_one("td.td-bank-bet02"))
-        row["intl_spread"] = _cell(tr.select_one("td.td-universal-bet01"))
-        row["intl_total"] = _cell(tr.select_one("td.td-universal-bet02"))
-        cur["rows"].append(row)
+        name, tid = "", None
+        if team_td is not None:
+            a = team_td.find("a")
+            name = (a or team_td).get_text(strip=True)
+            if a and a.get("href"):
+                m = re.search(r"teamid=(\d+)", a["href"])
+                tid = m.group(1) if m else None
+        cells = []
+        for td in tr.find_all("td"):
+            cls = " ".join(td.get("class") or [])
+            if "td-bank-bet" not in cls and "td-universal-bet" not in cls:
+                continue
+            side, line, odds = _cell(td)
+            if not side and not line and not odds:
+                continue
+            cells.append(dict(intl=("td-universal" in cls), side=side, line=line, odds=odds))
+        if not cells and not name:
+            continue
+        cur["rows"].append(dict(name=name, teamid=tid, cells=cells))
     out = []
     for g in games:
-        rows = g["rows"]
-        if len(rows) < 2:
+        rows = [r for r in g["rows"]]
+        named = [r for r in rows if r["name"]]
+        if len(named) < 2:
             continue
-        away = next((r for r in rows if r["spread"][0] == "客" or r["ml"][0] == "客"), rows[0])
-        home = next((r for r in rows if r["spread"][0] == "主" or r["ml"][0] == "主"), rows[-1])
-        draw = next((r for r in rows if r["ml"][0] in ("和", "和局")), None)
-        spread = None
-        if home["spread"][1] or away["spread"][1]:
-            lh = _num(home["spread"][1])
-            spread = dict(line=f"{home['name']} {home['spread'][1]}" if home["spread"][1] else f"{away['name']} {away['spread'][1]}",
-                          line_home=lh if lh is not None else (-_num(away["spread"][1]) if _num(away["spread"][1]) is not None else None),
-                          home=_num(home["spread"][2]), away=_num(away["spread"][2]))
-        ml = None
-        if _num(home["ml"][2]) or _num(away["ml"][2]):
-            ml = dict(home=_num(home["ml"][2]), away=_num(away["ml"][2]), draw=_num(draw["ml"][2]) if draw else None)
-        total = None
-        over = next((r for r in rows if r["total"][0] == "大"), None)
-        under = next((r for r in rows if r["total"][0] == "小"), None)
-        if over or under:
-            src = over or under
-            total = dict(line=_num(src["total"][1]), over=_num(over["total"][2]) if over else None,
-                         under=_num(under["total"][2]) if under else None)
-        intl = None
-        if home["intl_spread"][1] or home["intl_total"][1] or away["intl_spread"][1]:
-            intl = dict(spread_home=_num(home["intl_spread"][1]), total=_num(home["intl_total"][1] or away["intl_total"][1]))
-        time_t = g["time"]
-        m = re.match(r"(AM|PM)\s*(\d{1,2}):(\d{2})", time_t)
+        away, home = named[0], named[1]
+        spread = dict(line=None, line_home=None, home=None, away=None)
+        ml = dict(home=None, away=None, draw=None)
+        total = dict(line=None, over=None, under=None)
+        intl = dict(spread_home=None, total=None)
+        for r in rows:
+            is_home = r is home
+            is_away = r is away
+            for c in r["cells"]:
+                side, line, odds = c["side"], _num(c["line"]) if c["line"] else None, _num(c["odds"])
+                if c["intl"]:
+                    if side in ("主", "客") and line is not None:
+                        intl["spread_home"] = line if is_home else (-line if is_away and intl["spread_home"] is None else intl["spread_home"])
+                    elif side in ("大", "小") and line is not None:
+                        intl["total"] = line
+                    continue
+                if side in ("和", "和局"):
+                    ml["draw"] = odds
+                elif side in ("主", "客") and c["line"]:
+                    if is_home or side == "主":
+                        spread["line_home"] = line
+                        spread["home"] = odds
+                        spread["line"] = f"{home['name']} {c['line']}"
+                    else:
+                        spread["away"] = odds
+                        if spread["line_home"] is None and line is not None:
+                            spread["line_home"] = -line
+                        if not spread["line"]:
+                            spread["line"] = f"{away['name']} {c['line']}"
+                elif side in ("主", "客"):
+                    if is_home or side == "主":
+                        ml["home"] = odds
+                    else:
+                        ml["away"] = odds
+                elif side == "大":
+                    total["line"] = line
+                    total["over"] = odds
+                elif side == "小":
+                    total["line"] = line if line is not None else total["line"]
+                    total["under"] = odds
+        if spread["home"] is None and spread["away"] is None:
+            spread = None
+        if ml["home"] is None and ml["away"] is None:
+            ml = None
+        if total["over"] is None and total["under"] is None:
+            total = None
+        if intl["spread_home"] is None and intl["total"] is None:
+            intl = None
+        m = re.match(r"(AM|PM)\s*(\d{1,2}):(\d{2})", g["time"])
         hhmm = None
         if m:
             h = int(m.group(2)) % 12 + (12 if m.group(1) == "PM" else 0)
@@ -186,7 +223,7 @@ def parse_scale_page(text):
         out.append(dict(gameid=g["gameid"], no=g["no"], time=hhmm, away=away["name"], home=home["name"],
                         away_teamid=away["teamid"], home_teamid=home["teamid"],
                         spread=spread, ml=ml, total=total, intl=intl,
-                        sides=[(r["name"], r["spread"][0], r["ml"][0], r["ml"][2], r["total"][0]) for r in rows]))
+                        sides=[(r["name"], [(c["side"], c["line"], c["odds"]) for c in r["cells"]]) for r in rows]))
     return out
 
 
@@ -283,7 +320,8 @@ def attach_taiwan_odds(games, errors, log):
                 r["ls"] = ids.get(str(r.get("gameid")))
             rows_by_day[d] = rows
             if rows and f"sample_{aid}" not in DEBUG:
-                DEBUG[f"sample_{aid}"] = rows[0]
+                DEBUG[f"sample_{aid}"] = dict(rows[0])
+                DEBUG[f"sides_{aid}"] = [r.get("sides") for r in rows[:3]]
         total_rows = sum(len(v) for v in rows_by_day.values())
         if not total_rows:
             log(f"[alliance {aid}] 玩運彩沒有盤口資料")
@@ -298,7 +336,7 @@ def attach_taiwan_odds(games, errors, log):
                 unmatched.append(f"{g['league']} {g['away'].get('name_zh') or g['away']['name']}@{g['home'].get('name_zh') or g['home']['name']} {g['time_tw']}")
                 continue
             g["tw"] = dict(source="玩運彩", url=r["url"], updated=now.isoformat(timespec="minutes"), no=r.get("no"),
-                           matched_by=how, spread=r.get("spread"), ml=r.get("ml"), total=r.get("total"), intl=r.get("intl"),
+                           matched_by=how, spread=r.get("spread"), ml=r.get("ml"), total=r.get("total"),
                            tw_names=f"{r['away']} @ {r['home']}")
             hit += 1
         matched += hit
@@ -308,5 +346,6 @@ def attach_taiwan_odds(games, errors, log):
             names = sorted({f"{r['away']}@{r['home']}" for rows in rows_by_day.values() for r in rows})
             log(f"[alliance {aid}] 玩運彩那邊的隊名：{'；'.join(names[:40])}")
     if DEBUG:
-        log("玩運彩解析樣本：" + json.dumps(DEBUG, ensure_ascii=False)[:1500])
+        for k, v in DEBUG.items():
+            log(f"玩運彩樣本 {k}: " + json.dumps(v, ensure_ascii=False)[:900])
     return matched

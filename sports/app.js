@@ -233,7 +233,8 @@
     if (ml.home != null || ml.away != null) cells.push(`<div class="twc"><span class="ol">不讓分</span><b>${f(ml.away)}${ml.draw != null ? " / " + f(ml.draw) : ""} / ${f(ml.home)}</b><small>${g.tennis ? "" : "客" + (ml.draw != null ? " / 和" : "") + " / 主"}</small></div>`);
     if (tt.line != null) cells.push(`<div class="twc"><span class="ol">大小</span><b>${esc(tt.line)}</b><small>大 ${f(tt.over)} 小 ${f(tt.under)}</small></div>`);
     if (!cells.length) return "";
-    const ev = g.suggestion && g.suggestion.tw_ev != null ? `<span class="badge ${g.suggestion.tw_ev >= 2 ? "ok" : g.suggestion.tw_ev <= -10 ? "maybe" : "muted"}">期望值 ${g.suggestion.tw_ev > 0 ? "+" : ""}${g.suggestion.tw_ev}%</span>` : "";
+    const sgg = g.suggestion || {};
+    const ev = sgg.tw_ev != null ? `<span class="badge ${sgg.tw_value === "划算" ? "ok" : sgg.tw_value === "偏差" ? "maybe" : "muted"}" title="以國際盤勝率算台灣賠率的期望值">${esc(sgg.tw_value || "")} ${sgg.tw_ev > 0 ? "+" : ""}${sgg.tw_ev}%</span>` : "";
     return `<div class="tw"><div class="tw-head"><span class="badge lime">台灣運彩</span>${ev}<small>${esc(tw.source || "")}${tw.updated ? " · " + esc(String(tw.updated).slice(11, 16)) + " 更新" : ""}</small></div><div class="tw-grid">${cells.join("")}</div></div>`;
   }
 
