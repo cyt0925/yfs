@@ -1,0 +1,11 @@
+{
+  "name": "今日運彩總覽",
+  "short_name": "運彩總覽",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b0a14",
+  "theme_color": "#0b0a14",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -1,0 +1,58 @@
+name: 運彩資料更新
+
+on:
+  schedule:
+    - cron: "7 * * * *"      # 每小時一次（UTC），只在預設分支上生效
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sports-data-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝套件
+        run: pip install -r sports/pipeline/requirements.txt
+
+      - name: 抓資料
+        run: python sports/pipeline/fetch.py
+
+      - name: 顯示摘要
+        run: |
+          python - <<'EOF'
+          import json
+          d = json.load(open("sports/data/today.json", encoding="utf-8"))
+          print("更新時間", d["generated_at"], "賽事", len(d["games"]), "傷兵", len(d["injury_feed"]), "火燙/冰冷", len(d["hot_players"]))
+          from collections import Counter
+          print(Counter(g["league"] for g in d["games"]))
+          for e in d.get("errors", [])[:30]:
+              print("  !", e)
+          EOF
+
+      - name: 提交結果
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add sports/data/today.json
+          if git diff --cached --quiet; then
+            echo "資料沒有變化，不提交"
+            exit 0
+          fi
+          git commit -m "更新運彩資料 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M') [skip ci]"
+          for i in 1 2 3; do
+            if git push; then exit 0; fi
+            git pull --rebase
+          done
+          git push
