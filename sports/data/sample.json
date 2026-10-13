@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-13T16:56+08:00",
- "generated_ts": 1791881793,
+ "generated_at": "2026-10-13T17:00+08:00",
+ "generated_ts": 1791882005,
  "today_tw": "2026-10-13",
  "sports": [
   {
@@ -52,10 +52,10 @@
    "tournament": null,
    "round": null,
    "name": "LAL @ GS",
-   "start": "2026-10-13T01:56+00:00",
-   "start_tw": "2026-10-13T09:56+08:00",
+   "start": "2026-10-13T02:00+00:00",
+   "start_tw": "2026-10-13T10:00+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "09:56",
+   "time_tw": "10:00",
    "status": {
     "state": "post",
     "completed": true,
@@ -473,10 +473,10 @@
    "tournament": null,
    "round": null,
    "name": "OKC @ BOS",
-   "start": "2026-10-13T07:44+00:00",
-   "start_tw": "2026-10-13T15:44+08:00",
+   "start": "2026-10-13T07:48+00:00",
+   "start_tw": "2026-10-13T15:48+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "15:44",
+   "time_tw": "15:48",
    "status": {
     "state": "in",
     "completed": false,
@@ -817,10 +817,10 @@
    "tournament": null,
    "round": null,
    "name": "BOS @ LAL",
-   "start": "2026-10-13T15:26+00:00",
-   "start_tw": "2026-10-13T23:26+08:00",
+   "start": "2026-10-13T15:30+00:00",
+   "start_tw": "2026-10-13T23:30+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "23:26",
+   "time_tw": "23:30",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1257,10 +1257,10 @@
    "tournament": null,
    "round": null,
    "name": "GS @ OKC",
-   "start": "2026-10-13T17:56+00:00",
-   "start_tw": "2026-10-14T01:56+08:00",
+   "start": "2026-10-13T18:00+00:00",
+   "start_tw": "2026-10-14T02:00+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "01:56",
+   "time_tw": "02:00",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1617,10 +1617,10 @@
    "tournament": null,
    "round": null,
    "name": "TOR @ EDM",
-   "start": "2026-10-13T19:56+00:00",
-   "start_tw": "2026-10-14T03:56+08:00",
+   "start": "2026-10-13T20:00+00:00",
+   "start_tw": "2026-10-14T04:00+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "03:56",
+   "time_tw": "04:00",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1898,10 +1898,10 @@
    "tournament": null,
    "round": null,
    "name": "ARS @ MCI",
-   "start": "2026-10-14T11:56+00:00",
-   "start_tw": "2026-10-14T19:56+08:00",
+   "start": "2026-10-14T12:00+00:00",
+   "start_tw": "2026-10-14T20:00+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "19:56",
+   "time_tw": "20:00",
    "status": {
     "state": "pre",
     "completed": false,
@@ -2175,10 +2175,10 @@
    "tournament": null,
    "round": null,
    "name": "TOT @ LIV",
-   "start": "2026-10-14T14:26+00:00",
-   "start_tw": "2026-10-14T22:26+08:00",
+   "start": "2026-10-14T14:30+00:00",
+   "start_tw": "2026-10-14T22:30+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "22:26",
+   "time_tw": "22:30",
    "status": {
     "state": "pre",
     "completed": false,
@@ -2427,7 +2427,7 @@
    "detail": "腳踝",
    "return_date": null,
    "key": true,
-   "time_tw": "01:56",
+   "time_tw": "02:00",
    "day_tw": "2026-10-14"
   },
   {
@@ -2447,7 +2447,7 @@
    "detail": "膝蓋",
    "return_date": "2026-10-20",
    "key": false,
-   "time_tw": "23:26",
+   "time_tw": "23:30",
    "day_tw": "2026-10-13"
   },
   {
@@ -2467,7 +2467,7 @@
    "detail": "禁賽",
    "return_date": null,
    "key": false,
-   "time_tw": "01:56",
+   "time_tw": "02:00",
    "day_tw": "2026-10-14"
   },
   {
@@ -2487,7 +2487,7 @@
    "detail": "膝蓋",
    "return_date": null,
    "key": false,
-   "time_tw": "19:56",
+   "time_tw": "20:00",
    "day_tw": "2026-10-14"
   },
   {
@@ -2507,7 +2507,7 @@
    "detail": "腿後肌",
    "return_date": null,
    "key": false,
-   "time_tw": "19:56",
+   "time_tw": "20:00",
    "day_tw": "2026-10-14"
   },
   {
@@ -2527,7 +2527,7 @@
    "detail": "腿後肌",
    "return_date": null,
    "key": false,
-   "time_tw": "15:44",
+   "time_tw": "15:48",
    "day_tw": "2026-10-13"
   },
   {
@@ -2547,27 +2547,7 @@
    "detail": "腳踝",
    "return_date": null,
    "key": false,
-   "time_tw": "23:26",
-   "day_tw": "2026-10-13"
-  },
-  {
-   "game_id": "g1",
-   "league": "nba",
-   "league_zh": "NBA",
-   "sport": "basketball",
-   "team_id": "2",
-   "team": "塞爾提克",
-   "team_logo": "https://a.espncdn.com/i/teamlogos/nba/500/bos.png",
-   "player": "Jaylen Brown",
-   "headshot": "https://a.espncdn.com/i/headshots/nba/players/full/3917376.png",
-   "position": "SG",
-   "status": "Day-To-Day",
-   "status_zh": "逐日觀察",
-   "severity": "maybe",
-   "detail": "腿後肌",
-   "return_date": null,
-   "key": false,
-   "time_tw": "23:26",
+   "time_tw": "23:30",
    "day_tw": "2026-10-13"
   },
   {
@@ -2587,7 +2567,7 @@
    "detail": "上半身",
    "return_date": null,
    "key": false,
-   "time_tw": "03:56",
+   "time_tw": "04:00",
    "day_tw": "2026-10-14"
   }
  ],
@@ -2731,52 +2711,6 @@
    "n_games": 12
   },
   {
-   "game_id": "g1",
-   "league": "nba",
-   "league_zh": "NBA",
-   "sport": "basketball",
-   "team": "塞爾提克",
-   "team_logo": "https://a.espncdn.com/i/teamlogos/nba/500/bos.png",
-   "id": "4065648",
-   "player": "Jayson Tatum",
-   "headshot": "https://a.espncdn.com/i/headshots/nba/players/full/4065648.png",
-   "position": "SF",
-   "stat": "PTS",
-   "season_name": "2026-27 例行賽",
-   "last5": 33.4,
-   "season": 27.2,
-   "delta_pct": 23,
-   "label": "火燙",
-   "games": [
-    {
-     "date": "10/2",
-     "opp": "NY",
-     "v": 35
-    },
-    {
-     "date": "10/4",
-     "opp": "MIA",
-     "v": 29
-    },
-    {
-     "date": "10/6",
-     "opp": "TOR",
-     "v": 38
-    },
-    {
-     "date": "10/8",
-     "opp": "PHI",
-     "v": 31
-    },
-    {
-     "date": "10/10",
-     "opp": "CHA",
-     "v": 34
-    }
-   ],
-   "n_games": 12
-  },
-  {
    "game_id": "g2",
    "league": "nba",
    "league_zh": "NBA",
@@ -2870,52 +2804,6 @@
   },
   {
    "game_id": "g3",
-   "league": "nba",
-   "league_zh": "NBA",
-   "sport": "basketball",
-   "team": "雷霆",
-   "team_logo": "https://a.espncdn.com/i/teamlogos/nba/500/okc.png",
-   "id": "4278073",
-   "player": "Shai Gilgeous-Alexander",
-   "headshot": "https://a.espncdn.com/i/headshots/nba/players/full/4278073.png",
-   "position": "PG",
-   "stat": "PTS",
-   "season_name": "2026-27 例行賽",
-   "last5": 34.8,
-   "season": 30.1,
-   "delta_pct": 16,
-   "label": "火燙",
-   "games": [
-    {
-     "date": "10/1",
-     "opp": "DAL",
-     "v": 36
-    },
-    {
-     "date": "10/3",
-     "opp": "GS",
-     "v": 31
-    },
-    {
-     "date": "10/5",
-     "opp": "HOU",
-     "v": 40
-    },
-    {
-     "date": "10/7",
-     "opp": "MEM",
-     "v": 33
-    },
-    {
-     "date": "10/9",
-     "opp": "SA",
-     "v": 34
-    }
-   ],
-   "n_games": 12
-  },
-  {
-   "game_id": "g2",
    "league": "nba",
    "league_zh": "NBA",
    "sport": "basketball",

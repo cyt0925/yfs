@@ -28,10 +28,9 @@
   }
   function dayLabel(day) {
     const t = todayTW();
-    const d = new Date(day + "T00:00:00+08:00");
-    const td = new Date(t + "T00:00:00+08:00");
-    const diff = Math.round((d - td) / 86400000);
-    const wk = ["日", "一", "二", "三", "四", "五", "六"][d.getUTCDay()];
+    const toUTC = (s) => { const [y, m, dd] = s.split("-").map(Number); return Date.UTC(y, m - 1, dd); };
+    const diff = Math.round((toUTC(day) - toUTC(t)) / 86400000);
+    const wk = ["日", "一", "二", "三", "四", "五", "六"][new Date(toUTC(day)).getUTCDay()];
     const md = day.slice(5).replace("-", "/");
     const name = diff === 0 ? "今天" : diff === 1 ? "明天" : diff === -1 ? "昨天" : diff === 2 ? "後天" : "";
     return { name: name || md, sub: `${md}（${wk}）` };
@@ -58,7 +57,8 @@
   // 圖片載入失敗就換成縮寫
   document.addEventListener("error", (e) => {
     const el = e.target;
-    if (el.tagName !== "IMG" || !el.dataset.fb) return;
+    if (el.tagName !== "IMG") return;
+    if (!el.dataset.fb) { el.remove(); return; }
     const span = document.createElement("span");
     span.className = el.className + " fallback";
     span.textContent = el.dataset.fb;
@@ -89,8 +89,8 @@
     document.body.dataset.sport = state.sport;
     const t = todayTW();
     const dl = dayLabel(t);
-    $("#hdr-date").textContent = `${dl.sub}　台灣時間`;
-    $("#hdr-updated").textContent = ago(d.generated_ts);
+    $("#hdr-date").textContent = `${dl.sub} · ${ago(d.generated_ts)}`;
+    $("#hdr-updated").textContent = "台灣時間";
     $("#foot-src").textContent = `資料來源：${d.source || "ESPN"}　｜　更新時間 ${String(d.generated_at || "").replace("T", " ").slice(0, 16)}`;
     renderChips();
     renderPicks();
@@ -137,7 +137,7 @@
     const dl = dayLabel(first.day_tw);
     const hero = `
       <div class="hero">
-        <span class="kicker">${icon("i-star")}今日焦點 · ${esc(first.league_zh)} · ${esc(dl.name)} ${esc(first.time_tw)}</span>
+        <span class="kicker">${icon("i-star")}焦點賽事 · ${esc(first.league_zh)} · ${esc(dl.name)} ${esc(first.time_tw)}</span>
         <div class="hteams">
           <div class="hteam">${logoImg(first.away)}<b>${esc(tname(first.away))}</b><small>${esc(first.away.record || "客隊")}</small></div>
           <div class="hmid">VS<small>${esc(first.status.detail)}</small></div>

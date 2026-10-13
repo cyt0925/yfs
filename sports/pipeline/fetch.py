@@ -791,14 +791,18 @@ def finalize_team(team, lg, injuries_map):
 
 
 def aggregate(games):
+    """傷兵快報與火燙榜。同一隊在窗口內打兩場（背靠背）只列一次，掛在較早的那場。"""
     feed, hot = [], []
-    for g in games:
+    seen_inj, seen_hot = set(), set()
+    for g in sorted(games, key=lambda x: x["start"]):
         if g["status"]["state"] == "post":
             continue
         for side in ("home", "away"):
             t = g[side]
             for x in t.get("injuries") or []:
-                if x["severity"] in ("out", "maybe"):
+                key = (t.get("id"), x.get("id") or x.get("player"))
+                if x["severity"] in ("out", "maybe") and key not in seen_inj:
+                    seen_inj.add(key)
                     feed.append(dict(
                         game_id=g["id"], league=g["league"], league_zh=g["league_zh"], sport=g["sport"],
                         team_id=t["id"], team=team_label(t), team_logo=t.get("logo"),
@@ -809,7 +813,9 @@ def aggregate(games):
                         time_tw=g["time_tw"], day_tw=g["day_tw"],
                     ))
             for p in t.get("hot") or []:
-                if p["label"] != "平穩":
+                key = (t.get("id"), p.get("id") or p.get("player"))
+                if p["label"] != "平穩" and key not in seen_hot:
+                    seen_hot.add(key)
                     hot.append(dict(game_id=g["id"], league=g["league"], league_zh=g["league_zh"], sport=g["sport"],
                                     team=team_label(t), team_logo=t.get("logo"), **p))
     feed.sort(key=lambda x: (0 if x["severity"] == "out" else 1, 0 if x["key"] else 1, x["day_tw"], x["time_tw"]))

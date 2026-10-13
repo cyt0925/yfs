@@ -53,11 +53,11 @@ h2{margin:0}
 .brand-mark{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;color:var(--lime);
   background:linear-gradient(135deg,var(--violet),var(--violet-deep));box-shadow:0 6px 18px rgba(139,92,246,.4)}
 .brand-mark svg{width:24px;height:24px}
-.brand-name{font-weight:900;font-size:1.15rem;letter-spacing:.02em}
-.brand-sub{color:var(--muted);font-size:.85rem}
-.top-right{display:flex;align-items:center;gap:8px}
-.updated{color:var(--muted);font-size:.8rem;white-space:nowrap}
-.icon-btn{width:44px;height:44px;border-radius:12px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink-2)}
+.brand-name{font-weight:900;font-size:1.1rem;letter-spacing:.02em;white-space:nowrap}
+.brand-sub{color:var(--muted);font-size:.8rem;white-space:nowrap}
+.top-right{display:flex;align-items:center;gap:8px;flex:none}
+.updated{color:var(--muted);font-size:.8rem;white-space:nowrap;display:none}
+.icon-btn{width:42px;height:42px;border-radius:12px;background:var(--card);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink-2)}
 .icon-btn svg{width:20px;height:20px}
 .icon-btn:active{transform:scale(.96)}
 
@@ -102,7 +102,7 @@ h2{margin:0}
 .team .ten{color:var(--muted);font-size:.75rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .team .rec{color:var(--ink-2);font-size:.8rem;font-family:var(--num)}
 .team .rec b{color:var(--ink)}
-.mid{text-align:center;min-width:84px}
+.mid{text-align:center;min-width:76px}
 .mid .score{font-family:var(--num);font-weight:800;font-size:1.9rem;letter-spacing:.02em;line-height:1}
 .mid .score.sets{font-size:1rem}
 .mid .vs{font-family:var(--num);font-weight:800;color:var(--muted);font-size:1rem}
@@ -112,8 +112,8 @@ h2{margin:0}
 .side-badges{display:flex;justify-content:center;gap:4px;flex-wrap:wrap;min-height:22px}
 
 /* 近況圓點 */
-.dots{display:flex;gap:4px;justify-content:center;flex-wrap:wrap}
-.dot{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:.68rem;font-weight:900;color:#0b0a14}
+.dots{display:flex;gap:3px;justify-content:center;flex-wrap:wrap}
+.dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:.64rem;font-weight:900;color:#0b0a14;flex:none}
 .dot.W{background:var(--good)}
 .dot.L{background:var(--bad)}
 .dot.D{background:var(--muted)}
@@ -276,6 +276,8 @@ body[data-view="standings"] #sec-standings{display:block}
   :root{--fs:16px}
   body{padding-bottom:30px}
   .bottom-nav{display:none}
+  .updated{display:inline}
+  .brand-name{font-size:1.25rem}
   .layout{grid-template-columns:minmax(0,1fr) 360px;gap:22px}
   main > .sec, aside > .sec{display:block}
   aside{position:sticky;top:76px;align-self:start;max-height:calc(100vh - 90px);overflow:auto;padding-right:2px}
