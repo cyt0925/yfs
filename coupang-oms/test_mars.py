@@ -488,6 +488,15 @@ def main():
     cont = msx.parse_yx_pdf(yx_pdf([("PO202609305", "TAO3", "2026/09/29", [("10000001", 3, "2027/01/01"), ("10000002", 4, "2027/01/01"), ("10000003", 5, "2027/01/01")])], split_at=2), "續頁.pdf")
     check("一張配送單印成兩頁（續頁沒有收貨單號）→ 接回同一張：3 個品項、合計 12 箱對得上、不提醒", len(cont) == 1 and cont[0]["cont_pages"] == [2] and [i["qty"] for i in cont[0]["items"]] == [3, 4, 5]
           and cont[0]["total"] == 12 and not cont[0]["warnings"], str(cont)[:300])
+    import pymupdf as _pm
+    _d = _pm.open(); _pg = _d.new_page(); _y = 40
+    for ln in ["指送日期：2026/09/29", "收貨單號：PO202609305-酷澎-T", "5888010267024", "2", "易口舒 1:12:8", "17C", "635E1TAP01", "2027/11/21",
+               "2C", "635F1TAP01", "2027/11/22", "合計箱數:19"]:
+        _pg.insert_text((40, _y), ln, fontname="china-t", fontsize=9); _y += 14
+    two = msx.parse_yx_pdf(_d.tobytes(), "兩批.pdf")[0]["items"][0]
+    check("同一品兩批效期（照 TAO5 真檔排法）：箱數照舊加總 19、效期串起來，另外記每批幾箱、什麼效期（蝦皮特選比允收效期用）",
+          two["qty"] == 19 and two["expiry"] == "2027-11-21、2027-11-22"
+          and two["batches"] == [{"qty": 17, "expiry": "2027-11-21"}, {"qty": 2, "expiry": "2027-11-22"}], str(two))
     check("產品編號 58880＋貨號、配送數量 4C 的讀法", msx.QTY_RE.match("4C  ") and msx._mars_code("060019810") == "60019810" and msx._mars_code("10266398") == "10266398")
     r = up(c, "/api/mars/shortage/compare", pdf, "假_勇信.pdf"); res = r.get_json()
     check("比對：對到 1 張 PO，一個品項少 1 箱＝部分缺，其他沒缺；PO202609999 系統沒有 → 列未知", r.status_code == 200 and res["summary"]["pos"] == 1 and res["summary"]["partial"] == 1

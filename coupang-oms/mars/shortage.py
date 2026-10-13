@@ -48,17 +48,21 @@ def _read_items(lines, items):
     for ln in lines:
         cm = CODE_RE.match(ln)
         if cm:
-            cur = {"code": _mars_code(cm.group(1)), "raw_code": ln, "qty": None, "expiry": "", "name": ""}
+            cur = {"code": _mars_code(cm.group(1)), "raw_code": ln, "qty": None, "expiry": "", "name": "", "batches": []}
             items.append(cur); continue
         if cur is None:
             continue
         qm = QTY_RE.match(ln)
         if qm:
-            cur["qty"] = (cur["qty"] or 0) + int(qm.group(1)); continue      # 同商品分兩批效期：同一格裡會有兩個 5C／4C，加總
+            cur["qty"] = (cur["qty"] or 0) + int(qm.group(1))      # 同商品分兩批效期：同一格裡會有兩個 5C／4C，加總
+            cur["batches"].append({"qty": int(qm.group(1)), "expiry": ""}); continue   # 每批照「箱數、批號、效期」的順序印（TAO5 17C→2027/11/21、2C→2027/11/22）
         em = EXP_RE.match(ln)
         if em:
             d = f"{em.group(1)}-{em.group(2)}-{em.group(3)}"
-            cur["expiry"] = f"{cur['expiry']}、{d}" if cur["expiry"] else d; continue
+            cur["expiry"] = f"{cur['expiry']}、{d}" if cur["expiry"] else d
+            if cur["batches"] and not cur["batches"][-1]["expiry"]:
+                cur["batches"][-1]["expiry"] = d                       # 蝦皮特選拿來一批一批比允收效期
+            continue
         if ln and not ln.isdigit() and not cur["name"] and not ln.startswith("備註") and cur["qty"] is None:
             cur["name"] = re.sub(r"\s*\d+:\d+:\d+\s*$", "", ln)
     return items

@@ -699,20 +699,22 @@ function renderYx() {
   if (d.page_warnings.length) al.push(`<div class="alert al-warn">${d.page_warnings.map(esc).join("<br>")}</div>`);
   let h = `<div class="sum"><span><b>${fmt(s.pages)}</b> 頁</span><span><b>${fmt(s.files)}</b> 份 EIP</span><span><b>${fmt(s.items)}</b> 品</span>`
     + `<span><b style="color:var(--warn)">${fmt(s.partial)}</b> 部分缺貨</span><span><b style="color:var(--bad)">${fmt(s.none)}</b> 全缺</span>`
+    + (s.expiry_short ? `<span><b style="color:var(--bad)">${fmt(s.expiry_short)}</b> 品效期不足</span>` : "")
     + (s.over ? `<span><b style="color:var(--bad)">${fmt(s.over)}</b> 數量異常</span>` : "") + (s.warns ? `<span><b style="color:var(--warn)">${fmt(s.warns)}</b> 項提醒</span>` : "")
     + `<span class="kbd">${esc(d.dates.join("、"))} ${esc(d.warehouses.map(w => WH[w] || w).join("、"))}</span></div>` + al.join("");
   h += `<div class="tbl-wrap" style="max-height:52vh"><table class="t"><thead><tr><th>訂單編號</th><th>廠商料號</th><th>瑪氏貨號</th><th>品名</th><th>單位</th>
-    <th class="num">訂購（箱）</th><th class="num">勇信出貨（箱）</th><th class="num">短缺（箱）</th><th>效期</th><th>結果</th><th class="num">可出貨量</th></tr></thead><tbody>`;
+    <th class="num">訂購（箱）</th><th class="num">勇信出貨（箱）</th><th>效期（每批）</th><th class="num">缺貨（箱）</th><th>結果</th><th class="num">可出貨量</th></tr></thead><tbody>`;
   for (const b of d.eips) {
     const tag = b.skipped ? `<span class="badge b-dim">這次不核</span>` : b.in_pdf ? `<span class="badge b-s">表上第 ${b.pages.join("、")} 頁</span>` : `<span class="badge b-diff">表上沒有，視為整份未出貨</span>`;
     h += `<tr class="og"><td colspan="11"><label class="nw" style="cursor:pointer"><input type="checkbox" class="ck yx-ck" data-id="${b.eip_id}" ${b.skipped ? "" : "checked"}> 核對</label>
       <b class="fn" style="margin-left:10px">${esc(b.eip_po)}</b> <span class="kbd">${esc(b.expected_date)} 到貨 · ${esc(b.warehouse_name)} · ${esc(b.unit_group)}</span> ${tag}</td></tr>`;
     for (const r of b.items) {
       const [cls, txt] = YX_ST[r.status] || ["b-dim", "—"];
-      const res = b.skipped ? `<span class="kbd">這次不核</span>` : `<span class="badge ${cls}">${txt}</span> <span class="kbd nw">${esc(r.action)}</span>${r.was && r.action !== "已通知，不再修改" ? `<div class="kbd">前次寫入：可出貨量 ${fmt(r.was.after)}</div>` : ""}`;
+      const res = b.skipped ? `<span class="kbd">這次不核</span>` : `<span class="badge ${cls}">${txt}</span> <span class="kbd nw">${esc(r.action)}</span>${r.reasons.length ? `<div class="kbd nw">原因：${esc(r.reasons.join("、"))}</div>` : ""}${r.was && r.action !== "已通知，不再修改" ? `<div class="kbd">前次寫入：可出貨量 ${fmt(r.was.after)}</div>` : ""}`;
       h += `<tr class="${b.skipped ? "no" : ""}"><td class="fn">${esc(r.order_no)}</td><td class="fn">${esc(r.supplier_sku_id)}</td><td class="fn">${esc(r.mars_code)}</td><td>${esc((r.name || "").slice(0, 36))}</td><td class="nw">${esc(r.unit)}</td>
-        <td class="num">${fmt(r.ordered)}</td><td class="num"><b>${fmt(r.shipped)}</b></td><td class="num ${r.short ? "neg" : ""}">${fmt(r.short)}</td>
-        <td class="kbd nw">${esc(r.expiry) || "—"}</td><td>${res}${r.warn ? `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(r.warn)}</div>` : ""}</td>
+        <td class="num">${fmt(r.ordered)}</td><td class="num"><b>${fmt(r.shipped)}</b></td>
+        <td class="kbd nw">${r.batches.map(x => `<div${x.ok ? "" : ` class="neg"`}>${esc(x.expiry || "未印效期")} × ${fmt(x.qty)}${x.ok ? "" : "（效期不足）"}</div>`).join("") || "—"}${r.need ? `<div>允收 ${esc(r.need)} 以後</div>` : ""}</td>
+        <td class="num ${r.short ? "neg" : ""}">${fmt(r.short)}</td><td>${res}${r.warn ? `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(r.warn)}</div>` : ""}</td>
         <td class="num nw">${r.final != null && r.final < r.qty ? `${fmt(r.qty)} → <b class="neg">${fmt(r.final)}</b>` : fmt(r.qty)}</td></tr>`;
     }
   }

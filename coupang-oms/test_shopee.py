@@ -52,15 +52,20 @@ IN_HDR = ["Inbound ID", "is_jit", "Shopee SKU ID", "Supplier SKU ID", "SKU Name"
 
 
 def yx_pdf(pages):
-    """假的勇信配送明細表，文字排法照真檔（跟 test_mars.yx_pdf 一樣）：pages = [(EIP單號, 指送日期 yyyy/mm/dd, [(瑪氏貨號, 箱數, 效期), ...])]"""
+    """假的勇信配送明細表，文字排法照真檔（跟 test_mars.yx_pdf 一樣）：pages = [(EIP單號, 指送日期 yyyy/mm/dd, [(瑪氏貨號, 箱數, 效期), ...])]。
+    同一品兩批效期寫 (瑪氏貨號, [(箱數, 效期), (箱數, 效期)])，照真檔一批印「箱數、批號、效期」（TAO5 17C→2027/11/21、2C→2027/11/22）。"""
     import pymupdf
     doc = pymupdf.open()
     for eip, date, items in pages:
         lines = ["桃園市觀音區", "客戶單號：7816797526", "BMS100230-永豐商店-蝦皮特選", "出貨廠商名稱：A5888-台灣瑪氏股份有限公司",
                  f"指送日期：{date}", "配 送 明 細 表(預排鮮度)", "產品編號", "產品名稱", "入數", "配送數量", f"收貨單號：{eip}-蝦皮-T"]
-        for n, (code, qty, exp) in enumerate(items, start=1):
-            lines += [f"58880{code}", str(n), f"假品名 {code} 1:6:10", f"{qty}C  ", "625D1TAP01", exp]
-        lines += ["備註:蝦皮特選嘜頭(入庫通知單)+採購單", "單據金額:", f"合計箱數:{sum(q for _, q, _ in items)}", "客戶簽章:"]
+        total = 0
+        for n, it in enumerate(items, start=1):
+            batches = it[1] if isinstance(it[1], list) else [(it[1], it[2])]
+            lines += [f"58880{it[0]}", str(n), f"假品名 {it[0]} 1:6:10"]
+            for q, exp in batches:
+                lines += [f"{q}C  ", "625D1TAP01", exp]; total += q
+        lines += ["備註:蝦皮特選嘜頭(入庫通知單)+採購單", "單據金額:", f"合計箱數:{total}", "客戶簽章:"]
         page = doc.new_page(); y = 40
         for ln in lines:
             page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
@@ -774,22 +779,24 @@ def yx_tests(c, orders):
     check("沒傳檔 → 400", c.post("/api/shopee/yx/compare", json={}).status_code == 400)
     bad = c.post("/api/shopee/yx/compare", data={"file": (io.BytesIO(b"not a pdf"), "x.pdf")}, content_type="multipart/form-data")
     check("不是 PDF → 400、說打不開", bad.status_code == 400 and "無法開啟" in bad.get_json()["error"], str(bad.get_json()))
-    pdf = yx_pdf([("PO202610101", "2026/10/13", [("60003196", 1, "2027/01/01")]), ("PO209999999", "2026/10/13", [("12345678", 3, "2027/05/01")])])
+    pdf = yx_pdf([("PO202610101", "2026/10/13", [("60003196", [(1, "2027/06/01"), (1, "2027/01/01")])]),
+                  ("PO209999999", "2026/10/13", [("12345678", 3, "2027/05/01")])])
     r = cmp(pdf)
     d = r.get_json()
     rw = rows(d) if r.status_code == 200 else {}
     b1, a = rw.get(("PO202610101", "M60003196_QMN"), ({}, {}))
     b2, b_ = rw.get(("PO202610102", "M10281171_RMN"), ({}, {}))
-    check("收貨單號對到 EIP PO202610101：訂 2 箱、勇信出 1 箱 → 部分缺貨，48 盒下修至 24", r.status_code == 200 and b1.get("in_pdf")
-          and (a["ordered"], a["shipped"], a["short"], a["status"], a["final"], a["action"]) == (2, 1, 1, "partial", 24, "下修至 24"), str(a)[:300])
+    check("收貨單號對到 EIP PO202610101：訂 2 箱、勇信出 2 箱，兩批效期分開讀", r.status_code == 200 and b1.get("in_pdf") and (a["ordered"], a["shipped"]) == (2, 2)
+          and [(x["qty"], x["expiry"]) for x in a["batches"]] == [(1, "2027-06-01"), (1, "2027-01-01")], str(a)[:300])
+    check("效期 2027-01-01 那箱早於蝦皮允收（到貨日 10/13＋效期天 365×2/5＝2027-03-08）→ 不算可出貨：效期不足、48 盒下修至 24（需求 5.3）",
+          a["need"] == "2027-03-08" and [x["ok"] for x in a["batches"]] == [True, False] and (a["good"], a["short"], a["status"], a["final"], a["action"], a["reasons"])
+          == (1, 1, "partial", 24, "下修至 24", ["效期不足"]), str(a)[:400])
     check("同一天同一倉已回填、表上卻沒有的 PO202610102 → 整份沒出：18 箱刪單", not b2.get("in_pdf")
-          and (b_["ordered"], b_["shipped"], b_["status"], b_["final"], b_["action"]) == (18, 0, "none", 0, "刪單"), str(b_)[:300])
+          and (b_["ordered"], b_["shipped"], b_["status"], b_["final"], b_["action"], b_["reasons"]) == (18, 0, "none", 0, "刪單", ["庫存不足"]), str(b_)[:300])
     check("別天、還沒回填單號的安南三那份不在範圍內", len(d["eips"]) == 2 and not d["no_eip"], str([(b["eip_po"], b["filename"]) for b in d["eips"]]))
     check("表上的號碼系統裡找不到（可能是酷澎的單）→ 列出來", [u["eip_po"] for u in d["unknown"]] == ["PO209999999"], str(d["unknown"]))
-    check("效期 2027-01-01 早於蝦皮允收（到貨日 10/13＋效期天 365×2/5＝2027-03-08）→ 提醒，不自動扣", "效期 2027-01-01 早於蝦皮允收 2027-03-08" in a["warn"]
-          and a["final"] == 24, a["warn"])
     check("倉別讀不到的提醒不顯示（蝦皮看系統裡 EIP 的倉）、日期、倉、統計", not any("倉別" in w for w in d["page_warnings"]) and d["dates"] == ["2026-10-13"]
-          and d["warehouses"] == ["TWA"] and (d["summary"]["partial"], d["summary"]["none"], d["summary"]["absent"], d["summary"]["changes"]) == (1, 1, 1, 2),
+          and d["warehouses"] == ["TWA"] and (d["summary"]["partial"], d["summary"]["none"], d["summary"]["absent"], d["summary"]["changes"], d["summary"]["expiry_short"]) == (1, 1, 1, 2, 1),
           str(d["summary"]))
     r = cmp(pages=d["pages"], skip_eips=[e102])
     d2 = r.get_json()
@@ -798,14 +805,21 @@ def yx_tests(c, orders):
     r = c.post("/api/shopee/yx/apply", json={"pages": d["pages"], "skip_eips": [e102]})
     pl = plan()
     a = item(pl, "M60003196_QMN")
-    check("確認（跳過 102）：寫入 1 筆第一次下修，來源勇信核對、48 → 24、庫存不足、待通知", r.status_code == 200 and r.get_json()["written"] == 1
-          and [(x["round"], x["source"], x["before"], x["after"], x["reasons"]) for x in a["rounds"]] == [(1, "勇信核對", 48, 24, ["庫存不足"])]
-          and a["pending"] and pl[N]["status"] == "待通知" and "勇信 PO202610101 出 1 箱，訂 2 箱" in a["rounds"][0]["note"], str(a["rounds"]))
+    check("確認（跳過 102）：寫入 1 筆第一次下修，來源勇信核對、48 → 24、效期不足、待通知，說明寫哪一天以前的幾箱不算", r.status_code == 200 and r.get_json()["written"] == 1
+          and [(x["round"], x["source"], x["before"], x["after"], x["reasons"]) for x in a["rounds"]] == [(1, "勇信核對", 48, 24, ["效期不足"])]
+          and a["pending"] and pl[N]["status"] == "待通知" and "勇信 PO202610101 出 2 箱，訂 2 箱；效期早於 2027-03-08 的 1 箱不算" in a["rounds"][0]["note"], str(a["rounds"]))
     check("跳過的那份沒寫", not item(pl, "M10281171_RMN")["rounds"])
     r = c.post("/api/shopee/yx/apply", json={"pages": d["pages"]})
     pl = plan()
     check("再確認一次（不跳過）：只多寫 102 那筆（18 → 0），101 一樣的不重寫", r.get_json()["written"] == 1
           and [(x["before"], x["after"]) for x in item(pl, "M10281171_RMN")["rounds"]] == [(18, 0)] and len(item(pl, "M60003196_QMN")["rounds"]) == 1, str(r.get_json()))
+    both = rows(cmp(yx_pdf([("PO202610101", "2026/10/13", [("60003196", 1, "2027/01/01")]),
+                            ("PO202610102", "2026/10/13", [("10281171", 18, "2026/11/01")])])).get_json())
+    x1, x2 = both[("PO202610101", "M60003196_QMN")][1], both[("PO202610102", "M10281171_RMN")][1]
+    check("勇信少出、出的那箱效期又不夠 → 兩個原因一起標（庫存不足、效期不足），刪單（需求 5.4）",
+          (x1["shipped"], x1["good"], x1["status"], x1["final"], x1["reasons"]) == (1, 0, "none", 0, ["庫存不足", "效期不足"]), str(x1)[:300])
+    check("商品總表沒有效期天（M10281171）→ 無法判斷效期，提醒、不扣，18 箱照出", (x2["status"], x2["final"], x2["reasons"]) == ("ok", None, [])
+          and "沒有效期天" in x2["warn"] and x2["need"] == "", str(x2)[:300])
     over = cmp(yx_pdf([("PO202610101", "2026/10/13", [("60003196", 3, "2027/06/01")])])).get_json()
     o_ = rows(over)[("PO202610101", "M60003196_QMN")][1]
     check("勇信出得比訂得多（3 箱）→ 數量異常、不修改", (o_["status"], o_["action"], o_["final"]) == ("over", "數量異常，不修改", None), str(o_)[:200])

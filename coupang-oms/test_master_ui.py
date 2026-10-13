@@ -753,8 +753,8 @@ def main():
         # 瑪氏直送的單、EIP、回填單號用 API 先備好（畫面流程前面測過了），這裡只測勇信核對這一段
         cn = db.get_conn()
         cn.execute("INSERT INTO mst_mars_products (yf_sku, unit, mars_code, category, name, price, inner_per_case, pcs_per_case, unit_code, box_qty, "
-                   "inner_label, note, po_case_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                   ("M69990001", "盒", "69990001", "Petcare", "UI 測試 瑪氏貓糧", 100.0, 12, 12, "Q", 12, "", "", ""))
+                   "inner_label, note, po_case_note, shelf_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   ("M69990001", "盒", "69990001", "Petcare", "UI 測試 瑪氏貓糧", 100.0, 12, 12, "Q", 12, "", "", "", 365))
         cn.commit(); cn.close()
         hdr = ["PR ID", "PO ID", "Warehouse", "Expected Delivery Time", "Shopee SKU ID", "Supplier SKU ID", "Shopee SKU Name",
                "Shopee Requested Qty (unit)", "Selling Type", "EAN / UPC"]
@@ -773,8 +773,9 @@ def main():
         yxs = os.path.join(tempfile.gettempdir(), "ui_蝦皮_勇信.pdf"); doc.save(yxs)
         pg.set_input_files("#yx-file", yxs); pg.wait_for_selector("#yx-out table.t", timeout=20000); pg.wait_for_timeout(300)
         out = pg.inner_text("#yx-out")
-        check("上傳勇信 PDF → 比對表：對到 PO202610299、訂 2 箱出 1 箱、部分缺貨、24 → 12、確認鈕可按", gen.status_code == 200 and "PO202610299" in out
-              and "部分缺貨" in out and "下修至 12" in out and "24 → 12" in out.replace("\t", " ") and not pg.is_disabled("#yx-go"), out[:400])
+        check("上傳勇信 PDF → 比對表：對到 PO202610299、訂 2 箱出 1 箱、部分缺貨、原因庫存不足、24 → 12、確認鈕可按", gen.status_code == 200 and "PO202610299" in out
+              and "部分缺貨" in out and "下修至 12" in out and "原因：庫存不足" in out and "24 → 12" in out.replace("\t", " ") and not pg.is_disabled("#yx-go"), out[:400])
+        check("效期欄：每批效期、箱數，下面寫允收哪天以後（到貨日 10/21＋365×2/5）", "2027-06-01 × 1" in out and "允收 2027-03-16 以後" in out, out[:600])
         pg.uncheck("#yx-out input.yx-ck"); pg.wait_for_function("document.querySelector('#yx-out').innerText.includes('這次不核')", timeout=10000)
         check("取消勾選 → 這次不核、確認鈕鎖住", pg.is_disabled("#yx-go"))
         pg.check("#yx-out input.yx-ck"); pg.wait_for_function("!document.querySelector('#yx-go').disabled", timeout=10000)

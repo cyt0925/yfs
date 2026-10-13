@@ -13,7 +13,9 @@
   （主管 2026-10-08 講酷澎的：整份缺的勇信不會印在表上，不能等人記得去勾）。人可以取消勾選「這次不核」的那份。
   還沒回填 EIP 單號的對不到，不算缺，列出來要人先補。
 - 同一份 EIP 裡同一個貨號有好幾張蝦皮單（同一天同倉合在一列），勇信出的箱數依訂單先後分，最後一張拿剩下的（多出來的才看得到）。
-- 效期：表上有印效期就拿來比蝦皮的允收效期（到貨日＋商品總表效期天×竹運出貨頁設定的比例），不夠只提醒、不自動扣。
+- 效期（Jerry 2026-10-13「照文件改」：需求 8.1「核對庫存及效期」、5.3「不符合效期比例的不得計入可出貨量」、5.4 缺貨原因）：
+  勇信每批印「箱數、批號、效期」，一批一批比蝦皮允收效期（到貨日＋商品總表效期天×竹運出貨頁的效期標準）。
+  效期不夠的那幾箱不算可出貨，原因「效期不足」；勇信也少出的話兩個原因一起標。商品總表沒有效期天的沒辦法算，只提醒、不扣。
 
 確認後寫進缺貨紀錄 shp_short（瑪氏只有一次，來源「勇信核對」），之後在缺貨維護與通知勾選訂單產 LINE 通知，
 跟寶僑、紙潔同一套。還沒通知前可以重傳 PDF 重跑，舊的那次會被換掉；通知過就鎖住不再改。
@@ -29,25 +31,23 @@ from .ship import ratio_for, ship_settings
 
 MARS = "瑪氏"
 SOURCE = "勇信核對"
-REASON = "庫存不足"
+R_STOCK, R_EXP = "庫存不足", "效期不足"
 
 
 def _num(x):
     return int(x) if isinstance(x, float) and x.is_integer() else x
 
 
-def _expiry_check(item, shelf, expected_date, st):
-    """表上印的效期（最早那批）夠不夠蝦皮允收。回傳提醒文字，夠或沒資料回空字串。"""
-    if not item.get("expiry") or not shelf or not expected_date:
-        return ""
+def _need(shelf, expected_date, st):
+    """蝦皮允收的最早效期（到貨日＋取整數(效期天×比例)，跟竹運出貨同一套）。沒有效期天或到貨日回 None。"""
+    if not shelf or not expected_date:
+        return None
     try:
         arrive = _dt.date.fromisoformat(expected_date)
-        first = min(_dt.date.fromisoformat(x) for x in item["expiry"].split("、") if x)
     except ValueError:
-        return ""
+        return None
     ratio, text = ratio_for(shelf, st)
-    need = arrive + _dt.timedelta(days=int(shelf * ratio))
-    return f"效期 {first} 早於蝦皮允收 {need}（效期天 {shelf}×{text}），請確認" if first < need else ""
+    return {"date": (arrive + _dt.timedelta(days=int(shelf * ratio))).isoformat(), "rule": f"效期天 {shelf}×{text}"}
 
 
 def compare(conn, pages, skip_eips=()):
@@ -58,14 +58,14 @@ def compare(conn, pages, skip_eips=()):
     for p in pages:
         if not p.get("eip_po"):
             continue
-        d = by_eip.setdefault(p["eip_po"], {"qty": collections.Counter(), "pages": [], "names": {}, "expiry": {}})
+        d = by_eip.setdefault(p["eip_po"], {"qty": collections.Counter(), "pages": [], "names": {}, "batches": collections.defaultdict(list)})
         d["pages"].append(p["page"])
         for it in p.get("items") or []:
             c = canon.get(it["code"], it["code"])
             d["qty"][c] += it.get("qty") or 0
             d["names"].setdefault(c, it.get("name") or "")
-            if it.get("expiry"):
-                d["expiry"][c] = "、".join(x for x in (d["expiry"].get(c, ""), it["expiry"]) if x)
+            d["batches"][c] += [dict(b) for b in it.get("batches") or []] or (
+                [{"qty": it.get("qty") or 0, "expiry": (it.get("expiry") or "").split("、")[0]}] if it.get("qty") else [])
     dates = sorted({p["ship_date"] for p in pages if p.get("ship_date")})
 
     eips = _rows(conn.execute("SELECT * FROM shp_eip WHERE line = ? ORDER BY expected_date, warehouse, id", (MARS,)))
@@ -114,29 +114,32 @@ def compare(conn, pages, skip_eips=()):
             out.append({"order_id": o["id"], "order_no": order_no(o), "pr_id": o["pr_id"] or "", "po_id": o["po_id"] or "",
                         "supplier_sku_id": o["supplier_sku_id"], "shopee_sku_id": o["shopee_sku_id"], "yf_sku": o["base_code"],
                         "mars_code": code, "name": o["sku_name"], "unit": unit, "box": box, "qty": o["qty"] or 0, "use_qty": use,
-                        "ordered": _num(round(use / box, 4)) if box else 0, "shipped": 0, "short": 0, "status": "", "final": None,
-                        "expiry": "", "warn": "" if box else "EIP 上沒有箱入數，無法換算",
+                        "ordered": _num(round(use / box, 4)) if box else 0, "shipped": 0, "good": 0, "short": 0, "status": "", "final": None,
+                        "reasons": [], "batches": [], "need": "", "need_rule": "", "warn": "" if box else "EIP 上沒有箱入數，無法換算",
                         "locked": any(r["notify_id"] for r in rs),
                         "pending": next((r for r in rs if not r["notify_id"]), None), "_shelf": shelf.get((o["base_code"], unit))})
         return out
 
-    def finish(row, shipped, expiry, e):
-        row["shipped"] = shipped
-        if row["shipped"] == row["ordered"]:
-            row["status"] = "ok"
-        elif row["shipped"] == 0:
-            row["status"] = "none"
-        elif row["shipped"] < row["ordered"]:
-            row["status"] = "partial"
-        else:
+    def finish(row, shipped, good, info):
+        """shipped＝分到的勇信箱數；good＝其中效期合格的箱數；info＝這個貨號的批次與允收效期（表上沒有就 None）。"""
+        row.pop("_shelf", None)
+        ordered = row["ordered"]
+        judged = bool(info and info["need"])
+        cap = min(shipped, ordered)
+        usable = _num(min(good, cap)) if judged else cap
+        row.update(shipped=shipped, good=usable)
+        if info:
+            row.update(batches=info["batches"], need=info["need"]["date"] if judged else "", need_rule=info["need"]["rule"] if judged else "")
+            if not judged and info["batches"] and not row["warn"]:
+                row["warn"] = "瑪氏商品總表沒有效期天，無法判斷效期（不扣）"
+        if shipped > ordered:
             row["status"] = "over"
-        row["short"] = _num(round(max(row["ordered"] - row["shipped"], 0), 4))
+        else:
+            row["status"] = "ok" if usable == ordered else "none" if usable == 0 else "partial"
+            row["reasons"] = ([R_STOCK] if shipped < ordered else []) + ([R_EXP] if usable < cap else [])
+            row["short"] = _num(round(ordered - usable, 4))
         if row["status"] in ("partial", "none") and row["box"]:
-            row["final"] = min(row["qty"], int(round(row["shipped"] * row["box"])))
-        row["expiry"] = expiry
-        w = _expiry_check(row, row.pop("_shelf"), e["expected_date"], st) if row["status"] != "none" else ""
-        if w:
-            row["warn"] = w
+            row["final"] = min(row["qty"], int(round(usable * row["box"])))
         pend = row.pop("pending")
         row["was"] = {"after": pend["qty_after"], "note": pend["note"]} if pend else None
         if row["locked"]:
@@ -168,21 +171,35 @@ def compare(conn, pages, skip_eips=()):
         for gi, (_b, its) in enumerate(rows):
             for ii, r in enumerate(its):
                 last[r["mars_code"]] = (gi, ii)
+        # 每個貨號：每批效期夠不夠（同一份 EIP 到貨日一樣，效期天看第一個訂這個貨號的品項）
+        info = {}
+        for gi, (b, its) in enumerate(rows):
+            e = next(x for x in in_scope if x["id"] == b["eip_id"])
+            for r in its:
+                c = r["mars_code"]
+                if c in info:
+                    continue
+                need = _need(r["_shelf"], e["expected_date"], st)
+                bs = [{**x, "ok": (need is None or not x["expiry"] or x["expiry"] >= need["date"])} for x in d["batches"].get(c, [])]
+                info[c] = {"need": need, "batches": bs, "good": sum(x["qty"] for x in bs if x["ok"])}
         left = collections.Counter(d["qty"])
+        left_good = collections.Counter({c: v["good"] for c, v in info.items()})
         for gi, (b, its) in enumerate(rows):
             b["pages"] = d["pages"]
-            e = next(x for x in in_scope if x["id"] == b["eip_id"])
             for ii, r in enumerate(its):
                 c = r["mars_code"]
-                got = left.get(c, 0) if last.get(c) == (gi, ii) else min(left.get(c, 0), r["ordered"])
+                is_last = last.get(c) == (gi, ii)
+                got = left.get(c, 0) if is_last else min(left.get(c, 0), r["ordered"])
+                good = left_good.get(c, 0) if is_last else min(left_good.get(c, 0), r["ordered"])
                 left[c] -= got
-                b["items"].append(finish(r, _num(got), d["expiry"].get(c, ""), e))
+                left_good[c] -= good
+                b["items"].append(finish(r, _num(got), _num(good), info.get(c)))
         seen = {r["mars_code"] for _b, its in rows for r in its}
         group[0]["extra"] = [{"mars_code": c, "name": d["names"].get(c, ""), "cases": q} for c, q in d["qty"].items() if c not in seen and q]
     for b in out:
         if not b["in_pdf"]:
             e = next(x for x in in_scope if x["id"] == b["eip_id"])
-            b["items"] = [finish(r, 0, "", e) for r in item_rows(e)]
+            b["items"] = [finish(r, 0, 0, None) for r in item_rows(e)]
     todo = [r for b in out if not b["skipped"] for r in b["items"]]
     summary = {"pages": sum(1 + len(p.get("cont_pages") or []) for p in pages), "eip_pos": len(by_eip), "files": len(out),
                "absent": sum(1 for b in out if not b["in_pdf"] and not b["skipped"]), "skipped": sum(1 for b in out if b["skipped"]),
@@ -190,7 +207,8 @@ def compare(conn, pages, skip_eips=()):
                "none": sum(1 for r in todo if r["status"] == "none"), "over": sum(1 for r in todo if r["status"] == "over"),
                "short_cases": _num(round(sum(r["short"] for r in todo if r["status"] in ("partial", "none")), 4)),
                "changes": sum(1 for r in todo if not r["locked"] and r["action"].startswith(("下修", "刪單", "取消"))),
-               "locked": sum(1 for r in todo if r["locked"]), "warns": sum(1 for r in todo if r["warn"])}
+               "locked": sum(1 for r in todo if r["locked"]), "warns": sum(1 for r in todo if r["warn"]),
+               "expiry_short": sum(1 for r in todo if R_EXP in r["reasons"])}
     page_warnings = [w for p in pages for w in (p.get("warnings") or []) if "讀不到倉別" not in w]   # 倉別本來就看系統裡 EIP 的
     return {"eips": out, "unknown": unknown, "no_eip": no_eip, "page_warnings": page_warnings, "dates": dates,
             "warehouses": whs, "summary": summary, "skip_eips": sorted(skip)}
@@ -217,16 +235,19 @@ def apply(conn, result, operator):
                 continue
             note = (f"勇信 {b['eip_po']} 出 {r['shipped']} 箱，訂 {r['ordered']} 箱" if b["in_pdf"]
                     else f"勇信配送明細表上沒有 {b['eip_po']}，視為整份未出貨")
-            if old and (old["qty_before"], old["qty_after"], old["note"]) == (r["qty"], r["final"], note):
+            if R_EXP in r["reasons"]:
+                note += f"；效期早於 {r['need']} 的 {_num(min(r['shipped'], r['ordered']) - r['good'])} 箱不算（{r['need_rule']}）"
+            reasons = "、".join(r["reasons"]) or R_STOCK
+            if old and (old["qty_before"], old["qty_after"], old["note"], old["reasons"]) == (r["qty"], r["final"], note, reasons):
                 continue
             if old:
                 conn.execute("UPDATE shp_short SET source = ?, qty_before = ?, qty_after = ?, reasons = ?, note = ?, operator = ?, updated_at = ? WHERE id = ?",
-                             (SOURCE, r["qty"], r["final"], REASON, note, operator, stamp, old["id"]))
+                             (SOURCE, r["qty"], r["final"], reasons, note, operator, stamp, old["id"]))
             else:
                 conn.execute("INSERT INTO shp_short (order_id, round, source, qty_before, qty_after, reasons, note, operator, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                             (r["order_id"], 1, SOURCE, r["qty"], r["final"], REASON, note, operator, stamp))
+                             (r["order_id"], 1, SOURCE, r["qty"], r["final"], reasons, note, operator, stamp))
             _log(conn, MARS, r["order_no"], r["shopee_sku_id"], "", "shopee_short", "第 1 次下修", f"可出貨 {r['qty']}",
-                 f"可出貨 {r['final']}（缺 {r['qty'] - r['final']}）", operator, "manual", f"{r['supplier_sku_id']}；{SOURCE}；{note}", REASON)
+                 f"可出貨 {r['final']}（缺 {r['qty'] - r['final']}）", operator, "manual", f"{r['supplier_sku_id']}；{SOURCE}；{note}", reasons)
             written += 1
     s = result["summary"]
     _log(conn, MARS, "", "", "", "shopee_yx", "勇信核對缺貨", "", f"{s['files']} 份 EIP、寫入 {written} 筆、取消 {cleared} 筆", operator, "manual",
