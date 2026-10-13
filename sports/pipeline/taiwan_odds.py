@@ -33,39 +33,48 @@ HEADERS = {
 
 # ESPN 運動/聯盟 -> 玩運彩 allianceid
 ALLIANCE_BY_LEAGUE = {"nba": 3, "nhl": 91, "nfl": 93}
-ALLIANCE_BY_SPORT = {"soccer": 4, "tennis": 21}
+ALLIANCE_BY_SPORT = {"soccer": 4}
 
 # 玩運彩中文隊名 -> 我們的中文隊名（兩邊不一樣時補在這裡）
 ALIASES = {
-    "塞爾蒂克": "塞爾提克", "賽爾提克": "塞爾提克", "小牛": "獨行俠", "76人": "七六人",
-    "阿森納": "兵工廠", "拜仁": "拜仁慕尼黑", "巴黎": "巴黎聖日耳曼", "巴黎聖日爾曼": "巴黎聖日耳曼",
-    "馬競": "馬德里競技", "皇馬": "皇家馬德里", "國米": "國際米蘭", "尤文": "尤文圖斯", "多特": "多特蒙德",
-    "熱刺": "熱刺", "利物浦": "利物浦", "曼城": "曼城", "曼聯": "曼聯", "切爾西": "切爾西",
+    3: {"塞爾蒂克": "塞爾提克", "賽爾提克": "塞爾提克", "小牛": "獨行俠", "76人": "七六人"},
+    91: {"猛瑪象": "猛獁象", "佛羅里": "美洲豹", "巨鴨": "鴨子", "海怪": "海妖", "荒野": "野人", "達拉斯": "星辰",
+         "首都": "首都人", "加拿大": "加拿大人", "騎士": "金騎士", "黑鷹": "黑鷹"},
+    4: {"阿森納": "兵工廠", "拜仁": "拜仁慕尼黑", "巴黎": "巴黎聖日耳曼", "巴黎聖日爾曼": "巴黎聖日耳曼",
+        "馬競": "馬德里競技", "皇馬": "皇家馬德里", "國米": "國際米蘭", "尤文": "尤文圖斯", "多特": "多特蒙德",
+        "比亞雷亞爾": "比利亞雷亞爾", "維京足球會": "維京", "PSV恩荷芬": "PSV", "RB萊比錫": "萊比錫",
+        "薩巴赫馬薩齊爾": "薩巴赫", "斯拉維亞": "布拉格斯拉維亞", "紐卡索": "紐卡索", "愛華頓": "艾佛頓",
+        "熱刺": "熱刺", "車路士": "切爾西", "阿士東維拉": "阿斯頓維拉", "曼徹斯特聯": "曼聯", "曼徹斯特城": "曼城"},
 }
 
 DEBUG = {}
 
 
-def norm(name):
+def norm(name, aid=None):
     if not name:
         return ""
     s = re.sub(r"\s+", "", str(name))
     s = re.sub(r"[()（）\-–·．.]", "", s)
-    for suf in ("隊", "足球俱樂部", "競技", "體育會"):
-        if s.endswith(suf) and len(s) > len(suf) + 1 and suf != "競技":
+    for suf in ("隊", "足球俱樂部", "體育會", "足球會"):
+        if s.endswith(suf) and len(s) > len(suf) + 1:
             s = s[: -len(suf)]
-    return ALIASES.get(s, s)
+    return ALIASES.get(aid, {}).get(s, s)
 
 
-def names_match(a, b):
-    a, b = norm(a), norm(b)
+def name_score(a, b, aid=None):
+    """隊名相似度：2 完全相同、1 一邊包含另一邊、0 不像。"""
+    a, b = norm(a, aid), norm(b, aid)
     if not a or not b:
-        return False
+        return 0
     if a == b:
-        return True
+        return 2
     if len(a) >= 2 and len(b) >= 2 and (a in b or b in a):
-        return True
-    return False
+        return 1
+    return 0
+
+
+def names_match(a, b, aid=None):
+    return name_score(a, b, aid) > 0
 
 
 def fetch(url, tries=2, as_json=False):
@@ -176,7 +185,8 @@ def parse_scale_page(text):
             hhmm = f"{h:02d}:{m.group(3)}"
         out.append(dict(gameid=g["gameid"], no=g["no"], time=hhmm, away=away["name"], home=home["name"],
                         away_teamid=away["teamid"], home_teamid=home["teamid"],
-                        spread=spread, ml=ml, total=total, intl=intl))
+                        spread=spread, ml=ml, total=total, intl=intl,
+                        sides=[(r["name"], r["spread"][0], r["ml"][0], r["ml"][2], r["total"][0]) for r in rows]))
     return out
 
 
@@ -188,7 +198,11 @@ def fetch_livescore_ids(aid, day):
     for k, v in d.items():
         if not isinstance(v, dict) or not v.get("gameid"):
             continue
-        out[str(v["gameid"])] = dict(official=v.get("official_id"), h=v.get("horiginname"), a=v.get("aoriginname"),
+        h, a = v.get("horiginname"), v.get("aoriginname")
+        m = re.search(r"_([A-Za-z]+)@([A-Za-z]+)", str(v.get("official_id") or ""))
+        if m:
+            a, h = a or m.group(1), h or m.group(2)
+        out[str(v["gameid"])] = dict(official=v.get("official_id"), h=h, a=a,
                                      hname=v.get("hname"), aname=v.get("aname"), dateon=v.get("dateon"))
     return out
 
@@ -198,30 +212,48 @@ def _abbr_set(t):
     return {x for x in s if x}
 
 
-def match_game(g, rows):
-    """在同一天、同一聯盟的玩運彩列表中找出對應 ESPN 賽事。先比英文縮寫，再比中文隊名，最後比時間＋單邊。"""
+def _minutes(t):
+    try:
+        h, m = str(t).split(":")
+        return int(h) * 60 + int(m)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def match_game(g, rows, aid=None):
+    """在同一天、同一聯盟的玩運彩列表中找出對應 ESPN 賽事。
+    1. 英文縮寫完全相同（NBA、NHL 的比分 JSON 有）
+    2. 開賽時間相同（容許 20 分鐘）＋ 兩邊隊名相似度計分，取最高分
+    """
     ha, aa = (g["home"].get("abbr") or "").upper(), (g["away"].get("abbr") or "").upper()
     hz, az = g["home"].get("name_zh") or g["home"].get("name"), g["away"].get("name_zh") or g["away"].get("name")
     for r in rows:
         ls = r.get("ls") or {}
         if ha and aa and ls.get("h") and ls.get("a") and ls["h"].upper() == ha and ls["a"].upper() == aa:
             return r, "abbr"
+    gt = _minutes(g.get("time_tw"))
+    best, best_score = None, 0
     for r in rows:
-        if names_match(r["home"], hz) and names_match(r["away"], az):
-            return r, "name"
+        rt = _minutes(r.get("time"))
+        if gt is not None and rt is not None and abs(gt - rt) > 20:
+            continue
         ls = r.get("ls") or {}
-        if names_match(ls.get("hname"), hz) and names_match(ls.get("aname"), az):
-            return r, "lsname"
-    for r in rows:
-        if r.get("time") == g["time_tw"] and (names_match(r["home"], hz) or names_match(r["away"], az)):
-            return r, "time+one"
+        sh = max(name_score(r["home"], hz, aid), name_score(ls.get("hname"), hz, aid))
+        sa = max(name_score(r["away"], az, aid), name_score(ls.get("aname"), az, aid))
+        if sh == 0 or sa == 0:
+            continue
+        score = sh + sa + (1 if gt is not None and rt is not None else 0)
+        if score > best_score:
+            best, best_score = r, score
+    if best:
+        return best, f"name{best_score}"
     return None, None
 
 
 def attach_taiwan_odds(games, errors, log):
     """把台灣盤口掛到 games 上，回傳配對到的場數。"""
     now = datetime.now(TW)
-    days = [now.strftime("%Y%m%d"), (now + timedelta(days=1)).strftime("%Y%m%d")]
+    days = [(now + timedelta(days=i)).strftime("%Y%m%d") for i in range(3)]
     groups = {}
     for g in games:
         if g["status"]["state"] == "post":
@@ -261,7 +293,7 @@ def attach_taiwan_odds(games, errors, log):
         for g in lst:
             day = g["day_tw"].replace("-", "")
             rows = rows_by_day.get(day) or []
-            r, how = match_game(g, rows)
+            r, how = match_game(g, rows, aid)
             if not r:
                 unmatched.append(f"{g['league']} {g['away'].get('name_zh') or g['away']['name']}@{g['home'].get('name_zh') or g['home']['name']} {g['time_tw']}")
                 continue

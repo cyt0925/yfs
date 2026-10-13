@@ -57,14 +57,23 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add sports/data/today.json
-          if git diff --cached --quiet; then
-            echo "資料沒有變化，不提交"
-            exit 0
-          fi
-          git commit -m "更新運彩資料 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M') [skip ci]"
-          for i in 1 2 3; do
-            if git push; then exit 0; fi
-            git pull --rebase
+          cp sports/data/today.json /tmp/today.json
+          BRANCH="${GITHUB_REF_NAME}"
+          for i in 1 2 3 4; do
+            git fetch -q origin "$BRANCH"
+            git reset -q --hard "origin/$BRANCH"
+            cp /tmp/today.json sports/data/today.json
+            git add sports/data/today.json
+            if git diff --cached --quiet; then
+              echo "資料沒有變化，不提交"
+              exit 0
+            fi
+            git commit -q -m "更新運彩資料 $(TZ=Asia/Taipei date '+%Y-%m-%d %H:%M') [skip ci]"
+            if git push origin "HEAD:$BRANCH"; then
+              echo "已提交"
+              exit 0
+            fi
+            echo "推送失敗，重試 $i"
+            sleep 5
           done
-          git push
+          exit 1
