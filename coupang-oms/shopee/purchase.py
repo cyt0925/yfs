@@ -232,7 +232,7 @@ def item_plan(it, conv, adj, eip):
         p["problems"].append("這張單有差異待確認，請先到訂單總覽確認")
         p["blocking"] = True
     if eip and eip["eip_po"]:
-        p["problems"].append(f"已回填 EIP 單號 {eip['eip_po']}；要重新產出請先到「採購單產出」清掉單號")
+        p["problems"].append(f"已回填 EIP 採購單號 {eip['eip_po']}；要重新產出請先清除單號")
         p["blocking"] = True
     if conv is None:
         p["problems"].append(f"瑪氏商品總表找不到 {it['base_code']}（{p['unit']}），請至瑪氏出貨頁更新商品總表" if line == MARS

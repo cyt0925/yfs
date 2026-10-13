@@ -170,7 +170,7 @@ def api_short_save():
         if it is None:
             return jsonify({"error": "找不到這個品項，請重新整理頁面。"}), 404
         if it["fulfil"] not in MANUAL_FULFILS or it["line"] not in LINES_HERE:
-            return jsonify({"error": "竹運出貨的缺貨請在竹運出貨頁修改出貨量；瑪氏的缺貨由勇信效期表核對。"}), 400
+            return jsonify({"error": "竹運出貨的缺貨請在「效期批次／改出貨量」修改出貨量；瑪氏的缺貨由勇信配送明細表核對。"}), 400
         cur = short_item(it, _rounds(conn, [oid]).get(oid, []), None)
         rnd = cur["edit_round"]
         if not rnd:

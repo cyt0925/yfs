@@ -284,7 +284,7 @@ def api_yx_compare():
     conn = get_conn()
     try:
         if conn.execute("SELECT COUNT(*) AS n FROM shp_eip WHERE line = ? AND eip_po != ''", (MARS,)).fetchone()["n"] == 0:
-            return jsonify({"error": "目前沒有已回填 EIP 採購單號的瑪氏 EIP 採購單，無法比對。請先至「採購單產出」回填。"}), 400
+            return jsonify({"error": "目前沒有已回填 EIP 採購單號的瑪氏 EIP 採購單，無法比對。請先至「待回填 EIP 採購單號」回填。"}), 400
         result = compare(conn, pages, skip)
     finally:
         conn.close()

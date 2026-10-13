@@ -89,6 +89,24 @@
   .st .t { font-size:13.5px; font-weight:700; color:var(--ink); } .st .d { font-size:11.5px; color:var(--muted); margin-top:1px; }
   .st.on { border:2px solid var(--s8); background:var(--s0); padding:8px 11px; box-shadow:0 2px 10px rgba(238,77,45,.14); }
   .nx { display:inline-flex; gap:4px; flex-wrap:wrap; }
+  .layout { display:flex; align-items:flex-start; }
+  #side { flex:none; width:540px; position:sticky; top:0; height:100vh; background:#fff; border-left:1px solid var(--line); box-shadow:-8px 0 24px rgba(80,30,10,.08); display:flex; flex-direction:column; z-index:20; }
+  @media (max-width:1180px) { #side { position:fixed; right:0; top:0; width:min(540px,100vw); box-shadow:-10px 0 40px rgba(31,20,16,.25); } }
+  .sd-h { display:flex; align-items:flex-start; gap:10px; padding:14px 16px 10px; border-bottom:1px solid var(--line2); background:var(--s0); }
+  .sd-x { background:transparent; border:0; font-size:18px; color:var(--muted); cursor:pointer; padding:2px 4px; } .sd-x:hover { color:var(--ink); }
+  .sd-b { flex:1; overflow:auto; padding:12px 16px 24px; }
+  .sd-sec { border:1px solid var(--line2); border-radius:10px; margin-top:10px; }
+  .sd-sec > .h { display:flex; align-items:center; gap:8px; padding:8px 12px; font-weight:700; font-size:13.5px; }
+  .sd-sec > .b { padding:0 12px 10px; }
+  details.sd-sec > summary { list-style:none; cursor:pointer; } details.sd-sec > summary::-webkit-details-marker { display:none; }
+  details.sd-sec > summary::after { content:"\F282"; font-family:bootstrap-icons; margin-left:auto; color:var(--muted); font-weight:400; }
+  details.sd-sec[open] > summary::after { content:"\F286"; }
+  .sd-it { padding:9px 0; border-top:1px solid var(--line2); font-size:13px; } .sd-it:first-child { border-top:0; }
+  .sd-it .r { display:flex; gap:8px; align-items:baseline; }
+  .sd-kv { display:flex; flex-wrap:wrap; gap:2px 14px; font-size:12px; color:var(--ink2); margin-top:3px; } .sd-kv b { color:var(--ink); }
+  .sd-acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  @media (min-width:1181px) { body.side-open table.t .opt { display:none; } }   /* 右側面板開著：清單只留主要欄位，細節看面板 */
+  table.t tr.og.sel td { background:var(--s1); } table.t tr.og.sel td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
   a.lnk { color:var(--s9); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
 </style>
 </head>
@@ -109,7 +127,8 @@
   </div>
 </header>
 
-<main class="wrap mx-auto px-5 py-5">
+<div class="layout">
+<main class="wrap mx-auto px-5 py-5" style="flex:1;min-width:0">
 <!-- 2026-10-13 改版（Jerry：「真的要分為六個介面嗎？」）：六個頁籤合成一個畫面。
      最上面一個入口收所有檔案；一排作業流程格子，點了下面的清單就切到那一步、只出現那一步要按的按鈕。
      參考資料（價格本、庫存資料、倉資料…）收進「資料與設定」。規矩見 .claude/skills/ux-design/SKILL.md -->
@@ -220,6 +239,12 @@
   </details>
 </div>
 </main>
+<!-- 右側面板（改版第二次）：點一張單，這張單的全部在這裡看、在這裡改；清單不被蓋住 -->
+<aside id="side" class="hidden" aria-label="訂單詳細">
+  <div class="sd-h"><div id="sd-title" style="flex:1;min-width:0"></div><button class="sd-x" id="sd-close" title="關閉（Esc）" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="sd-b" id="sd-body"></div>
+</aside>
+</div>
 
 <dialog id="dlg-diff"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="dd-title">差異</span><button class="x" data-close="dlg-diff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div id="dd-body"></div>

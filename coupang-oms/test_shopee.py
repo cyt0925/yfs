@@ -887,6 +887,23 @@ def flow_tests(c, orders):
           str(r.get_json()))
     check("通知紀錄可以單獨讀（資料與設定頁用）", isinstance(c.get("/api/shopee/short/notifies").get_json()["notifies"], list))
 
+    def side(no, **q):
+        return c.get("/api/shopee/order", query_string={"no": no, "from": "2026-01-01", **q})
+    L = side("POTWCTWA26100514L").get_json()
+    check("右側面板：竹運採購進貨那張 → 品項、採購單計畫（轉換率、下採）、兩份 EIP、差異紀錄、歷程都在", L["order"]["order_no"] == "POTWCTWA26100514L"
+          and L["buy"] and L["buy"]["fulfil"] == "竹運採購進貨" and {p["supplier_sku_id"] for p in L["buy"]["items"]} >= {"4987176232878_CNN"}
+          and len(L["eips"]) == 2 and L["diffs"] and L["logs"] and L["ship"] is None and L["short"]["items"], str({k: bool(v) for k, v in L.items()}))
+    check("右側面板：缺貨紀錄在（寶僑兩次都通知過）", [r["round"] for r in next(x for x in L["short"]["items"] if x["supplier_sku_id"] == "4987176232878_CNN")["rounds"]] == [1, 2])
+    J = side("POTWCTWA26101500J").get_json()
+    check("右側面板：竹運出貨那張 → 出貨量、效期批次（跟清單同一組篩選算）", J["ship"] and J["ship"]["order_no"] == "POTWCTWA26101500J" and J["buy"] is None
+          and "alloc" in J["ship"]["items"][0] and not J["ship"].get("alone"), str(J["ship"])[:200])
+    J2 = side("POTWCTWA26101500J", **{"from": "2026-12-01"}).get_json()
+    check("不在目前篩選範圍裡的竹運出貨單 → 只就這張單試算、標出來", J2["ship"] and J2["ship"].get("alone"))
+    N_ = side("POTWCTWA26100514N").get_json()
+    check("右側面板：瑪氏直送那張 → 兩份 EIP 都回填了、勇信核對的缺貨在", all(e["eip_po"] and e["mars"] for e in N_["eips"]) and len(N_["eips"]) == 2
+          and any(r["source"] == "勇信核對" for x in N_["short"]["items"] for r in x["rounds"]), str(N_["eips"]))
+    check("找不到的單 → 404；沒給單號 → 400", side("POXXXXXXXX").status_code == 404 and c.get("/api/shopee/order").status_code == 400)
+
 
 if __name__ == "__main__":
     main()

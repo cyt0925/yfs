@@ -15,12 +15,16 @@
   short.py    寶僑（兩次）、紙潔（一次）人工填缺貨；竹運出貨的缺貨自動帶入；產 LINE 通知文字＋Excel 明細，通知過的那次鎖住
 瑪氏缺貨（2026-10-13）：
   yx.py       讀勇信配送明細表 PDF（跟酷澎瑪氏同一份格式），對回瑪氏 EIP 逐品比箱數，確認後寫成缺貨紀錄，再走 short.py 的通知
+畫面改版（2026-10-13）：
+  drop.py     一個上傳入口收所有檔案（看內容認是哪一種，再交給原本那一支）
+  orders.py   overview() 算每張單的待辦（作業流程格子）
+  side.py     右側面板：一張單的全部（品項、採購單計畫、竹運出貨、缺貨、EIP、差異、歷程）
 判讀依據、Jerry 定的規則、還沒問清楚的事寫在 docs/蝦皮特選_設計筆記.md。
 """
 from flask import Blueprint
 
 shopee_bp = Blueprint("shopee", __name__)
 
-from . import drop, mars_po, orders, purchase, ship, short, yx  # noqa: E402,F401 — 讓路由生效
+from . import drop, mars_po, orders, purchase, ship, short, side, yx  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["shopee_bp"]
