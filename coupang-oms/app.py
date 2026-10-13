@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-13.4"
+BUILD_VERSION = "2026-10-13.5"
 
 app = Flask(__name__)
 
@@ -2384,7 +2384,7 @@ def api_import_commit():
 
         today = db.today()
 
-        # CPG 和寶僑的配送方式先帶原廠(EM)（db.EM_DEFAULT_LINES），新單建立
+        # CPG、寶僑、瑪氏的配送方式先帶原廠(EM)（db.EM_DEFAULT_LINES），新單建立
         # 時就直接判斷帶入，省得 OP 每張都手動選。只在「這批真的建立了新
         # 表頭」時才判斷——同一張 PO 之後再匯入新增 SKU，表頭早就存在，不該
         # 回頭去動配送方式。

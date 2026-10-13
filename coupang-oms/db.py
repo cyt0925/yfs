@@ -1542,10 +1542,10 @@ def _unify_overridden_po_fields(conn):
                   )""")
 
 
-# 配送方式先帶原廠(EM)的線別：CPG-開頭（CPG-潔品、CPG-紙品…）跟寶僑。
-# 寶僑是 Jerry 2026-10-13 加的：「寶僑的配送方式，可以一樣先帶原廠(EM)嗎?」
+# 配送方式先帶原廠(EM)的線別：CPG-開頭（CPG-潔品、CPG-紙品…）、寶僑、瑪氏。
+# 寶僑、瑪氏是 Jerry 2026-10-13 加的：「寶僑的配送方式，可以一樣先帶原廠(EM)嗎?」「瑪氏配送方式，可以一樣先帶原廠(EM)嗎?」
 EM_DEFAULT_LINE_PREFIX = "CPG-"
-EM_DEFAULT_LINES = ("寶僑",)
+EM_DEFAULT_LINES = ("寶僑", "瑪氏")
 
 
 def em_default_line(line):
@@ -1554,7 +1554,7 @@ def em_default_line(line):
 
 
 def _backfill_em_shipping_method(conn):
-    """CPG、寶僑的配送方式先帶原廠(EM)，補上這條規則之後匯入的新單會
+    """CPG、寶僑、瑪氏的配送方式先帶原廠(EM)，補上這條規則之後匯入的新單會
     自動帶（見 app.py 的 api_import_commit），但補規則之前已經存在的舊
     資料不會回頭套用，這裡一次補齊。
 

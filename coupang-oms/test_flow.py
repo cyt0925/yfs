@@ -1215,7 +1215,7 @@ def main():
           and after_nil[amt_skus[0]["sku_id"]]["verified_amount"] == 88176.0,
           after_nil[amt_skus[0]["sku_id"]]["verified_amount"])
 
-    print("\n【36】CPG、寶僑新單匯入自動帶配送方式，其他線別不動；舊資料一併補齊")
+    print("\n【36】CPG、寶僑、瑪氏新單匯入自動帶配送方式，線別空白的不動；舊資料一併補齊")
     # CPG 固定走原廠(EM)，新單建立當下就該自動判斷帶入，不用 OP 每張手動選。
     cpg_po = "13000000900001"
     other_po = "13000000900002"
@@ -1224,7 +1224,8 @@ def main():
     wb = openpyxl.load_workbook(SAMPLE)
     ws = wb["整合表"]
     template_row = 2   # 直接複製一列真實資料的其他欄位，只改 PO 單號跟線別
-    rows_to_add = [(cpg_po, "CPG-潔品"), (other_po, "瑪氏"), (pg_po, "寶僑")]
+    mars_po = "13000000900008"
+    rows_to_add = [(cpg_po, "CPG-潔品"), (other_po, ""), (pg_po, "寶僑"), (mars_po, "瑪氏")]
     for i, (po, line) in enumerate(rows_to_add):
         r = ws.max_row + 1
         for c in range(1, ws.max_column + 1):
@@ -1246,8 +1247,12 @@ def main():
     check("寶僑新單一樣先帶「原廠(EM)」（Jerry 2026-10-13）",
           pg_header["shipping_method"] == "原廠(EM)", pg_header["shipping_method"])
 
+    mars_header = client.get(f"/api/pos/{mars_po}").get_json()["header"]
+    check("瑪氏新單一樣先帶「原廠(EM)」（Jerry 2026-10-13）",
+          mars_header["shipping_method"] == "原廠(EM)", mars_header["shipping_method"])
+
     other_header = client.get(f"/api/pos/{other_po}").get_json()["header"]
-    check("CPG、寶僑以外的線別（瑪氏），配送方式不自動帶、維持空白",
+    check("線別空白（線別待補）的新單，配送方式不自動帶、維持空白",
           other_header["shipping_method"] == "", other_header["shipping_method"])
 
     # 補既有舊資料：找一筆匯入前就存在、線別是 CPG 但配送方式還沒填的單
@@ -1256,11 +1261,12 @@ def main():
     legacy_po = "13000000900003"
     legacy_pg_po = "13000000900005"
     legacy_set_po = "13000000900006"     # 寶僑、但 OP 早就手動選了竹運：不能被蓋掉
-    legacy_mars_po = "13000000900007"    # 瑪氏：維持空白
+    legacy_mars_po = "13000000900007"    # 瑪氏：一樣補
+    legacy_blank_po = "13000000900009"   # 線別空白：維持空白
     conn = db.get_conn()
     stamp = db.now()
     for po, line, ship in ((legacy_po, "CPG-紙品", ""), (legacy_pg_po, "寶僑", ""),
-                           (legacy_set_po, "寶僑", "竹運(CUP)"), (legacy_mars_po, "瑪氏", "")):
+                           (legacy_set_po, "寶僑", "竹運(CUP)"), (legacy_mars_po, "瑪氏", ""), (legacy_blank_po, "", "")):
         conn.execute(
             "INSERT INTO po_headers (po_number, po_status, receiving_status, is_pulled, "
             "filed_date, shipping_method, created_at, updated_at) VALUES (?, '已建立', '未驗收', 0, ?, ?, ?, ?)",
@@ -1281,9 +1287,9 @@ def main():
     check("規則上線前既有的 CPG 舊資料，補值邏輯跑過一次後也補上了",
           legacy_header["shipping_method"] == "原廠(EM)", legacy_header["shipping_method"])
     ship_of = {po: client.get(f"/api/pos/{po}").get_json()["header"]["shipping_method"]
-               for po in (legacy_pg_po, legacy_set_po, legacy_mars_po)}
-    check("寶僑舊資料：配送方式空白的補上原廠(EM)，已經手動選過的不動，瑪氏維持空白",
-          ship_of == {legacy_pg_po: "原廠(EM)", legacy_set_po: "竹運(CUP)", legacy_mars_po: ""}, ship_of)
+               for po in (legacy_pg_po, legacy_set_po, legacy_mars_po, legacy_blank_po)}
+    check("寶僑、瑪氏舊資料：配送方式空白的補上原廠(EM)，已經手動選過的不動，線別空白的維持空白",
+          ship_of == {legacy_pg_po: "原廠(EM)", legacy_set_po: "竹運(CUP)", legacy_mars_po: "原廠(EM)", legacy_blank_po: ""}, ship_of)
 
     print("\n【37】YFS 訂單系統入口（/portal）：首頁數字跟資料庫對得起來、待辦會出現也會消失")
     import datetime as _dt
