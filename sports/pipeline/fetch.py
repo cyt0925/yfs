@@ -1100,7 +1100,9 @@ def process_league(lg, dates, lo, hi, all_games, standings):
                 try:
                     fetch_form(lg, t)
                 except Exception as e:  # noqa: BLE001
-                    ERRORS.append(f"{lg['key']} 球隊 {t.get('abbr')} 近況失敗: {e!r}")
+                    import traceback
+                    tb = traceback.extract_tb(e.__traceback__)[-1]
+                    ERRORS.append(f"{lg['key']} 球隊 {t.get('abbr')} 近況失敗: {e!r} @ {tb.name}:{tb.lineno} {tb.line}")
                 if lg.get("gamelog") and g["status"]["state"] != "post":
                     hot = []
                     for ath in (t.get("leaders") or [])[:3]:
