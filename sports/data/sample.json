@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-13T17:00+08:00",
- "generated_ts": 1791882005,
+ "generated_at": "2026-10-13T17:02+08:00",
+ "generated_ts": 1791882178,
  "today_tw": "2026-10-13",
  "sports": [
   {
@@ -52,10 +52,10 @@
    "tournament": null,
    "round": null,
    "name": "LAL @ GS",
-   "start": "2026-10-13T02:00+00:00",
-   "start_tw": "2026-10-13T10:00+08:00",
+   "start": "2026-10-13T02:02+00:00",
+   "start_tw": "2026-10-13T10:02+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "10:00",
+   "time_tw": "10:02",
    "status": {
     "state": "post",
     "completed": true,
@@ -473,10 +473,10 @@
    "tournament": null,
    "round": null,
    "name": "OKC @ BOS",
-   "start": "2026-10-13T07:48+00:00",
-   "start_tw": "2026-10-13T15:48+08:00",
+   "start": "2026-10-13T07:50+00:00",
+   "start_tw": "2026-10-13T15:50+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "15:48",
+   "time_tw": "15:50",
    "status": {
     "state": "in",
     "completed": false,
@@ -817,10 +817,10 @@
    "tournament": null,
    "round": null,
    "name": "BOS @ LAL",
-   "start": "2026-10-13T15:30+00:00",
-   "start_tw": "2026-10-13T23:30+08:00",
+   "start": "2026-10-13T15:32+00:00",
+   "start_tw": "2026-10-13T23:32+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "23:30",
+   "time_tw": "23:32",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1257,10 +1257,10 @@
    "tournament": null,
    "round": null,
    "name": "GS @ OKC",
-   "start": "2026-10-13T18:00+00:00",
-   "start_tw": "2026-10-14T02:00+08:00",
+   "start": "2026-10-13T18:02+00:00",
+   "start_tw": "2026-10-14T02:02+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "02:00",
+   "time_tw": "02:02",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1617,10 +1617,10 @@
    "tournament": null,
    "round": null,
    "name": "TOR @ EDM",
-   "start": "2026-10-13T20:00+00:00",
-   "start_tw": "2026-10-14T04:00+08:00",
+   "start": "2026-10-13T20:02+00:00",
+   "start_tw": "2026-10-14T04:02+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "04:00",
+   "time_tw": "04:02",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1898,10 +1898,10 @@
    "tournament": null,
    "round": null,
    "name": "ARS @ MCI",
-   "start": "2026-10-14T12:00+00:00",
-   "start_tw": "2026-10-14T20:00+08:00",
+   "start": "2026-10-14T12:02+00:00",
+   "start_tw": "2026-10-14T20:02+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "20:00",
+   "time_tw": "20:02",
    "status": {
     "state": "pre",
     "completed": false,
@@ -2175,10 +2175,10 @@
    "tournament": null,
    "round": null,
    "name": "TOT @ LIV",
-   "start": "2026-10-14T14:30+00:00",
-   "start_tw": "2026-10-14T22:30+08:00",
+   "start": "2026-10-14T14:32+00:00",
+   "start_tw": "2026-10-14T22:32+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "22:30",
+   "time_tw": "22:32",
    "status": {
     "state": "pre",
     "completed": false,
@@ -2427,7 +2427,7 @@
    "detail": "腳踝",
    "return_date": null,
    "key": true,
-   "time_tw": "02:00",
+   "time_tw": "02:02",
    "day_tw": "2026-10-14"
   },
   {
@@ -2447,7 +2447,7 @@
    "detail": "膝蓋",
    "return_date": "2026-10-20",
    "key": false,
-   "time_tw": "23:30",
+   "time_tw": "23:32",
    "day_tw": "2026-10-13"
   },
   {
@@ -2467,7 +2467,7 @@
    "detail": "禁賽",
    "return_date": null,
    "key": false,
-   "time_tw": "02:00",
+   "time_tw": "02:02",
    "day_tw": "2026-10-14"
   },
   {
@@ -2487,7 +2487,7 @@
    "detail": "膝蓋",
    "return_date": null,
    "key": false,
-   "time_tw": "20:00",
+   "time_tw": "20:02",
    "day_tw": "2026-10-14"
   },
   {
@@ -2507,7 +2507,7 @@
    "detail": "腿後肌",
    "return_date": null,
    "key": false,
-   "time_tw": "20:00",
+   "time_tw": "20:02",
    "day_tw": "2026-10-14"
   },
   {
@@ -2527,7 +2527,7 @@
    "detail": "腿後肌",
    "return_date": null,
    "key": false,
-   "time_tw": "15:48",
+   "time_tw": "15:50",
    "day_tw": "2026-10-13"
   },
   {
@@ -2547,7 +2547,7 @@
    "detail": "腳踝",
    "return_date": null,
    "key": false,
-   "time_tw": "23:30",
+   "time_tw": "23:32",
    "day_tw": "2026-10-13"
   },
   {
@@ -2567,7 +2567,7 @@
    "detail": "上半身",
    "return_date": null,
    "key": false,
-   "time_tw": "04:00",
+   "time_tw": "04:02",
    "day_tw": "2026-10-14"
   }
  ],

@@ -161,7 +161,7 @@ def team_label(t):
 
 # ---------- 盤口 ----------
 def pick_ml(side):
-    if not side:
+    if not side or not isinstance(side, dict):
         return None
     v = side.get("moneyLine")
     if v is None:
@@ -176,9 +176,9 @@ def pick_ml(side):
 
 def parse_odds(comp):
     arr = comp.get("odds") or []
-    if not arr:
+    o = next((x for x in arr if isinstance(x, dict)), None)
+    if not o:
         return None
-    o = arr[0]
     ml_h = pick_ml(o.get("homeTeamOdds"))
     ml_a = pick_ml(o.get("awayTeamOdds"))
     draw = o.get("drawOdds") or {}
@@ -387,25 +387,28 @@ def fetch_games(lg, dates):
         if not data:
             continue
         for ev in data.get("events") or []:
-            if lg.get("tennis"):
-                groupings = ev.get("groupings") or []
-                if groupings:
-                    for gp in groupings:
-                        gname = (gp.get("grouping") or {}).get("displayName")
-                        for comp in gp.get("competitions") or []:
-                            g = make_game(lg, ev, comp, is_tennis=True, group_name=gname)
+            try:
+                if lg.get("tennis"):
+                    groupings = ev.get("groupings") or []
+                    if groupings:
+                        for gp in groupings:
+                            gname = (gp.get("grouping") or {}).get("displayName")
+                            for comp in gp.get("competitions") or []:
+                                g = make_game(lg, ev, comp, is_tennis=True, group_name=gname)
+                                if g:
+                                    games[g["id"]] = g
+                    else:
+                        for comp in ev.get("competitions") or []:
+                            g = make_game(lg, ev, comp, is_tennis=True)
                             if g:
                                 games[g["id"]] = g
                 else:
-                    for comp in ev.get("competitions") or []:
-                        g = make_game(lg, ev, comp, is_tennis=True)
+                    for comp in (ev.get("competitions") or [])[:1]:
+                        g = make_game(lg, ev, comp)
                         if g:
                             games[g["id"]] = g
-            else:
-                for comp in (ev.get("competitions") or [])[:1]:
-                    g = make_game(lg, ev, comp)
-                    if g:
-                        games[g["id"]] = g
+            except Exception as e:  # noqa: BLE001
+                ERRORS.append(f"{lg['key']} 解析賽事 {ev.get('id')} 失敗: {e!r}")
     return list(games.values())
 
 
@@ -841,57 +844,13 @@ def main():
     for lg in LEAGUES:
         if only and lg["key"] not in only:
             continue
-        t0 = time.time()
-        games = fetch_games(lg, dates)
-        keep = []
-        for g in games:
-            st = parse_dt(g["start"])
-            if g["status"]["state"] == "in" or (lo <= st <= hi):
-                keep.append(g)
-        keep.sort(key=lambda g: g["start"])
-        log(f"[{lg['key']}] 賽事 {len(games)} 場，窗口內 {len(keep)} 場")
-        if not keep:
-            continue
-        injuries_map = fetch_injuries(lg) if lg.get("injuries") else {}
-        news = fetch_news(lg) if not lg.get("tennis") else []
-        seen_teams = {}
-        for g in keep:
-            for side in ("home", "away"):
-                t = g[side]
-                finalize_team(t, lg, injuries_map)
-                if g.get("tennis"):
-                    continue
-                if t["id"] in seen_teams:
-                    cached = seen_teams[t["id"]]
-                    for k in ("form", "form_note", "streak", "last10", "last10_w", "avg_for5", "avg_against5", "avg_total5", "avg_margin5", "hot"):
-                        t[k] = cached.get(k)
-                    continue
-                fetch_form(lg, t)
-                if lg.get("gamelog") and g["status"]["state"] != "post":
-                    hot = []
-                    for ath in (t.get("leaders") or [])[:3]:
-                        pf = fetch_player_form(lg, ath)
-                        if pf:
-                            hot.append(pf)
-                    t["hot"] = hot
-                seen_teams[t["id"]] = t
-            ids = {g["home"]["id"], g["away"]["id"]}
-            picked = []
-            for a in news:
-                if a["teams"] & ids:
-                    picked.append(dict(title=a["title"], desc=a["desc"], url=a["url"], image=a["image"],
-                                       published=a["published"],
-                                       team="home" if g["home"]["id"] in a["teams"] else "away"))
-                if len(picked) >= 4:
-                    break
-            g["news"] = picked
-            g["suggestion"] = build_suggestion(g, lg)
-        all_games.extend(keep)
-        if not lg.get("tennis"):
-            s = fetch_standings(lg)
-            if s:
-                standings[lg["key"]] = dict(label=LEAGUE_ZH.get(lg["key"]), sport=lg["sport"], **s)
-        log(f"[{lg['key']}] 完成，{time.time() - t0:.1f}s，累計呼叫 {CALLS['n']}")
+        try:
+            process_league(lg, dates, lo, hi, all_games, standings)
+        except Exception as e:  # noqa: BLE001
+            import traceback
+            ERRORS.append(f"{lg['key']} 整個聯盟失敗: {e!r}")
+            log(f"[{lg['key']}] 失敗：{e!r}")
+            traceback.print_exc()
 
     all_games.sort(key=lambda g: (g["start"], g["league"]))
     feed, hot = aggregate(all_games)
@@ -918,6 +877,77 @@ def main():
     log(f"寫入 {args.out}：{len(all_games)} 場、傷兵 {len(feed)} 筆、火燙/冰冷 {len(hot)} 人、錯誤 {len(ERRORS)}")
     for e in ERRORS[:20]:
         log("  ! " + e)
+
+
+def process_league(lg, dates, lo, hi, all_games, standings):
+    if True:
+        t0 = time.time()
+        games = fetch_games(lg, dates)
+        keep = []
+        for g in games:
+            st = parse_dt(g["start"])
+            if g["status"]["state"] == "in" or (lo <= st <= hi):
+                keep.append(g)
+        keep.sort(key=lambda g: g["start"])
+        log(f"[{lg['key']}] 賽事 {len(games)} 場，窗口內 {len(keep)} 場")
+        if not keep:
+            return
+        injuries_map = fetch_injuries(lg) if lg.get("injuries") else {}
+        news = fetch_news(lg) if not lg.get("tennis") else []
+        seen_teams = {}
+        for g in keep:
+            for side in ("home", "away"):
+                t = g[side]
+                finalize_team(t, lg, injuries_map)
+                if g.get("tennis"):
+                    continue
+                if t["id"] in seen_teams:
+                    cached = seen_teams[t["id"]]
+                    for k in ("form", "form_note", "streak", "last10", "last10_w", "avg_for5", "avg_against5", "avg_total5", "avg_margin5", "hot"):
+                        t[k] = cached.get(k)
+                    continue
+                try:
+                    fetch_form(lg, t)
+                except Exception as e:  # noqa: BLE001
+                    ERRORS.append(f"{lg['key']} 球隊 {t.get('abbr')} 近況失敗: {e!r}")
+                if lg.get("gamelog") and g["status"]["state"] != "post":
+                    hot = []
+                    for ath in (t.get("leaders") or [])[:3]:
+                        try:
+                            pf = fetch_player_form(lg, ath)
+                        except Exception as e:  # noqa: BLE001
+                            ERRORS.append(f"{lg['key']} 球員 {ath.get('player')} 近況失敗: {e!r}")
+                            pf = None
+                        if pf:
+                            hot.append(pf)
+                    t["hot"] = hot
+                seen_teams[t["id"]] = t
+            ids = {g["home"]["id"], g["away"]["id"]}
+            picked = []
+            for a in news:
+                if a["teams"] & ids:
+                    picked.append(dict(title=a["title"], desc=a["desc"], url=a["url"], image=a["image"],
+                                       published=a["published"],
+                                       team="home" if g["home"]["id"] in a["teams"] else "away"))
+                if len(picked) >= 4:
+                    break
+            g["news"] = picked
+            try:
+                g["suggestion"] = build_suggestion(g, lg)
+            except Exception as e:  # noqa: BLE001
+                ERRORS.append(f"{lg['key']} 建議 {g['id']} 失敗: {e!r}")
+                g["suggestion"] = dict(pick=None, pick_label=None, play="觀望", confidence="低",
+                                       summary="資料不完整，先觀望", reasons=[], cautions=[], totals=None)
+        all_games.extend(keep)
+        if not lg.get("tennis"):
+            try:
+                s = fetch_standings(lg)
+            except Exception as e:  # noqa: BLE001
+                ERRORS.append(f"{lg['key']} 排名失敗: {e!r}")
+                s = None
+            if s:
+                standings[lg["key"]] = dict(label=LEAGUE_ZH.get(lg["key"]), sport=lg["sport"], **s)
+        log(f"[{lg['key']}] 完成，{time.time() - t0:.1f}s，累計呼叫 {CALLS['n']}")
 
 
 if __name__ == "__main__":
