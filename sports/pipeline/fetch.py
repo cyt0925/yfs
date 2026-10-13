@@ -160,35 +160,124 @@ def team_label(t):
 
 
 # ---------- 盤口 ----------
-def pick_ml(side):
-    if not side or not isinstance(side, dict):
+RAW = {}
+
+
+def keep_raw(name, obj):
+    """保留第一筆原始資料，--debug-dir 時寫出來，方便看 ESPN 的欄位長什麼樣。"""
+    if name not in RAW and obj is not None:
+        RAW[name] = obj
+
+
+def dec_to_american(d):
+    d = num(d)
+    if not d or d <= 1:
         return None
-    v = side.get("moneyLine")
-    if v is None:
-        cur = side.get("current") or {}
-        ml = cur.get("moneyLine")
-        if isinstance(ml, dict):
-            v = ml.get("american") or ml.get("value")
-        else:
-            v = ml
-    return to_american(v)
+    return float(round((d - 1) * 100)) if d >= 2 else float(round(-100 / (d - 1)))
 
 
-def parse_odds(comp):
+def _ml_from_dict(ml):
+    """moneyLine 可能是數字、字串，或 {american, decimal, displayValue, ...} 的物件。"""
+    if isinstance(ml, dict):
+        v = to_american(ml.get("american") or ml.get("alternateDisplayValue") or ml.get("displayValue"))
+        if v is None and ml.get("decimal") is not None:
+            v = dec_to_american(ml.get("decimal"))
+        return v
+    return to_american(ml)
+
+
+def _ml_from_block(block):
+    """homeTeamOdds / awayTeamOdds / drawOdds：舊版直接有 moneyLine，新版藏在 current/close/open 裡。"""
+    if not isinstance(block, dict):
+        return None
+    v = _ml_from_dict(block.get("moneyLine"))
+    if v is not None:
+        return v
+    for k in ("current", "close", "open"):
+        sub = block.get(k)
+        if isinstance(sub, dict):
+            v = _ml_from_dict(sub.get("moneyLine"))
+            if v is not None:
+                return v
+    return None
+
+
+def _ml_from_market(o, side):
+    """另一種版本：o["moneyline"] = {home:{close:{odds}}, away:{...}, draw:{...}}"""
+    ml = o.get("moneyline")
+    if not isinstance(ml, dict):
+        return None
+    s = ml.get(side)
+    if not isinstance(s, dict):
+        return None
+    for k in ("close", "current", "open"):
+        sub = s.get(k)
+        if isinstance(sub, dict):
+            v = _ml_from_dict(sub.get("odds") if sub.get("odds") is not None else sub.get("american"))
+            if v is not None:
+                return v
+    return None
+
+
+def _line_from_market(o, market, side, key="line"):
+    m = o.get(market)
+    if not isinstance(m, dict):
+        return None
+    s = m.get(side)
+    if not isinstance(s, dict):
+        return None
+    for k in ("close", "current", "open"):
+        sub = s.get(k)
+        if isinstance(sub, dict) and sub.get(key) is not None:
+            return num(str(sub.get(key)).replace("+", ""))
+    return None
+
+
+SPREAD_SIGMA = {"basketball": 11.5, "football": 13.5, "hockey": 2.0}
+
+
+def spread_prob(spread, sport):
+    """沒有獨贏賠率時，用讓分盤估主隊勝率（常態分布近似）。spread 為主隊讓分，負數代表主隊讓。"""
+    sigma = SPREAD_SIGMA.get(sport)
+    if spread is None or not sigma:
+        return None
+    from math import erf, sqrt
+    return 0.5 * (1 + erf((-spread) / (sigma * sqrt(2))))
+
+
+def parse_odds(comp, sport=None):
     arr = comp.get("odds") or []
     o = next((x for x in arr if isinstance(x, dict)), None)
     if not o:
         return None
-    ml_h = pick_ml(o.get("homeTeamOdds"))
-    ml_a = pick_ml(o.get("awayTeamOdds"))
-    draw = o.get("drawOdds") or {}
-    ml_d = to_american(draw.get("moneyLine")) if draw else None
+    keep_raw(f"odds_{sport}", o)
+    ml_h = _ml_from_block(o.get("homeTeamOdds"))
+    if ml_h is None:
+        ml_h = _ml_from_market(o, "home")
+    ml_a = _ml_from_block(o.get("awayTeamOdds"))
+    if ml_a is None:
+        ml_a = _ml_from_market(o, "away")
+    ml_d = _ml_from_block(o.get("drawOdds"))
+    if ml_d is None:
+        ml_d = _ml_from_market(o, "draw")
+    spread = num(o.get("spread"))
+    if spread is None:
+        spread = _line_from_market(o, "pointSpread", "home")
+    total = num(o.get("overUnder"))
+    if total is None:
+        total = _line_from_market(o, "total", "over")
     probs = {k: implied(v) for k, v in (("home", ml_h), ("away", ml_a), ("draw", ml_d)) if v is not None}
+    source = "moneyline"
+    if "home" not in probs or "away" not in probs:
+        p = spread_prob(spread, sport)
+        if p is not None:
+            probs = {"home": p, "away": 1 - p}
+            source = "spread"
     s = sum(probs.values())
     fair = {k: round(v / s, 3) for k, v in probs.items()} if s else {}
     fav = None
-    if ml_h is not None and ml_a is not None:
-        fav = "home" if ml_h < ml_a else "away"
+    if fair.get("home") is not None and fair.get("away") is not None:
+        fav = "home" if fair["home"] >= fair["away"] else "away"
     elif (o.get("homeTeamOdds") or {}).get("favorite"):
         fav = "home"
     elif (o.get("awayTeamOdds") or {}).get("favorite"):
@@ -196,11 +285,12 @@ def parse_odds(comp):
     return dict(
         provider=(o.get("provider") or {}).get("name"),
         details=o.get("details"),
-        spread=num(o.get("spread")),
-        total=num(o.get("overUnder")),
+        spread=spread,
+        total=total,
         ml_home=ml_h, ml_away=ml_a, ml_draw=ml_d,
         dec_home=dec(ml_h), dec_away=dec(ml_a), dec_draw=dec(ml_d),
         prob_home=fair.get("home"), prob_away=fair.get("away"), prob_draw=fair.get("draw"),
+        prob_source=source if fair else None,
         fav=fav,
     )
 
@@ -328,8 +418,12 @@ def make_game(lg, ev, comp, is_tennis=False, group_name=None):
     if len(comps) < 2:
         return None
     if is_tennis:
+        if group_name and "Doubles" in group_name:
+            return None
         home_c, away_c = comps[0], comps[1]
         home, away = parse_player(home_c, lg), parse_player(away_c, lg)
+        if not home["name"] or not away["name"]:
+            return None
     else:
         home_c = next((c for c in comps if c.get("homeAway") == "home"), comps[0])
         away_c = next((c for c in comps if c.get("homeAway") == "away"), comps[1])
@@ -372,7 +466,7 @@ def make_game(lg, ev, comp, is_tennis=False, group_name=None):
         broadcast=", ".join(dict.fromkeys(bc)) or None,
         home=home,
         away=away,
-        odds=parse_odds(comp),
+        odds=parse_odds(comp, lg["sport"]),
         headline=headline,
         news=[],
         suggestion=None,
@@ -386,6 +480,8 @@ def fetch_games(lg, dates):
         data = get(f"{SITE}/{lg['path']}/scoreboard", params=params)
         if not data:
             continue
+        if data.get("events"):
+            keep_raw(f"scoreboard_event_{lg['key']}", data["events"][0])
         for ev in data.get("events") or []:
             try:
                 if lg.get("tennis"):
@@ -418,6 +514,8 @@ def fetch_injuries(lg):
     out = {}
     if not data:
         return out
+    if data.get("injuries"):
+        keep_raw(f"injuries_{lg['key']}", data["injuries"][0])
     for team in data.get("injuries") or []:
         tid = str(team.get("id") or (team.get("team") or {}).get("id") or "")
         lst = []
@@ -425,6 +523,14 @@ def fetch_injuries(lg):
             a = inj.get("athlete") or {}
             status = inj.get("status") or (inj.get("type") or {}).get("description") or ""
             det = inj.get("details") or {}
+            if status in MAYBE_LIKE:
+                sev = "maybe"
+            elif status.startswith("Injured Reserve") or status == "Out For Season":
+                sev = "ir"
+            elif status in OUT_LIKE:
+                sev = "out"
+            else:
+                sev = "other"
             lst.append(dict(
                 id=str(a.get("id") or ""),
                 player=a.get("displayName") or a.get("fullName") or a.get("shortName"),
@@ -433,7 +539,7 @@ def fetch_injuries(lg):
                 position_zh=POS_ZH.get((a.get("position") or {}).get("abbreviation") or ""),
                 status=status,
                 status_zh=STATUS_ZH.get(status, status),
-                severity="out" if status in OUT_LIKE else ("maybe" if status in MAYBE_LIKE else "other"),
+                severity=sev,
                 detail=det.get("type") or det.get("detail"),
                 side=det.get("side"),
                 return_date=det.get("returnDate"),
@@ -497,6 +603,8 @@ def fetch_form(lg, team):
     if not team.get("id"):
         return
     data = get(f"{SITE}/{lg['path']}/teams/{team['id']}/schedule")
+    if data and data.get("events"):
+        keep_raw(f"schedule_event_{lg['key']}", data["events"][0])
     rows = parse_schedule(data, team["id"], lg)
     note = None
     if not rows and lg["sport"] in ("basketball", "hockey", "football"):
@@ -535,6 +643,8 @@ def fetch_player_form(lg, athlete):
     data = get(f"{WEB}/{lg['path']}/athletes/{athlete['id']}/gamelog")
     if not data:
         return None
+    keep_raw(f"gamelog_{lg['key']}", dict(labels=data.get("labels"), seasonTypes=(data.get("seasonTypes") or [])[:1],
+                                         events=dict(list((data.get("events") or {}).items())[:2])))
     labels = data.get("labels") or []
     stat = lg["stat"]
     if stat not in labels:
@@ -608,6 +718,7 @@ def fetch_standings(lg):
     data = get(f"{SITE_V2}/{lg['path']}/standings")
     if not data:
         return None
+    keep_raw(f"standings_{lg['key']}", dict(children=[dict(name=c.get("name"), standings=dict(entries=((c.get("standings") or {}).get("entries") or [])[:1])) for c in (data.get("children") or [])[:1]]))
     groups = []
     children = data.get("children") or []
     if not children and data.get("standings"):
@@ -685,7 +796,10 @@ def build_suggestion(g, lg):
     score = 0.0
     reasons, cautions = [], []
     side = "主" if fav == "home" else "客"
-    reasons.append(f"國際盤看好{side}隊 {fn}，勝率約 {round(pf * 100)}%")
+    if o.get("prob_source") == "spread":
+        reasons.append(f"依讓分盤推估{side}隊 {fn} 勝率約 {round(pf * 100)}%（無獨贏賠率）")
+    else:
+        reasons.append(f"國際盤看好{side}隊 {fn}，勝率約 {round(pf * 100)}%")
     if o.get("prob_draw"):
         reasons.append(f"和局機率約 {round(o['prob_draw'] * 100)}%")
     if ft["key_out"]:
@@ -782,15 +896,16 @@ def build_suggestion(g, lg):
 # ---------- 整合 ----------
 def finalize_team(team, lg, injuries_map):
     inj = injuries_map.get(team["id"], []) if team.get("id") else []
-    inj = sorted(inj, key=lambda x: (0 if x["severity"] == "out" else 1 if x["severity"] == "maybe" else 2))
+    order = {"maybe": 0, "out": 1, "ir": 2, "other": 3}
+    inj = sorted(inj, key=lambda x: order.get(x["severity"], 3))
     team["injuries"] = inj
-    team["out_count"] = sum(1 for x in inj if x["severity"] == "out")
+    team["out_count"] = sum(1 for x in inj if x["severity"] in ("out", "ir"))
     team["maybe_count"] = sum(1 for x in inj if x["severity"] == "maybe")
     leader_ids = {l["id"] for l in team.get("leaders") or []}
     leader_names = {l["player"] for l in team.get("leaders") or []}
-    key = [x["player"] for x in inj if x["severity"] == "out" and (x["id"] in leader_ids or x["player"] in leader_names)]
+    key = [x["player"] for x in inj if x["severity"] in ("out", "ir") and ((x["id"] and x["id"] in leader_ids) or x["player"] in leader_names)]
     team["key_out"] = key
-    team["key_maybe"] = [x["player"] for x in inj if x["severity"] == "maybe" and (x["id"] in leader_ids or x["player"] in leader_names)]
+    team["key_maybe"] = [x["player"] for x in inj if x["severity"] == "maybe" and ((x["id"] and x["id"] in leader_ids) or x["player"] in leader_names)]
 
 
 def aggregate(games):
@@ -804,7 +919,7 @@ def aggregate(games):
             t = g[side]
             for x in t.get("injuries") or []:
                 key = (t.get("id"), x.get("id") or x.get("player"))
-                if x["severity"] in ("out", "maybe") and key not in seen_inj:
+                if x["severity"] in ("out", "maybe", "ir") and key not in seen_inj:
                     seen_inj.add(key)
                     feed.append(dict(
                         game_id=g["id"], league=g["league"], league_zh=g["league_zh"], sport=g["sport"],
@@ -821,15 +936,25 @@ def aggregate(games):
                     seen_hot.add(key)
                     hot.append(dict(game_id=g["id"], league=g["league"], league_zh=g["league_zh"], sport=g["sport"],
                                     team=team_label(t), team_logo=t.get("logo"), **p))
-    feed.sort(key=lambda x: (0 if x["severity"] == "out" else 1, 0 if x["key"] else 1, x["day_tw"], x["time_tw"]))
+    # 排序：主力優先；再來是「今天到底上不上」最有用的存疑/逐日觀察，然後缺陣，長期傷兵名單放最後
+    sev_order = {"maybe": 0, "out": 1, "ir": 2}
+    feed.sort(key=lambda x: (0 if x["key"] else 1, sev_order.get(x["severity"], 3), x["day_tw"], x["time_tw"]))
+    # 每個聯盟最多 30 筆，避免 NFL 那種一隊二十幾個傷兵把版面塞滿
+    per = {}
+    trimmed = []
+    for x in feed:
+        per[x["league"]] = per.get(x["league"], 0) + 1
+        if per[x["league"]] <= 30:
+            trimmed.append(x)
     hot.sort(key=lambda x: -abs(x["delta_pct"]))
-    return feed, hot
+    return trimmed, hot
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "today.json"))
     ap.add_argument("--leagues", default="", help="逗號分隔，只抓這些聯盟（測試用）")
+    ap.add_argument("--debug-dir", default="", help="把每種 ESPN 回應的第一筆原始資料寫到這個資料夾")
     args = ap.parse_args()
 
     now = datetime.now(timezone.utc)
@@ -877,6 +1002,12 @@ def main():
     log(f"寫入 {args.out}：{len(all_games)} 場、傷兵 {len(feed)} 筆、火燙/冰冷 {len(hot)} 人、錯誤 {len(ERRORS)}")
     for e in ERRORS[:20]:
         log("  ! " + e)
+    if args.debug_dir:
+        os.makedirs(args.debug_dir, exist_ok=True)
+        for name, obj in RAW.items():
+            with open(os.path.join(args.debug_dir, f"{name}.json"), "w", encoding="utf-8") as f:
+                json.dump(obj, f, ensure_ascii=False, indent=1)
+        log(f"原始資料樣本 {len(RAW)} 份寫到 {args.debug_dir}")
 
 
 def process_league(lg, dates, lo, hi, all_games, standings):

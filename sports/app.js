@@ -232,14 +232,17 @@
       <span class="badge ${s.confidence === "高" ? "ok" : "vio"} conf">信心 ${esc(s.confidence)}</span>${lean}</div></div>`;
   }
 
+  const sevClass = (s) => (s === "out" ? "out" : s === "maybe" ? "maybe" : s === "ir" ? "ir" : "muted");
+
   function playerRow(p, extra = "") {
-    return `<div class="prow">${avatarImg(p)}<div class="grow"><div class="pn">${esc(p.player)}</div><div class="ps">${esc(p.position_zh || p.position || "")}${p.detail ? " · " + esc(p.detail) : ""}${p.return_date ? " · 預計回歸 " + esc(String(p.return_date).slice(0, 10)) : ""}</div></div>${extra}</div>`;
+    const comment = p.comment ? `<div class="pc">${esc(String(p.comment).slice(0, 180))}${p.comment.length > 180 ? "…" : ""}</div>` : "";
+    return `<div class="prow">${avatarImg(p)}<div class="grow"><div class="pn">${esc(p.player)}</div><div class="ps">${esc(p.position_zh || p.position || "")}${p.detail ? " · " + esc(p.detail) : ""}${p.return_date ? " · 預計回歸 " + esc(String(p.return_date).slice(0, 10)) : ""}</div>${comment}</div>${extra}</div>`;
   }
 
   function injuryCol(t) {
-    const list = (t.injuries || []).filter((x) => x.severity !== "other" || true).slice(0, 8);
+    const list = (t.injuries || []).slice(0, 10);
     if (!list.length) return `<div class="plist"><span class="badge ok">${icon("i-check")}沒有傷兵回報</span></div>`;
-    return `<div class="plist">${list.map((x) => playerRow(x, `<span class="badge ${x.severity === "out" ? "out" : x.severity === "maybe" ? "maybe" : "muted"}">${esc(x.status_zh)}</span>`)).join("")}</div>`;
+    return `<div class="plist">${list.map((x) => playerRow(x, `<span class="badge ${sevClass(x.severity)}">${esc(x.status_zh)}</span>`)).join("")}</div>`;
   }
 
   function hotRow(p) {
@@ -310,35 +313,65 @@
     </article>`;
   }
 
+  function tennisSummary(tennis) {
+    if (!tennis.length) return "";
+    const by = {};
+    tennis.forEach((g) => { const k = `${g.league_zh}｜${g.tournament || ""}`; (by[k] = by[k] || []).push(g); });
+    const items = Object.keys(by).map((k) => {
+      const list = by[k];
+      const live = list.filter((g) => g.status.state === "in").length;
+      const up = list.filter((g) => g.status.state === "pre").length;
+      const [lg, tn] = k.split("｜");
+      return `<button class="pick" data-sport-go="tennis"><span class="logos">${icon("i-tennis")}</span><span class="pt"><b>${esc(tn || lg)}</b><small>${esc(lg)} · ${live ? `進行中 ${live} 場 · ` : ""}未開賽 ${up} 場 · 共 ${list.length} 場單打</small></span><span class="pr"><span class="badge vio">看網球</span></span></button>`;
+    }).join("");
+    return `<div class="day-title">網球<small>點進去看各場次</small></div><div class="pick-grid">${items}</div>`;
+  }
+
   function renderGames() {
-    const games = gamesForSport();
+    const all = gamesForSport();
+    const isAll = state.sport === "all";
+    const games = isAll ? all.filter((g) => !g.tennis) : all;
+    const tennis = isAll ? all.filter((g) => g.tennis) : [];
     const live = games.filter((g) => g.status.state === "in");
     const liveSec = $("#sec-live");
     liveSec.classList.toggle("none", !live.length);
     $("#live").innerHTML = live.map(gameCard).join("");
     const rest = games.filter((g) => g.status.state !== "in");
-    if (!rest.length && !live.length) {
+    if (!rest.length && !live.length && !tennis.length) {
       $("#games").innerHTML = `<div class="empty">這個球種目前沒有賽事（往後 40 小時內）。</div>`;
       return;
     }
-    const byDay = {};
-    rest.forEach((g) => { (byDay[g.day_tw] = byDay[g.day_tw] || []).push(g); });
-    $("#games").innerHTML = Object.keys(byDay).sort().map((day) => {
-      const dl = dayLabel(day);
-      const list = byDay[day].sort((a, b) => (a.status.state === "post") - (b.status.state === "post") || a.start.localeCompare(b.start));
-      return `<div class="day-title">${esc(dl.name)}<small>${esc(dl.sub)} · ${list.length} 場</small></div><div class="cards">${list.map(gameCard).join("")}</div>`;
-    }).join("");
+    const sortGames = (list) => list.sort((a, b) => (a.status.state === "post") - (b.status.state === "post") || a.start.localeCompare(b.start));
+    let html = "";
+    if (state.sport === "tennis") {
+      const byT = {};
+      rest.forEach((g) => { const k = `${g.league_zh}｜${g.tournament || ""}`; (byT[k] = byT[k] || []).push(g); });
+      html = Object.keys(byT).map((k) => {
+        const [lg, tn] = k.split("｜");
+        const list = sortGames(byT[k]);
+        return `<div class="day-title">${esc(tn || lg)}<small>${esc(lg)} · ${list.length} 場單打</small></div><div class="cards">${list.map(gameCard).join("")}</div>`;
+      }).join("");
+    } else {
+      const byDay = {};
+      rest.forEach((g) => { (byDay[g.day_tw] = byDay[g.day_tw] || []).push(g); });
+      html = Object.keys(byDay).sort().map((day) => {
+        const dl = dayLabel(day);
+        const list = sortGames(byDay[day]);
+        return `<div class="day-title">${esc(dl.name)}<small>${esc(dl.sub)} · ${list.length} 場</small></div><div class="cards">${list.map(gameCard).join("")}</div>`;
+      }).join("");
+    }
+    $("#games").innerHTML = html + tennisSummary(tennis);
   }
 
   function renderInjuries() {
     const feed = (state.data.injury_feed || []).filter((x) => state.sport === "all" || x.sport === state.sport);
     const el = $("#injuries");
     if (!feed.length) { el.innerHTML = `<div class="empty">今明兩天的比賽沒有傷兵回報，或該球種沒有傷兵資料來源。</div>`; return; }
-    const list = state.showAllInj ? feed : feed.slice(0, 8);
+    const list = state.showAllInj ? feed : feed.slice(0, 10);
     el.innerHTML = list.map((x) => `<button class="aitem" data-goto="${esc(x.game_id)}">${avatarImg(x)}<div class="grow"><div class="pn">${esc(x.player)} ${x.key ? `<span class="badge vio">主力</span>` : ""}</div>
       <div class="ps">${x.team_logo ? `<img class="tl" src="${esc(x.team_logo)}" alt="">` : ""}${esc(x.team)} · ${esc(x.position || "")}${x.detail ? " · " + esc(x.detail) : ""} · ${esc(x.time_tw)}</div></div>
-      <span class="badge ${x.severity === "out" ? "out" : "maybe"}">${esc(x.status_zh)}</span></button>`).join("") +
-      (feed.length > 8 ? `<button class="more" data-more="inj">${state.showAllInj ? "收起" : `還有 ${feed.length - 8} 筆，展開全部`}</button>` : "");
+      <span class="badge ${sevClass(x.severity)}">${esc(x.status_zh)}</span></button>`).join("") +
+      (feed.length > 10 ? `<button class="more" data-more="inj">${state.showAllInj ? "收起" : `還有 ${feed.length - 10} 筆，展開全部`}</button>` : "");
   }
 
   function renderHot() {
@@ -388,8 +421,8 @@
     window.scrollTo({ top: 0 });
   }
   document.addEventListener("click", (e) => {
-    const chip = e.target.closest(".chip");
-    if (chip) { state.sport = chip.dataset.sport; localStorage.setItem("sport", state.sport); render(); return; }
+    const chip = e.target.closest(".chip, [data-sport-go]");
+    if (chip) { state.sport = chip.dataset.sport || chip.dataset.sportGo; localStorage.setItem("sport", state.sport); render(); window.scrollTo({ top: 0 }); return; }
     const tg = e.target.closest("[data-toggle]");
     if (tg) {
       const id = tg.dataset.toggle;

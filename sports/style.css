@@ -146,6 +146,9 @@ h2{margin:0}
 .badge.vio{background:var(--violet-wash);color:var(--violet-2)}
 .badge.lime{background:var(--lime);color:var(--lime-ink)}
 .badge.muted{background:var(--card-3);color:var(--muted)}
+.badge.ir{background:var(--card-3);color:var(--bad);opacity:.85}
+.pc{color:var(--muted);font-size:.74rem;line-height:1.35;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pick .logos svg{width:30px;height:30px;color:var(--lime)}
 .badge.big{font-size:.86rem;padding:5px 11px}
 
 /* 建議列 */

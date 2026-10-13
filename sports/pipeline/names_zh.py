@@ -109,6 +109,15 @@ SOCCER = {
     "union saint gilloise": "聖吉羅斯聯", "sturm graz": "格拉茨", "young boys": "年輕男孩",
     "sparta prague": "布拉格斯巴達", "sparta praha": "布拉格斯巴達", "red star belgrade": "貝爾格勒紅星",
     "crvena zvezda": "貝爾格勒紅星",
+    "brugge": "布魯日", "athletic": "畢爾包競技", "sabah": "薩巴赫", "viking": "維京",
+    "lask linz": "林茨", "lask": "林茨", "aek athens": "AEK 雅典", "slovan bratislava": "布拉提斯拉瓦",
+    "bod glimt": "博德閃耀", "ferencvaros": "費倫茨瓦羅斯", "kairat almaty": "凱拉特",
+    "panathinaikos": "帕納辛奈科斯", "paok": "PAOK", "besiktas": "貝西克塔斯", "braga": "布拉加",
+    "lille osc": "里爾", "nice ogc": "尼斯", "ogc nice": "尼斯", "rc lens": "朗斯",
+    "stade rennais": "雷恩", "stade brestois": "布雷斯特", "rb salzburg": "薩爾茲堡",
+    "fc midtjylland": "中日德蘭", "midtjylland": "中日德蘭", "malmo": "馬爾默", "genk": "亨克",
+    "anderlecht": "安德萊赫特", "dynamo kyiv": "基輔迪納摩", "zenit": "聖彼得堡澤尼特",
+    "nottingham": "諾丁漢森林", "brighton and hove albion": "布萊頓",
 }
 
 STATUS_ZH = {
@@ -175,6 +184,6 @@ def zh_name(league_key, abbr, name, short=None):
     # 再寬鬆一點：隊名中含有字典 key 的
     n = normalize(name)
     for key, zh in SOCCER.items():
-        if len(key) >= 5 and (n == key or n.startswith(key + " ") or n.endswith(" " + key)):
+        if len(key) >= 4 and (n == key or n.startswith(key + " ") or n.endswith(" " + key)):
             return zh
     return None
