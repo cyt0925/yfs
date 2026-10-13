@@ -59,12 +59,20 @@ async function dropOne(f) {
   return true;
 }
 
-/* 上傳區右邊：價格本、庫存資料什麼時候更新的（點了到「資料與設定」） */
+/* 上傳區右邊：蝦皮採購單／入庫單最後一次匯入、價格本、庫存資料什麼時候更新的（點了到「資料與設定」）。
+   蝦皮採購單排第一個：只列參考資料會讓人以為全部傳好了（Jerry 2026-10-13：「上面有寫要上傳蝦皮採購單嗎??」） */
 async function loadFresh() {
-  let c, k; try { [c, k] = await Promise.all([api("/api/shopee/conv"), api("/api/shopee/stock")]); } catch (err) { return; }
+  let c, k, u; try { [c, k, u] = await Promise.all([api("/api/shopee/conv"), api("/api/shopee/stock"), api("/api/shopee/uploads")]); } catch (err) { return; }
   const md = t => t ? `${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))}` : "";
-  const chips = ["寶僑", "紙潔"].map(l => { const x = c.lines[l]; return x ? `<span title="${esc(x.file || "")}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${l}價格本 ${md(x.updated_at)}</span>`
-    : `<span class="w"><i class="bi bi-exclamation-circle"></i> ${l}價格本未上傳</span>`; });
+  const today = iso(new Date(Date.now() - new Date().getTimezoneOffset() * 6e4));
+  const chips = [["purchase", "蝦皮採購單"], ["inbound", "蝦皮入庫單"]].map(([kind, label]) => {
+    const x = u.uploads.find(r => r.kind === kind), at = x && (x.committed_at || x.uploaded_at);
+    if (x) return `<span title="${esc(x.filename)}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${label} ${at.slice(0, 10) === today ? "今天" : md(at)}</span>`;
+    return kind === "purchase" ? `<span class="w"><i class="bi bi-exclamation-circle"></i> ${label}未匯入</span>`
+      : `<span title="竹運出貨產拋單檔需要入庫單號"><i class="bi bi-dash-circle"></i> ${label}未匯入</span>`;
+  });
+  chips.push(...["寶僑", "紙潔"].map(l => { const x = c.lines[l]; return x ? `<span title="${esc(x.file || "")}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${l}價格本 ${md(x.updated_at)}</span>`
+    : `<span class="w"><i class="bi bi-exclamation-circle"></i> ${l}價格本未上傳</span>`; }));
   for (const kk of KIND_ORDER) {
     const x = k.stock[kk];
     if (!x) { chips.push(`<span class="w"><i class="bi bi-exclamation-circle"></i> ${KIND_LABEL[kk]}未上傳</span>`); continue; }
@@ -105,7 +113,7 @@ function renderPreview(box, d) {
       const r = await post("/api/shopee/import/commit", { upload_id: d.upload_id, fulfil });
       const k = r.counts; box.remove();
       toast(`已匯入 ${d.filename}：新增 ${k.new} 項、有變 ${k.changed} 項、移除 ${k.remove} 項、無異動 ${k.same} 項`);
-      refresh();
+      loadFresh(); refresh();
     } catch (err) { e.target.disabled = false; toast(err.message, "err"); }
   });
 }
@@ -884,4 +892,13 @@ function showSettings(on) {
 $("#btn-set").addEventListener("click", () => showSettings($("#view-set").classList.contains("hidden")));
 $("#set-back").addEventListener("click", () => showSettings(false));
 
-loadFresh(); refresh();
+/* 上傳了還沒按「確認匯入」就重新整理：把預覽卡片放回來 */
+async function loadPending() {
+  let d; try { d = await api("/api/shopee/import/pending"); } catch (err) { return; }
+  for (const p of d.pending) {
+    const box = document.createElement("div"); box.className = "pv"; $("#previews").append(box);
+    renderPreview(box, p);
+    box.insertAdjacentHTML("afterbegin", `<div class="alert al-warn mb-3"><i class="bi bi-exclamation-triangle-fill"></i> 這個檔今天已上傳，但還沒按「確認匯入」，訂單尚未寫入。</div>`);
+  }
+}
+loadFresh(); loadPending(); refresh();

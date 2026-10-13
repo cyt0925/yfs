@@ -179,10 +179,20 @@ def main():
     check("預覽：採購單、新增 3、要選履約方式、還沒寫進訂單", pv["kind"] == "purchase" and pv["counts"]["new"] == 3 and pv["needs_fulfil"]
           and orders()["summary"]["orders"] == 0, str(pv["counts"]))
     check("還沒匯入：全部訂單 0 張（畫面據此寫「尚未匯入蝦皮訂單」）", orders()["all_orders"] == {"count": 0, "first": "", "last": ""}, str(orders()["all_orders"]))
+    pend = c.get("/api/shopee/import/pending").get_json()["pending"]
+    check("還沒按確認匯入：重新整理後拿得回這張預覽（同一個上傳、新增 3、要選履約方式、線別寶僑 3 項）",
+          len(pend) == 1 and pend[0]["upload_id"] == pv["upload_id"] and pend[0]["counts"]["new"] == 3 and pend[0]["needs_fulfil"]
+          and pend[0]["lines"] == pv["lines"] and pend[0]["orders"] == pv["orders"], str(pend)[:300])
+    with c.session_transaction() as s_:
+        s_["user"] = "Alice"
+    check("別人的預覽不會跑到自己畫面上", c.get("/api/shopee/import/pending").get_json()["pending"] == [])
+    with c.session_transaction() as s_:
+        s_["user"] = "Jerry"
     r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"]})
     check("沒選履約方式 → 400", r.status_code == 400 and "履約方式" in r.get_json()["error"])
     r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "竹運採購進貨"})
     check("選了竹運採購進貨 → 匯入 3 項", r.status_code == 200 and r.get_json()["counts"]["new"] == 3, str(r.get_json()))
+    check("確認匯入後就不再列為待確認", c.get("/api/shopee/import/pending").get_json()["pending"] == [])
     check("同一個預覽再按一次 → 404（不會重複匯入）", c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "竹運出貨"}).status_code == 404)
     o = orders()
     g = o["orders"][0]

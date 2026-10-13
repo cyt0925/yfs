@@ -659,12 +659,20 @@ def main():
         check("還沒有任何蝦皮訂單：停在「全部訂單」，清單寫「尚未匯入蝦皮訂單」並說要上傳哪個檔、按哪個鈕",
               pg.get_attribute("#stages .st.on", "data-s") == "all" and "尚未匯入蝦皮訂單" in pg.inner_text("#tbl")
               and "PurchaseOrder" in pg.inner_text("#tbl") and "確認匯入" in pg.inner_text("#tbl"), pg.inner_text("#tbl")[:200])
+        pg.wait_for_selector("#fresh span", timeout=8000)
+        check("上傳區右邊第一個是「蝦皮採購單未匯入」（黃色），不是只列參考資料", pg.inner_text("#fresh span >> nth=0").strip() == "蝦皮採購單未匯入"
+              and "w" in (pg.get_attribute("#fresh span >> nth=0", "class") or ""), pg.inner_text("#fresh"))
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.set_input_files("#file", sp1); pg.wait_for_selector(".pv .ok", timeout=15000)
         check("上傳採購單 → 預覽：蝦皮採購單、新增 2 項、沒選履約方式不能按確認", "蝦皮採購單" in pg.inner_text(".pv") and "新增 2 項" in pg.inner_text(".pv").replace("\n", " ")
               and pg.is_disabled(".pv .ok"), pg.inner_text(".pv")[:200])
+        pg.reload(); pg.wait_for_selector(".pv .ok", timeout=15000)
+        check("還沒按確認匯入就重新整理 → 預覽卡片放回來，寫「還沒按確認匯入」", "還沒按「確認匯入」" in pg.inner_text(".pv")
+              and "新增 2 項" in pg.inner_text(".pv").replace("\n", " ") and pg.eval_on_selector_all(".pv", "els => els.length") == 1, pg.inner_text("#previews")[:200])
+        pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.click(".pv .ff[data-f='竹運出貨']"); pg.click(".pv .ok"); pg.wait_for_function("document.querySelectorAll('.pv').length === 0", timeout=10000); pg.wait_for_timeout(800)
         check("匯入後：「待產拋單檔」那格 1 張", count("ship") == 1, pg.inner_text("#stages"))
+        check("匯入後上傳區寫「蝦皮採購單 今天」", "蝦皮採購單 今天" in pg.inner_text("#fresh"), pg.inner_text("#fresh"))
         stage("all")
         row = pg.inner_text("#tbl tr.og >> nth=0")
         check("全部訂單：這張 PR、寶僑、觀音、竹運出貨，下一步「產出拋單檔」，列上沒有一排按鈕", "PRTWCOTWA202610019999" in row and "寶僑" in row and "觀音" in row and "竹運出貨" in row

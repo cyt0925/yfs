@@ -220,12 +220,38 @@ def api_import_preview():
         uid = cur.lastrowid
     finally:
         conn.close()
-    orders = sorted({(r.get("po_id") or r.get("pr_id")) for r in parsed["rows"]})
-    return jsonify({"upload_id": uid, "kind": parsed["kind"], "kind_text": KIND_TEXT[parsed["kind"]], "filename": f.filename,
-                    "rows_total": len(parsed["rows"]), "orders": orders, "lines": parsed["lines"],
-                    "warehouses": sorted({r["warehouse"] for r in parsed["rows"] if r["warehouse"]}),
-                    "dates": sorted({r["expected_date"] for r in parsed["rows"] if r["expected_date"]}),
-                    "counts": c, "diffs": diffs[:500], "errors": parsed["errors"], "needs_fulfil": c["new"] > 0})
+    return jsonify(_preview_out(uid, parsed["kind"], f.filename, parsed["rows"], parsed["lines"], parsed["errors"], c, diffs))
+
+
+def _preview_out(uid, kind, filename, rows, lines, errors, c, diffs):
+    return {"upload_id": uid, "kind": kind, "kind_text": KIND_TEXT[kind], "filename": filename,
+            "rows_total": len(rows), "orders": sorted({(r.get("po_id") or r.get("pr_id")) for r in rows}), "lines": lines,
+            "warehouses": sorted({r["warehouse"] for r in rows if r["warehouse"]}),
+            "dates": sorted({r["expected_date"] for r in rows if r["expected_date"]}),
+            "counts": c, "diffs": diffs[:500], "errors": errors, "needs_fulfil": c["new"] > 0}
+
+
+@shopee_bp.route("/api/shopee/import/pending")
+def api_import_pending():
+    """這個人今天上傳了、還沒按「確認匯入」的檔：頁面重新整理後把預覽卡片放回來，不然看起來像傳了卻什麼都沒有。"""
+    conn = get_conn()
+    try:
+        ups = _rows(conn.execute("SELECT id, kind, filename, payload_json, errors_json FROM shp_uploads "
+                                 "WHERE status = 'pending' AND uploaded_by = ? AND uploaded_at >= ? ORDER BY id",
+                                 (_operator(), now()[:10])))
+        out = []
+        for u in ups:
+            rows = json.loads(u["payload_json"] or "[]")
+            if not rows:
+                continue
+            acts, diffs = plan(conn, u["kind"], rows)
+            lines = {}
+            for r in rows:
+                lines[r.get("line") or ""] = lines.get(r.get("line") or "", 0) + 1
+            out.append(_preview_out(u["id"], u["kind"], u["filename"], rows, lines, json.loads(u["errors_json"] or "[]"), _counts(acts), diffs))
+    finally:
+        conn.close()
+    return jsonify({"pending": out})
 
 
 def _pending_upload(conn, uid):
