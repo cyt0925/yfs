@@ -1084,7 +1084,7 @@ def main():
         injury_feed=feed[:80],
         hot_players=hot[:40],
         standings=standings,
-        source="ESPN 公開資料；盤口為美國莊家（ESPN BET），非台灣運彩",
+        source="賽事、傷兵、近況來自 ESPN；國際盤為美國莊家參考值；台灣盤來自玩運彩",
         errors=ERRORS[:50],
         calls=CALLS["n"],
     )
