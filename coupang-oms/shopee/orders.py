@@ -375,11 +375,15 @@ def api_orders():
         out = overview(conn, request.args)
         pending_all = conn.execute("SELECT COUNT(DISTINCT CASE WHEN po_id != '' THEN po_id ELSE pr_id END) AS n FROM shp_orders "
                                    "WHERE diff_pending = 1").fetchone()["n"]
+        # 篩選條件下沒有訂單時，畫面要說清楚是「還沒匯入」還是「被到貨日篩掉了」（Jerry 2026-10-13：「甚麼都沒有」）
+        every = conn.execute("SELECT COUNT(DISTINCT CASE WHEN po_id != '' THEN po_id ELSE pr_id END) AS n, MIN(expected_date) AS d1, "
+                             "MAX(expected_date) AS d2 FROM shp_orders").fetchone()
     finally:
         conn.close()
     stages = [{"key": k, "label": lab, "count": sum(1 for g in out if k in g["todo"])} for k, lab, _a in STAGES]
     stages.append({"key": "done", "label": "已處理", "count": sum(1 for g in out if not g["todo"])})
     return jsonify({"orders": out, "pending_orders": pending_all, "stages": stages,
+                    "all_orders": {"count": every["n"] or 0, "first": every["d1"] or "", "last": every["d2"] or ""},
                     "summary": {"orders": len(out), "items": sum(g["item_count"] for g in out), "qty": sum(g["qty"] for g in out),
                                 "pending": sum(1 for g in out if g["diff_pending"])}})
 

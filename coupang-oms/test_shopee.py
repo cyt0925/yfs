@@ -178,6 +178,7 @@ def main():
     pv = preview(raw, "PurchaseOrder_20261001.xlsx").get_json()
     check("預覽：採購單、新增 3、要選履約方式、還沒寫進訂單", pv["kind"] == "purchase" and pv["counts"]["new"] == 3 and pv["needs_fulfil"]
           and orders()["summary"]["orders"] == 0, str(pv["counts"]))
+    check("還沒匯入：全部訂單 0 張（畫面據此寫「尚未匯入蝦皮訂單」）", orders()["all_orders"] == {"count": 0, "first": "", "last": ""}, str(orders()["all_orders"]))
     r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"]})
     check("沒選履約方式 → 400", r.status_code == 400 and "履約方式" in r.get_json()["error"])
     r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "竹運採購進貨"})
@@ -185,6 +186,9 @@ def main():
     check("同一個預覽再按一次 → 404（不會重複匯入）", c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "竹運出貨"}).status_code == 404)
     o = orders()
     g = o["orders"][0]
+    out = orders(**{"from": "2027-01-01"})
+    check("到貨日篩掉全部：清單 0 張，但告訴畫面系統共有 1 張、到貨日 10/19（畫面據此給「清除篩選」）",
+          out["orders"] == [] and out["all_orders"] == {"count": 1, "first": "2026-10-19", "last": "2026-10-19"}, str(out["all_orders"]))
     check("總覽：一張單、訂單編號先用 PR、線別寶僑、倉 TWA、到貨日、履約方式、原始訂購量 482", len(o["orders"]) == 1 and g["order_no"] == "PRTWCOTWA202610010001"
           and g["line"] == "寶僑" and g["warehouse"] == "TWA" and g["expected_date"] == "2026-10-19" and g["fulfil"] == "竹運採購進貨"
           and g["qty_original"] == 482 and g["status"] == "已匯入", str(g)[:300])

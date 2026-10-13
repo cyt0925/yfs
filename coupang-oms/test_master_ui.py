@@ -655,6 +655,10 @@ def main():
         check("一個畫面：上傳入口一個、作業流程六格（差異待確認 → … → 全部訂單）、沒有舊頁籤",
               pg.eval_on_selector_all(".dzbox", "els => els.length") == 1 and pg.eval_on_selector_all("#stages .st", "els => els.map(e => e.dataset.s).join()") == "diff,buy,eip,ship,notify,all"
               and pg.query_selector("#tabs") is None)
+        pg.wait_for_selector("#stages .st.on", timeout=10000); pg.wait_for_timeout(500)
+        check("還沒有任何蝦皮訂單：停在「全部訂單」，清單寫「尚未匯入蝦皮訂單」並說要上傳哪個檔、按哪個鈕",
+              pg.get_attribute("#stages .st.on", "data-s") == "all" and "尚未匯入蝦皮訂單" in pg.inner_text("#tbl")
+              and "PurchaseOrder" in pg.inner_text("#tbl") and "確認匯入" in pg.inner_text("#tbl"), pg.inner_text("#tbl")[:200])
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.set_input_files("#file", sp1); pg.wait_for_selector(".pv .ok", timeout=15000)
         check("上傳採購單 → 預覽：蝦皮採購單、新增 2 項、沒選履約方式不能按確認", "蝦皮採購單" in pg.inner_text(".pv") and "新增 2 項" in pg.inner_text(".pv").replace("\n", " ")
@@ -689,6 +693,12 @@ def main():
               and count("ship") == 0 and count("buy") == 1, row[:200])
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         check("按 Esc 關掉右側面板、欄位回來", pg.is_hidden("#side") and "供應商直送" in pg.inner_text("#tbl tr.og >> nth=0"))
+        pg.fill("#f-from", "2027-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_selector("#tbl .clr-f", timeout=8000)
+        check("到貨日篩掉全部：清單寫「系統共有 1 張，到貨日 10/19～10/19」，有「清除篩選」", "系統共有 1 張" in pg.inner_text("#tbl")
+              and "10/19～10/19" in pg.inner_text("#tbl"), pg.inner_text("#tbl")[:200])
+        pg.click("#tbl .clr-f"); pg.wait_for_selector("#tbl tr.og", timeout=8000)
+        check("按「清除篩選」→ 到貨日清空、那張單回來", pg.input_value("#f-from") == "" and "PRTWCOTWA202610019999" in pg.inner_text("#tbl"))
+        pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.click("#btn-set"); pg.wait_for_selector("#view-set:not(.hidden)", timeout=5000); pg.click("#up-box summary"); pg.wait_for_timeout(500)
         check("資料與設定：上傳紀錄看得到兩次上傳、可下載原始檔", pg.eval_on_selector_all("#up-tbl a.lnk", "els => els.length") >= 2)
         check("資料與設定：庫存資料三種都還沒上傳、效期標準與出貨方式", pg.inner_text("#stock-st").count("尚未上傳") == 3

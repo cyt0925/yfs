@@ -133,6 +133,21 @@ const STAGE_DEF = [
 ];
 const SDEF = Object.fromEntries(STAGE_DEF.map(x => [x.key, x]));
 
+/* 清單是空的：分清楚「還沒匯入」「被篩選條件篩掉」「這一步沒事」，並告訴人下一步做什麼 */
+function emptyRow(cols) {
+  const a = VIEW.all_orders || {}, md = t => t ? `${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))}` : "";
+  let m = "這一步目前沒有要處理的訂單。";
+  if (!a.count) m = `<b>尚未匯入蝦皮訂單。</b><br>請將蝦皮採購單（檔名 PurchaseOrder 開頭的 Excel）拖曳至上方「上傳檔案」，選擇履約方式後按「確認匯入」。`;
+  else if (!VIEW.orders.length) m = `目前的到貨日、線別或搜尋條件下沒有訂單（系統共有 ${fmt(a.count)} 張，到貨日 ${md(a.first)}～${md(a.last)}）。
+    <div class="mt-2"><button class="btn btn-o btn-sm clr-f"><i class="bi bi-funnel"></i> 清除篩選，顯示全部訂單</button></div>`;
+  return `<tr><td colspan="${cols}" class="muted" style="padding:24px;text-align:center">${m}</td></tr>`;
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest(".clr-f")) return;
+  ["#f-from", "#f-to", "#f-line", "#f-q"].forEach(s => { $(s).value = ""; });
+  BSEL.clear(); ZSEL.clear(); KSEL.clear(); refresh();
+});
+
 async function loadOrders() {
   const p = new URLSearchParams({ ...fq(), q: $("#f-q").value.trim() });
   try { VIEW = await api(`/api/shopee/orders?${p}`); } catch (err) { toast(err.message, "err"); return; }
@@ -174,9 +189,10 @@ async function refresh() {
   await Promise.all([loadOrders(), loadEipCount()]);
   if (!STAGE) {        // 一進來：網址指定的那一步（首頁今日事項連 /shopee#diff）→ 上次看的那一步 → 第一個有待辦的
     let saved = ""; try { saved = localStorage.getItem("shopee_stage") || ""; } catch (e) { /* 讀不到就算了 */ }
-    if (SDEF[location.hash.slice(1)]) saved = location.hash.slice(1);
     const cnt = Object.fromEntries((VIEW.stages || []).map(x => [x.key, x.count])); cnt.eip = EIP_TODO;
-    STAGE = SDEF[saved] ? saved : (["diff", "buy", "eip", "ship", "notify"].find(k => cnt[k]) || "all");
+    const hash = location.hash.slice(1);
+    STAGE = SDEF[hash] ? hash : (SDEF[saved] && (saved === "all" || cnt[saved])) ? saved
+      : (["diff", "buy", "eip", "ship", "notify"].find(k => cnt[k]) || "all");
   }
   renderStages(); loadStage();
   if (SIDE_NO) openSide(SIDE_NO);       // 做完事，右側面板也換成最新的
@@ -203,7 +219,7 @@ function render() {
       <td class="num opt ${g.qty_ship == null ? "muted" : ""}">${fmt(g.qty_ship)}</td><td class="num opt ${g.qty_short ? "neg" : g.qty_short == null ? "muted" : ""}">${fmt(g.qty_short)}</td>
       <td>${STAGE === "diff" ? `<button class="btn btn-p btn-sm dd" data-k="${esc(k)}"><i class="bi bi-arrow-left-right"></i> 確認差異</button>` : nextBadges(g)}</td></tr>`;
   }
-  if (!list.length) h += `<tr><td colspan="10" class="muted" style="padding:24px;text-align:center">${STAGE === "all" ? "此條件下沒有訂單。請調整到貨日，或將蝦皮採購單拖曳至上方上傳。" : "這一步目前沒有要處理的訂單。"}</td></tr>`;
+  if (!list.length) h += emptyRow(10);
   $("#tbl").innerHTML = h + "</tbody>";
   $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .go-st")) return; openSide(tr.dataset.k); }));
   $$("#tbl button.dd").forEach(b => b.addEventListener("click", () => openDiff(b.dataset.k)));
@@ -312,7 +328,7 @@ function renderPlan() {
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil === "供應商直送" ? "直送" : g.fulfil)}</td>
       <td class="num opt">${g.items.length}</td><td class="num">${fmt(g.qty)}</td><td>${st}</td></tr>`;
   }
-  if (!list.length) h += `<tr><td colspan="9" class="muted" style="padding:24px;text-align:center">這一步目前沒有要處理的訂單。</td></tr>`;
+  if (!list.length) h += emptyRow(9);
   $("#b-tbl").innerHTML = h + "</tbody>";
   $$("#b-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; openSide(tr.dataset.k); }));
   $$("#b-tbl input.b-ck").forEach(c => c.addEventListener("change", () => { c.checked ? BSEL.add(c.dataset.k) : BSEL.delete(c.dataset.k); renderPlan(); }));
@@ -488,7 +504,7 @@ function renderShip() {
       <td class="nw">${done ? `<span class="badge b-s">已產出</span> <span class="kbd">${esc((g.dispatch_at || "").slice(5, 16).replace("T", " "))}</span> <button class="btn btn-o btn-sm z-undo" data-k="${esc(k)}">取消產出</button>`
         : `<span class="badge b-dim">${esc(g.dispatch_status)}</span>`}</td></tr>`;
   }
-  if (!list.length) h += `<tr><td colspan="11" class="muted" style="padding:24px;text-align:center">這一步目前沒有要處理的訂單。</td></tr>`;
+  if (!list.length) h += emptyRow(11);
   $("#z-tbl").innerHTML = h + "</tbody>";
   $$("#z-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; openSide(tr.dataset.k); }));
   $$("#z-tbl input.z-ck").forEach(c => c.addEventListener("change", () => { c.checked ? ZSEL.add(c.dataset.k) : ZSEL.delete(c.dataset.k); renderShip(); }));
@@ -602,7 +618,7 @@ function renderShort() {
       <td class="num opt">${fmt(g.orig)}</td><td class="num"><b>${fmt(g.final)}</b></td><td class="num ${g.cut ? "neg" : ""}">${fmt(g.cut)}${g.deleted ? `<div class="kbd">刪單 ${g.deleted} 品</div>` : ""}</td>
       <td><span class="badge ${g.status === "待通知" ? "b-warn" : g.status.startsWith("已通知") ? "b-ok" : "b-dim"}">${esc(g.status)}</span></td></tr>`;
   }
-  if (!list.length) h += `<tr><td colspan="11" class="muted" style="padding:24px;text-align:center">這一步目前沒有要處理的訂單。</td></tr>`;
+  if (!list.length) h += emptyRow(11);
   $("#k-tbl").innerHTML = h + "</tbody>";
   $$("#k-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; openSide(tr.dataset.k); }));
   $$("#k-tbl input.k-ck").forEach(c => c.addEventListener("change", () => { c.checked ? KSEL.add(c.dataset.k) : KSEL.delete(c.dataset.k); renderShort(); }));
