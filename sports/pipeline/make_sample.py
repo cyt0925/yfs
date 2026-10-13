@@ -142,6 +142,12 @@ def main():
         game("g7", "nba", "basketball", -7, gsw, lal, odds(150, -180), state="post", scores=("104", "118"), detail="已結束"),
     ]
     games.sort(key=lambda g: g["start"])
+    # 範例：第一場掛上台灣運彩盤口，看介面
+    g1 = next(g for g in games if g["id"] == "g1")
+    g1["tw"] = dict(source="玩運彩", url="https://www.playsport.cc/predict/scale?allianceid=3", updated=now.astimezone(TW).isoformat(timespec="minutes"), no="327",
+                    spread=dict(line="湖人 -3.5", line_home=-3.5, home=1.75, away=1.68), ml=dict(home=1.5, away=1.96, draw=None),
+                    total=dict(line=228.5, over=1.7, under=1.73), intl=None)
+    g1["suggestion"] = F.build_suggestion(g1, F.LEAGUES_BY_KEY["nba"])
     feed, hotp = F.aggregate(games)
     standings = {
         "nba": dict(label="NBA", sport="basketball", groups=[dict(name="西區", rows=[

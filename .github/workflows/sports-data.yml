@@ -33,9 +33,6 @@ jobs:
       - name: 抓資料
         run: python sports/pipeline/fetch.py --debug-dir debug
 
-      - name: 探路：玩運彩與台灣運彩網頁結構（暫時，只印 log）
-        run: python sports/pipeline/probe_playsport.py || true
-
       - name: 保留原始資料樣本（除錯用，3 天後自動刪）
         uses: actions/upload-artifact@v4
         with:

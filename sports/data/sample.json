@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-13T17:09+08:00",
- "generated_ts": 1791882567,
+ "generated_at": "2026-10-13T17:33+08:00",
+ "generated_ts": 1791883996,
  "today_tw": "2026-10-13",
  "sports": [
   {
@@ -52,10 +52,10 @@
    "tournament": null,
    "round": null,
    "name": "LAL @ GS",
-   "start": "2026-10-13T02:09+00:00",
-   "start_tw": "2026-10-13T10:09+08:00",
+   "start": "2026-10-13T02:33+00:00",
+   "start_tw": "2026-10-13T10:33+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "10:09",
+   "time_tw": "10:33",
    "status": {
     "state": "post",
     "completed": true,
@@ -473,10 +473,10 @@
    "tournament": null,
    "round": null,
    "name": "OKC @ BOS",
-   "start": "2026-10-13T07:57+00:00",
-   "start_tw": "2026-10-13T15:57+08:00",
+   "start": "2026-10-13T08:21+00:00",
+   "start_tw": "2026-10-13T16:21+08:00",
    "day_tw": "2026-10-13",
-   "time_tw": "15:57",
+   "time_tw": "16:21",
    "status": {
     "state": "in",
     "completed": false,
@@ -817,10 +817,10 @@
    "tournament": null,
    "round": null,
    "name": "BOS @ LAL",
-   "start": "2026-10-13T15:39+00:00",
-   "start_tw": "2026-10-13T23:39+08:00",
-   "day_tw": "2026-10-13",
-   "time_tw": "23:39",
+   "start": "2026-10-13T16:03+00:00",
+   "start_tw": "2026-10-14T00:03+08:00",
+   "day_tw": "2026-10-14",
+   "time_tw": "00:03",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1239,13 +1239,39 @@
     ],
     "cautions": [
      "Austin Reaves 近 5 場場均 15.2 PTS，比季平均低 23%",
-     "對手 Jayson Tatum 手感火燙，近 5 場場均 33.4 PTS"
+     "對手 Jayson Tatum 手感火燙，近 5 場場均 33.4 PTS",
+     "台灣運彩不讓分賠率 1.5 偏低，期望值 -10%，考慮改玩讓分或縮小注碼"
     ],
     "totals": {
      "lean": "無明顯方向",
      "line": 224.5,
      "expected": 221.2
-    }
+    },
+    "tw_ev": -10,
+    "tw_dec": 1.5
+   },
+   "tw": {
+    "source": "玩運彩",
+    "url": "https://www.playsport.cc/predict/scale?allianceid=3",
+    "updated": "2026-10-13T17:33+08:00",
+    "no": "327",
+    "spread": {
+     "line": "湖人 -3.5",
+     "line_home": -3.5,
+     "home": 1.75,
+     "away": 1.68
+    },
+    "ml": {
+     "home": 1.5,
+     "away": 1.96,
+     "draw": null
+    },
+    "total": {
+     "line": 228.5,
+     "over": 1.7,
+     "under": 1.73
+    },
+    "intl": null
    }
   },
   {
@@ -1257,10 +1283,10 @@
    "tournament": null,
    "round": null,
    "name": "GS @ OKC",
-   "start": "2026-10-13T18:09+00:00",
-   "start_tw": "2026-10-14T02:09+08:00",
+   "start": "2026-10-13T18:33+00:00",
+   "start_tw": "2026-10-14T02:33+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "02:09",
+   "time_tw": "02:33",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1617,10 +1643,10 @@
    "tournament": null,
    "round": null,
    "name": "TOR @ EDM",
-   "start": "2026-10-13T20:09+00:00",
-   "start_tw": "2026-10-14T04:09+08:00",
+   "start": "2026-10-13T20:33+00:00",
+   "start_tw": "2026-10-14T04:33+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "04:09",
+   "time_tw": "04:33",
    "status": {
     "state": "pre",
     "completed": false,
@@ -1898,10 +1924,10 @@
    "tournament": null,
    "round": null,
    "name": "ARS @ MCI",
-   "start": "2026-10-14T12:09+00:00",
-   "start_tw": "2026-10-14T20:09+08:00",
+   "start": "2026-10-14T12:33+00:00",
+   "start_tw": "2026-10-14T20:33+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "20:09",
+   "time_tw": "20:33",
    "status": {
     "state": "pre",
     "completed": false,
@@ -2175,10 +2201,10 @@
    "tournament": null,
    "round": null,
    "name": "TOT @ LIV",
-   "start": "2026-10-14T14:39+00:00",
-   "start_tw": "2026-10-14T22:39+08:00",
+   "start": "2026-10-14T15:03+00:00",
+   "start_tw": "2026-10-14T23:03+08:00",
    "day_tw": "2026-10-14",
-   "time_tw": "22:39",
+   "time_tw": "23:03",
    "status": {
     "state": "pre",
     "completed": false,
@@ -2427,7 +2453,7 @@
    "detail": "腳踝",
    "return_date": null,
    "key": true,
-   "time_tw": "02:09",
+   "time_tw": "02:33",
    "day_tw": "2026-10-14"
   },
   {
@@ -2447,7 +2473,7 @@
    "detail": "腿後肌",
    "return_date": null,
    "key": false,
-   "time_tw": "15:57",
+   "time_tw": "16:21",
    "day_tw": "2026-10-13"
   },
   {
@@ -2467,8 +2493,8 @@
    "detail": "腳踝",
    "return_date": null,
    "key": false,
-   "time_tw": "23:39",
-   "day_tw": "2026-10-13"
+   "time_tw": "00:03",
+   "day_tw": "2026-10-14"
   },
   {
    "game_id": "g6",
@@ -2487,7 +2513,7 @@
    "detail": "上半身",
    "return_date": null,
    "key": false,
-   "time_tw": "04:09",
+   "time_tw": "04:33",
    "day_tw": "2026-10-14"
   },
   {
@@ -2507,8 +2533,8 @@
    "detail": "膝蓋",
    "return_date": "2026-10-20",
    "key": false,
-   "time_tw": "23:39",
-   "day_tw": "2026-10-13"
+   "time_tw": "00:03",
+   "day_tw": "2026-10-14"
   },
   {
    "game_id": "g2",
@@ -2527,7 +2553,7 @@
    "detail": "禁賽",
    "return_date": null,
    "key": false,
-   "time_tw": "02:09",
+   "time_tw": "02:33",
    "day_tw": "2026-10-14"
   },
   {
@@ -2547,7 +2573,7 @@
    "detail": "膝蓋",
    "return_date": null,
    "key": false,
-   "time_tw": "20:09",
+   "time_tw": "20:33",
    "day_tw": "2026-10-14"
   },
   {
@@ -2567,7 +2593,7 @@
    "detail": "腿後肌",
    "return_date": null,
    "key": false,
-   "time_tw": "20:09",
+   "time_tw": "20:33",
    "day_tw": "2026-10-14"
   }
  ],

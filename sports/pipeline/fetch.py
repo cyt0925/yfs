@@ -561,8 +561,8 @@ def _score_val(c):
     return num(s)
 
 
-def parse_schedule(data, team_id, lg, comp=None):
-    """把球隊賽程裡已完成的比賽整理成近況列。comp 是賽事代號（足球跨賽事合併時用）。"""
+def parse_schedule(data, team_id, lg, comp_key=None):
+    """把球隊賽程裡已完成的比賽整理成近況列。comp_key 是賽事代號（足球跨賽事合併時用）。"""
     rows = []
     for ev in (data or {}).get("events") or []:
         comp = (ev.get("competitions") or [{}])[0]
@@ -595,7 +595,7 @@ def parse_schedule(data, team_id, lg, comp=None):
             opp_logo=ot.get("logo") or ((ot.get("logos") or [{}])[0].get("href") if ot.get("logos") else None),
             home=(me.get("homeAway") == "home"),
             pf=pf, pa=pa, result=res,
-            comp=(LEAGUE_ZH.get(comp, comp) if comp and lg["sport"] == "soccer" else None),
+            comp=(LEAGUE_ZH.get(comp_key, comp_key) if comp_key and lg["sport"] == "soccer" else None),
         ))
     rows.sort(key=lambda r: r["ts"])
     return rows
@@ -641,7 +641,7 @@ def fetch_form(lg, team):
     data = get(f"{SITE}/{lg['path']}/teams/{team['id']}/schedule")
     if data and data.get("events"):
         keep_raw(f"schedule_event_{lg['key']}", data["events"][0])
-    rows = parse_schedule(data, team["id"], lg, comp=lg["key"])
+    rows = parse_schedule(data, team["id"], lg, comp_key=lg["key"])
     note = None
     if lg["sport"] == "soccer":
         soccer_team_index()
@@ -654,7 +654,7 @@ def fetch_form(lg, team):
                 others.add(cup)
         for other in sorted(others):
             d2 = get(f"{SITE}/soccer/{other}/teams/{team['id']}/schedule", quiet=True)
-            rows += parse_schedule(d2, team["id"], lg, comp=other)
+            rows += parse_schedule(d2, team["id"], lg, comp_key=other)
         seen, merged = set(), []
         for r in sorted(rows, key=lambda r: r["ts"]):
             k = (round(r["ts"] / 3600), r["opp"])
