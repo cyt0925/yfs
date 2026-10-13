@@ -127,6 +127,11 @@
       <label class="dzbox mt-3" title="Alice 維護的「自動化_Mars整合商品資料」，有更新時重新上傳即可。"><i class="bi bi-cloud-arrow-up"></i><div><b>將瑪氏商品總表拖曳至此</b>，或點選檔案<div class="kbd">.xlsx，整份覆蓋</div></div>
         <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
       <div id="mp-msg" class="text-sm mt-2"></div>
+      <div class="mt-3 flex items-center gap-2 flex-wrap">
+        <input id="mp-q" class="inp" placeholder="查商品總表：永豐料號、瑪氏貨號、品名" style="width:300px" title="可用空白隔開多個關鍵字，全部符合才列出；備註裡的舊料號也查得到">
+        <span id="mp-q-n" class="text-sm muted"></span>
+      </div>
+      <div id="mp-res" class="mt-2"></div>
     </div>
   </section>
 

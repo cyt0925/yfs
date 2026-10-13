@@ -124,6 +124,14 @@ def main():
     check("單位不是箱盒包的列跳過、Category 認不得的列標出來", d["codes"] == 8 and any("打" in w for w in d["warnings"]) and any("Candy" in w for w in d["warnings"]), str(d["warnings"]))
     d = up(c, "/api/mars/products/import", MASTER).get_json()
     check("再傳原本那份＝整份覆蓋：跟上一版比拿掉 1 個", d["codes"] == 7 and d["removed"] == 1 and d["removed_examples"] == ["M00000001"], str(d)[:160])
+    sr = lambda q: c.get("/api/mars/products", query_string={"q": q}).get_json()  # noqa: E731
+    allm = sr("m")
+    code0, name0 = allm["rows"][0]["yf_sku"], allm["rows"][0]["name"]
+    check("查商品總表：空白不列；打小寫料號也找得到，箱盒包三列都出來（Jerry 2026-10-13：「瑪氏沒有搜尋功能喔」）",
+          sr("")["total"] == 0 and allm["total"] == 21 and sr(code0.lower())["total"] == 3
+          and {r["unit"] for r in sr(code0.lower())["rows"]} == {"箱", "盒", "包"}, str(allm)[:200])
+    check("兩個關鍵字（料號＋單位）全部符合才列、用品名也找得到、沒有的回 0 筆",
+          sr(f"{code0} 箱")["total"] == 1 and sr(name0[:4])["total"] >= 1 and sr("不存在的料號XYZ")["total"] == 0)
 
     print("\n【2】② 匯訂單：地址、報價備註也存下來")
     for n in ("假_訂單彙總表_9月_第一次.xlsx", "假_訂單彙總表_9月_第二次.xlsx"):

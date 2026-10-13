@@ -355,6 +355,12 @@ def main():
                        content_type="multipart/form-data").status_code == 200
         pg.goto(f"{base}/mars"); pg.wait_for_selector("#sp-table thead"); pg.wait_for_timeout(500)
         check("瑪氏出貨頁打得開、商品總表狀態寫出 7 個料號", "7" in pg.inner_text("#mp-status") and "假_瑪氏商品總表" in pg.inner_text("#mp-status"), pg.inner_text("#mp-status")[:120])
+        pg.fill("#mp-q", "m36752197"); pg.wait_for_selector("#mp-res table", timeout=5000)
+        check("商品總表搜尋：打小寫料號 → 列出箱盒包三列、寫共 3 筆、有箱入數", pg.eval_on_selector_all("#mp-res tbody tr", "els => els.length") == 3
+              and "共 3 筆" in pg.inner_text("#mp-q-n") and "144" in pg.inner_text("#mp-res"), pg.inner_text("#mp-res")[:200])
+        pg.fill("#mp-q", "M60013313"); pg.wait_for_function("document.querySelector('#mp-res').innerText.includes('沒有')", timeout=5000)
+        check("查不到 → 寫「商品總表裡沒有」並說要補進 Alice 的總表再上傳", "商品總表裡沒有「M60013313」" in pg.inner_text("#mp-res") and "重新上傳" in pg.inner_text("#mp-res"))
+        pg.fill("#mp-q", ""); pg.wait_for_timeout(400)
         pg.click("#lm-btn"); pg.wait_for_timeout(200)
         check("線別工具：瑪氏那欄有「瑪氏出貨」而且標目前在這", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("瑪氏出貨"))
         pg.keyboard.press("Escape")

@@ -209,8 +209,8 @@ def _eip_map(conn, ids):
     return out
 
 
-def item_plan(it, conv, adj, eip):
-    """一個品項要怎麼下：換算、寫進哪個檔、有什麼問題。"""
+def item_plan(it, conv, adj, eip, other_units=()):
+    """一個品項要怎麼下：換算、寫進哪個檔、有什麼問題。other_units：瑪氏商品總表有這個料號、但單位不同的那幾列（找不到時講清楚）。"""
     line, fulfil = it["line"], it["fulfil"]
     code3 = (it["base_code"] or "") + (it["unit_code"] or "")
     box = box_of(conv)
@@ -235,7 +235,8 @@ def item_plan(it, conv, adj, eip):
         p["problems"].append(f"已回填 EIP 採購單號 {eip['eip_po']}；要重新產出請先清除單號")
         p["blocking"] = True
     if conv is None:
-        p["problems"].append(f"瑪氏商品總表找不到 {it['base_code']}（{p['unit']}），請至瑪氏出貨頁更新商品總表" if line == MARS
+        p["problems"].append((f"瑪氏商品總表有 {it['base_code']} 的{'、'.join(other_units)}，沒有{p['unit']}，請至瑪氏出貨頁更新商品總表" if other_units
+                              else f"瑪氏商品總表找不到 {it['base_code']}（{p['unit']}），請至瑪氏出貨頁更新商品總表") if line == MARS
                              else f"價格本找不到 {code3}，請更新{line}價格本")
         p["blocking"] = True
         return p
@@ -296,7 +297,8 @@ def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None):
         g = groups.setdefault(no, {"order_no": no, "pr_id": it["pr_id"], "po_id": it["po_id"], "line": it["line"], "warehouse": it["warehouse"],
                                    "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": []})
         conv = mars.get((it["base_code"], it["unit_name"])) if it["line"] == MARS else convs.get((it["base_code"] or "") + (it["unit_code"] or ""))
-        g["items"].append(item_plan(it, conv, adjs.get(it["id"]), eips.get(it["id"])))
+        others = sorted(u for (c, u) in mars if c == it["base_code"] and u != it["unit_name"]) if it["line"] == MARS and conv is None else ()
+        g["items"].append(item_plan(it, conv, adjs.get(it["id"]), eips.get(it["id"]), others))
     out = []
     for g in groups.values():
         its = g["items"]

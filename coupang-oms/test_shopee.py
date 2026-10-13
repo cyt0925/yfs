@@ -567,6 +567,14 @@ def mixed_tests(c, preview, orders):
                  "PurchaseOrder_one.xlsx").get_json()
     r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "供應商直送"})
     check("舊的寫法（一個檔選一種）照樣能用", r.status_code == 200 and r.get_json()["counts"]["new"] == 1, str(r.get_json()))
+    cn = db.get_conn()
+    cn.execute("INSERT INTO mst_mars_products (yf_sku, unit, category, name, box_qty, inner_label) VALUES (?,?,?,?,?,?)",
+               ("M10273409", "箱", "Chocolate", "M&M'S 箱購", 1, ""))
+    cn.commit(); cn.close()
+    pl = c.get("/api/shopee/purchase/plan", query_string={"fulfil": "供應商直送", "from": "2026-12-01", "to": "2026-12-01"}).get_json()["orders"]
+    mi = next(i for g in pl for i in g["items"] if i["supplier_sku_id"] == "M10273409_QMN")
+    check("瑪氏商品總表有這個料號、但單位不同 → 講清楚有哪個單位、少了哪個（不是只說找不到）",
+          mi["blocking"] and mi["problems"] == ["瑪氏商品總表有 M10273409 的箱，沒有盒，請至瑪氏出貨頁更新商品總表"], str(mi["problems"]))
 
 
 def ship_tests(c, preview, orders, up):

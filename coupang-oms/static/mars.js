@@ -15,6 +15,23 @@ let VIEW = null, OPEN = new Set(), CHECKED = new Set();
 let DATES = [], Q = "", NOEIP = false, SORT = "date";        // 有瑪氏訂單的到貨日（搜尋全部日期用）、搜尋字、只看還沒填 EIP 單號的
 
 /* ── 商品總表 ── */
+/* 查商品總表（Jerry 2026-10-13：「瑪氏沒有搜尋功能喔」）：蝦皮特選、拆單說找不到某料號時，在這裡直接查 */
+let MPQ_T = 0;
+$("#mp-q").addEventListener("input", () => { clearTimeout(MPQ_T); MPQ_T = setTimeout(searchProducts, 250); });
+async function searchProducts() {
+  const q = $("#mp-q").value.trim();
+  if (!q) { $("#mp-res").innerHTML = ""; $("#mp-q-n").textContent = ""; return; }
+  let d; try { d = await api(`/api/mars/products?${new URLSearchParams({ q })}`); } catch (err) { $("#mp-res").innerHTML = `<span class="neg">${esc(err.message)}</span>`; return; }
+  if (q !== $("#mp-q").value.trim()) return;           // 打字比查詢快，只顯示最後一次
+  $("#mp-q-n").textContent = d.total > d.rows.length ? `共 ${d.total} 筆，先列 ${d.rows.length} 筆` : `共 ${d.total} 筆`;
+  if (!d.rows.length) { $("#mp-res").innerHTML = `<div class="text-sm neg">商品總表裡沒有「${esc(q)}」。新品要先補進 Alice 的「自動化_Mars整合商品資料」，再重新上傳。</div>`; return; }
+  $("#mp-res").innerHTML = `<div class="tbl-wrap" style="max-height:40vh"><table class="t" style="white-space:nowrap"><thead><tr><th>永豐料號</th><th>單位</th><th>瑪氏貨號</th><th>品名</th><th>品類</th>
+    <th class="num">箱入數</th><th>中盒貼標</th><th class="num">效期天</th><th>備註</th></tr></thead><tbody>
+    ${d.rows.map(r => `<tr><td class="fn">${esc(r.yf_sku)}</td><td>${esc(r.unit)}</td><td class="fn">${esc(r.mars_code)}</td><td style="white-space:normal;min-width:240px">${esc(r.name)}</td><td>${esc(r.category)}</td>
+      <td class="num">${r.box_qty == null ? `<span class="neg">空白</span>` : Number(r.box_qty)}</td><td>${esc(r.inner_label) || "—"}</td>
+      <td class="num">${r.shelf_days == null ? "—" : r.shelf_days}</td><td class="text-sm">${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
 async function loadStatus() {
   const d = await api("/api/mars/status");
   DATES = d.dates || [];

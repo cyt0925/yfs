@@ -124,6 +124,29 @@ def api_import_mars_products():
                     "added_examples": added[:5], "removed_examples": removed[:5], "warnings": warnings[:50]})
 
 
+@mars_bp.route("/api/mars/products")
+def api_search_mars_products():
+    """查商品總表（Jerry 2026-10-13：「瑪氏沒有搜尋功能喔」——蝦皮特選說商品總表找不到某料號，要能自己查）。
+    空白隔開多個關鍵字，全部符合才列；備註有換號紀錄，所以舊料號也查得到。"""
+    words = [w for w in str(request.args.get("q") or "").split() if w][:5]
+    if not words:
+        return jsonify({"rows": [], "total": 0})
+    cols = ("yf_sku", "unit", "mars_code", "name", "item_code", "item_code2", "category", "brand", "note")
+    where, params = [], []
+    for w in words:            # LIKE 樣式一律綁參數（PostgreSQL 字串裡不能有裸的 %）
+        where.append("(" + " OR ".join(f"LOWER({c}) LIKE ?" for c in cols) + ")")   # 大小寫都找得到（Postgres 的 LIKE 分大小寫）
+        params += [f"%{w.lower()}%"] * len(cols)
+    conn = get_conn()
+    try:
+        total = conn.execute(f"SELECT COUNT(*) AS n FROM mst_mars_products WHERE {' AND '.join(where)}", params).fetchone()["n"]
+        rows = _rows(conn.execute(
+            f"SELECT yf_sku, unit, mars_code, name, category, box_qty, inner_label, shelf_days, note FROM mst_mars_products "
+            f"WHERE {' AND '.join(where)} ORDER BY yf_sku, unit LIMIT 100", params))
+    finally:
+        conn.close()
+    return jsonify({"rows": rows, "total": total})
+
+
 @mars_bp.route("/api/mars/status")
 def api_mars_status():
     conn = get_conn()
