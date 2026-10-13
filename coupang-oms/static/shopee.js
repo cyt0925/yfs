@@ -331,6 +331,21 @@ async function loadPlan() {
   renderPlan();
 }
 
+/* 「需處理」要寫出卡在哪（Jerry 2026-10-13：「為何產出 EIP 採購單勾不起來」——只寫「3 項需處理」、勾選框反灰，看不出原因）。
+   清單上寫原因的摘要；勾選框換成紅色驚嘆號，點這一列右側列出每一品的原因和怎麼修。 */
+const WHY = [[/^認不出線別/, "認不出線別"], [/^瑪氏目前只開放/, "瑪氏只開放供應商直送"], [/差異待確認/, "差異待確認"],
+  [/^已回填 EIP/, "已回填 EIP 採購單號"], [/^瑪氏商品總表找不到/, "瑪氏商品總表找不到"], [/^價格本找不到/, "價格本找不到"],
+  [/沒有箱入數/, "沒有箱入數"], [/除不盡/, "除不盡，需改數量"], [/^請先上傳/, "庫存資料未上傳"], [/^竹運商品主檔沒有/, "竹運商品主檔沒有年限"],
+  [/已超過目前可用的庫存/, "出貨量超過庫存"], [/^還沒有入庫單號/, "還沒有入庫單號"], [/張入庫單/, "一品有多張入庫單"]];
+function whyText(items) {
+  const n = new Map();
+  for (const p of items) if (p.blocking) for (const m of p.problems) { const w = (WHY.find(([re]) => re.test(m)) || [0, m])[1]; n.set(w, (n.get(w) || 0) + 1); }
+  return [...n].map(([w, c]) => `${w} ${c} 項`).join("、");
+}
+const blockCell = g => `<span class="badge b-diff">${g.blocking} 項需處理</span><div class="kbd" style="color:var(--bad);margin-top:3px">${esc(whyText(g.items))}</div>`;
+const BLK_ICON = `<i class="bi bi-exclamation-circle blk-i" title="需先處理：點這一列，右側會列出每一品的原因"></i>`;
+const blkHint = n => n ? `有 ${n} 張需先處理：點該列，右側會列出每一品的原因和修正方式。` : "";
+
 function renderPlan() {
   const list = PLAN.orders.filter(g => inStage(g.order_no));
   const picks = list.filter(canPick), blk = list.filter(g => g.supported && g.blocking).length;
@@ -341,9 +356,9 @@ function renderPlan() {
   for (const g of list) {
     const k = g.order_no, pick = canPick(g);
     const st = !g.supported ? `<span class="badge b-dim">${esc(g.line === "瑪氏" ? "瑪氏目前只開放供應商直送" : "認不出線別")}</span>`
-      : g.blocking ? `<span class="badge b-diff">${g.blocking} 項需處理</span>` : `<span class="badge b-ok">可產出</span>`;
+      : g.blocking ? blockCell(g) : `<span class="badge b-ok">可產出</span>`;
     h += `<tr class="og ${g.supported && g.blocking ? "blk" : ""} ${g.supported ? "" : "lock"}" data-k="${esc(k)}">
-      <td><input type="checkbox" class="ck b-ck" data-k="${esc(k)}" ${BSEL.has(k) ? "checked" : ""} ${pick ? "" : "disabled"}></td>
+      <td>${!pick && g.supported && g.blocking ? BLK_ICON : `<input type="checkbox" class="ck b-ck" data-k="${esc(k)}" ${BSEL.has(k) ? "checked" : ""} ${pick ? "" : "disabled"}>`}</td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil === "供應商直送" ? "直送" : g.fulfil)}</td>
       <td class="num opt">${g.items.length}</td><td class="num">${fmt(g.qty)}</td><td>${st}</td></tr>`;
@@ -356,7 +371,8 @@ function renderPlan() {
   markSel();
   const n = [...BSEL].length;
   $("#b-go").disabled = !n;
-  $("#b-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出 EIP 採購單（竹運採購進貨另附採購下採明細）。` : "請勾選要產出的訂單；「需處理」的訂單請點該列，在右側修正。";
+  $("#b-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出 EIP 採購單（竹運採購進貨另附採購下採明細）。`
+    : picks.length ? `請勾選要產出的訂單。${blkHint(blk)}` : blkHint(blk) || "這一步目前沒有可產出的訂單。";
 }
 $("#b-go").addEventListener("click", async () => {
   const nos = [...BSEL]; if (!nos.length) return;
@@ -514,10 +530,10 @@ function renderShip() {
     <th>訂單編號</th><th>線別</th><th>到貨日</th><th>倉別</th><th class="num">品項</th><th class="num">訂購量</th><th class="num">出貨量</th><th class="num">缺貨量</th><th>檢查結果</th><th>拋單檔</th></tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no, done = g.dispatch_status === "已產出";
-    const st = done ? `<span class="badge b-dim">—</span>` : g.blocking ? `<span class="badge b-diff">${g.blocking} 項需處理</span>`
+    const st = done ? `<span class="badge b-dim">—</span>` : g.blocking ? blockCell(g)
       : `<span class="badge ${g.short ? "b-warn" : "b-ok"}">${g.short ? (g.deleted ? `缺貨（刪單 ${g.deleted} 品）` : "部分缺貨") : "可全數出貨"}</span>${g.warnings ? ` <span class="badge b-warn">${g.warnings} 項提醒</span>` : ""}`;
     h += `<tr class="og ${g.blocking && !done ? "blk" : ""} ${done ? "lock" : ""}" data-k="${esc(k)}">
-      <td><input type="checkbox" class="ck z-ck" data-k="${esc(k)}" ${ZSEL.has(k) ? "checked" : ""} ${zPick(g) ? "" : "disabled"}></td>
+      <td>${!zPick(g) && !done && g.blocking ? BLK_ICON : `<input type="checkbox" class="ck z-ck" data-k="${esc(k)}" ${ZSEL.has(k) ? "checked" : ""} ${zPick(g) ? "" : "disabled"}>`}</td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="num">${g.items.length}</td>
       <td class="num">${fmt(g.qty)}</td><td class="num"><b>${fmt(g.ship)}</b></td><td class="num ${g.short ? "neg" : ""}">${fmt(g.short)}</td><td>${st}</td>
@@ -532,7 +548,9 @@ function renderShip() {
   markSel();
   $$("#z-tbl button.z-undo").forEach(b => b.addEventListener("click", () => undoShip(b.dataset.k)));
   const n = ZSEL.size; $("#z-go").disabled = !n;
-  $("#z-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出訂單系統拋單檔（一天一倉一個檔）＋下修刪單清單（zip）。` : "請勾選要產出的訂單；「需處理」的訂單請點該列，在右側修正。";
+  const zb = list.filter(g => g.blocking && g.dispatch_status !== "已產出").length;
+  $("#z-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出訂單系統拋單檔（一天一倉一個檔）＋下修刪單清單（zip）。`
+    : picks.length ? `請勾選要產出的訂單。${blkHint(zb)}` : blkHint(zb) || "這一步目前沒有可產出的訂單。";
 }
 let SHIPX = null;
 function openShip(id) {
@@ -790,15 +808,20 @@ function renderSide() {
       <button class="btn btn-p btn-sm mt-2 sd-dconf"><i class="bi bi-check2-circle"></i> 確認差異</button></div>`;
 
   // 品項：每一品把各步的資料放在一起，該改的按鈕就在旁邊
-  h += `<div class="sd-sec"><div class="h"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）</div><div class="b">`;
-  for (const i of g.items) {
+  // 需處理的品項排最前面（瑪氏一張單常常四十幾品，擋下來的那幾品不能讓人一品一品捲著找）
+  const isBad = i => { const p = buy.get(i.id), z = ship.get(i.id); return !!((g.todo.includes("buy") && p && p.blocking) || (z && z.blocking && !z.dispatch)); };
+  const items = [...g.items.filter(isBad), ...g.items.filter(i => !isBad(i))], nBad = g.items.filter(isBad).length;
+  h += `<div class="sd-sec"><div class="h"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）${nBad
+    ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理，排在最前面</span>` : ""}</div><div class="b">`;
+  for (const i of items) {
     const p = buy.get(i.id), z = ship.get(i.id), k = sh.get(i.id), unit = i.unit_name || i.unit_code;
     const kv = [`原始 <b>${fmt(i.qty_original)}</b>`, i.inbound_ids ? `入庫單 <span class="fn">${esc(i.inbound_ids)}</span>` : "", `<a class="lnk ver" data-id="${i.id}" data-t="${esc(i.supplier_sku_id)}">第 ${i.version} 版</a>`];
     let more = "", acts = "";
     if (p) {
       more += `<div class="sd-kv"><span>轉換率 <b>${fmt(p.conv)}</b></span><span>下採 <b>${fmt(p.use_qty)}</b>${p.adj ? "（已修改）" : ""}</span>
         <span>EIP <b>${p.out_qty == null ? "—" : fmt(p.out_qty)}</b> ${esc(p.out_unit || "")}${p.cases != null && p.out_unit !== "箱" ? `（${fmt(p.cases)} 箱）` : ""}</span>${p.unit_group ? `<span>${esc(p.unit_group)}</span>` : ""}</div>`;
-      if (g.todo.includes("buy")) more += p.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("");   // 已產出的單不再列產出前的檢查
+      if (g.todo.includes("buy")) more += p.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}${/瑪氏出貨頁/.test(x)
+        ? ` <a class="lnk" href="/mars" target="_blank" rel="noopener">開啟瑪氏出貨頁</a>` : ""}</div>`).join("");   // 已產出的單不再列產出前的檢查
       if ((p.rem || p.adj) && !(p.eip && p.eip.eip_po)) acts += `<button class="btn ${p.rem ? "btn-p" : "btn-o"} btn-sm sd-adj" data-id="${i.id}"><i class="bi bi-pencil"></i> 修改數量</button>`;
     }
     if (z) {
