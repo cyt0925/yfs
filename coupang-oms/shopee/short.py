@@ -4,7 +4,7 @@
 - 寶僑：採購單打完、核單後，採購寄信通知缺貨 → 人工進系統填缺貨 → 第一次下修通知蝦皮；
   之後拋訂單時又缺 → 人工再填 → 第二次通知。
 - 紙潔：Teams 通知缺貨 → 人工填 → 通知蝦皮（一次）。
-- 瑪氏：勇信效期表（跟酷澎瑪氏的勇信配送明細表 PDF 長一樣）系統自動核對 → 通知蝦皮（下一段做）。
+- 瑪氏：勇信配送明細表（跟酷澎瑪氏的 PDF 長一樣）系統自動核對（yx.py）→ 寫成第一次 → 通知蝦皮。只有一次、不能人工填。
 - 竹運出貨：竹運出貨頁產拋單檔時判斷出來的缺貨，直接帶進來當第一次（不用再填）。
 - 通知蝦皮用 LINE：照 Alice 的 LINE 機器人訊息（Jerry 2026-10-12 貼的範例）產文字，一張 PR、一種處理（刪單／下修）一則，
   另外附 Excel 明細（下修明細、刪單明細、最終可出貨量）。
@@ -25,9 +25,10 @@ from .orders import order_no
 
 MANUAL_FULFILS = ("竹運採購進貨", "供應商直送")
 SHIP_FULFIL = "竹運出貨"
-MAX_ROUNDS = {"寶僑": 2, "紙潔": 1}
+MAX_ROUNDS = {"寶僑": 2, "紙潔": 1, "瑪氏": 1}
 REASONS = ("庫存不足", "效期不足")
-LINES_HERE = ("寶僑", "紙潔")
+LINES_HERE = ("寶僑", "紙潔")                     # 可以人工填缺貨的線別
+LIST_LINES = LINES_HERE + ("瑪氏",)              # 清單上看得到的（瑪氏只有供應商直送，缺貨由勇信核對寫進來）
 MARKET = {"寶僑": "P&G", "紙潔": "紙潔", "瑪氏": "瑪氏"}          # 訊息裡的「賣場」（Alice 範例寶僑寫 P&G）
 ROUND_TXT = {1: "首次通知", 2: "第二次通知"}
 
@@ -77,14 +78,14 @@ def short_item(it, rounds, done):
 
 
 def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None):
-    where, params = ["removed = 0", "line IN (?, ?)"], list(LINES_HERE)
+    where, params = ["removed = 0", "line IN (?, ?, ?)", "(line != ? OR fulfil = ?)"], list(LIST_LINES) + ["瑪氏", "供應商直送"]
     fulfils = (fulfil,) if fulfil in MANUAL_FULFILS + (SHIP_FULFIL,) else MANUAL_FULFILS + (SHIP_FULFIL,)
     where.append(f"fulfil IN ({','.join('?' * len(fulfils))})"); params += list(fulfils)
     if d1:
         where.append("expected_date >= ?"); params.append(d1)
     if d2:
         where.append("expected_date <= ?"); params.append(d2)
-    if line in LINES_HERE:
+    if line in LIST_LINES:
         where.append("line = ?"); params.append(line)
     items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {' AND '.join(where)} ORDER BY expected_date, warehouse, id", params))
     if order_nos is not None:

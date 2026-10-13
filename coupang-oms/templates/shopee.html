@@ -188,13 +188,23 @@
 
 <!-- 缺貨維護與通知（需求第八章）：寶僑兩次、紙潔一次人工填；竹運出貨自動帶入；用 LINE 通知蝦皮 -->
 <div id="pane-short" class="space-y-4 hidden">
+  <section class="card p-4 space-y-3" id="yx-box">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b style="font-size:15px">瑪氏缺貨核對</b>
+      <span class="kbd">上傳勇信配送明細表（PDF），系統依收貨單號對應已回填的瑪氏 EIP 採購單，逐品比對箱數。確認後寫入缺貨紀錄，再於下方勾選訂單通知蝦皮。</span>
+    </div>
+    <label class="dzbox" id="dz-yx" style="padding:10px 16px"><i class="bi bi-file-earmark-pdf" style="font-size:22px"></i>
+      <div><b>上傳勇信配送明細表</b><div class="kbd" style="color:var(--s9)">拖曳或點此選擇 PDF，可一次選多個檔</div></div>
+      <input type="file" id="yx-file" accept=".pdf" multiple class="hidden"></label>
+    <div id="yx-out" class="space-y-3"></div>
+  </section>
   <section class="card p-4 space-y-3">
     <div class="flex items-center gap-3 flex-wrap">
       <b style="font-size:15px">缺貨維護</b>
-      <span class="kbd">寶僑最多兩次（採購來信缺貨、拋單時缺貨）、紙潔一次（Teams 通知缺貨）；竹運出貨的缺貨於產出拋單檔後自動帶入。通知過的那一次即鎖定。</span>
+      <span class="kbd">寶僑最多兩次（採購來信缺貨、拋單時缺貨）、紙潔一次（Teams 通知缺貨）；瑪氏由上方勇信配送明細表核對寫入；竹運出貨的缺貨於產出拋單檔後自動帶入。通知過的那一次即鎖定。</span>
       <div class="flex-1"></div>
       <label class="kbd">到貨日 <input type="date" id="k-from" class="inp"> ～ <input type="date" id="k-to" class="inp"></label>
-      <select id="k-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>紙潔</option></select>
+      <select id="k-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>紙潔</option><option>瑪氏</option></select>
       <select id="k-fulfil" class="inp"><option value="">全部履約方式</option><option>竹運出貨</option><option>竹運採購進貨</option><option>供應商直送</option></select>
       <span class="chip" id="k-only"><i class="bi bi-funnel"></i> 只看有缺貨</span>
     </div>

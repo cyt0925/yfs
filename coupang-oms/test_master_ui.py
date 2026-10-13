@@ -749,6 +749,42 @@ def main():
         check("按複製 → 提示已複製", "已複製" in pg.inner_text("#toasts"))
         pg.click("#dlg-notify .x"); pg.wait_for_timeout(300)
         check("通知後狀態變已通知", "已通知" in pg.inner_text("#k-tbl tr.og >> nth=0"))
+        print("\n【6e-5】蝦皮特選瑪氏缺貨：上傳勇信配送明細表 → 比對 → 寫入缺貨 → 待通知")
+        # 瑪氏直送的單、EIP、回填單號用 API 先備好（畫面流程前面測過了），這裡只測勇信核對這一段
+        cn = db.get_conn()
+        cn.execute("INSERT INTO mst_mars_products (yf_sku, unit, mars_code, category, name, price, inner_per_case, pcs_per_case, unit_code, box_qty, "
+                   "inner_label, note, po_case_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   ("M69990001", "盒", "69990001", "Petcare", "UI 測試 瑪氏貓糧", 100.0, 12, 12, "Q", 12, "", "", ""))
+        cn.commit(); cn.close()
+        hdr = ["PR ID", "PO ID", "Warehouse", "Expected Delivery Time", "Shopee SKU ID", "Supplier SKU ID", "Shopee SKU Name",
+               "Shopee Requested Qty (unit)", "Selling Type", "EAN / UPC"]
+        wbm = openpyxl.Workbook(); wsm = wbm.active; wsm.append(hdr)
+        wsm.append(["PRTWCOTWA202610209999", "POTWCTWA26102099M", "TWA", "2026-10-21", "99_1", "M69990001_QMN", "UI 測試 瑪氏貓糧", "24", "Pcs", "M69990001"])
+        bm = io.BytesIO(); wbm.save(bm)
+        up = tc.post("/api/shopee/import/preview", data={"file": (io.BytesIO(bm.getvalue()), "PurchaseOrder_ui_mars.xlsx")}, content_type="multipart/form-data").get_json()
+        tc.post("/api/shopee/import/commit", json={"upload_id": up["upload_id"], "fulfil": "供應商直送"})
+        gen = tc.post("/api/shopee/purchase/generate", json={"fulfil": "供應商直送", "order_nos": ["POTWCTWA26102099M"]})
+        me = next(e for e in tc.get("/api/shopee/eips").get_json()["eips"] if e["line"] == "瑪氏")
+        tc.put(f"/api/shopee/eips/{me['id']}", json={"eip_po": "PO202610299"})
+        doc = pymupdf.open(); page = doc.new_page(); y = 40
+        for ln in ["BMS100230-永豐商店-蝦皮特選", "指送日期：2026/10/21", "配 送 明 細 表(預排鮮度)", "收貨單號：PO202610299-蝦皮-T",
+                   "5888069990001", "1", "UI 測試 瑪氏貓糧 1:6:10", "1C  ", "625D1TAP01", "2027/06/01", "合計箱數:1"]:
+            page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
+        yxs = os.path.join(tempfile.gettempdir(), "ui_蝦皮_勇信.pdf"); doc.save(yxs)
+        pg.set_input_files("#yx-file", yxs); pg.wait_for_selector("#yx-out table.t", timeout=20000); pg.wait_for_timeout(300)
+        out = pg.inner_text("#yx-out")
+        check("上傳勇信 PDF → 比對表：對到 PO202610299、訂 2 箱出 1 箱、部分缺貨、24 → 12、確認鈕可按", gen.status_code == 200 and "PO202610299" in out
+              and "部分缺貨" in out and "下修至 12" in out and "24 → 12" in out.replace("\t", " ") and not pg.is_disabled("#yx-go"), out[:400])
+        pg.uncheck("#yx-out input.yx-ck"); pg.wait_for_function("document.querySelector('#yx-out').innerText.includes('這次不核')", timeout=10000)
+        check("取消勾選 → 這次不核、確認鈕鎖住", pg.is_disabled("#yx-go"))
+        pg.check("#yx-out input.yx-ck"); pg.wait_for_function("!document.querySelector('#yx-go').disabled", timeout=10000)
+        pg.click("#yx-go"); pg.wait_for_function("document.querySelector('#toasts').innerText.includes('已寫入 1 筆缺貨')", timeout=10000)
+        pg.wait_for_function("document.querySelector('#k-tbl').innerText.includes('POTWCTWA26102099M')", timeout=10000)
+        row = pg.inner_text("#k-tbl tr.og[data-k='POTWCTWA26102099M']")
+        check("確認後：下方清單出現這張瑪氏單、待通知、累計下修 12", "瑪氏" in row and "待通知" in row and "12" in row, row)
+        pg.click("#k-tbl tr.og[data-k='POTWCTWA26102099M']"); pg.wait_for_selector("#k-tbl tr.sub", timeout=5000)
+        check("展開品項：下修紀錄來源勇信核對、沒有填缺貨按鈕（寫「由勇信核對」）", "勇信核對" in pg.inner_text("#k-tbl tr.sub") and "由勇信核對" in pg.inner_text("#k-tbl tr.sub"))
+        check("比對結果重算：那筆顯示前次寫入", "前次寫入" in pg.inner_text("#yx-out"))
         pg.click("#tabs .tab[data-tab='orders']"); pg.wait_for_selector("#pane-orders:not(.hidden) #tbl tr.og", timeout=10000)
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#tbl thead"), ("/master", "#dd-line-btn"),

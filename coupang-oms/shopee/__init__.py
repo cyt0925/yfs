@@ -13,13 +13,14 @@
               選效期批次、人工改出貨量；產訂單系統拋單檔＋下修刪單清單
 缺貨維護與通知（2026-10-12）：
   short.py    寶僑（兩次）、紙潔（一次）人工填缺貨；竹運出貨的缺貨自動帶入；產 LINE 通知文字＋Excel 明細，通知過的那次鎖住
-瑪氏用勇信效期表自動核對缺貨還沒做。
+瑪氏缺貨（2026-10-13）：
+  yx.py       讀勇信配送明細表 PDF（跟酷澎瑪氏同一份格式），對回瑪氏 EIP 逐品比箱數，確認後寫成缺貨紀錄，再走 short.py 的通知
 判讀依據、Jerry 定的規則、還沒問清楚的事寫在 docs/蝦皮特選_設計筆記.md。
 """
 from flask import Blueprint
 
 shopee_bp = Blueprint("shopee", __name__)
 
-from . import mars_po, orders, purchase, ship, short  # noqa: E402,F401 — 讓路由生效
+from . import mars_po, orders, purchase, ship, short, yx  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["shopee_bp"]
