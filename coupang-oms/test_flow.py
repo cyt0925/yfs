@@ -1124,7 +1124,7 @@ def main():
     sum_headers = [c.value for c in wb_sum.active[1]]
     check("表頭跟首頁列表一致，外加備註與驗收金額",
           sum_headers == ["PO單號", "訂單類型", "PO狀態", "已拉單", "驗收狀態", "線別", "品牌",
-                          "建檔日", "到貨日", "到貨倉別", "配送方式", "品項數", "出貨數量",
+                          "建檔日", "下單日期", "到貨日", "到貨倉別", "配送方式", "品項數", "出貨數量",
                           "實際驗入數量", "驗收金額", "備註"],
           sum_headers)
     data_rows = list(wb_sum.active.iter_rows(min_row=2, values_only=True))
@@ -1378,6 +1378,146 @@ def main():
     check("各工具頁的本頁紀錄不混進酷澎訂單管理系統的紀錄",
           not any(l.get("system") == "酷澎訂單管理系統" for s in ("mars", "zhuyun", "purchase")
                   for l in client.get(f"/api/master/logs?scope={s}&limit=1000").get_json()["logs"]))
+
+    print("\n【38】整合表新格式（2026-10）：多了子序（H 欄）、下單日期（AP 欄）")
+    import datetime as _dt38
+    import importer as _imp38
+    head38 = ["訂單類型", "線別", "PO單號", "到貨倉別", "地址", "交付日期", "NO", "子序", "SKU ID",
+              "條碼(國條)", "永豐料號", "品牌", "品名", "下單數量(酷澎單位)", "出貨數量", "單位",
+              "箱入數", "箱數", "酷澎下單單價(含稅)", "業務報價單價(含稅)", "核對單價", "報價備註",
+              "箱單價(含稅)", "總計(含稅)", "總效期天數(day)", "允收效期", "備註", "有效期限", "製造日期",
+              "日期格式", "瑪氏效期表Id", "Mars配送箱數", "Mars單位", "Mars PackInfo", "品號(PGCode)",
+              "PG配置明細Id", "PG配置箱數", "PG配置數量", "PG配置#", "PG到期日", "PG製造日", "下單日期"]
+    check("測試用表頭跟真實新格式一樣：子序在 H 欄、報價備註在 V 欄、下單日期在 AP 欄",
+          head38[7] == "子序" and head38[21] == "報價備註" and head38[41] == "下單日期")
+    items38 = [("T38000000000001", "S38A", "2026-10-20", _dt38.datetime(2026, 10, 12), "A-1"),
+               ("T38000000000001", "S38B", "2026-10-20", _dt38.datetime(2026, 10, 12), ""),
+               ("T38000000000002", "S38C", "2026-10-22", _dt38.datetime(2026, 10, 5), ""),
+               ("T38000000000002", "S38D", "2026-10-22", _dt38.datetime(2026, 10, 5), "")]
+
+    def book38(name, items, new_format=True):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "整合表"
+        cols = head38 if new_format else [h for h in head38 if h not in ("子序", "下單日期")]
+        ws.append(cols)
+        for i, (po, sku, deliv, odate, qnote) in enumerate(items, 1):
+            v = {"訂單類型": "一般", "線別": "寶僑", "PO單號": po, "到貨倉別": "TAO1", "地址": "桃園",
+                 "交付日期": deliv, "NO": i, "子序": 1, "SKU ID": sku, "永豐料號": "YF" + sku,
+                 "品牌": "測試品牌", "品名": "測試品" + sku, "下單數量(酷澎單位)": 10, "出貨數量": 10,
+                 "單位": "EA", "箱入數": 5, "酷澎下單單價(含稅)": 100, "報價備註": qnote, "下單日期": odate}
+            ws.append([v.get(h) for h in cols])
+        path = os.path.join(_tmp, name)
+        wb.save(path)
+        return path
+
+    def commit38(path):
+        pv = upload(client, path).get_json()
+        cm = client.post("/api/import/commit", json={"batch_id": pv["batch_id"]}).get_json()
+        return pv, cm
+
+    def pos38():
+        return {r["po_number"]: r for r in
+                client.get("/api/pos?po_number=T38&page_size=50").get_json()["rows"]}
+
+    def logs38(field):
+        conn = db.get_conn()
+        try:
+            return [dict(r) for r in conn.execute(
+                "SELECT * FROM edit_logs WHERE po_number LIKE ? AND field = ?", ("T38%", field)).fetchall()]
+        finally:
+            conn.close()
+
+    rows38, _ = _imp38.parse_workbook(open(book38("new38_parse.xlsx", items38), "rb"), "x.xlsx")
+    check("新格式：下單日期讀成日期、報價備註照樣讀得到（子序插進來沒有讓欄位錯位）",
+          [r["order_date"] for r in rows38] == ["2026-10-12", "2026-10-12", "2026-10-05", "2026-10-05"]
+          and rows38[0]["quote_note"] == "A-1" and rows38[0]["sku_id"] == "S38A" and rows38[0]["qty_coupang"] == 10,
+          [(r["order_date"], r["quote_note"]) for r in rows38])
+
+    pv, cm = commit38(book38("old38.xlsx", items38, new_format=False))
+    check("舊格式（沒有下單日期）照常匯入，下單日期留空白",
+          cm.get("inserted") == 4 and all(not r["order_date"] for r in pos38().values()), cm)
+
+    pv, cm = commit38(book38("new38.xlsx", items38))
+    p38 = pos38()
+    check("同一批單換新格式再匯入：判定完全相同，不算酷澎修改",
+          pv["updated_count"] == 0 and pv["identical_count"] == 4 and pv["new_count"] == 0,
+          (pv["new_count"], pv["updated_count"], pv["identical_count"]))
+    check("舊單的下單日期安靜補上（4 筆）",
+          cm.get("order_dates_set") == 4 and p38["T38000000000001"]["order_date"] == "2026-10-12"
+          and p38["T38000000000002"]["order_date"] == "2026-10-05", (cm, {k: v["order_date"] for k, v in p38.items()}))
+    check("補日期不亮燈、不寫歷程",
+          all(r["review_count"] == 0 for r in p38.values()) and not logs38("order_date"))
+    det38 = client.get("/api/pos/T38000000000001").get_json()
+    check("PO 明細看得到下單日期", det38["order_date"] == "2026-10-12"
+          and all(s["order_date"] == "2026-10-12" for s in det38["skus"]), det38.get("order_date"))
+
+    def filt38(q):
+        return sorted(client.get(f"/api/pos?po_number=T38&page_size=50&{q}").get_json()["rows"],
+                      key=lambda r: r["po_number"])
+    check("下單日期篩選：起～迄都有",
+          [r["po_number"] for r in filt38("order_from=2026-10-10&order_to=2026-10-12")] == ["T38000000000001"]
+          and [r["po_number"] for r in filt38("order_from=2026-10-01&order_to=2026-10-06")] == ["T38000000000002"]
+          and len(filt38("order_from=2026-10-01")) == 2 and filt38("order_to=2026-10-04") == [])
+    check("下單日期篩選接受 2026/10/12 這種寫法",
+          [r["po_number"] for r in filt38("order_from=2026/10/12&order_to=2026/10/12")] == ["T38000000000001"])
+    all38 = client.get("/api/pos?page_size=500&order_from=2000-01-01").get_json()["rows"]
+    check("沒有下單日期的舊單，篩下單日期時不會出現",
+          sorted(r["po_number"] for r in all38) == ["T38000000000001", "T38000000000002"],
+          [r["po_number"] for r in all38])
+
+    items38b = [(po, sku, d, _dt38.datetime(2026, 10, 13) if po.endswith("1") else od, q)
+                for po, sku, d, od, q in items38] + [
+               ("T38000000000003", "S38E", "2026-10-25", _dt38.datetime(2026, 10, 13), "")]
+    pv, cm = commit38(book38("new38b.xlsx", items38b))
+    p38 = pos38()
+    check("酷澎改了下單日期：不算修改、不亮燈，但資料有跟著更新",
+          pv["updated_count"] == 0 and p38["T38000000000001"]["order_date"] == "2026-10-13"
+          and p38["T38000000000001"]["review_count"] == 0, (pv["updated_count"], p38["T38000000000001"]))
+    lg = logs38("order_date")
+    check("改日期留一筆歷程備查（每個品項各一筆，舊值→新值）",
+          len(lg) == 2 and all(l["old_value"] == "2026-10-12" and l["new_value"] == "2026-10-13"
+                               and l["field_label"] == "下單日期" for l in lg), lg)
+    check("新單直接帶下單日期", p38["T38000000000003"]["order_date"] == "2026-10-13"
+          and p38["T38000000000002"]["order_date"] == "2026-10-05")
+
+    pv, cm = commit38(book38("old38b.xlsx", items38b, new_format=False))
+    check("之後又上傳舊格式的檔：已有的下單日期不會被洗成空白",
+          pos38()["T38000000000001"]["order_date"] == "2026-10-13" and cm.get("order_dates_set") == 0, cm)
+
+    for prof, key in (("full", "PO單號"), ("po_summary", "PO單號")):
+        ex = client.post("/api/export", json={"profile": prof, "mark_pulled": False, "filters": {},
+                                              "po_numbers": ["T38000000000001", "T38000000000002"]})
+        ws38 = openpyxl.load_workbook(io.BytesIO(ex.data)).active
+        hdr = [c.value for c in ws38[1]]
+        recs = [dict(zip(hdr, r)) for r in ws38.iter_rows(min_row=2, values_only=True)]
+        check(f"匯出（{prof}）有「下單日期」，緊接在建檔日後面（沒有建檔日就放最後）、值正確",
+              "下單日期" in hdr and (hdr.index("下單日期") == hdr.index("建檔日") + 1 if "建檔日" in hdr
+                                     else hdr[-1] == "下單日期")
+              and {r[key]: str(r["下單日期"])[:10] for r in recs}
+              == {"T38000000000001": "2026-10-13", "T38000000000002": "2026-10-05"},
+              (hdr, [(r[key], r["下單日期"]) for r in recs]))
+    ex = client.post("/api/export", json={"profile": "full", "mark_pulled": False,
+                                          "filters": {"po_number": "T38", "order_from": "2026-10-13"}})
+    recs = list(openpyxl.load_workbook(io.BytesIO(ex.data)).active.iter_rows(min_row=2, values_only=True))
+    check("匯出也吃下單日期篩選", ex.status_code == 200 and len(recs) == 3, len(recs))
+
+    prof_data = app_module.load_json("export_profiles.json", {"profiles": {}})
+    for k in ("full", "po_summary"):
+        prof_data["profiles"][k]["columns"] = [c for c in prof_data["profiles"][k]["columns"]
+                                               if c.get("field") != "order_date"]
+    app_module.save_json("export_profiles.json", prof_data)
+    app_module._ensure_order_date_export_column()
+    app_module._ensure_order_date_export_column()
+    prof_data = app_module.load_json("export_profiles.json", {"profiles": {}})
+    fields = {k: [c["field"] for c in prof_data["profiles"][k]["columns"]] for k in ("full", "po_summary")}
+    check("正式站已存的匯出格式會自動補上下單日期（補在建檔日後面、只補一次）",
+          all(f.count("order_date") == 1 and (f.index("order_date") == f.index("filed_date") + 1
+                                               if "filed_date" in f else f[-1] == "order_date")
+              for f in fields.values()) and "filed_date" in fields["po_summary"], fields)
+    page = client.get("/coupang").get_data(as_text=True)
+    check("畫面上有下單日期篩選（起／迄）與列表欄位",
+          'id="f-order-from"' in page and 'id="f-order-to"' in page and ">下單日期</th>" in page)
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

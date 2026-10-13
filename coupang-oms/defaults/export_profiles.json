@@ -9,7 +9,7 @@
     "format 可省略，可選 text / int / date / decimal / yesno（yesno 把 0/1 印成「否/是」，flagged 這種是非欄位適合用）。",
     "const 可用來輸出固定值（ERP 常見的常數欄位，例如公司別、單別）。",
     "mark_pulled_default 只是畫面上的預設勾選狀態，OP 匯出時仍可自行決定。",
-    "新增可用欄位：filed_date（建檔日）、receiving_note（該品項的驗收註記）、",
+    "新增可用欄位：filed_date（建檔日）、order_date（下單日期，整合表 AP 欄）、receiving_note（該品項的驗收註記）、",
     "  shipping_method（配送方式）、flagged（個人顏色標記，建議搭配 format: yesno）",
     "level 設成 \"po\" 就是 PO 層級的總表：一張 PO 一列，不列 SKU 明細，跟首頁列表同一個彙總邏輯。",
     "  這種格式可用的 field 除了上面那些，還多了 sku_count（品項數）；line／brand 在這裡是整張單底下所有",
@@ -189,6 +189,11 @@
           "format": "date"
         },
         {
+          "header": "下單日期",
+          "field": "order_date",
+          "format": "date"
+        },
+        {
           "header": "到貨日",
           "field": "delivery_date",
           "format": "date"
@@ -235,6 +240,11 @@
         {
           "header": "建檔日",
           "field": "filed_date",
+          "format": "date"
+        },
+        {
+          "header": "下單日期",
+          "field": "order_date",
           "format": "date"
         },
         {

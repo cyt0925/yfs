@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS orders (
     unit_price        REAL,
     expiry_note       TEXT DEFAULT '',
     seq_no            INTEGER,              -- 整合表的 NO，僅供參考排序
+    order_date        TEXT DEFAULT '',      -- 整合表的「下單日期」ISO（同張 PO 都一樣），只供查看與篩選
 
     -- === OP 自有欄位：匯入永不覆蓋 ===
     qty_ship          INTEGER,              -- 出貨數量（實際要出的）
@@ -333,6 +334,7 @@ CREATE TABLE IF NOT EXISTS orders (
     unit_price        REAL,
     expiry_note       TEXT DEFAULT '',
     seq_no            INTEGER,
+    order_date        TEXT DEFAULT '',
 
     qty_ship          INTEGER,
     qty_ship_overridden INTEGER NOT NULL DEFAULT 0,
@@ -1478,6 +1480,10 @@ def _migrate_columns(conn):
         conn.execute(
             "ALTER TABLE orders ADD COLUMN removed_from_coupang "
             "INTEGER NOT NULL DEFAULT 0")
+
+    # 2026-10 整合表新增「下單日期」（AP 欄）。舊資料留空，下次匯入時安靜補上。
+    if "order_date" not in existing:
+        conn.execute("ALTER TABLE orders ADD COLUMN order_date TEXT DEFAULT ''")
 
     if IS_POSTGRES:
         poh_existing = {r["column_name"] for r in conn.execute(

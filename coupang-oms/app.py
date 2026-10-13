@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-12.5"
+BUILD_VERSION = "2026-10-13.1"
 
 app = Flask(__name__)
 
@@ -205,7 +205,7 @@ INSERT_FIELDS = [
     "po_number", "sku_id", "order_type", "parent_po", "line", "brand",
     "product_name", "barcode", "yf_sku", "warehouse", "address",
     "delivery_date", "qty_coupang", "unit", "box_size", "unit_price",
-    "expiry_note", "seq_no",
+    "expiry_note", "seq_no", "order_date",
 ]
 
 # 新增 SKU 併入既有 PO 時要一起寫進去的「人工調整過」旗標（見
@@ -409,6 +409,34 @@ def _ensure_po_summary_amount_column():
     save_json("export_profiles.json", data)
 
 
+def _ensure_order_date_export_column():
+    """把「下單日期」補進既有安裝的「完整欄位」與「PO 總表」匯出格式。
+
+    2026-10 整合表新增下單日期（AP 欄）。跟其他 _ensure_* 一樣只補不搶：
+    沒有這個欄位代碼才補，補在「建檔日」後面，找不到建檔日就加在最後。"""
+    data = load_json("export_profiles.json", {"profiles": {}})
+    profiles = data.get("profiles") or {}
+    changed = False
+    for key in ("full", "po_summary"):
+        profile = profiles.get(key)
+        if not profile:
+            continue
+        columns = profile.get("columns") or []
+        if any(c.get("field") == "order_date" for c in columns):
+            continue
+        new_col = {"header": "下單日期", "field": "order_date", "format": "date"}
+        at = next((i for i, c in enumerate(columns)
+                   if c.get("field") == "filed_date"), None)
+        if at is None:
+            columns.append(new_col)
+        else:
+            columns.insert(at + 1, new_col)
+        profile["columns"] = columns
+        changed = True
+    if changed:
+        save_json("export_profiles.json", data)
+
+
 def _ensure_po_summary_profile():
     """把「PO 總表」這個新的匯出格式補進既有安裝——只在 profiles 裡完全
     沒有 po_summary 這個 key 時才補，OP 如果自己刪掉過就不會被救回來，
@@ -436,6 +464,7 @@ _ensure_shipping_methods_option()
 _ensure_export_profile_columns()
 _ensure_po_summary_profile()
 _ensure_po_summary_amount_column()
+_ensure_order_date_export_column()
 
 
 def verify_password(stored, given):
@@ -1514,6 +1543,14 @@ def build_filter(args):
     if date_to:
         add("delivery_date <= ?", date_to)
 
+    # 下單日期（整合表 AP 欄）。舊單還沒補到日期的是空白，篩選時自然不會出現。
+    order_from = norm_date(args.get("order_from"))
+    if order_from:
+        add("order_date >= ?", order_from)
+    order_to = norm_date(args.get("order_to"))
+    if order_to:
+        add("order_date <= ?", order_to)
+
     pulled = args.get("is_pulled")
     if pulled in ("0", "1"):
         add("is_pulled = ?", int(pulled))
@@ -1858,6 +1895,7 @@ def po_summary_sql(clause):
                MIN(pulled_at)       AS pulled_at,
                MIN(pulled_by)       AS pulled_by,
                MIN(filed_date)      AS filed_date,
+               COALESCE(MIN(NULLIF(order_date, '')), '') AS order_date,
                MIN(shipping_method) AS shipping_method,
                MAX(flagged)         AS flagged,
                -- 優先拿人工調整過那一列的值，沒有才取 MIN；跟明細的
@@ -1977,6 +2015,7 @@ def api_po_detail(po_number):
             "brands": _csv_clean(",".join(s["brand"] or "" for s in skus)),
             "lines": _csv_clean(",".join(s["line"] or "" for s in skus)),
             "delivery_date": po_shared_value(skus, "delivery_date"),
+            "order_date": po_shared_value(skus, "order_date"),
             "warehouse": po_shared_value(skus, "warehouse"),
             "order_type": po_shared_value(skus, "order_type"),
             "delivery_date_spread": po_field_spread(skus, "delivery_date"),
@@ -2272,6 +2311,11 @@ def api_import_preview():
             "identical_count": len(result["identical"]),
             "identical_keys": [[r["po_number"], r["sku_id"]]
                                for r in result["identical"]],
+            # 下單日期不算酷澎修改（不在 COUPANG_FIELDS），所以舊單補日期、
+            # 酷澎改日期都不會被 diff 抓成「有異動」。整份檔案的日期另外帶著，
+            # 匯入時安靜補寫，見 _sync_order_dates。
+            "order_dates": [[r["po_number"], r["sku_id"], r["order_date"]]
+                            for r in rows if r.get("order_date")],
         }
         cur = conn.execute(
             """INSERT INTO import_batches
@@ -2548,6 +2592,9 @@ def api_import_commit():
             )
             removed_count += 1
 
+        order_dates_set = _sync_order_dates(conn, preview.get("order_dates") or [],
+                                            operator, preview["filename"])
+
         # 內容完全相同的列只更新「最後出現時間」，不動任何業務欄位、
         # 不寫歷程、不改 version —— 這就是「靜默去重」。
         conn.executemany(
@@ -2572,7 +2619,41 @@ def api_import_commit():
         "updated": updated,
         "identical": preview["identical_count"],
         "removed": removed_count,
+        "order_dates_set": order_dates_set,
     })
+
+
+def _sync_order_dates(conn, order_dates, operator, filename):
+    """把整合表的下單日期安靜寫進 orders：不亮燈、不改 version。
+
+    - 原本空白（2026-10 前匯入的舊單）：直接補上，不記歷程——這只是把
+      新格式多出來的資料補齊，不是酷澎改了什麼。
+    - 原本有值、酷澎改了：照樣更新，記一筆歷程備查，但不亮燈。下單
+      日期不影響出貨，亮燈只會讓同事多一張要按「已確認」的單。
+    回傳實際寫入的筆數。"""
+    if not order_dates:
+        return 0
+    wanted = {(po, sku): d for po, sku, d in order_dates}
+    pos = sorted({po for po, _ in wanted})
+    changes = []
+    for i in range(0, len(pos), 500):
+        chunk = pos[i:i + 500]
+        marks = ", ".join("?" * len(chunk))
+        for r in conn.execute(
+                f"SELECT id, po_number, sku_id, order_date FROM orders "
+                f"WHERE po_number IN ({marks})", tuple(chunk)).fetchall():
+            r = dict(r)
+            new = wanted.get((r["po_number"], r["sku_id"]))
+            old = r["order_date"] or ""
+            if not new or new == old:
+                continue
+            if old:
+                log_change(conn, r, "order_date", "下單日期", old, new,
+                           operator, "import", filename + "（不亮燈）")
+            changes.append((new, r["id"]))
+    if changes:
+        conn.executemany("UPDATE orders SET order_date = ? WHERE id = ?", changes)
+    return len(changes)
 
 
 # ---------------------------------------------------------------- 匯出

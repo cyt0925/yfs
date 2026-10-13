@@ -198,6 +198,10 @@
         <input id="f-from" type="date" class="border rounded px-2 py-2"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨日（迄）</span>
         <input id="f-to" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">下單日期（起）</span>
+        <input id="f-order-from" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">下單日期（迄）</span>
+        <input id="f-order-to" type="date" class="border rounded px-2 py-2"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
         <select id="f-status" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
@@ -228,7 +232,7 @@
       <!-- min-width 是各欄加總的下限：螢幕比這個窄，欄位維持原寬、交給外層
            .scroll-x 橫向捲動，不會被壓扁換行；螢幕比這個寬，width:100% 讓
            table-layout:fixed 把多出來的空間依各欄比例撐開，不會在右邊留白。 -->
-      <table class="po-table text-sm border-collapse" style="min-width:1380px; width:100%;">
+      <table class="po-table text-sm border-collapse" style="min-width:1406px; width:100%;">
         <colgroup>
           <col style="width:36px">
           <col style="width:150px">
@@ -236,7 +240,9 @@
           <col style="width:100px">
           <col style="width:90px">
           <col style="width:80px">
-          <col style="width:280px">
+          <!-- 線別：以前這欄連品牌一起顯示才給 280，現在只剩線別，讓 80 給「下單日期」 -->
+          <col style="width:200px">
+          <col style="width:106px">
           <col style="width:106px">
           <col style="width:106px">
           <col style="width:86px">
@@ -253,6 +259,7 @@
             <th class="px-2 py-2 text-left whitespace-nowrap">驗收</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">線別</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">建檔日</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">下單日期</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨日</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">到貨倉別</th>
             <th class="px-2 py-2 text-left whitespace-nowrap">配送方式</th>
@@ -847,6 +854,8 @@ function filters() {
     order_type: $("#f-ordertype").value,
     date_from: $("#f-from").value,
     date_to: $("#f-to").value,
+    order_from: $("#f-order-from").value,
+    order_to: $("#f-order-to").value,
     po_status: $("#f-status").value,
     receiving_status: $("#f-receiving").value,
     shipping_method: $("#f-shipping").value,
@@ -882,7 +891,7 @@ function renderRows() {
   const tb = $("#tbody");
   ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="15" class="text-center py-16 text-ink-300">
+    tb.innerHTML = `<tr><td colspan="16" class="text-center py-16 text-ink-300">
       查無符合條件的資料。請先上傳訂單彙總表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
@@ -929,6 +938,7 @@ function renderRows() {
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
           data-inline="filed_date" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點選即可修改"}">${esc(r.filed_date)}</td>
+      <td class="px-2 py-2 whitespace-nowrap" title="酷澎整合表的下單日期">${esc(r.order_date) || "—"}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}${mixedTag(r.delivery_date_variants, "到貨日")}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}${mixedTag(r.warehouse_variants, "到貨倉別")}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell"
@@ -1073,6 +1083,9 @@ async function openPo(poNumber) {
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">建檔日</span>
         <input id="p-filed" type="date" value="${esc(h.filed_date)}" ${locked ? "disabled" : ""}
           class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">下單日期</span>
+        <input value="${esc(d.order_date) || "—"}" disabled title="酷澎整合表的下單日期，隨匯入更新，不能手動修改"
+          class="border rounded px-2 py-1.5 bg-ink-50 text-ink-500"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
         <input value="${h.is_pulled ? "已拉單" : "未拉單"}" disabled
           class="border rounded px-2 py-1.5 bg-ink-50 text-ink-500"></label>
@@ -1777,7 +1790,7 @@ $("#check-all").addEventListener("change", e => {
 
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
 $("#btn-reset").addEventListener("click", () => {
-  ["#f-po", "#f-keyword", "#f-from", "#f-to"].forEach(s => $(s).value = "");
+  ["#f-po", "#f-keyword", "#f-from", "#f-to", "#f-order-from", "#f-order-to"].forEach(s => $(s).value = "");
   ["#f-line", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-shipping", "#f-pulled"]
     .forEach(s => $(s).value = "");
   $("#f-review").checked = false;
