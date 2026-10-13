@@ -333,7 +333,9 @@ def attach_taiwan_odds(games, errors, log):
             rows = rows_by_day.get(day) or []
             r, how = match_game(g, rows, aid)
             if not r:
-                unmatched.append(f"{g['league']} {g['away'].get('name_zh') or g['away']['name']}@{g['home'].get('name_zh') or g['home']['name']} {g['time_tw']}")
+                gt = _minutes(g["time_tw"])
+                near = [f"{x['away']}@{x['home']}" for x in rows if gt is not None and _minutes(x.get("time")) is not None and abs(_minutes(x["time"]) - gt) <= 20]
+                unmatched.append(f"{g['league']} {g['away'].get('name_zh') or g['away']['name']}@{g['home'].get('name_zh') or g['home']['name']} {g['time_tw']}" + (f"（同時段：{'、'.join(near[:4])}）" if near else ""))
                 continue
             g["tw"] = dict(source="玩運彩", url=r["url"], updated=now.isoformat(timespec="minutes"), no=r.get("no"),
                            matched_by=how, spread=r.get("spread"), ml=r.get("ml"), total=r.get("total"),
