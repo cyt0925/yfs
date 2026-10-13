@@ -96,21 +96,33 @@ function renderPreview(box, d) {
     <div class="tbl-wrap mt-3" style="max-height:300px"><table class="t"><thead><tr><th>訂單編號</th><th>廠商料號</th><th>品名</th><th>欄位</th><th>上一版本</th><th>新版本</th><th class="num">數量增減</th></tr></thead><tbody>
     ${d.diffs.map(x => `<tr><td class="fn">${esc(x.order_no)}</td><td class="fn">${esc(x.supplier_sku_id)}</td><td>${esc((x.sku_name || "").slice(0, 40))}</td><td>${esc(x.label)}</td><td>${esc(x.old)}</td><td><b>${esc(x.new)}</b></td><td class="num">${delta(x.qty_delta)}</td></tr>`).join("")}
     </tbody></table></div>`;
-  if (d.needs_fulfil) h += `<div class="fulfil"><b>履約方式</b><span class="kbd">（${c.new} 項新訂單套用，匯入後可整張修改）</span>
-    ${FULFILS.map(f => `<span class="chip ff" data-f="${esc(f)}">${esc(f)}</span>`).join("")}</div>`;
-  h += `<div class="flex items-center gap-2 mt-3"><button class="btn btn-p ok" ${d.needs_fulfil ? "disabled" : ""}><i class="bi bi-check2"></i> 確認匯入</button>
-    <button class="btn btn-o cancel">取消</button>${d.needs_fulfil ? `<span class="kbd need">請先選擇履約方式</span>` : ""}</div>`;
+  // 履約方式每個線別各選一次（Jerry 2026-10-13：採購單常常三個線別混在一起）。瑪氏預設供應商直送；竹運採購進貨瑪氏還沒開放
+  const nl = d.new_lines && Object.keys(d.new_lines).length ? d.new_lines : { "": c.new }, pick = {};
+  if (d.needs_fulfil) h += `<div class="fulfil" style="display:block"><b>履約方式</b><span class="kbd">（每個線別各選一次，套用到這個檔的新訂單；匯入後可整張修改）</span>
+    ${Object.entries(nl).map(([ln, n]) => {
+      if (ln === "瑪氏") pick[ln] = "供應商直送";
+      return `<div class="ffl" data-l="${esc(ln)}"><span class="ffl-l"><b>${esc(ln || "新訂單")}</b> ${fmt(n)} 項</span>${FULFILS.map(f => {
+        const off = ln === "瑪氏" && f === "竹運採購進貨";
+        return `<span class="chip ff ${pick[ln] === f ? "on" : ""} ${off ? "off" : ""}" data-f="${esc(f)}" ${off ? 'title="瑪氏目前只開放竹運出貨、供應商直送"' : ""}>${esc(f)}</span>`;
+      }).join("")}</div>`; }).join("")}</div>`;
+  const need = () => Object.keys(nl).filter(ln => !pick[ln]);
+  h += `<div class="flex items-center gap-2 mt-3"><button class="btn btn-p ok"><i class="bi bi-check2"></i> 確認匯入</button>
+    <button class="btn btn-o cancel">取消</button><span class="kbd need"></span></div>`;
   box.innerHTML = h;
-  let fulfil = "";
-  box.querySelectorAll(".ff").forEach(ch => ch.addEventListener("click", () => {
-    box.querySelectorAll(".ff").forEach(x => x.classList.remove("on")); ch.classList.add("on"); fulfil = ch.dataset.f;
-    box.querySelector(".ok").disabled = false; const n = box.querySelector(".need"); if (n) n.remove();
-  }));
+  const sync = () => {
+    const miss = d.needs_fulfil ? need() : [];
+    box.querySelector(".ok").disabled = miss.length > 0;
+    box.querySelector(".need").textContent = miss.length ? `請先選擇${miss.map(x => x || "新訂單").join("、")}的履約方式` : "";
+  };
+  box.querySelectorAll(".ffl").forEach(row => row.querySelectorAll(".ff:not(.off)").forEach(ch => ch.addEventListener("click", () => {
+    row.querySelectorAll(".ff").forEach(x => x.classList.remove("on")); ch.classList.add("on"); pick[row.dataset.l] = ch.dataset.f; sync();
+  })));
+  sync();
   box.querySelector(".cancel").addEventListener("click", async () => { try { await post("/api/shopee/import/cancel", { upload_id: d.upload_id }); } catch (e) {} box.remove(); });
   box.querySelector(".ok").addEventListener("click", async e => {
     e.target.disabled = true;
     try {
-      const r = await post("/api/shopee/import/commit", { upload_id: d.upload_id, fulfil });
+      const r = await post("/api/shopee/import/commit", { upload_id: d.upload_id, fulfils: pick });
       const k = r.counts; box.remove();
       toast(`已匯入 ${d.filename}：新增 ${k.new} 項、有變 ${k.changed} 項、移除 ${k.remove} 項、無異動 ${k.same} 項`);
       loadFresh(); refresh();

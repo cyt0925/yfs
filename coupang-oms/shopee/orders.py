@@ -9,7 +9,7 @@
 - 履約方式匯入時人選一次（同一個檔的新單都套用），之後可以整張改，要寫原因、留紀錄。
 """
 from .common import (
-    FULFILS, ST_DIFF, ST_IMPORTED, SYSTEM, _log, _operator, _row, _rows, base64, current_app, get_conn, io, json,
+    FULFILS, LINES, ST_DIFF, ST_IMPORTED, SYSTEM, _log, _operator, _row, _rows, base64, current_app, get_conn, io, json,
     jsonify, now, render_template, request, send_file, shopee_bp, wh_name,
 )
 from .parse import KIND_TEXT, ParseError, parse_file
@@ -127,7 +127,7 @@ def _snapshot(conn, order_id, version, upload_id, kind):
 
 
 def apply(conn, upload, acts, fulfil, operator):
-    """把 plan 的結果寫進去。回 counts。"""
+    """把 plan 的結果寫進去。回 counts。fulfil 是新單的履約方式：一個字串全部套用，或 {線別: 履約方式} 各線別各自套。"""
     stamp = now(); uid = upload["id"]; kind = upload["kind"]
     for a in acts:
         if a["op"] == "same":
@@ -142,7 +142,8 @@ def apply(conn, upload, acts, fulfil, operator):
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,1,?,?,?,?)""",
                 (okey, f.get("pr_id", ""), f.get("po_id", ""), f.get("inbound_ids", ""), f["warehouse"], f["expected_date"],
                  f["shopee_sku_id"], f["supplier_sku_id"], f["base_code"], f["unit_code"], f["unit_name"], f["line"], f["sku_name"],
-                 f.get("ean", ""), f["selling_type"], f["qty"], f["qty"], f.get("inbound_qty"), fulfil, ST_IMPORTED,
+                 f.get("ean", ""), f["selling_type"], f["qty"], f["qty"], f.get("inbound_qty"),
+                 fulfil.get(f["line"], "") if isinstance(fulfil, dict) else fulfil, ST_IMPORTED,
                  uid, uid, stamp, stamp))
             _snapshot(conn, cur.lastrowid, 1, uid, kind)
             continue
@@ -210,6 +211,7 @@ def api_import_preview():
     try:
         acts, diffs = plan(conn, parsed["kind"], parsed["rows"])
         c = _counts(acts)
+        nl = _new_lines(acts)
         cur = conn.execute(
             """INSERT INTO shp_uploads (kind, filename, content_b64, payload_json, rows_total, new_count, changed_count, same_count,
                removed_count, errors_json, status, uploaded_by, uploaded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -220,11 +222,21 @@ def api_import_preview():
         uid = cur.lastrowid
     finally:
         conn.close()
-    return jsonify(_preview_out(uid, parsed["kind"], f.filename, parsed["rows"], parsed["lines"], parsed["errors"], c, diffs))
+    return jsonify(_preview_out(uid, parsed["kind"], f.filename, parsed["rows"], parsed["lines"], parsed["errors"], c, diffs, nl))
 
 
-def _preview_out(uid, kind, filename, rows, lines, errors, c, diffs):
-    return {"upload_id": uid, "kind": kind, "kind_text": KIND_TEXT[kind], "filename": filename,
+def _new_lines(acts):
+    """新單各線別幾項。一個檔常常三個線別混在一起（Jerry 2026-10-13），履約方式每個線別各選一次。"""
+    out = {}
+    for a in acts:
+        if a["op"] == "new":
+            k = a["fields"]["line"] or ""
+            out[k] = out.get(k, 0) + 1
+    return {k: out[k] for k in [x for x in LINES if x in out] + sorted(set(out) - set(LINES))}
+
+
+def _preview_out(uid, kind, filename, rows, lines, errors, c, diffs, new_lines):
+    return {"upload_id": uid, "new_lines": new_lines, "kind": kind, "kind_text": KIND_TEXT[kind], "filename": filename,
             "rows_total": len(rows), "orders": sorted({(r.get("po_id") or r.get("pr_id")) for r in rows}), "lines": lines,
             "warehouses": sorted({r["warehouse"] for r in rows if r["warehouse"]}),
             "dates": sorted({r["expected_date"] for r in rows if r["expected_date"]}),
@@ -248,7 +260,8 @@ def api_import_pending():
             lines = {}
             for r in rows:
                 lines[r.get("line") or ""] = lines.get(r.get("line") or "", 0) + 1
-            out.append(_preview_out(u["id"], u["kind"], u["filename"], rows, lines, json.loads(u["errors_json"] or "[]"), _counts(acts), diffs))
+            out.append(_preview_out(u["id"], u["kind"], u["filename"], rows, lines, json.loads(u["errors_json"] or "[]"), _counts(acts), diffs,
+                                    _new_lines(acts)))
     finally:
         conn.close()
     return jsonify({"pending": out})
@@ -264,7 +277,8 @@ def _pending_upload(conn, uid):
 @shopee_bp.route("/api/shopee/import/commit", methods=["POST"])
 def api_import_commit():
     p = request.get_json(silent=True) or {}
-    fulfil = str(p.get("fulfil") or "").strip()
+    fulfil = str(p.get("fulfil") or "").strip()                 # 舊的：一個檔選一種
+    per_line = p.get("fulfils") if isinstance(p.get("fulfils"), dict) else {}   # 新的：{線別: 履約方式}
     operator = _operator()
     conn = get_conn()
     try:
@@ -273,16 +287,21 @@ def api_import_commit():
             return jsonify({"error": "找不到這次上傳的預覽，可能已經匯入或取消，請重新上傳。"}), 404
         rows = json.loads(u["payload_json"] or "[]")
         acts, _diffs = plan(conn, u["kind"], rows)
-        if any(a["op"] == "new" for a in acts) and fulfil not in FULFILS:
-            return jsonify({"error": f"有新訂單，請先選擇履約方式（{'、'.join(FULFILS)}）。"}), 400
-        c = apply(conn, u, acts, fulfil, operator)
+        new_lines = _new_lines(acts)
+        choice = {ln: str(per_line.get(ln) or fulfil).strip() for ln in new_lines}
+        missing = [ln or "未知線別" for ln in new_lines if choice[ln] not in FULFILS]
+        if missing:
+            return jsonify({"error": f"有新訂單，請先選擇{'、'.join(missing)}的履約方式（{'、'.join(FULFILS)}）。"}), 400
+        c = apply(conn, u, acts, choice, operator)
+        used = sorted(set(choice.values()))
+        fulfil_text = "" if not c["new"] else used[0] if len(used) == 1 else "、".join(f"{ln}{choice[ln]}" for ln in new_lines)
         conn.execute("""UPDATE shp_uploads SET status = 'ok', fulfil = ?, payload_json = '', new_count = ?, changed_count = ?,
                         same_count = ?, removed_count = ?, committed_at = ? WHERE id = ?""",
-                     (fulfil if c["new"] else "", c["new"], c["changed"], c["same"], c["remove"], now(), u["id"]))
+                     (fulfil_text, c["new"], c["changed"], c["same"], c["remove"], now(), u["id"]))
         lines = sorted({r["line"] for r in rows if r.get("line")})
         _log(conn, "、".join(lines), "", "", "", "shopee_import", f"匯入蝦皮{KIND_TEXT[u['kind']]}", "",
              f"新增 {c['new']}、有變 {c['changed']}、移除 {c['remove']}、無異動 {c['same']}", operator, "import",
-             u["filename"] + (f"（履約方式：{fulfil}）" if c["new"] else ""))
+             u["filename"] + (f"（履約方式：{fulfil_text}）" if c["new"] else ""))
         conn.commit()
     finally:
         conn.close()

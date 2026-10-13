@@ -673,6 +673,22 @@ def main():
         pg.click(".pv .ff[data-f='竹運出貨']"); pg.click(".pv .ok"); pg.wait_for_function("document.querySelectorAll('.pv').length === 0", timeout=10000); pg.wait_for_timeout(800)
         check("匯入後：「待產拋單檔」那格 1 張", count("ship") == 1, pg.inner_text("#stages"))
         check("匯入後上傳區寫「蝦皮採購單 今天」", "蝦皮採購單 今天" in pg.inner_text("#fresh"), pg.inner_text("#fresh"))
+        sp3 = os.path.join(tempfile.gettempdir(), "ui_PurchaseOrder_mixed.xlsx")
+        wbm = openpyxl.Workbook(); wsm = wbm.active
+        wsm.append(["PR ID", "PO ID", "Warehouse", "Expected Delivery Time", "Shopee SKU ID", "Shopee SKU Name", "Supplier SKU ID",
+                    "Shopee Requested Qty (unit)", "Selling Type", "EAN / UPC"])
+        wsm.append(["PRTWCOTWA202612019999", None, "TWA", "2026-12-01", "MXA", "幫寶適 混線", "4987176232878_CNN", "24", "Pcs", "4987176232878"])
+        wsm.append(["PRTWCOTWA202612019999", None, "TWA", "2026-12-01", "MXB", "M&M'S 混線", "M10273409_QMN", "6", "Pcs", "M10273409"])
+        wbm.save(sp3)
+        pg.set_input_files("#file", sp3); pg.wait_for_selector(".pv .ffl", timeout=15000)
+        rows_ = pg.eval_on_selector_all(".pv .ffl", "els => els.map(e => e.dataset.l)")
+        check("寶僑、瑪氏混在一個檔：卡片上每個線別一列各選履約方式；瑪氏帶好供應商直送、竹運採購進貨不能選",
+              rows_ == ["寶僑", "瑪氏"] and pg.get_attribute(".pv .ffl[data-l='瑪氏'] .ff.on", "data-f") == "供應商直送"
+              and "off" in pg.get_attribute(".pv .ffl[data-l='瑪氏'] .ff[data-f='竹運採購進貨']", "class"), str(rows_))
+        check("寶僑還沒選：確認匯入按不了、提示寫「請先選擇寶僑的履約方式」", pg.is_disabled(".pv .ok") and "請先選擇寶僑的履約方式" in pg.inner_text(".pv .need"))
+        pg.click(".pv .ffl[data-l='寶僑'] .ff[data-f='竹運採購進貨']")
+        check("選了寶僑 → 可以按確認匯入", not pg.is_disabled(".pv .ok") and pg.inner_text(".pv .need") == "")
+        pg.click(".pv .cancel"); pg.wait_for_function("document.querySelectorAll('.pv').length === 0", timeout=10000)
         stage("all")
         row = pg.inner_text("#tbl tr.og >> nth=0")
         check("全部訂單：這張 PR、寶僑、觀音、竹運出貨，下一步「產出拋單檔」，列上沒有一排按鈕", "PRTWCOTWA202610019999" in row and "寶僑" in row and "觀音" in row and "竹運出貨" in row

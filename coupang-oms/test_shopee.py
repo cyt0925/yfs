@@ -543,6 +543,30 @@ def stage2(c, preview, orders):
     short_tests(c, orders)
     yx_tests(c, orders)
     flow_tests(c, orders)
+    mixed_tests(c, preview, orders)
+
+
+def mixed_tests(c, preview, orders):
+    print("\n【17】一個採購單檔三個線別混在一起：履約方式每個線別各選一次（Jerry 2026-10-13）")
+    raw = purchase_xlsx([("MX1", "4987176232878_CNN", "幫寶適 混線測試", 24, "Pcs"),
+                         ("MX2", "1022257_PNN", "五月花 混線測試", 12, "Pcs"),
+                         ("MX3", "M10273409_QMN", "M&M'S 混線測試", 6, "Pcs")], pr="PRTWCOTWA202612010001", date="2026-12-01")
+    pv = preview(raw, "PurchaseOrder_mixed.xlsx").get_json()
+    check("預覽列出新單各線別幾項（寶僑、瑪氏、紙潔各 1）", pv["new_lines"] == {"寶僑": 1, "瑪氏": 1, "紙潔": 1}, str(pv.get("new_lines")))
+    r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfils": {"寶僑": "竹運出貨", "瑪氏": "供應商直送"}})
+    check("紙潔沒選 → 400，講是哪個線別沒選", r.status_code == 400 and "紙潔" in r.get_json()["error"] and "寶僑" not in r.get_json()["error"], r.get_json()["error"])
+    r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"],
+                                                   "fulfils": {"寶僑": "竹運出貨", "紙潔": "竹運採購進貨", "瑪氏": "供應商直送"}})
+    check("三個線別都選了 → 匯入 3 項", r.status_code == 200 and r.get_json()["counts"]["new"] == 3, str(r.get_json()))
+    g = next(x for x in orders(**{"from": "2026-12-01", "to": "2026-12-01"})["orders"] if x["order_no"] == "PRTWCOTWA202612010001")
+    by = {i["line"]: i["fulfil"] for i in g["items"]}
+    check("同一張 PR 裡各品照自己線別的履約方式", by == {"寶僑": "竹運出貨", "紙潔": "竹運採購進貨", "瑪氏": "供應商直送"}, str(by))
+    up = next(u for u in c.get("/api/shopee/uploads").get_json()["uploads"] if u["filename"] == "PurchaseOrder_mixed.xlsx")
+    check("上傳紀錄寫各線別選了什麼", up["fulfil"] == "寶僑竹運出貨、瑪氏供應商直送、紙潔竹運採購進貨", up["fulfil"])
+    pv = preview(purchase_xlsx([("MX4", "4987176232878_RNN", "幫寶適 混線測試 箱", 2, "Carton")], pr="PRTWCOTWA202612010002", date="2026-12-01"),
+                 "PurchaseOrder_one.xlsx").get_json()
+    r = c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"], "fulfil": "供應商直送"})
+    check("舊的寫法（一個檔選一種）照樣能用", r.status_code == 200 and r.get_json()["counts"]["new"] == 1, str(r.get_json()))
 
 
 def ship_tests(c, preview, orders, up):
