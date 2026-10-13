@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-13.2"
+BUILD_VERSION = "2026-10-13.3"
 
 app = Flask(__name__)
 
@@ -2384,9 +2384,10 @@ def api_import_commit():
 
         today = db.today()
 
-        # CPG 的配送方式固定是原廠(EM)，新單建立時就直接判斷帶入，省得
-        # OP 每張都手動選。只在「這批真的建立了新表頭」時才判斷——同一張
-        # PO 之後再匯入新增 SKU，表頭早就存在，不該回頭去動配送方式。
+        # CPG 和寶僑的配送方式先帶原廠(EM)（db.EM_DEFAULT_LINES），新單建立
+        # 時就直接判斷帶入，省得 OP 每張都手動選。只在「這批真的建立了新
+        # 表頭」時才判斷——同一張 PO 之後再匯入新增 SKU，表頭早就存在，不該
+        # 回頭去動配送方式。
         new_po_numbers = {row["po_number"] for row in preview["new"]}
         existing_po_numbers = set()
         if new_po_numbers:
@@ -2396,7 +2397,7 @@ def api_import_commit():
                     f"SELECT po_number FROM po_headers WHERE po_number IN ({placeholders})",
                     tuple(new_po_numbers)).fetchall()
             }
-        po_has_cpg_line = {}
+        po_default_em = {}
 
         # 同一張 PO 之後再匯入新增 SKU 時，如果 OP 早就把這張單的交期／
         # 倉別／訂單類型改過（跟酷澎談好的結果），新 SKU 不能照檔案帶
@@ -2424,8 +2425,8 @@ def api_import_commit():
             # 這裡什麼都不做——狀態與建檔日一律以系統為準，不被 Excel 覆蓋。
             conn.execute(insert_po_header, (row["po_number"], today, stamp, stamp))
             if (row["po_number"] not in existing_po_numbers
-                    and str(row.get("line") or "").startswith("CPG-")):
-                po_has_cpg_line[row["po_number"]] = True
+                    and db.em_default_line(row.get("line"))):
+                po_default_em[row["po_number"]] = True
 
             row = dict(row)
             inherit_notes = []
@@ -2459,7 +2460,7 @@ def api_import_commit():
                            operator, "import", note)
             inserted += 1
 
-        for po_number in po_has_cpg_line:
+        for po_number in po_default_em:
             conn.execute(
                 "UPDATE po_headers SET shipping_method = '原廠(EM)', updated_at = ? "
                 "WHERE po_number = ? AND shipping_method = ''",

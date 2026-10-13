@@ -1514,7 +1514,7 @@ def _migrate_columns(conn):
         conn.execute("ALTER TABLE orders RENAME COLUMN remarks TO remarks_legacy")
         _consolidate_legacy_remarks(conn)
 
-    _backfill_cpg_shipping_method(conn)
+    _backfill_em_shipping_method(conn)
     _unify_overridden_po_fields(conn)
 
 
@@ -1542,8 +1542,19 @@ def _unify_overridden_po_fields(conn):
                   )""")
 
 
-def _backfill_cpg_shipping_method(conn):
-    """CPG 線別的配送方式固定是原廠(EM)，補上這條規則之後匯入的新單會
+# 配送方式先帶原廠(EM)的線別：CPG-開頭（CPG-潔品、CPG-紙品…）跟寶僑。
+# 寶僑是 Jerry 2026-10-13 加的：「寶僑的配送方式，可以一樣先帶原廠(EM)嗎?」
+EM_DEFAULT_LINE_PREFIX = "CPG-"
+EM_DEFAULT_LINES = ("寶僑",)
+
+
+def em_default_line(line):
+    line = str(line or "")
+    return line.startswith(EM_DEFAULT_LINE_PREFIX) or line in EM_DEFAULT_LINES
+
+
+def _backfill_em_shipping_method(conn):
+    """CPG、寶僑的配送方式先帶原廠(EM)，補上這條規則之後匯入的新單會
     自動帶（見 app.py 的 api_import_commit），但補規則之前已經存在的舊
     資料不會回頭套用，這裡一次補齊。
 
@@ -1556,12 +1567,14 @@ def _backfill_cpg_shipping_method(conn):
     模式下 conn.execute 預設會把整段 SQL 當成有可能帶參數在跑
     （psycopg2 底層的行為），字串裡隨便一個 % 都會被誤認成佔位符號，
     啟動時直接炸成 IndexError，SQLite 本機測試又踩不到，非常隱蔽。"""
+    marks = ", ".join("?" * len(EM_DEFAULT_LINES))
     conn.execute(
-        """UPDATE po_headers SET shipping_method = '原廠(EM)'
-           WHERE shipping_method = ''
-             AND po_number IN (
-                 SELECT DISTINCT po_number FROM orders WHERE line LIKE ?
-             )""", ("CPG-%",))
+        f"""UPDATE po_headers SET shipping_method = '原廠(EM)'
+            WHERE shipping_method = ''
+              AND po_number IN (
+                  SELECT DISTINCT po_number FROM orders
+                  WHERE line LIKE ? OR line IN ({marks})
+              )""", (EM_DEFAULT_LINE_PREFIX + "%",) + EM_DEFAULT_LINES)
 
 
 def _consolidate_legacy_remarks(conn):
