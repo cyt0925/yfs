@@ -112,7 +112,8 @@ main,aside{min-width:0}
 .mid .time{font-family:var(--num);font-weight:700;color:var(--lime);font-size:1.15rem}
 :root[data-theme="light"] .mid .time{color:var(--violet-deep)}
 .mid .sub{font-size:.75rem;color:var(--muted);margin-top:4px}
-.side-badges{display:flex;justify-content:center;gap:4px;flex-wrap:wrap;min-height:22px}
+.side-badges{display:flex;justify-content:center;gap:4px;flex-wrap:wrap;min-height:22px;max-width:100%}
+.side-badges .badge{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 
 /* 近況圓點 */
 .dots{display:flex;gap:3px;justify-content:center;flex-wrap:wrap}
@@ -223,8 +224,8 @@ main,aside{min-width:0}
 .hero .pickline b{font-size:1.2rem;font-weight:900}
 .hero .why{opacity:.92;font-size:.88rem;margin-top:8px}
 .hero .go{margin-top:10px;display:inline-flex;align-items:center;gap:6px;background:var(--lime);color:var(--lime-ink);font-weight:900;padding:9px 14px;border-radius:999px;min-height:44px}
-.pick-grid{display:grid;grid-template-columns:1fr;gap:10px}
-.pick{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-s);padding:10px 12px;min-height:64px;text-align:left;width:100%}
+.pick-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.pick{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-s);padding:10px 12px;min-height:64px;text-align:left;width:100%;min-width:0;max-width:100%;overflow:hidden}
 .pick .logos{display:flex;align-items:center;gap:2px;flex:none}
 .pick .logos img{width:34px;height:34px;object-fit:contain}
 .pick .logos .fallback{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--card-3);font-size:.65rem;font-weight:800;font-family:var(--num)}
