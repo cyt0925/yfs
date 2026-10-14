@@ -4,62 +4,177 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>酷澎訂單管理系統</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+<!-- Tailwind 跟圖示字型都改成本機檔案，不再連國外 CDN——這個系統本來就
+     要求完全不碰雲端，之前每次開頁面都連去抓樣式表，違反了這個前提，
+     公司網路一擋或那個服務掛掉，畫面會直接爛掉變純文字。編譯方式見
+     .build-tools/README.md，品牌色系（ink 結構色／brand 紅色強調色）
+     設定在 .build-tools/tailwind.config.js。 -->
+<link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
   body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
   .scroll-x { overflow-x: auto; }
-  table.grid th { position: sticky; top: 0; z-index: 10; }
-  .row-alert { background-color: #fef2f2; }
-  .row-warn  { background-color: #fffbeb; }
-  .row-pulled { color: #64748b; }
-  dialog::backdrop { background: rgba(15,23,42,.55); }
+
+  /* ── 表格：只留橫線，不再是滿版田字格 ──────────────────
+     田字格是當初對齊除錯期間刻意加的，現在對齊病灶（class 撞名）已經
+     修掉、實測 0px 誤差，滿版框線就只剩壓迫感，拿掉。 */
+  table.po-table { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+  table.po-table th {
+    position: sticky; top: 0; z-index: 10; background-color: #161d29;
+    font-weight: 600; letter-spacing: .02em;
+  }
+  table.po-table thead tr { box-shadow: inset 0 -2px 0 #b1222b; }
+  table.po-table tbody td { border-bottom: 1px solid #eef1f5; vertical-align: middle; }
+  table.po-table tbody tr:last-child td { border-bottom: none; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* 警示不再獨佔一整欄，改成列最左邊一條色帶，省下的寬度還給
+     「品牌 / 線別」，長品牌串不再被切掉。 */
+  td.edge { border-left: 3px solid transparent; transition: border-color .2s ease; }
+  tr.row-warn  td.edge { border-left-color: #f59e0b; }
+  tr.row-alert td.edge { border-left-color: #b1222b; }
+  tr.row-warn  td { background-color: #fffdf5; }
+  tr.row-alert td { background-color: #fdf5f5; }
+  .row-pulled { color: #69789a; }
+
+  /* 狀態彩色標籤 */
+  .badge {
+    display: inline-block; padding: 2px 9px; border-radius: 9999px;
+    font-size: 11px; font-weight: 600; line-height: 1.6; white-space: nowrap;
+    transition: transform .15s ease;
+  }
+  .b-gray  { background: #eef1f5; color: #4b5975; }
+  .b-blue  { background: #e0edff; color: #1d4ed8; }
+  .b-green { background: #dcfce7; color: #15803d; }
+  .b-red   { background: #fee2e2; color: #b91c1c; }
+  .b-amber { background: #fef3c7; color: #b45309; }
+
+  /* ── 動畫 ──────────────────────────────────────────
+     整體原則：狀態變化要「看得到」但不能干擾操作——時間都壓在
+     150–250ms，緩動用 ease-out（快進慢出），符合手感直覺。 */
+  table.po-table tbody tr { transition: background-color .15s ease; }
+  table.po-table tbody tr:hover td { background-color: #fdf2f2; }
+  .row-selected td { background-color: #fbe1e1 !important; }
+  .row-selected td.edge { border-left-color: #b1222b; }
+
+  .inline-cell:not(.inline-locked) { cursor: pointer; }
+  .inline-cell:not(.inline-locked) { transition: background-color .15s ease, outline-color .15s ease; outline: 1px dashed transparent; outline-offset: -1px; }
+  .inline-cell:not(.inline-locked):hover { background-color: #fbe1e1; outline-color: #cc373d; }
+
+  .flag-cell { cursor: pointer; }
+  .flag-cell:hover { outline: 1px dashed #b45309; outline-offset: -1px; }
+
+  /* 就地編輯存檔成功：格子閃一下綠色再淡出，給一個「確實存到了」的
+     視覺回饋，不用等 toast 才知道。 */
+  @keyframes save-flash {
+    0%   { background-color: #dcfce7; }
+    100% { background-color: transparent; }
+  }
+  .save-flash { animation: save-flash 900ms ease-out; }
+
+  /* 批次動作列：從螢幕下緣滑入滑出，而不是硬切 display:none。 */
+  #action-bar {
+    transform: translate(-50%, 16px); opacity: 0; pointer-events: none;
+    transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
+  }
+  #action-bar.ab-show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+  /* 面板（批次改狀態／拉單原因）用高度展開，感覺是從動作列長出來的。 */
+  #ab-panel {
+    max-height: 0; opacity: 0; overflow: hidden; border: 1px solid transparent; padding: 0;
+    transition: max-height .2s ease, opacity .15s ease, margin-top .2s ease, padding .2s ease;
+  }
+  #ab-panel.ab-panel-open { max-height: 160px; opacity: 1; margin-top: .75rem; padding: .75rem; border-color: #e3e7ee; }
+
+  /* Modal：淡入 + 輕微放大，取代原生 <dialog> 生硬的瞬間出現。 */
+  dialog::backdrop { background: rgba(14,19,28,.6); opacity: 0; transition: opacity .18s ease; }
+  dialog[open]::backdrop { opacity: 1; }
+  dialog { opacity: 1; transform: scale(1) translateY(0); transition: opacity .16s ease, transform .16s ease; }
+  /* @starting-style 讓「從 display:none 變成顯示」這個瞬間也能有起始狀態
+     可以補間動畫（沒有它，瀏覽器不知道要從哪個狀態淡入）。舊版瀏覽器
+     不支援時，就單純沒有淡入動畫、直接顯示，不影響功能。 */
+  @starting-style {
+    dialog[open] { opacity: 0; transform: scale(.97) translateY(6px); }
+  }
+
+  /* Toast：從右上角滑入，跟批次動作列（螢幕下方）分開，不會疊在一起。
+     這只是個純顯示的提示框、不接受任何點擊，所以 pointer-events 直接
+     關掉——opacity:0 不會讓元素真的消失，還是會擋住底下的點擊。之前
+     漏了這行，跳出過一次 toast 之後，剛好疊在右上角設定按鈕上面的
+     那塊區域就再也點不到，要重新整理才會恢復。 */
+  #toast {
+    transform: translateX(24px); opacity: 0; pointer-events: none;
+    transition: transform .2s cubic-bezier(.2,.8,.2,1), opacity .18s ease;
+  }
+  #toast.toast-show { transform: translateX(0); opacity: 1; }
+
+  /* 按鈕：輕微上浮 + 陰影，滑鼠互動更有回饋，但幅度很小不浮誇。 */
+  button:not(:disabled) { transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease; }
+  button:not(:disabled):active { transform: translateY(1px); }
+
+  /* 拖曳上傳：檔案拖進框框時整塊亮起來，放開才知道丟對地方了。 */
+  .dropzone.dz-active { border-color: #b1222b; background: #fdf2f2; }
 </style>
 </head>
-<body class="bg-slate-100 text-slate-800">
+<body class="bg-ink-50 text-ink-900">
 
 <!-- ── 頂部 ───────────────────────────────────────────── -->
-<header class="bg-slate-800 text-white shadow-lg">
+<header class="bg-ink-900 text-white shadow-lg border-b-[3px] border-brand-600">
   <div class="max-w-[1800px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
-    <div class="flex items-center gap-2">
-      <i class="bi bi-box-seam text-2xl text-sky-400"></i>
+    <div class="flex items-center gap-2.5">
+      <img src="{{ url_for('static', filename='logo.png') }}" width="40" height="35"
+           class="h-9 w-auto flex-none" alt="永豐商店 logo">
       <div>
-        <h1 class="text-lg font-bold leading-tight">酷澎訂單管理系統</h1>
-        <p class="text-[11px] text-slate-400 leading-tight">永豐商店 OP 中繼站</p>
+        <h1 class="text-lg font-bold leading-tight tracking-tight">酷澎訂單管理系統</h1>
+        <p class="text-[11px] text-ink-300 leading-tight">永豐商店 OP 中繼站</p>
       </div>
     </div>
     <div class="flex-1"></div>
-    <div class="flex items-center gap-2 bg-slate-700/60 rounded-lg px-3 py-1.5">
-      <i class="bi bi-person-badge text-sky-300"></i>
-      <span class="text-xs text-slate-300">操作人員</span>
-      <select id="operator" class="bg-slate-900 text-white text-sm rounded px-2 py-1 border border-slate-600">
-        <option value="">— 請選擇 —</option>
-      </select>
-    </div>
-    <button id="btn-upload" class="bg-sky-600 hover:bg-sky-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+    <button id="btn-upload" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
       <i class="bi bi-cloud-arrow-up"></i> 上傳整合表
     </button>
-    <button id="btn-export" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2">
+    <button id="btn-sign" class="bg-[#D2AB75] hover:bg-[#c19a63] px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm text-ink-900">
+      <i class="bi bi-pen"></i> 驗收單簽名
+    </button>
+    <button id="btn-sign-sop" class="bg-transparent hover:bg-[#D2AB75]/10 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-[#D2AB75] text-[#D2AB75]">
+      <i class="bi bi-journal-text"></i> 驗收單簽名 SOP
+    </button>
+    <a href="{{ url_for('purchase.purchase_page') }}" id="btn-purchase"
+       class="bg-emerald-800 hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm text-[#D2AB75] border border-[#D2AB75]"
+       title="跟酷澎訂單管理無關的獨立工具：把酷澎訂單匯入檔轉成各線別的採購表">
+      <i class="bi bi-cart-check"></i> 採購表轉換
+    </a>
+    <button id="btn-logs" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
+      <i class="bi bi-clock-history"></i> 修改歷程
+    </button>
+    <button id="btn-export" class="bg-ink-700 hover:bg-ink-600 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 border border-ink-600">
       <i class="bi bi-file-earmark-excel"></i> 匯出報表
     </button>
+    {% if logged_in_user %}
+    <div class="flex items-center gap-2 pl-2 border-l border-ink-700">
+      <span class="text-xs text-ink-300" title="所有修改都會記在這個名字下">
+        <i class="bi bi-person-check-fill text-emerald-400"></i> {{ logged_in_user }}</span>
+      <button id="btn-settings" type="button" title="設定"
+              class="text-ink-300 hover:text-white text-sm px-1"><i class="bi bi-gear-fill"></i></button>
+      <form action="{{ url_for('logout') }}" method="post">
+        <button type="submit" class="text-xs text-ink-300 hover:text-white underline underline-offset-2">登出</button>
+      </form>
+    </div>
+    {% endif %}
   </div>
 </header>
 
-<div id="operator-warning" class="hidden bg-amber-400 text-amber-950 text-sm text-center py-2 font-medium">
-  <i class="bi bi-exclamation-triangle-fill"></i> 請先選擇操作人員，否則無法上傳、編輯或匯出（修改歷程需要記錄是誰改的）。
-</div>
-
-<main class="max-w-[1800px] mx-auto px-5 py-5 space-y-4">
+<main class="max-w-[1800px] mx-auto px-5 py-5 pb-24 space-y-4">
 
   <!-- ── 統計 ───────────────────────────────────────── -->
   <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
-    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-      <p class="text-xs text-slate-500">符合條件筆數</p>
-      <p id="stat-total" class="text-2xl font-bold text-slate-800">0</p>
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-ink-100">
+      <p class="text-xs text-ink-400">符合條件筆數</p>
+      <p id="stat-total" class="text-2xl font-bold text-ink-900">0</p>
     </div>
-    <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-      <p class="text-xs text-slate-500">出貨數量合計</p>
-      <p id="stat-qty" class="text-2xl font-bold text-sky-700">0</p>
+    <div class="bg-white rounded-xl p-4 shadow-sm border border-ink-100">
+      <p class="text-xs text-ink-400">出貨數量合計</p>
+      <p id="stat-qty" class="text-2xl font-bold text-ink-700">0</p>
     </div>
     <button id="stat-review-card" class="bg-white rounded-xl p-4 shadow-sm border-2 border-amber-300 text-left hover:bg-amber-50">
       <p class="text-xs text-amber-700"><i class="bi bi-bell-fill"></i> 異動待確認</p>
@@ -72,168 +187,238 @@
   </section>
 
   <!-- ── 篩選 ───────────────────────────────────────── -->
-  <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+  <section class="bg-white rounded-xl shadow-sm border border-ink-100 p-4">
     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-sm">
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 單號</span>
-        <input id="f-po" class="border rounded px-2 py-1.5" placeholder="模糊搜尋"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品名 / 料號 / 條碼</span>
-        <input id="f-keyword" class="border rounded px-2 py-1.5" placeholder="關鍵字"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別</span>
-        <select id="f-line" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌</span>
-        <select id="f-brand" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">倉別</span>
-        <select id="f-warehouse" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">訂單類型</span>
-        <select id="f-ordertype" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期（起）</span>
-        <input id="f-from" type="date" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期（迄）</span>
-        <input id="f-to" type="date" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 狀態</span>
-        <select id="f-status" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
-        <select id="f-receiving" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">拉單狀態</span>
-        <select id="f-pulled" class="border rounded px-2 py-1.5">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
+        <input id="f-po" class="border rounded px-2 py-2" placeholder="模糊搜尋"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品名 / 料號 / 條碼</span>
+        <input id="f-keyword" class="border rounded px-2 py-2" placeholder="關鍵字"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
+        <select id="f-line" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">倉別</span>
+        <select id="f-warehouse" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型</span>
+        <select id="f-ordertype" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">交期（起）</span>
+        <input id="f-from" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">交期（迄）</span>
+        <input id="f-to" type="date" class="border rounded px-2 py-2"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
+        <select id="f-status" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
+        <select id="f-receiving" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
+        <select id="f-shipping" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
+        <select id="f-pulled" class="border rounded px-2 py-2">
           <option value="">全部</option><option value="0">未拉單</option><option value="1">已拉單</option>
         </select></label>
       <label class="flex items-end gap-2 pb-1">
         <input id="f-review" type="checkbox" class="w-4 h-4">
-        <span class="text-xs text-slate-600">只看待確認</span></label>
+        <span class="text-xs text-ink-600">只看待確認</span></label>
+      <label class="flex items-end gap-2 pb-1">
+        <input id="f-flagged" type="checkbox" class="w-4 h-4">
+        <span class="text-xs text-ink-600">只看已標記顏色</span></label>
     </div>
     <div class="flex gap-2 mt-3">
-      <button id="btn-search" class="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2 rounded-lg text-sm font-semibold">
+      <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
         <i class="bi bi-search"></i> 搜尋</button>
-      <button id="btn-reset" class="bg-slate-200 hover:bg-slate-300 px-4 py-2 rounded-lg text-sm">重設</button>
-      <div class="flex-1"></div>
-      <button id="btn-confirm-review" class="bg-amber-500 hover:bg-amber-400 text-white px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-check2-circle"></i> 確認選取的異動</button>
-      <button id="btn-unpull" class="bg-white border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded-lg text-sm">
-        <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
+      <button id="btn-reset" class="bg-ink-100 hover:bg-ink-200 text-ink-700 px-4 py-2 rounded-lg text-sm">重設</button>
     </div>
   </section>
 
   <!-- ── 列表 ───────────────────────────────────────── -->
-  <section class="bg-white rounded-xl shadow-sm border border-slate-200">
+  <section class="bg-white rounded-xl shadow-sm border border-ink-100">
     <div class="scroll-x" style="max-height:65vh; overflow-y:auto;">
-      <table class="grid w-full text-sm border-collapse">
-        <thead class="bg-slate-700 text-white text-xs">
+      <!-- min-width 是各欄加總的下限：螢幕比這個窄，欄位維持原寬、交給外層
+           .scroll-x 橫向捲動，不會被壓扁換行；螢幕比這個寬，width:100% 讓
+           table-layout:fixed 把多出來的空間依各欄比例撐開，不會在右邊留白。 -->
+      <table class="po-table text-sm border-collapse" style="min-width:1380px; width:100%;">
+        <colgroup>
+          <col style="width:36px">
+          <col style="width:150px">
+          <col style="width:64px">
+          <col style="width:100px">
+          <col style="width:90px">
+          <col style="width:80px">
+          <col style="width:280px">
+          <col style="width:106px">
+          <col style="width:106px">
+          <col style="width:86px">
+          <col style="width:72px">
+          <col style="width:96px">
+        </colgroup>
+        <thead class="bg-ink-900 text-white text-xs">
           <tr>
-            <th class="px-2 py-2"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
-            <th class="px-2 py-2 text-left">狀態</th>
-            <th class="px-2 py-2 text-left">PO 單號</th>
-            <th class="px-2 py-2 text-left">類型</th>
-            <th class="px-2 py-2 text-left">線別</th>
-            <th class="px-2 py-2 text-left">品牌</th>
-            <th class="px-2 py-2 text-left">品名</th>
-            <th class="px-2 py-2 text-left">永豐料號</th>
-            <th class="px-2 py-2 text-left">倉別</th>
-            <th class="px-2 py-2 text-left">交期</th>
-            <th class="px-2 py-2 text-right">下單數量</th>
-            <th class="px-2 py-2 text-right">出貨數量</th>
-            <th class="px-2 py-2 text-left">PO狀態</th>
-            <th class="px-2 py-2 text-left">驗收</th>
-            <th class="px-2 py-2 text-left">備註</th>
-            <th class="px-2 py-2"></th>
+            <th class="px-2 py-2 whitespace-nowrap"><input id="check-all" type="checkbox" class="w-4 h-4"></th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">PO 單號</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">類型</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">PO 狀態</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">拉單</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">驗收</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">線別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">建檔日</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">到貨日</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">到貨倉別</th>
+            <th class="px-2 py-2 text-left whitespace-nowrap">配送方式</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">品項數</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">出貨數量</th>
+            <th class="px-2 py-2 text-right whitespace-nowrap">實際驗入數量
+              <span class="block font-normal text-[10px] text-ink-400">酷澎後台同步</span></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
-    <div class="flex items-center gap-3 px-4 py-3 border-t text-sm">
-      <button id="btn-prev" class="px-3 py-1 border rounded hover:bg-slate-50">上一頁</button>
-      <span id="page-info" class="text-slate-600"></span>
-      <button id="btn-next" class="px-3 py-1 border rounded hover:bg-slate-50">下一頁</button>
-      <div class="flex-1"></div>
-      <span id="selected-info" class="text-slate-500"></span>
+
+    <div class="flex items-center gap-3 px-4 py-3 border-t border-ink-100 text-sm">
+      <button id="btn-prev" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">上一頁</button>
+      <span id="page-info" class="text-ink-500"></span>
+      <button id="btn-next" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50 text-ink-700">下一頁</button>
     </div>
   </section>
+
+  <p class="text-center text-[11px] text-ink-300 pt-2">
+    版本 {{ build_version }}　·　跟啟動視窗上印出來的號碼對不起來，代表看到的不是最新版，先重開程式
+  </p>
 </main>
 
+<!-- ── 批次動作列：只在有勾選時浮出，釘在瀏覽器視窗最下方，
+     不隨頁面內容捲動，不管畫面捲到哪都看得到 ── -->
+<div id="action-bar" class="fixed left-1/2 bottom-4 z-40
+     w-[min(1000px,94vw)] rounded-xl border border-ink-200 bg-white shadow-2xl px-4 py-3 text-sm">
+  <div class="flex items-center gap-2 flex-wrap">
+    <span class="font-semibold text-ink-900">已選 <span id="ab-count">0</span> 張 PO</span>
+    <button id="ab-clear" class="text-ink-400 hover:text-ink-700 text-xs px-2">
+      <i class="bi bi-x-lg"></i> 清除選取</button>
+    <div class="flex-1"></div>
+    <button id="ab-copy-po" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg"
+            title="複製選取的 PO 單號，貼到酷澎後台驗收工具指定要驗哪幾張">
+      <i class="bi bi-clipboard-check"></i> 複製 PO 單號給驗收工具</button>
+    <button id="ab-status-toggle" class="bg-white border border-ink-200 hover:bg-ink-100 text-ink-700 px-3 py-1.5 rounded-lg">
+      <i class="bi bi-arrow-repeat"></i> 批次改狀態</button>
+    <button id="ab-review" class="bg-amber-500 hover:bg-amber-400 text-white px-3 py-1.5 rounded-lg">
+      <i class="bi bi-check2-circle"></i> 確認異動</button>
+    <button id="ab-pull-on" class="bg-ink-900 hover:bg-ink-800 text-white px-3 py-1.5 rounded-lg">
+      <i class="bi bi-box-arrow-right"></i> 標記已拉單</button>
+    <button id="ab-pull-off" class="bg-white border border-red-300 text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg">
+      <i class="bi bi-unlock"></i> 解除拉單鎖定</button>
+  </div>
+  <div id="ab-panel" class="bg-white rounded-lg"></div>
+</div>
+
 <!-- ── 上傳 Modal ─────────────────────────────────────── -->
-<dialog id="dlg-upload" class="rounded-xl p-0 w-[min(1100px,94vw)] backdrop:bg-slate-900/60">
-  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+<dialog id="dlg-upload" class="rounded-xl p-0 w-[min(1100px,94vw)] backdrop:bg-ink-950/70">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-cloud-arrow-up"></i> 上傳酷澎整合表</h2>
-    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
   <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-    <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-sky-900">
+    <div class="bg-ink-50 border border-ink-200 rounded-lg p-3 text-sm text-ink-800">
       <p class="font-semibold mb-1"><i class="bi bi-info-circle"></i> 直接整份上傳就好，不用記上次拉到哪。</p>
-      <ul class="list-disc list-inside text-xs space-y-0.5 text-sky-800">
+      <ul class="list-disc list-inside text-xs space-y-0.5 text-ink-600">
         <li>內容完全相同的 → 自動略過</li>
         <li>全新的單 → 自動新增</li>
         <li>酷澎偷偷改過的 → 更新並記錄歷程，推到最上面等你確認</li>
         <li>資料庫有、這份檔案沒有的 → <b>完全不動</b>（上傳片段不會誤判成取消）</li>
       </ul>
     </div>
-    <input id="file-input" type="file" accept=".xlsx,.xlsm" class="block w-full text-sm border rounded-lg p-2">
+    <div id="dz-file-input" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+      <input id="file-input" type="file" accept=".xlsx,.xlsm" class="block w-full text-sm border rounded-lg p-2">
+      <p class="text-[11px] text-ink-400 mt-1">也可以直接把檔案拖曳到這個框框裡</p>
+    </div>
     <div id="upload-result" class="hidden space-y-3"></div>
   </div>
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
     <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-preview" class="px-4 py-2 rounded-lg bg-slate-800 text-white">解析並預覽</button>
-    <button id="btn-commit" class="hidden px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold">確認匯入</button>
+    <button id="btn-preview" class="px-4 py-2 rounded-lg bg-ink-900 hover:bg-ink-800 text-white">解析並預覽</button>
+    <button id="btn-commit" class="hidden px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">確認匯入</button>
   </div>
 </dialog>
 
-<!-- ── 編輯 Modal ─────────────────────────────────────── -->
-<dialog id="dlg-edit" class="rounded-xl p-0 w-[min(900px,94vw)]">
-  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
-    <h2 class="font-bold"><i class="bi bi-pencil-square"></i> 編輯訂單</h2>
-    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+<!-- ── PO 明細 Modal ─────────────────────────────────── -->
+<dialog id="dlg-po" class="rounded-xl p-0 w-[min(1200px,96vw)]">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold flex items-center gap-2"><i class="bi bi-receipt"></i>
+      PO <span id="po-title" class="font-mono"></span></h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
-  <div class="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-    <div id="edit-header" class="bg-slate-50 border rounded-lg p-3 text-sm"></div>
-    <div id="edit-lock" class="hidden bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-800"></div>
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">出貨數量</span>
-        <input id="e-qty" type="number" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">交期</span>
-        <input id="e-date" type="date" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">倉別</span>
-        <input id="e-warehouse" class="border rounded px-2 py-1.5"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">PO 狀態</span>
-        <select id="e-status" class="border rounded px-2 py-1.5"></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">驗收狀態</span>
-        <select id="e-receiving" class="border rounded px-2 py-1.5"></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">線別 <span id="e-line-hint" class="text-[10px]"></span></span>
-        <input id="e-line" list="dl-line" class="border rounded px-2 py-1.5">
-        <datalist id="dl-line"></datalist></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">品牌 <span id="e-brand-hint" class="text-[10px]"></span></span>
-        <input id="e-brand" list="dl-brand" class="border rounded px-2 py-1.5">
-        <datalist id="dl-brand"></datalist></label>
-    </div>
-    <label class="flex flex-col gap-1 text-sm"><span class="text-xs text-slate-500">備註</span>
-      <textarea id="e-remarks" rows="3" class="border rounded px-2 py-1.5"></textarea></label>
-    <div>
-      <h3 class="font-semibold text-sm mb-2 flex items-center gap-2">
-        <i class="bi bi-clock-history"></i> 修改歷程
-        <span class="text-xs font-normal text-slate-500">（誰、什麼時候、把哪個欄位改成什麼）</span>
-      </h3>
-      <div id="edit-logs" class="border rounded-lg max-h-64 overflow-y-auto text-xs"></div>
-    </div>
+  <div id="po-body" class="p-5 space-y-4 max-h-[76vh] overflow-y-auto"></div>
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-ink-50">
+    <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
+    <button id="btn-po-save" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">儲存修改</button>
   </div>
-  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
-    <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-save" class="px-4 py-2 rounded-lg bg-sky-600 text-white font-semibold">儲存修改</button>
+</dialog>
+
+<!-- ── 歷程總覽 Modal ────────────────────────────────── -->
+<dialog id="dlg-logs" class="rounded-xl p-0 w-[min(1300px,96vw)]">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-clock-history"></i> 修改歷程總覽</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="p-5 space-y-3 max-h-[78vh] overflow-y-auto">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
+        <input id="l-po" class="border rounded px-2 py-1.5" placeholder="模糊搜尋"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">改了哪個欄位</span>
+        <select id="l-field" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">操作人員</span>
+        <select id="l-operator" class="border rounded px-2 py-1.5"><option value="">全部</option></select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">來源</span>
+        <select id="l-source" class="border rounded px-2 py-1.5">
+          <option value="">全部</option><option value="manual">手動</option>
+          <option value="import">匯入</option><option value="system">系統</option>
+        </select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">期間（起）</span>
+        <input id="l-from" type="date" class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">期間（迄）</span>
+        <input id="l-to" type="date" class="border rounded px-2 py-1.5"></label>
+    </div>
+    <div class="flex gap-2 items-center">
+      <button id="btn-log-search" class="bg-ink-900 hover:bg-ink-800 text-white px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-search"></i> 查詢</button>
+      <button id="btn-log-reset" class="bg-ink-100 hover:bg-ink-200 text-ink-700 px-4 py-2 rounded-lg text-sm">重設</button>
+      <span id="log-count" class="text-xs text-ink-400"></span>
+      <div class="flex-1"></div>
+      <button id="btn-log-export" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm">
+        <i class="bi bi-download"></i> 匯出這些歷程</button>
+    </div>
+    <div class="border border-ink-200 rounded-lg overflow-auto max-h-[52vh]">
+      <table class="w-full text-sm">
+        <thead class="bg-ink-100 text-xs sticky top-0"><tr>
+          <th class="px-2 py-1.5 text-left w-36">時間</th>
+          <th class="px-2 py-1.5 text-left w-32">PO 單號</th>
+          <th class="px-2 py-1.5 text-left w-20">層級</th>
+          <th class="px-2 py-1.5 text-left w-24">欄位</th>
+          <th class="px-2 py-1.5 text-left">改前 → 改後</th>
+          <th class="px-2 py-1.5 text-left w-20">人員</th>
+          <th class="px-2 py-1.5 text-left w-16">來源</th>
+        </tr></thead>
+        <tbody id="log-body"></tbody>
+      </table>
+    </div>
+    <div class="flex gap-2 items-center text-sm">
+      <button id="btn-log-prev" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50">上一頁</button>
+      <span id="log-page" class="text-ink-500"></span>
+      <button id="btn-log-next" class="px-3 py-1 border border-ink-200 rounded hover:bg-ink-50">下一頁</button>
+    </div>
   </div>
 </dialog>
 
 <!-- ── 匯出 Modal ─────────────────────────────────────── -->
 <dialog id="dlg-export" class="rounded-xl p-0 w-[min(700px,94vw)]">
-  <div class="bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
     <h2 class="font-bold"><i class="bi bi-file-earmark-excel"></i> 匯出 Excel</h2>
-    <button data-close class="text-slate-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
   </div>
   <div class="p-5 space-y-4 text-sm">
-    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">匯出格式</span>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">匯出格式</span>
       <select id="x-profile" class="border rounded px-2 py-2"></select>
-      <span id="x-profile-note" class="text-xs text-slate-500"></span></label>
-    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">範圍</span>
+      <span id="x-profile-note" class="text-xs text-ink-400"></span></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">範圍</span>
       <select id="x-scope" class="border rounded px-2 py-2">
         <option value="filter">目前篩選條件的全部資料</option>
-        <option value="selected">只匯出勾選的資料列</option>
+        <option value="selected">只匯出勾選的 PO</option>
       </select></label>
     <label class="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3">
       <input id="x-mark" type="checkbox" class="w-4 h-4 mt-0.5">
@@ -244,46 +429,410 @@
         </span>
       </span>
     </label>
-    <p id="x-hint" class="text-xs text-slate-500"></p>
+    <p id="x-hint" class="text-xs text-ink-400"></p>
   </div>
   <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
     <button data-close class="px-4 py-2 rounded-lg border">取消</button>
-    <button id="btn-do-export" class="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold">
+    <button id="btn-do-export" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
       <i class="bi bi-download"></i> 產生 Excel</button>
   </div>
 </dialog>
 
-<div id="toast" class="hidden fixed bottom-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50"></div>
+<!-- ── 驗收單簽名 Modal ──────────────────────────────── -->
+<dialog id="dlg-sign" class="rounded-xl p-0 w-[min(1000px,95vw)] backdrop:bg-ink-950/70">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-pen"></i> 驗收單批次簽名</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
+    <button data-sgtab="run" class="sg-tab px-3 py-2 border-b-2 font-medium">簽名</button>
+    <button data-sgtab="history" class="sg-tab px-3 py-2 border-b-2 font-medium">歷史紀錄</button>
+    <button data-sgtab="calibrate" class="sg-tab px-3 py-2 border-b-2 font-medium">位置校正</button>
+  </div>
+
+  <!-- 簽名 -->
+  <div data-sgpane="run" class="sg-pane p-5 space-y-4 max-h-[72vh] overflow-y-auto text-sm">
+    <div id="sign-banner" class="hidden border rounded-lg p-3"></div>
+
+    <div class="border border-ink-200 rounded-lg p-3 space-y-2">
+      <h3 class="font-semibold text-xs text-ink-500">我的簽名圖</h3>
+      <div id="sign-ready" class="hidden items-center gap-3 flex">
+        <img id="sign-preview" alt="我的簽名" class="h-10 bg-white border rounded px-2">
+        <div class="text-xs text-ink-600 flex-1">
+          <p>會蓋上 <b id="sign-owner"></b> 的簽名。</p>
+          <p class="text-ink-400">系統會自動找「<span id="sign-keyword" class="font-mono"></span>」欄位，蓋在它正下方。</p>
+        </div>
+        <button id="btn-sign-del" class="px-3 py-1.5 rounded-lg border text-red-600 hover:bg-red-50 text-xs whitespace-nowrap">
+          <i class="bi bi-trash"></i> 移除簽名</button>
+      </div>
+      <div id="sign-nosig" class="hidden bg-amber-50 border border-amber-300 rounded-lg p-2 text-amber-900 text-xs">
+        <i class="bi bi-exclamation-triangle-fill"></i> 還沒有簽名圖，先在下面上傳一張才能簽名。
+      </div>
+      <div id="dz-sign-sig-file" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+        <input id="sign-sig-file" type="file" accept="image/png,image/jpeg"
+               class="block w-full text-sm border rounded-lg p-2">
+        <p class="text-[11px] text-ink-400 mt-1">也可以直接拖曳圖片到這個框框裡</p>
+      </div>
+      <p class="text-[11px] text-ink-400">上傳一次就好，之後每次簽名都會自動用這張。支援 PNG / JPG，小於 2MB。</p>
+    </div>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">選擇要簽名的驗收單 PDF（可一次選多份）</span>
+      <div id="dz-sign-files" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+        <input id="sign-files" type="file" accept=".pdf" multiple
+               class="block w-full text-sm border rounded-lg p-2">
+        <p class="text-[11px] text-ink-400 mt-1">也可以直接把多份 PDF 一起拖曳到這個框框裡</p>
+      </div>
+    </label>
+
+    <div id="sign-result" class="hidden space-y-3"></div>
+  </div>
+
+  <!-- 歷史紀錄 -->
+  <div data-sgpane="history" class="sg-pane p-5 space-y-3 max-h-[72vh] overflow-y-auto text-sm hidden">
+    <div id="sgh-banner" class="hidden border rounded-lg p-3"></div>
+    <div class="flex gap-2 items-end flex-wrap">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 單號</span>
+        <input id="sgh-po" placeholder="輸入單號可篩選" class="border rounded px-2 py-1.5 w-56"></label>
+      <button id="btn-sgh-search" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-ink-50">
+        <i class="bi bi-search"></i> 查詢</button>
+      <div class="flex-1"></div>
+      <p id="sgh-stored" class="text-xs text-ink-400"></p>
+    </div>
+    <div class="flex gap-2 items-end flex-wrap bg-ink-50 border border-ink-200 rounded-lg p-2">
+      <button id="btn-sgh-delete" class="px-3 py-1.5 rounded-lg border text-red-600 hover:bg-red-50 text-xs" disabled>
+        <i class="bi bi-trash"></i> 刪除選取（<span id="sgh-sel-count">0</span>）</button>
+    </div>
+    <div class="border rounded-lg overflow-auto">
+      <table class="w-full text-xs">
+        <thead class="bg-ink-100 sticky top-0"><tr>
+          <th class="px-2 py-1.5 w-16 whitespace-nowrap">
+            <label class="flex items-center gap-1 cursor-pointer">
+              <input id="sgh-check-all" type="checkbox" class="w-3.5 h-3.5"> 全選</label></th>
+          <th class="px-2 py-1.5 text-left">簽名時間</th>
+          <th class="px-2 py-1.5 text-left">PO 單號</th>
+          <th class="px-2 py-1.5 text-left">檔名</th>
+          <th class="px-2 py-1.5 text-left">簽名人</th>
+          <th class="px-2 py-1.5 text-right">蓋章處</th>
+          <th class="px-2 py-1.5 text-left">結果</th>
+          <th class="px-2 py-1.5 text-left w-20">下載</th>
+        </tr></thead>
+        <tbody id="sgh-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 位置校正：全公司共用一份設定，改了大家的簽名都會照這裡蓋 -->
+  <div data-sgpane="calibrate" class="sg-pane p-5 space-y-4 max-h-[72vh] overflow-y-auto text-sm hidden">
+    <div id="sg-banner" class="hidden border rounded-lg p-3"></div>
+
+    <div>
+      <h3 class="font-semibold mb-1">簽名位置校正</h3>
+      <p class="text-xs text-ink-500">
+        上傳一份真的驗收單，直接在圖上把簽名拖到對的位置、拉角落調大小就好。
+        校正一次，之後<b>所有人</b>的簽名都會照這個位置蓋——因為位置是記錄成「相對於
+        欄位文字的偏移」，不是頁面上的絕對座標，不用每一份都調。
+      </p>
+      <p id="sg-cal-lastby" class="hidden text-xs text-ink-400 mt-1"></p>
+    </div>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">要找的欄位文字（必須跟 PDF 上印的一模一樣，含全形括號）</span>
+      <input id="sg-keyword" class="border rounded px-2 py-2 font-mono"></label>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">上傳一份範例驗收單 PDF 開始校正</span>
+      <div id="dz-sg-cal-file" class="dropzone border-2 border-dashed border-ink-200 rounded-lg p-3 transition-colors">
+        <input id="sg-cal-file" type="file" accept=".pdf" class="block w-full text-sm border rounded-lg p-2">
+        <p class="text-[11px] text-ink-400 mt-1">也可以直接把 PDF 拖曳到這個框框裡</p>
+      </div>
+    </label>
+
+    <div id="sg-cal-empty" class="hidden text-xs text-ink-400 bg-ink-50 border border-dashed rounded-lg p-4 text-center">
+      還沒校正過，上傳一份範例 PDF 開始。
+    </div>
+
+    <div id="sg-cal-area" class="hidden relative border rounded-lg overflow-auto bg-ink-100 select-none"
+         style="max-height: 50vh">
+      <img id="sg-cal-img" class="block max-w-full" draggable="false">
+      <div id="sg-cal-kwbox" class="absolute border-2 border-dashed border-blue-500 pointer-events-none"></div>
+      <div id="sg-cal-sigbox" class="absolute border-2 border-[#D2AB75] bg-[#D2AB75]/10" style="cursor: move; touch-action: none;">
+        <img id="sg-cal-sigimg" class="w-full h-full object-contain pointer-events-none hidden" draggable="false">
+        <div id="sg-cal-handle" class="absolute w-4 h-4 bg-[#D2AB75] rounded-full border-2 border-white"
+             style="right: -8px; bottom: -8px; cursor: nwse-resize; touch-action: none;"></div>
+      </div>
+    </div>
+    <p id="sg-cal-hint" class="hidden text-xs text-ink-400">
+      拖動金色方框移動位置，拉右下角圓點調整大小，調好按下面「套用這個位置」。
+    </p>
+
+    <div class="flex gap-2">
+      <button id="btn-sg-cal-apply" class="hidden px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs">
+        <i class="bi bi-check-lg"></i> 套用這個位置</button>
+    </div>
+
+    <details class="text-xs border-t pt-3">
+      <summary class="cursor-pointer text-ink-500 font-medium">進階：直接輸入數字（單位是 PDF 的「點」，1 點 ≈ 1/72 英吋）</summary>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">寬</span>
+          <input id="sg-width" type="number" class="border rounded px-2 py-2"></label>
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">高</span>
+          <input id="sg-height" type="number" class="border rounded px-2 py-2"></label>
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">左右偏移</span>
+          <input id="sg-offx" type="number" class="border rounded px-2 py-2"></label>
+        <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">上下偏移</span>
+          <input id="sg-offy" type="number" class="border rounded px-2 py-2"></label>
+      </div>
+    </details>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">簽好的 PDF 保留天數（填 0 表示永久保留）</span>
+      <input id="sg-retention" type="number" class="border rounded px-2 py-2 w-40"></label>
+    <p class="text-[11px] text-ink-400">
+      超過天數後只會清掉 PDF 檔本身，「誰在什麼時候簽了哪張單」的紀錄永久保留。
+    </p>
+    <div class="pt-1">
+      <button id="btn-sg-save"
+              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+        <i class="bi bi-check-lg"></i> 儲存簽名設定</button>
+    </div>
+  </div>
+
+  <div class="px-5 py-3 border-t flex gap-2 justify-end bg-slate-50">
+    <button data-close class="px-4 py-2 rounded-lg border">關閉</button>
+    <button id="btn-sign-zip" class="hidden px-4 py-2 rounded-lg border bg-white hover:bg-ink-50">
+      <i class="bi bi-file-earmark-zip"></i> 下載全部（ZIP）</button>
+    <button id="btn-sign-run" class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+      <i class="bi bi-pen-fill"></i> 開始簽名</button>
+  </div>
+</dialog>
+
+<!-- ── 驗收單簽名 SOP ──────────────────────────────────── -->
+<dialog id="dlg-sign-sop" class="rounded-xl p-0 w-[min(1100px,96vw)] backdrop:bg-ink-950/70">
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-journal-text"></i> 驗收單簽名 SOP</h2>
+    <div class="flex items-center gap-3">
+      <button id="btn-sop-print" class="text-ink-300 hover:text-white text-sm flex items-center gap-1">
+        <i class="bi bi-printer"></i> 列印／存成 PDF</button>
+      <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+    </div>
+  </div>
+  <div class="bg-ink-100 flex flex-col items-center p-4 gap-3 overflow-y-auto" style="max-height: 78vh;">
+    <div class="flex items-center justify-center relative w-full">
+      <img id="sop-slide-img" class="max-w-full max-h-[52vh] rounded-lg shadow-lg border border-ink-200" alt="SOP">
+      <video id="sop-slide-video" class="hidden max-w-full max-h-[52vh] rounded-lg shadow-lg border border-ink-200"
+             muted loop playsinline autoplay controls></video>
+    </div>
+    <div id="sop-caption" class="w-full max-w-[860px] bg-white rounded-lg border border-ink-200 px-4 py-3">
+      <div id="sop-caption-title" class="font-bold text-[#8a6d3f] mb-1.5"></div>
+      <ul id="sop-caption-bullets" class="list-disc pl-5 space-y-1 text-sm text-ink-700"></ul>
+    </div>
+  </div>
+  <div class="px-5 py-3 border-t flex items-center justify-between bg-slate-50 gap-3">
+    <button id="btn-sop-prev" class="px-4 py-2 rounded-lg border bg-white hover:bg-ink-50 whitespace-nowrap">
+      <i class="bi bi-chevron-left"></i> 上一頁</button>
+    <div class="flex items-center gap-3 flex-wrap justify-center">
+      <span id="sop-page-label" class="text-sm text-ink-500 font-mono"></span>
+      <div id="sop-dots" class="flex items-center gap-1.5"></div>
+    </div>
+    <button id="btn-sop-next" class="px-4 py-2 rounded-lg bg-[#D2AB75] hover:bg-[#c19a63] text-ink-900 font-semibold whitespace-nowrap">
+      下一頁 <i class="bi bi-chevron-right"></i></button>
+  </div>
+</dialog>
+
+<dialog id="dlg-settings" class="rounded-xl p-0 w-[min(760px,94vw)]"
+  <div class="bg-ink-900 text-white px-5 py-3 flex items-center justify-between">
+    <h2 class="font-bold"><i class="bi bi-gear-fill"></i> 設定</h2>
+    <button data-close class="text-ink-300 hover:text-white"><i class="bi bi-x-lg"></i></button>
+  </div>
+
+  <div class="border-b bg-slate-50 px-5 flex gap-1 text-sm">
+    <button data-tab="password" class="st-tab px-3 py-2 border-b-2 font-medium">改密碼</button>
+    <button data-tab="users" class="st-tab px-3 py-2 border-b-2 font-medium hidden">帳號管理</button>
+    <button data-tab="data" class="st-tab px-3 py-2 border-b-2 font-medium hidden">清除資料</button>
+    <button data-tab="sync" class="st-tab px-3 py-2 border-b-2 font-medium hidden">驗收同步</button>
+  </div>
+
+  <!-- 改密碼：每個人都看得到，改自己的 -->
+  <div data-pane="password" class="st-pane p-5 space-y-3 text-sm">
+    <p class="text-xs text-ink-500">修改 <b id="st-me"></b> 的登入密碼。</p>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">目前密碼</span>
+      <input id="st-old" type="password" autocomplete="current-password" class="border rounded px-2 py-2"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">新密碼（至少 6 個字）</span>
+      <input id="st-new" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">再輸入一次新密碼</span>
+      <input id="st-new2" type="password" autocomplete="new-password" class="border rounded px-2 py-2"></label>
+    <div class="pt-1">
+      <button id="btn-save-password"
+              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+        <i class="bi bi-key-fill"></i> 更新密碼</button>
+    </div>
+  </div>
+
+  <!-- 驗收單簽名：簽名圖每個人自己傳；下面的尺寸／關鍵字只有管理員能改 -->
+  <!-- 帳號管理：只有管理員 -->
+  <div data-pane="users" class="st-pane p-5 space-y-4 text-sm hidden">
+    <div>
+      <p class="text-xs text-ink-400 mb-2">目前帳號</p>
+      <div id="st-userlist" class="border rounded-lg divide-y"></div>
+    </div>
+    <div class="border-t pt-4 space-y-3">
+      <p class="text-xs text-ink-400">新增帳號</p>
+      <div class="flex gap-2">
+        <input id="st-newuser" placeholder="帳號名稱" class="border rounded px-2 py-2 flex-1">
+        <input id="st-newpass" type="text" placeholder="密碼（至少 6 個字）" class="border rounded px-2 py-2 flex-1">
+      </div>
+      <label class="flex items-center gap-2 text-xs">
+        <input id="st-newadmin" type="checkbox" class="w-4 h-4"> 設為管理員（可以加人、改別人密碼、清資料）
+      </label>
+      <button id="btn-add-user"
+              class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold">
+        <i class="bi bi-person-plus-fill"></i> 新增</button>
+    </div>
+  </div>
+
+  <!-- 清除資料：只有管理員 -->
+  <div data-pane="data" class="st-pane p-5 space-y-4 text-sm hidden">
+    <div class="bg-red-50 border border-red-300 rounded-lg p-3 text-red-800">
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 這個操作會刪掉所有訂單資料</b>
+      <p class="text-xs mt-1">
+        清空前系統會自動備份一份，但備份放在伺服器上，你不一定拿得回來。
+        正式資料請先用「匯出報表」存一份 Excel 再清。
+      </p>
+    </div>
+    <label class="flex items-start gap-2">
+      <input id="st-keeplogs" type="checkbox" class="w-4 h-4 mt-0.5">
+      <span>保留修改歷程
+        <span class="block text-xs text-ink-400 mt-0.5">
+          不勾＝連歷程一起清乾淨（測試完要正式上線時選這個）。
+          勾起來＝訂單清掉但誰改過什麼還查得到。
+        </span>
+      </span>
+    </label>
+    <label class="flex flex-col gap-1">
+      <span class="text-xs text-ink-400">請輸入「清空資料」四個字以確認</span>
+      <input id="st-confirm" placeholder="清空資料" class="border rounded px-2 py-2">
+    </label>
+    <button id="btn-reset-data"
+            class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold">
+      <i class="bi bi-trash3-fill"></i> 清空訂單資料</button>
+  </div>
+
+  <!-- 驗收同步：只有管理員，給酷澎後台批次驗收工具用的通行碼 -->
+  <div data-pane="sync" class="st-pane p-5 space-y-4 text-sm hidden">
+    <p class="text-xs text-ink-500">
+      酷澎後台的「批次驗收工具」用這組網址跟通行碼，把「實際驗入數量」自動送進系統，
+      不用再手動匯出 Excel、上傳。設定一次就好，之後每次跑工具都會自動同步。
+    </p>
+    <p class="text-xs text-ink-500 bg-ink-50 border border-ink-200 rounded-lg p-2">
+      <i class="bi bi-info-circle"></i>
+      同步進來之後會自動比對「實際驗入數量」跟「出貨數量」：全部品項都驗到而且數字都對得起來，
+      整張單判為<b>完成</b>；只要有任何一個品項數字對不起來（不管多驗還是少驗）就判為<b>異常</b>；
+      還有品項沒驗到的維持<b>未驗收</b>。<br>
+      驗收狀態還是可以自己手動改，<b>手動改過的單之後同步就不會再被自動蓋掉</b>；
+      想恢復自動判定的話，把狀態改回「未驗收」就好。
+    </p>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">同步網址</span>
+      <input id="st-sync-url" readonly class="border rounded px-2 py-2 font-mono text-xs bg-ink-50"></label>
+    <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">通行碼</span>
+      <div class="flex gap-2">
+        <input id="st-sync-token" readonly type="password"
+               class="border rounded px-2 py-2 font-mono text-xs bg-ink-50 flex-1">
+        <button id="btn-sync-token-show" type="button"
+                class="px-3 py-2 rounded-lg border border-ink-300 hover:bg-ink-50">顯示</button>
+      </div>
+    </label>
+    <div class="pt-1 flex gap-2">
+      <button id="btn-sync-token-regen"
+              class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold">
+        <i class="bi bi-arrow-repeat"></i> 換一把新的</button>
+    </div>
+    <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      換新的通行碼之後，舊的立刻失效，記得回去工具那邊也要跟著改，不然會同步失敗。
+    </p>
+  </div>
+</dialog>
+
+<div id="toast" class="fixed top-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50"></div>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => (s ?? "").toString()
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
+// 拖曳上傳：把丟進框框的檔案塞回原本的 <input type=file>，再手動觸發
+// change 事件——這樣既有的上傳邏輯（每個 input 各自的 change handler）
+// 完全不用改，拖曳只是「用另一種方式把檔案放進同一個 input」。
+// 用 DataTransfer 組 FileList 是唯一能寫回 input.files 的方法，瀏覽器
+// 不允許直接指派陣列。
+function enableDropzone(zoneId, inputId) {
+  const zone = $(`#${zoneId}`), input = $(`#${inputId}`);
+  if (!zone || !input) return;
+  let depth = 0; // 拖過內部子元素（例如那行提示文字）會連續觸發
+                 // dragenter/dragleave，用計數器才不會一進子元素就誤判離開。
+  zone.addEventListener("dragenter", e => {
+    e.preventDefault();
+    depth++;
+    zone.classList.add("dz-active");
+  });
+  zone.addEventListener("dragover", e => e.preventDefault());
+  zone.addEventListener("dragleave", e => {
+    e.preventDefault();
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) zone.classList.remove("dz-active");
+  });
+  zone.addEventListener("drop", e => {
+    e.preventDefault();
+    depth = 0;
+    zone.classList.remove("dz-active");
+    const dropped = e.dataTransfer.files;
+    if (!dropped || !dropped.length) return;
+    const dt = new DataTransfer();
+    const files = input.multiple ? dropped : [dropped[0]];
+    for (const f of files) dt.items.add(f);
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+enableDropzone("dz-file-input", "file-input");
+enableDropzone("dz-sign-sig-file", "sign-sig-file");
+enableDropzone("dz-sign-files", "sign-files");
+enableDropzone("dz-sg-cal-file", "sg-cal-file");
+
+// 沒有這兩行的話，使用者手滑把檔案拖到框框外面放開，瀏覽器預設動作
+// 是直接把那個檔案打開取代掉整個網頁畫面——拖曳上傳最經典的地雷。
+// 框框內的 drop 已經各自 preventDefault 過了，這裡擋的是「沒接住」
+// 的情況。
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
+
 let CONFIG = {}, PAGE = 1, PAGE_SIZE = 100, TOTAL = 0, ROWS = [], CURRENT = null, BATCH = null;
+const STATIC_URL = "{{ url_for('static', filename='') }}";
 const selected = new Set();
+const rowInfo = new Map(); // po_number -> 最近一次看到的列資料，用來判斷動作列按鈕該不該可按
 
 function toast(msg, kind = "ok") {
   const el = $("#toast");
-  el.className = "fixed bottom-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50 " +
+  el.className = "fixed top-6 right-6 px-5 py-3 rounded-lg shadow-xl text-white text-sm z-50 " +
     (kind === "err" ? "bg-red-600" : kind === "warn" ? "bg-amber-600" : "bg-emerald-600");
   el.textContent = msg;
-  el.classList.remove("hidden");
+  // 先讓瀏覽器畫一次「還沒展開」的狀態，下一影格再加 show，
+  // 這樣才會真的觸發滑入動畫，而不是直接跳出成品。
+  el.classList.remove("toast-show");
+  void el.offsetWidth;
+  requestAnimationFrame(() => el.classList.add("toast-show"));
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.add("hidden"), 4200);
+  toast._t = setTimeout(() => el.classList.remove("toast-show"), 4200);
 }
 
-function operator() { return $("#operator").value; }
-
-function requireOperator() {
-  if (!operator()) {
-    $("#operator-warning").classList.remove("hidden");
-    toast("請先在右上角選擇操作人員。", "warn");
-    return false;
-  }
-  $("#operator-warning").classList.add("hidden");
-  return true;
-}
+// 操作人員＝登入者，後端一律以 session 為準，前端不再傳也不用檢查。
+// 這兩個函式留著只是為了不用改動十幾處呼叫點。
+const LOGGED_IN_USER = {{ logged_in_user | tojson }};
+function operator() { return LOGGED_IN_USER; }
+function requireOperator() { return true; }
 
 function fillSelect(el, values, keepAll = true) {
   const current = el.value;
@@ -296,26 +845,29 @@ function fillSelect(el, values, keepAll = true) {
   if (values.includes(current)) el.value = current;
 }
 
+// 「CPG-潔品」「CPG-紙品」這類 CPG 開頭的線別，篩選選單裡合併成一個
+// 「CPG」選項——選了這個，兩種都撈得到，不用分開選兩次。
+function groupCpgLines(lines) {
+  const rest = lines.filter(v => !v.startsWith("CPG-"));
+  const hasCpg = lines.some(v => v.startsWith("CPG-"));
+  return hasCpg ? ["CPG", ...rest] : rest;
+}
+
+// 同一個合併規則用在畫面顯示上——一張單底下混了「CPG-潔品」「CPG-紙品」
+// 兩種品項時，列表跟 PO 明細顯示「CPG」，不要把兩個原始名字都印出來。
+function displayLines(joined) {
+  if (!joined) return "";
+  return groupCpgLines(joined.split(", ").filter(Boolean)).join(", ");
+}
+
 async function loadConfig() {
   CONFIG = await (await fetch("/api/config")).json();
-  const op = $("#operator");
-  op.innerHTML = '<option value="">— 請選擇 —</option>';
-  CONFIG.operators.forEach(o => op.insertAdjacentHTML("beforeend", `<option>${esc(o)}</option>`));
-  const saved = localStorage.getItem("oms_operator");
-  if (saved && CONFIG.operators.includes(saved)) op.value = saved;
-
-  fillSelect($("#f-line"), CONFIG.lines);
-  fillSelect($("#f-brand"), CONFIG.brands);
+  fillSelect($("#f-line"), groupCpgLines(CONFIG.lines));
   fillSelect($("#f-warehouse"), CONFIG.warehouses);
   fillSelect($("#f-ordertype"), CONFIG.order_types);
   fillSelect($("#f-status"), CONFIG.po_statuses);
   fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
-  fillSelect($("#e-status"), CONFIG.po_statuses, false);
-  fillSelect($("#e-receiving"), CONFIG.receiving_statuses, false);
-
-  // 補填時給既有值當提示，避免打成「瑪氏 」「瑪式」這種對不起來的字
-  $("#dl-line").innerHTML = CONFIG.lines.map(v => `<option value="${esc(v)}">`).join("");
-  $("#dl-brand").innerHTML = CONFIG.brands.map(v => `<option value="${esc(v)}">`).join("");
+  fillSelect($("#f-shipping"), CONFIG.shipping_methods);
 
   const xp = $("#x-profile");
   xp.innerHTML = "";
@@ -332,15 +884,16 @@ function filters() {
     po_number: $("#f-po").value.trim(),
     keyword: $("#f-keyword").value.trim(),
     line: $("#f-line").value,
-    brand: $("#f-brand").value,
     warehouse: $("#f-warehouse").value,
     order_type: $("#f-ordertype").value,
     date_from: $("#f-from").value,
     date_to: $("#f-to").value,
     po_status: $("#f-status").value,
     receiving_status: $("#f-receiving").value,
+    shipping_method: $("#f-shipping").value,
     is_pulled: $("#f-pulled").value,
     needs_review: $("#f-review").checked ? "1" : "",
+    flagged: $("#f-flagged").checked ? "1" : "",
     alert_level: filters._alert || "",
   };
 }
@@ -350,7 +903,7 @@ async function loadOrders() {
     Object.entries(filters()).filter(([, v]) => v !== "" && v != null));
   params.set("page", PAGE);
   params.set("page_size", PAGE_SIZE);
-  const data = await (await fetch("/api/orders?" + params)).json();
+  const data = await (await fetch("/api/pos?" + params)).json();
 
   TOTAL = data.total; ROWS = data.rows;
   $("#stat-total").textContent = data.total.toLocaleString();
@@ -359,7 +912,7 @@ async function loadOrders() {
   $("#stat-alert").textContent = data.summary.changed_after_pull;
 
   const pages = Math.max(1, Math.ceil(TOTAL / PAGE_SIZE));
-  $("#page-info").textContent = `第 ${PAGE} / ${pages} 頁 · 共 ${TOTAL} 筆`;
+  $("#page-info").textContent = `第 ${PAGE} / ${pages} 頁 · 共 ${TOTAL} 張 PO`;
   $("#btn-prev").disabled = PAGE <= 1;
   $("#btn-next").disabled = PAGE >= pages;
 
@@ -368,146 +921,293 @@ async function loadOrders() {
 
 function renderRows() {
   const tb = $("#tbody");
+  ROWS.forEach(r => rowInfo.set(r.po_number, r));
   if (!ROWS.length) {
-    tb.innerHTML = `<tr><td colspan="16" class="text-center py-16 text-slate-400">
+    tb.innerHTML = `<tr><td colspan="14" class="text-center py-16 text-ink-300">
       沒有符合條件的資料。請先上傳整合表，或放寬篩選條件。</td></tr>`;
     updateSelectedInfo();
     return;
   }
   tb.innerHTML = ROWS.map(r => {
-    const cls = r.alert_level === "changed_after_pull" ? "row-alert"
-              : r.needs_review ? "row-warn"
-              : r.is_pulled ? "row-pulled" : "";
-    let badge = "";
-    if (r.alert_level === "changed_after_pull")
-      badge = `<span class="inline-block bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded" title="${esc(r.review_reason)}">拉單後被改</span>`;
-    else if (r.needs_review)
-      badge = `<span class="inline-block bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded" title="${esc(r.review_reason)}">待確認</span>`;
-    else if (r.is_pulled)
-      badge = `<span class="inline-block bg-slate-400 text-white text-[10px] px-1.5 py-0.5 rounded">已拉單</span>`;
-    else
-      badge = `<span class="inline-block bg-sky-100 text-sky-700 text-[10px] px-1.5 py-0.5 rounded">未拉單</span>`;
+    // 警示掛在整張單上：只要底下任何一個品項被酷澎改過，整列就亮燈，
+    // 進去彈窗才看是哪幾項。OP 要處理的單位本來就是整張單。改成列最
+    // 左邊一條色帶，不再獨佔一整欄——詳細字樣移到 PO 單號底下顯示。
+    const cls = [
+      r.after_pull_count > 0 ? "row-alert"
+        : r.review_count > 0 ? "row-warn"
+        : r.is_pulled ? "row-pulled" : "",
+      selected.has(r.po_number) ? "row-selected" : "",
+    ].filter(Boolean).join(" ");
+    const lockedCls = r.is_pulled ? "inline-locked" : "";
+    let alert = "";
+    if (r.after_pull_count > 0)
+      alert = `<span class="block text-[10px] text-brand-700 font-semibold mt-0.5">拉單後被改 ${r.after_pull_count} 項</span>`;
+    else if (r.review_count > 0)
+      alert = `<span class="block text-[10px] text-amber-700 font-semibold mt-0.5">${r.review_count} 項有異動</span>`;
 
-    const qtyDiff = r.qty_ship != null && r.qty_coupang != null && r.qty_ship !== r.qty_coupang;
-    return `<tr class="${cls} border-b hover:bg-slate-50">
-      <td class="px-2 py-1.5 text-center"><input type="checkbox" data-id="${r.id}"
-          class="row-check w-4 h-4" ${selected.has(r.id) ? "checked" : ""}></td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${badge}</td>
-      <td class="px-2 py-1.5 font-mono text-xs whitespace-nowrap">${esc(r.po_number)}
-        ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.order_type)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${r.line ? esc(r.line)
-        : '<span class="text-amber-600 text-xs">待補</span>'}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.brand)}</td>
-      <td class="px-2 py-1.5 max-w-[260px] truncate" title="${esc(r.product_name)}">${esc(r.product_name)}</td>
-      <td class="px-2 py-1.5 font-mono text-xs whitespace-nowrap">${esc(r.yf_sku)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.warehouse)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.delivery_date)}</td>
-      <td class="px-2 py-1.5 text-right">${r.qty_coupang ?? ""}</td>
-      <td class="px-2 py-1.5 text-right ${qtyDiff ? "text-red-600 font-bold" : ""}"
-          title="${qtyDiff ? "出貨數量與酷澎下單數量不一致" : ""}">${r.qty_ship ?? ""}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.po_status)}</td>
-      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.receiving_status)}</td>
-      <td class="px-2 py-1.5 max-w-[200px] truncate" title="${esc(r.remarks)}">${esc(r.remarks)}</td>
-      <td class="px-2 py-1.5"><button data-edit="${r.id}"
-          class="text-sky-600 hover:text-sky-800"><i class="bi bi-pencil-square"></i></button></td>
+    return `<tr class="${cls}">
+      <td class="edge px-2 py-2 text-center"><input type="checkbox" data-po="${esc(r.po_number)}"
+          class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
+      <td class="px-2 py-2 whitespace-nowrap flag-cell ${r.flagged ? "bg-amber-200" : ""}"
+          data-flag="${esc(r.po_number)}" title="點單號旁的空白處可標記／取消標記顏色"><button data-open="${esc(r.po_number)}"
+          class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>
+        ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}
+        ${alert}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
+          data-inline="order_type" data-po="${esc(r.po_number)}"
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.order_type) || "—"}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
+          data-inline="po_status" data-po="${esc(r.po_number)}"
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}"><span class="badge ${badgeClass(r.po_status)}">${esc(r.po_status)}</span></td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell"
+          data-inline="is_pulled" data-po="${esc(r.po_number)}"
+          title="點一下可直接切換"><span class="badge ${r.is_pulled ? "b-amber" : "b-gray"}">
+          <i class="bi ${r.is_pulled ? "bi-lock-fill" : "bi-unlock"}"></i> ${r.is_pulled ? "已拉單" : "未拉單"}</span></td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell"
+          data-inline="receiving_status" data-po="${esc(r.po_number)}"
+          title="點一下可直接修改（不受拉單鎖定限制）"><span class="badge ${badgeClass(r.receiving_status)}">${esc(r.receiving_status)}</span></td>
+      <td class="px-2 py-2 truncate">${esc(displayLines(r.lines)) || "線別待補"}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
+          data-inline="filed_date" data-po="${esc(r.po_number)}"
+          title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點一下可直接修改"}">${esc(r.filed_date)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}</td>
+      <td class="px-2 py-2 whitespace-nowrap inline-cell"
+          data-inline="shipping_method" data-po="${esc(r.po_number)}"
+          title="點一下可直接修改（不受拉單鎖定限制）">${esc(r.shipping_method) || "選擇配送方式"}</td>
+      <td class="px-2 py-2 text-right num">${r.sku_count}</td>
+      <td class="px-2 py-2 text-right num ${r.qty_ship !== r.qty_coupang ? "text-red-600 font-bold" : ""}"
+          title="${r.qty_ship !== r.qty_coupang ? "出貨數量與酷澎下單數量不一致" : ""}">${(r.qty_ship || 0).toLocaleString()}</td>
+      <td class="px-2 py-2 text-right num ${r.actual_verified_qty != null && r.actual_verified_qty !== r.qty_ship ? "text-amber-700 font-bold" : ""}"
+          title="${r.actual_verified_qty == null ? "這張單還沒有品項同步過" : r.actual_verified_qty !== r.qty_ship ? "跟出貨數量不一致，可能有短驗" : ""}">
+        ${r.actual_verified_qty == null ? "—" : r.actual_verified_qty.toLocaleString()}</td>
     </tr>`;
   }).join("");
   updateSelectedInfo();
 }
 
+function badgeClass(value) {
+  const v = (value || "").trim();
+  if (["已取消", "異常", "退貨"].includes(v)) return "b-red";
+  if (["已完成", "完成"].includes(v)) return "b-green";
+  if (["處理中", "已回覆"].includes(v)) return "b-blue";
+  if (["修改中", "重啟"].includes(v)) return "b-amber";
+  return "b-gray";
+}
+
 function updateSelectedInfo() {
-  $("#selected-info").textContent = selected.size ? `已勾選 ${selected.size} 筆` : "";
+  updateActionBar();
 }
 
 // ── 編輯 ────────────────────────────────────────────────
-async function openEdit(id) {
-  const row = ROWS.find(r => r.id === id);
-  if (!row) return;
-  CURRENT = row;
-  $("#edit-header").innerHTML = `
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-      <div><span class="text-xs text-slate-500">PO 單號</span><br><b class="font-mono">${esc(row.po_number)}</b></div>
-      <div><span class="text-xs text-slate-500">SKU ID</span><br><span class="font-mono text-xs">${esc(row.sku_id)}</span></div>
-      <div><span class="text-xs text-slate-500">品牌 / 線別</span><br>${esc(row.brand)} / ${esc(row.line) || "待補"}</div>
-      <div><span class="text-xs text-slate-500">酷澎下單數量</span><br><b>${row.qty_coupang ?? "-"}</b>
-        <span class="text-[10px] text-slate-500">（唯讀，只有匯入能改）</span></div>
-    </div>
-    <div class="mt-2 text-xs text-slate-600">${esc(row.product_name)}</div>`;
+// ── PO 明細彈窗 ─────────────────────────────────────────
+async function openPo(poNumber) {
+  CURRENT = null;
+  $("#po-title").textContent = poNumber;
+  $("#po-body").innerHTML = '<p class="p-6 text-ink-300">載入中…</p>';
+  $("#dlg-po").showModal();
 
-  const lock = $("#edit-lock");
-  if (row.is_pulled) {
-    lock.classList.remove("hidden");
-    lock.innerHTML = `<i class="bi bi-lock-fill"></i> 這筆已於 <b>${esc(row.pulled_at)}</b>
-      由 <b>${esc(row.pulled_by)}</b> 拉單並鎖定，倉庫可能已拿到資料。
-      需要修改請先用列表上方的「解除拉單鎖定」。`;
-  } else lock.classList.add("hidden");
+  const res = await fetch(`/api/pos/${encodeURIComponent(poNumber)}`);
+  if (!res.ok) { toast("找不到這張 PO。", "err"); $("#dlg-po").close(); return; }
+  const d = await res.json();
+  CURRENT = d;
 
-  $("#e-qty").value = row.qty_ship ?? "";
-  $("#e-date").value = row.delivery_date || "";
-  $("#e-warehouse").value = row.warehouse || "";
-  $("#e-status").value = row.po_status || "";
-  $("#e-receiving").value = row.receiving_status || "";
-  $("#e-remarks").value = row.remarks || "";
+  const h = d.header;
+  const locked = !!h.is_pulled;
+  const opt = (list, cur) => list.map(v =>
+    `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v) || "（空白）"}</option>`).join("");
 
-  // 線別／品牌：空白才給補，已經有值就鎖起來
-  [["line", "#e-line", "#e-line-hint"], ["brand", "#e-brand", "#e-brand-hint"]]
-    .forEach(([field, input, hint]) => {
-      const blank = !(row[field] || "").trim();
-      $(input).value = row[field] || "";
-      $(input).dataset.locked = blank ? "" : "1";
-      $(hint).textContent = blank ? "（空白，可補填）" : "（以整合表為準，不可改）";
-      $(hint).className = blank ? "text-[10px] text-amber-600" : "text-[10px] text-slate-400";
-    });
-
-  [...document.querySelectorAll("#dlg-edit input, #dlg-edit select, #dlg-edit textarea")]
-    .forEach(el => el.disabled = !!row.is_pulled);
-  if (!row.is_pulled) {
-    $("#e-line").disabled = $("#e-line").dataset.locked === "1";
-    $("#e-brand").disabled = $("#e-brand").dataset.locked === "1";
+  // 箱數是算出來的，不存進資料庫，也不能手動改——一旦讓人同時改
+  // 「出貨數量」「箱入數」又能改「箱數」，三個數字要聽誰的就打架，
+  // 這是之前討論過一定會出 bug 的做法，所以箱數永遠只能看。
+  function boxCount(qty, boxSize) {
+    if (qty == null || qty === "" || !boxSize) return "—";
+    const n = Number(qty) / Number(boxSize);
+    if (!isFinite(n)) return "—";
+    return (Math.round(n * 100) / 100).toString();
   }
-  $("#btn-save").disabled = !!row.is_pulled;
 
-  $("#edit-logs").innerHTML = '<p class="p-3 text-slate-400">載入中…</p>';
-  $("#dlg-edit").showModal();
+  const skuRows = d.skus.map(s => {
+    const cls = s.removed_from_coupang ? "bg-orange-50"
+              : s.alert_level === "changed_after_pull" ? "bg-red-50"
+              : s.needs_review ? "bg-amber-50" : "";
+    const diff = s.qty_ship != null && s.qty_coupang != null && s.qty_ship !== s.qty_coupang;
+    return `<tr class="${cls} border-b border-ink-100">
+      <td class="px-2 py-1.5 text-xs">${s.removed_from_coupang
+        ? `<span class="text-orange-700 font-semibold whitespace-nowrap"
+             title="${esc(s.review_reason)}">已從酷澎移除</span>`
+        : s.needs_review
+        ? `<span class="${s.alert_level === "changed_after_pull" ? "text-red-700" : "text-amber-700"} font-semibold whitespace-nowrap"
+             title="${esc(s.review_reason)}">已改</span>` : ""}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px] ${s.removed_from_coupang ? "line-through text-ink-400" : ""}" title="酷澎的商品編號">${esc(s.sku_id)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px] ${s.removed_from_coupang ? "line-through text-ink-400" : ""}" title="永豐內部料號">${esc(s.yf_sku)}</td>
+      <td class="px-2 py-1.5 text-xs ${s.removed_from_coupang ? "line-through text-ink-400" : ""}">${esc(s.product_name)}</td>
+      <td class="px-2 py-1.5 text-right text-xs">${s.qty_coupang ?? ""}</td>
+      <td class="px-2 py-1.5"><input type="number" data-sku="${s.id}" data-f="qty_ship"
+          value="${s.qty_ship ?? ""}" ${locked ? "disabled" : ""}
+          class="w-20 border border-ink-200 rounded px-1 py-0.5 text-xs text-right box-calc ${diff ? "text-red-600 font-bold" : ""}"></td>
+      <td class="px-2 py-1.5 text-right text-xs ${s.actual_verified_qty != null && s.actual_verified_qty !== s.qty_ship ? "text-amber-700 font-bold" : "text-ink-500"}"
+          title="${s.actual_verified_qty == null ? "還沒同步" : s.actual_verified_qty !== s.qty_ship ? "跟出貨數量不一致" : ""}">
+        ${s.actual_verified_qty == null ? "—" : s.actual_verified_qty}</td>
+      <td class="px-2 py-1.5 text-xs text-ink-500">${esc(s.unit)}</td>
+      <td class="px-2 py-1.5 text-right text-xs text-ink-500">${s.box_size ?? ""}</td>
+      <td class="px-2 py-1.5 text-right text-xs font-mono" data-box-count="${s.id}">${boxCount(s.qty_ship, s.box_size)}</td>
+      <td class="px-2 py-1.5"><input data-sku="${s.id}" data-f="receiving_note"
+          value="${esc(s.receiving_note)}" placeholder="短驗 / 溢收…"
+          class="w-full border border-ink-200 rounded px-1 py-0.5 text-xs"></td>
+    </tr>`;
+  }).join("");
 
-  const logs = await (await fetch(`/api/orders/${id}/logs`)).json();
-  $("#edit-logs").innerHTML = logs.length ? logs.map(l => `
-    <div class="px-3 py-2 border-b last:border-0 flex gap-3">
-      <span class="text-slate-400 whitespace-nowrap font-mono">${esc(l.changed_at)}</span>
-      <span class="px-1.5 rounded ${l.source === "import" ? "bg-sky-100 text-sky-700"
-        : l.source === "system" ? "bg-slate-200 text-slate-700" : "bg-emerald-100 text-emerald-700"}">
+  const logRows = d.logs.length ? d.logs.map(l => `
+    <div class="px-3 py-1.5 border-b border-ink-100 last:border-0 flex gap-2 items-baseline">
+      <span class="text-ink-300 whitespace-nowrap font-mono text-[11px]">${esc(l.changed_at)}</span>
+      <span class="px-1.5 rounded text-[10px] ${l.source === "import" ? "bg-ink-100 text-ink-700"
+        : l.source === "system" ? "bg-ink-200 text-ink-700" : "bg-brand-100 text-brand-700"}">
         ${l.source === "import" ? "匯入" : l.source === "system" ? "系統" : "手動"}</span>
-      <b class="whitespace-nowrap">${esc(l.operator)}</b>
-      <span class="flex-1">
+      <b class="whitespace-nowrap text-xs">${esc(l.operator)}</b>
+      <span class="flex-1 text-xs">
+        ${l.sku_id ? `<span class="text-ink-400 font-mono text-[10px]">${esc(l.sku_id)}</span> ` : ""}
         <b>${esc(l.field_label)}</b>：
-        <span class="text-slate-500 line-through">${esc(l.old_value) || "（空白）"}</span>
-        <i class="bi bi-arrow-right text-slate-400"></i>
-        <span class="text-slate-900 font-semibold">${esc(l.new_value) || "（空白）"}</span>
-        ${l.note ? `<span class="block text-[11px] text-slate-400">${esc(l.note)}</span>` : ""}
+        <span class="text-ink-400 line-through">${esc(l.old_value) || "（空白）"}</span>
+        →<span class="font-semibold">${esc(l.new_value) || "（空白）"}</span>
+        ${l.note ? `<span class="block text-[10px] text-ink-300">${esc(l.note)}</span>` : ""}
       </span>
-    </div>`).join("") : '<p class="p-3 text-slate-400">尚無修改紀錄。</p>';
+    </div>`).join("") : '<p class="p-3 text-ink-300 text-xs">尚無修改紀錄。</p>';
+
+  $("#po-body").innerHTML = `
+    ${locked ? `<div class="bg-red-50 border border-red-300 rounded-lg p-3 text-sm text-red-800">
+      <i class="bi bi-lock-fill"></i> 這張單已於 <b>${esc(h.pulled_at)}</b> 由 <b>${esc(h.pulled_by)}</b>
+      拉單並鎖定，倉庫可能已拿到資料。要修改請先用上方的「拉單狀態」解除。</div>` : ""}
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
+        <select id="p-status" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">${opt(CONFIG.po_statuses, h.po_status)}</select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
+        <select id="p-recv" class="border rounded px-2 py-1.5">${opt(CONFIG.receiving_statuses, h.receiving_status)}</select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
+        <select id="p-shipping" class="border rounded px-2 py-1.5">
+          ${h.shipping_method ? "" : `<option value="">選擇配送方式</option>`}
+          ${opt(CONFIG.shipping_methods, h.shipping_method)}
+        </select></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">建檔日</span>
+        <input id="p-filed" type="date" value="${esc(h.filed_date)}" ${locked ? "disabled" : ""}
+          class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
+        <input value="${h.is_pulled ? "已拉單" : "未拉單"}" disabled
+          class="border rounded px-2 py-1.5 bg-ink-50 text-ink-500"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨日（整張單）</span>
+        <input id="p-date" type="date" value="${esc(d.delivery_date)}" ${locked ? "disabled" : ""}
+          class="border rounded px-2 py-1.5"></label>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨倉別（整張單）</span>
+        <input id="p-wh" value="${esc(d.warehouse)}" ${locked ? "disabled" : ""}
+          class="border rounded px-2 py-1.5"></label>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
+        <span class="text-sm py-1.5">${esc(displayLines(d.lines)) || "待補"}</span></div>
+      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型（整張單）</span>
+        <select id="p-ordertype" ${locked ? "disabled" : ""} class="border rounded px-2 py-1.5">
+          ${(d.skus[0]?.order_type || "") ? "" : `<option value="">（尚未填寫）</option>`}
+          ${opt(CONFIG.order_types, d.skus[0]?.order_type || "")}
+        </select></label>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-sm mb-2">品項明細（${d.skus.length} 項）
+        <span class="text-xs font-normal text-ink-400">— 底色標示的是酷澎改過的品項</span></h3>
+      <div class="border border-ink-200 rounded-lg overflow-auto max-h-72">
+        <table class="w-full text-sm">
+          <thead class="bg-ink-100 text-xs sticky top-0"><tr>
+            <th class="px-2 py-1.5 text-left w-12">警示</th>
+            <th class="px-2 py-1.5 text-left w-32">SKU ID<span class="block font-normal text-[10px] text-ink-400">酷澎編號</span></th>
+            <th class="px-2 py-1.5 text-left w-24">永豐料號<span class="block font-normal text-[10px] text-ink-400">內部料號</span></th>
+            <th class="px-2 py-1.5 text-left">品名</th>
+            <th class="px-2 py-1.5 text-right w-20">下單數量</th>
+            <th class="px-2 py-1.5 text-left w-24">出貨數量</th>
+            <th class="px-2 py-1.5 text-right w-24">實際驗入數量
+              <span class="block font-normal text-[10px] text-ink-400">酷澎後台同步</span></th>
+            <th class="px-2 py-1.5 text-left w-16">單位</th>
+            <th class="px-2 py-1.5 text-right w-20">箱入數</th>
+            <th class="px-2 py-1.5 text-right w-16">箱數<span class="block font-normal text-[10px] text-ink-400">自動算</span></th>
+            <th class="px-2 py-1.5 text-left w-32">驗收註記</th>
+          </tr></thead>
+          <tbody>${skuRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-sm mb-2">備註
+        <span class="text-xs font-normal text-ink-400">（整張單的備註，不受拉單鎖定限制）</span></h3>
+      <textarea id="p-remarks" rows="3"
+        class="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm"
+        placeholder="這張單的備註…">${esc(h.remarks)}</textarea>
+    </div>
+
+    <div>
+      <h3 class="font-semibold text-sm mb-2"><i class="bi bi-clock-history"></i> 修改歷程
+        <span class="text-xs font-normal text-ink-400">（整張單的所有異動，含各品項）</span></h3>
+      <div class="border border-ink-200 rounded-lg max-h-56 overflow-y-auto">${logRows}</div>
+    </div>`;
+
+  // 出貨數量改變時，箱數要立刻跟著重算——箱入數是固定值、不會變，
+  // 純畫面計算，不送出任何請求，真的存檔時才會呼叫 savePo()。
+  document.querySelectorAll("#po-body .box-calc").forEach(el => {
+    el.addEventListener("input", () => {
+      const skuId = el.dataset.sku;
+      const row = el.closest("tr");
+      const boxSize = d.skus.find(x => String(x.id) === String(skuId))?.box_size;
+      const out = row.querySelector(`[data-box-count="${skuId}"]`);
+      if (out) out.textContent = boxCount(el.value, boxSize);
+    });
+  });
+
+  // 拉單鎖定後，出貨數量那個輸入格本身就 disabled 了（改不了值），
+  // 但驗收註記／備註不受鎖定限制，所以存檔按鈕不能整個鎖死，否則
+  // 連這兩個允許的欄位都存不了。
+  $("#btn-po-save").disabled = false;
 }
 
-async function saveEdit() {
+async function savePo() {
   if (!requireOperator() || !CURRENT) return;
-  const res = await fetch(`/api/orders/${CURRENT.id}`, {
+  const po = CURRENT.header.po_number;
+  let changed = 0, failed = 0;
+
+  // 先存整張單共用的欄位
+  const res = await fetch(`/api/pos/${encodeURIComponent(po)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      operator: operator(), version: CURRENT.version,
-      qty_ship: $("#e-qty").value, delivery_date: $("#e-date").value,
-      warehouse: $("#e-warehouse").value, po_status: $("#e-status").value,
-      receiving_status: $("#e-receiving").value, remarks: $("#e-remarks").value,
-      // 只在原本空白時才送，避免不小心把既有值蓋掉
-      ...($("#e-line").dataset.locked ? {} : { line: $("#e-line").value }),
-      ...($("#e-brand").dataset.locked ? {} : { brand: $("#e-brand").value }),
+      operator: operator(), po_version: CURRENT.header.version,
+      po_status: $("#p-status").value, receiving_status: $("#p-recv").value,
+      shipping_method: $("#p-shipping").value, remarks: $("#p-remarks").value,
+      filed_date: $("#p-filed").value, delivery_date: $("#p-date").value,
+      warehouse: $("#p-wh").value, order_type: $("#p-ordertype").value,
     }),
   });
   const data = await res.json();
-  if (res.status === 409) { toast(data.message, "err"); $("#dlg-edit").close(); loadOrders(); return; }
   if (!res.ok) { toast(data.message || data.error, "err"); return; }
-  toast(data.changed ? `已儲存，記錄了 ${data.changed} 項變更。` : "沒有任何欄位變動。");
-  $("#dlg-edit").close();
+  changed += data.changed || 0;
+
+  // 再存每個品項自己的欄位（只送真的改過的）
+  for (const sku of CURRENT.skus) {
+    const body = {};
+    ["qty_ship", "receiving_note"].forEach(f => {
+      const el = document.querySelector(`[data-sku="${sku.id}"][data-f="${f}"]`);
+      if (!el) return;
+      const now = el.value;
+      const was = sku[f] == null ? "" : String(sku[f]);
+      if (now !== was) body[f] = now;
+    });
+    if (!Object.keys(body).length) continue;
+    const r = await fetch(`/api/orders/${sku.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: operator(), version: sku.version, ...body }),
+    });
+    const rd = await r.json();
+    if (r.ok) changed += rd.changed || 0; else failed++;
+  }
+
+  if (failed) { toast(`有 ${failed} 個品項存檔失敗，請重新載入後再試。`, "err"); }
+  else toast(changed ? `已儲存，記錄了 ${changed} 項變更。` : "沒有任何欄位變動。");
+  $("#dlg-po").close();
   loadOrders();
 }
 
@@ -540,13 +1240,24 @@ async function doPreview() {
       <td class="px-2 py-1 text-xs">${esc(u.row.product_name).slice(0, 26)}</td>
       <td class="px-2 py-1">${u.changes.map(c =>
         `<span class="${c.critical ? "text-red-700 font-semibold" : "text-slate-600"}">
-           ${esc(c.label)}：${esc(c.old)} → ${esc(c.new)}</span>`).join("<br>")}</td>
+           ${esc(c.label)}：${esc(c.old)} → ${esc(c.new)}</span>`).join("<br>")}
+        ${u.revived ? `<span class="text-red-700 font-semibold block">先前被判定已從酷澎移除，這次重新出現</span>` : ""}</td>
       <td class="px-2 py-1 text-xs">${u.after_pull
         ? '<span class="text-red-700 font-bold">已拉單後被改</span>' : ""}</td>
     </tr>`).join("");
 
+  const removedRows = data.removed.map(r => `
+    <tr class="border-b ${r.is_pulled ? "bg-red-50" : "bg-amber-50"}">
+      <td class="px-2 py-1 font-mono text-xs">${esc(r.po_number)}</td>
+      <td class="px-2 py-1 font-mono text-xs">${esc(r.sku_id)}</td>
+      <td class="px-2 py-1 text-xs">${esc(r.product_name).slice(0, 26)}</td>
+      <td class="px-2 py-1 text-xs text-right">${r.qty_ship ?? ""}</td>
+      <td class="px-2 py-1 text-xs">${r.is_pulled
+        ? '<span class="text-red-700 font-bold">已拉單後被改</span>' : ""}</td>
+    </tr>`).join("");
+
   $("#upload-result").innerHTML = `
-    <div class="grid grid-cols-4 gap-2 text-center">
+    <div class="grid grid-cols-5 gap-2 text-center">
       <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
         <p class="text-xs text-emerald-700">新增</p>
         <p class="text-2xl font-bold text-emerald-700">${data.new_count}</p></div>
@@ -559,10 +1270,17 @@ async function doPreview() {
       <div class="bg-red-50 border border-red-300 rounded-lg p-3">
         <p class="text-xs text-red-700">已拉單後被改</p>
         <p class="text-2xl font-bold text-red-700">${data.after_pull_count}</p></div>
+      <div class="bg-orange-50 border border-orange-300 rounded-lg p-3">
+        <p class="text-xs text-orange-700">酷澎移除的品項</p>
+        <p class="text-2xl font-bold text-orange-700">${data.removed_count}</p></div>
     </div>
     ${data.after_pull_count ? `<div class="bg-red-100 border border-red-400 rounded-lg p-3 text-sm text-red-900">
       <b><i class="bi bi-exclamation-octagon-fill"></i> 注意：有 ${data.after_pull_count} 筆是「已經拉單交給倉庫之後」才被酷澎改動的。</b>
       倉庫手上拿到的可能是舊資料，匯入後請立刻處理。</div>` : ""}
+    ${data.removed_count ? `<div class="bg-orange-100 border border-orange-400 rounded-lg p-3 text-sm text-orange-900">
+      <b><i class="bi bi-exclamation-octagon-fill"></i> 注意：有 ${data.removed_count} 個品項，在整合表裡已經找不到、但資料庫還留著資料。</b>
+      通常是酷澎把下單數量下修到 0 之後，這個品項就從後台匯出的整合表整列消失了。
+      確認匯入後，這些品項的出貨數量會歸零、不再計入 PO 總數，但不會被刪除，隨時可以在品項明細裡查到。</div>` : ""}
     ${data.warnings.length ? `<div class="bg-amber-50 border border-amber-300 rounded-lg p-3 text-xs text-amber-900">
       <b>解析提醒（${data.warnings.length}）：</b><ul class="list-disc list-inside mt-1">
       ${data.warnings.slice(0, 20).map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : ""}
@@ -573,7 +1291,15 @@ async function doPreview() {
           <th class="px-2 py-1 text-left">PO 單號</th><th class="px-2 py-1 text-left">品名</th>
           <th class="px-2 py-1 text-left">變更內容</th><th class="px-2 py-1"></th></tr></thead>
         <tbody>${updRows}</tbody></table></div></div>` : ""}
-    <p class="text-xs text-slate-500">以上都還沒寫進資料庫。按「確認匯入」才會實際寫入，過程中若任何一列出錯會整批還原。</p>`;
+    ${data.removed_count ? `<div>
+      <h3 class="font-semibold text-sm mb-1">整合表裡找不到的品項（前 ${Math.min(200, data.removed_count)} 筆）</h3>
+      <div class="border rounded-lg overflow-auto max-h-64"><table class="w-full text-sm">
+        <thead class="bg-slate-100 text-xs"><tr>
+          <th class="px-2 py-1 text-left">PO 單號</th><th class="px-2 py-1 text-left">SKU ID</th>
+          <th class="px-2 py-1 text-left">品名</th><th class="px-2 py-1 text-right">原出貨數量</th>
+          <th class="px-2 py-1"></th></tr></thead>
+        <tbody>${removedRows}</tbody></table></div></div>` : ""}
+    <p class="text-xs text-ink-400">以上都還沒寫進資料庫。按「確認匯入」才會實際寫入，過程中若任何一列出錯會整批還原。</p>`;
 }
 
 async function doCommit() {
@@ -586,7 +1312,8 @@ async function doCommit() {
   const data = await res.json();
   $("#btn-commit").disabled = false;
   if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`匯入完成：新增 ${data.inserted} 筆、更新 ${data.updated} 筆、略過重複 ${data.identical} 筆。`);
+  toast(`匯入完成：新增 ${data.inserted} 筆、更新 ${data.updated} 筆、略過重複 ${data.identical} 筆`
+    + (data.removed ? `、酷澎移除 ${data.removed} 筆` : "") + "。");
   $("#dlg-upload").close();
   BATCH = null;
   $("#btn-commit").classList.add("hidden");
@@ -608,12 +1335,12 @@ function syncProfileNote() {
 async function doExport() {
   if (!requireOperator()) return;
   const scope = $("#x-scope").value;
-  const ids = scope === "selected" ? [...selected] : [];
-  if (scope === "selected" && !ids.length) { toast("你選擇了「只匯出勾選的」，但沒有勾選任何資料列。", "warn"); return; }
+  const pos = scope === "selected" ? [...selected] : [];
+  if (scope === "selected" && !pos.length) { toast("你選擇了「只匯出勾選的」，但沒有勾選任何 PO。", "warn"); return; }
 
   const body = {
     operator: operator(), profile: $("#x-profile").value,
-    mark_pulled: $("#x-mark").checked, filters: filters(), ids,
+    mark_pulled: $("#x-mark").checked, filters: filters(), po_numbers: pos,
   };
   const res = await fetch("/api/export", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -638,69 +1365,443 @@ async function doExport() {
   loadOrders();
 }
 
-// ── 批次動作 ────────────────────────────────────────────
-async function confirmReview() {
+// ── 批次動作列 ──────────────────────────────────────────
+// 動作列只在有勾選時浮出，貼著列表下緣；需要二次確認或填原因的動作
+// 一律用「原地展開的面板」處理，不用瀏覽器原生 confirm()/prompt()——
+// 那種對話框的按鈕文字改不動，一旦拿來表達「兩個方向都會動到資料」的
+// 選擇，取消鍵就會失去「什麼都不做」的意思，容易誤觸。
+function selectionStats() {
+  // 只算「有勾選且我們曾經看過這列資料」的部分——rowInfo 只在渲染
+  // 到那一列的當下更新，換頁後沒再看到的列會用最後看到的舊資料判斷，
+  // 最終還是由後端把關，這裡只是避免按下去完全沒作用的按鈕可以被按。
+  let pulled = 0, unpulled = 0, review = 0;
+  selected.forEach(po => {
+    const info = rowInfo.get(po);
+    if (!info) { unpulled++; review++; return; } // 沒看過資料時保守放行，交給後端判斷
+    info.is_pulled ? pulled++ : unpulled++;
+    if (info.review_count > 0) review++;
+  });
+  return { pulled, unpulled, review };
+}
+
+function setActionDisabled(id, disabled, reason) {
+  const btn = $(id);
+  btn.disabled = disabled;
+  btn.classList.toggle("opacity-40", disabled);
+  btn.classList.toggle("cursor-not-allowed", disabled);
+  btn.title = disabled ? reason : "";
+}
+
+function updateActionBar() {
+  $("#action-bar").classList.toggle("ab-show", selected.size > 0);
+  $("#ab-count").textContent = selected.size;
+  closePanel();
+  if (selected.size === 0) return;
+
+  const { pulled, unpulled, review } = selectionStats();
+  setActionDisabled("#ab-pull-on", unpulled === 0,
+    "勾選的單都已經是已拉單，不需要再標記一次。");
+  setActionDisabled("#ab-pull-off", pulled === 0,
+    "勾選的單都還沒拉單，沒有鎖定可以解除。");
+  setActionDisabled("#ab-review", review === 0,
+    "勾選的單都沒有待確認的異動。");
+}
+
+function closePanel() {
+  const panel = $("#ab-panel");
+  panel.classList.remove("ab-panel-open");
+  // 等收合動畫播完才清空內容，不然文字會在還沒縮起來前就先消失，
+  // 看起來像瞬間跳掉而不是收合。
+  clearTimeout(closePanel._t);
+  closePanel._t = setTimeout(() => { if (!panel.classList.contains("ab-panel-open")) panel.innerHTML = ""; }, 200);
+}
+
+function openPanel(html) {
+  clearTimeout(closePanel._t);
+  const panel = $("#ab-panel");
+  panel.innerHTML = html;
+  void panel.offsetWidth;
+  requestAnimationFrame(() => panel.classList.add("ab-panel-open"));
+}
+
+function clearSelection() {
+  selected.clear();
+  renderRows();
+}
+
+async function abReview() {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要確認的資料列。", "warn"); return; }
-  const res = await fetch("/api/orders/review", {
+  const res = await fetch("/api/pos/review", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operator: operator(), ids: [...selected] }),
+    body: JSON.stringify({ operator: operator(), po_numbers: [...selected] }),
   });
   const data = await res.json();
   if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`已確認 ${data.count} 筆異動。`);
-  selected.clear();
+  toast(`已確認 ${data.count} 張單的異動。`);
+  clearSelection();
   loadOrders();
 }
 
-async function unpull() {
+function openStatusPanel() {
   if (!requireOperator()) return;
-  if (!selected.size) { toast("請先勾選要解除鎖定的資料列。", "warn"); return; }
-  const reason = prompt("倉庫可能已經拿到這批資料了。請填寫解除拉單鎖定的原因：");
-  if (!reason) return;
-  const res = await fetch("/api/orders/unpull", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ operator: operator(), ids: [...selected], reason }),
+  const statusOpts = (CONFIG.po_statuses || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  const recvOpts = (CONFIG.receiving_statuses || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  const shippingOpts = (CONFIG.shipping_methods || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  openPanel(`
+    <div class="flex items-center gap-4 flex-wrap text-sm">
+      <label class="flex items-center gap-1.5">
+        <input type="radio" name="abp-field" value="po_status" checked> PO 狀態</label>
+      <label class="flex items-center gap-1.5">
+        <input type="radio" name="abp-field" value="receiving_status"> 驗收狀態</label>
+      <label class="flex items-center gap-1.5">
+        <input type="radio" name="abp-field" value="shipping_method"> 配送方式</label>
+      <span class="text-ink-400">改成</span>
+      <select id="abp-value" class="border rounded px-2 py-1.5">${statusOpts}</select>
+      <div class="flex-1"></div>
+      <button id="abp-cancel" class="px-3 py-1.5 rounded text-ink-600 hover:bg-ink-100">取消</button>
+      <button id="abp-apply" class="bg-ink-900 hover:bg-ink-800 text-white px-3 py-1.5 rounded-lg">
+        套用到 ${selected.size} 張</button>
+    </div>`);
+  const valueSelect = $("#abp-value");
+  document.querySelectorAll('input[name="abp-field"]').forEach(r => {
+    r.addEventListener("change", () => {
+      valueSelect.innerHTML = r.value === "po_status" ? statusOpts
+        : r.value === "shipping_method" ? shippingOpts : recvOpts;
+    });
   });
-  const data = await res.json();
-  if (!res.ok) { toast(data.error, "err"); return; }
-  toast(`已解除 ${data.count} 筆的拉單鎖定。`);
-  selected.clear();
-  loadOrders();
+  $("#abp-cancel").addEventListener("click", closePanel);
+  $("#abp-apply").addEventListener("click", async () => {
+    const field = document.querySelector('input[name="abp-field"]:checked').value;
+    const value = $("#abp-value").value;
+    const label = field === "po_status" ? "PO 狀態"
+      : field === "shipping_method" ? "配送方式" : "驗收狀態";
+    const res = await fetch("/api/pos/status", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: operator(), po_numbers: [...selected], field, value }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error, "err"); return; }
+    toast(`已把 ${data.count} 張單的${label}改成「${value}」。`);
+    clearSelection();
+    loadOrders();
+  });
+}
+
+function openPullPanel(pulled) {
+  if (!requireOperator()) return;
+  const warn = pulled
+    ? `標記為已拉單後，這 ${selected.size} 張單將被鎖定，需先解鎖才能編輯。`
+    : `解鎖後這 ${selected.size} 張單可再被編輯——倉庫可能已經拿到這批資料，請確認再解鎖。`;
+  const applyLabel = pulled ? "標記為已拉單" : "解除拉單鎖定";
+  const applyCls = pulled ? "bg-ink-900 hover:bg-ink-800" : "bg-red-600 hover:bg-red-500";
+  // 標記／解除都不強制填理由——例行操作，不要求填理由才不會拖慢流程。
+  // 欄位還在，填了照樣進歷程，只是不再擋下沒填的情況。
+  openPanel(`
+    <div class="text-sm space-y-2">
+      <p class="text-amber-700"><i class="bi bi-exclamation-triangle-fill"></i> ${esc(warn)}</p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <input id="abp-reason" class="border rounded px-2 py-1.5 flex-1 min-w-[240px]"
+               placeholder="備註（選填）">
+        <button id="abp-cancel" class="px-3 py-1.5 rounded text-ink-600 hover:bg-ink-100">取消</button>
+        <button id="abp-apply"
+                class="${applyCls} text-white px-3 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+          ${applyLabel}（${selected.size} 張）</button>
+      </div>
+    </div>`);
+  const reasonInput = $("#abp-reason"), applyBtn = $("#abp-apply");
+  $("#abp-cancel").addEventListener("click", closePanel);
+  applyBtn.addEventListener("click", async () => {
+    const reason = reasonInput.value.trim();
+    const res = await fetch("/api/pos/pull", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: operator(), po_numbers: [...selected], pulled, reason }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error, "err"); return; }
+    toast(`已調整 ${data.count} 張單的拉單狀態。`);
+    clearSelection();
+    loadOrders();
+  });
+}
+
+
+// ── 歷程總覽 ────────────────────────────────────────────
+let LOG_PAGE = 1;
+
+function logFilters() {
+  return {
+    po_number: $("#l-po").value.trim(),
+    field: $("#l-field").value,
+    operator: $("#l-operator").value,
+    source: $("#l-source").value,
+    date_from: $("#l-from").value,
+    date_to: $("#l-to").value,
+  };
+}
+
+async function loadLogs() {
+  const params = new URLSearchParams(
+    Object.entries(logFilters()).filter(([, v]) => v !== "" && v != null));
+  params.set("page", LOG_PAGE);
+  params.set("page_size", 100);
+  const d = await (await fetch("/api/logs?" + params)).json();
+
+  // 篩選選項只填一次，避免每次查詢都把使用者選的值洗掉
+  if (!$("#l-field").dataset.filled && d.fields.length) {
+    $("#l-field").innerHTML = '<option value="">全部</option>' +
+      d.fields.map(f => `<option value="${esc(f.field)}">${esc(f.label)}</option>`).join("");
+    $("#l-operator").innerHTML = '<option value="">全部</option>' +
+      d.operators.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join("");
+    $("#l-field").dataset.filled = "1";
+  }
+
+  const zh = { import: "匯入", manual: "手動", system: "系統" };
+  $("#log-body").innerHTML = d.rows.length ? d.rows.map(l => `
+    <tr class="border-b border-ink-100">
+      <td class="px-2 py-1.5 font-mono text-[11px] text-ink-500 whitespace-nowrap">${esc(l.changed_at)}</td>
+      <td class="px-2 py-1.5 font-mono text-[11px] whitespace-nowrap">${esc(l.po_number)}</td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${l.sku_id
+        ? `<span class="text-ink-500">單一品項</span>` : `<b>整張單</b>`}</td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(l.field_label)}</td>
+      <td class="px-2 py-1.5 text-xs">
+        <span class="text-ink-400 line-through">${esc(l.old_value) || "（空白）"}</span>
+        → <span class="font-semibold">${esc(l.new_value) || "（空白）"}</span>
+        ${l.note ? `<span class="block text-[10px] text-ink-300">${esc(l.note)}</span>` : ""}
+        ${l.sku_id ? `<span class="block text-[10px] text-ink-300 font-mono">${esc(l.sku_id)}</span>` : ""}
+      </td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(l.operator)}</td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${zh[l.source] || esc(l.source)}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="7" class="text-center py-12 text-ink-300">沒有符合條件的歷程。</td></tr>`;
+
+  const pages = Math.max(1, Math.ceil(d.total / d.page_size));
+  $("#log-count").textContent = `共 ${d.total.toLocaleString()} 筆`;
+  $("#log-page").textContent = `第 ${d.page} / ${pages} 頁`;
+  $("#btn-log-prev").disabled = d.page <= 1;
+  $("#btn-log-next").disabled = d.page >= pages;
+}
+
+async function exportLogs() {
+  if (!requireOperator()) return;
+  const res = await fetch("/api/logs/export", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), filters: logFilters() }),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({ error: "匯出失敗" }));
+    toast(d.error, "err");
+    return;
+  }
+  const blob = await res.blob();
+  const disp = res.headers.get("Content-Disposition") || "";
+  const m = /filename\*=UTF-8''([^;]+)/.exec(disp) || /filename="?([^";]+)"?/.exec(disp);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = m ? decodeURIComponent(m[1]) : "修改歷程.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("已匯出修改歷程。");
 }
 
 // ── 事件綁定 ────────────────────────────────────────────
 document.addEventListener("click", e => {
   const close = e.target.closest("[data-close]");
   if (close) { close.closest("dialog").close(); return; }
-  const edit = e.target.closest("[data-edit]");
-  if (edit) openEdit(Number(edit.dataset.edit));
+  const open = e.target.closest("[data-open]");
+  if (open) { openPo(open.dataset.open); return; }
+});
+
+// ── 表格內直接編輯 ──────────────────────────────────────
+// PO 狀態／驗收狀態／建檔日／訂單類型這幾個欄位是「整張 PO 單一值」，
+// 改錯了重點一次就能修正、沒有連帶後果，適合直接在表格上點了就改。
+// 出貨數量／備註等 SKU 層級欄位刻意不做在這裡——首頁那一格顯示的是
+// 底下所有品項的加總，不對應單一真實欄位，還是要進 PO 彈窗逐項改。
+async function saveInlineField(po, field, value) {
+  const info = rowInfo.get(po);
+  const res = await fetch(`/api/pos/${encodeURIComponent(po)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      operator: operator(), po_version: info ? info.po_version : 0, [field]: value,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.message || data.error, "err"); return false; }
+  return true;
+}
+
+// 拉單狀態不是 PO_EDITABLE_FIELDS 的一員——它有自己的鎖定／解鎖副作用
+// （寫 pulled_at／pulled_by、鎖住其他欄位），走專門的 /api/pos/pull，
+// 不能跟其他欄位一樣直接 PUT 整張單。
+async function saveInlinePull(po, pulled) {
+  const res = await fetch("/api/pos/pull", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), po_numbers: [po], pulled }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return false; }
+  return true;
+}
+
+async function finishInlineEdit(cell, po, field, value) {
+  cell.innerHTML = `<span class="text-ink-300">儲存中…</span>`;
+  const ok = field === "is_pulled"
+    ? await saveInlinePull(po, value === "1")
+    : await saveInlineField(po, field, value);
+  delete cell.dataset.editing;
+  await loadOrders();
+  // 存檔成功後那一格閃一下綠色再淡出，馬上給個「確實存到了」的回饋，
+  // 不用等使用者自己注意到 toast。loadOrders 已經把 tbody 重繪過，
+  // 所以要在重繪完之後才找得到新的格子元素。
+  if (ok) {
+    const target = document.querySelector(
+      `.inline-cell[data-po="${CSS.escape(po)}"][data-inline="${CSS.escape(field)}"]`);
+    if (target) {
+      target.classList.remove("save-flash");
+      void target.offsetWidth;
+      target.classList.add("save-flash");
+    }
+  }
+}
+
+function startInlineEdit(cell) {
+  if (!requireOperator()) return;
+  const po = cell.dataset.po;
+  const field = cell.dataset.inline;
+  const info = rowInfo.get(po);
+  // 拉單狀態本身不受「已拉單鎖定」擋——那個鎖擋的是拉單以外的其他
+  // 欄位，拉單狀態自己就是控制那個鎖的開關，當然要能一直點。驗收狀態
+  // 也不受這個鎖限制：驗收本來就發生在拉單之後（貨到了才驗），鎖住
+  // 反而擋住正常作業流程。
+  if (!["is_pulled", "receiving_status", "shipping_method"].includes(field) && info && info.is_pulled) {
+    toast("這張單已拉單並鎖定，請先解除拉單鎖定才能修改。", "warn");
+    return;
+  }
+  cell.dataset.editing = "1";
+  const current = info ? (info[field] || "") : cell.textContent.trim();
+  let committed = false;
+
+  if (field === "is_pulled") {
+    const isPulled = !!(info && info.is_pulled);
+    cell.innerHTML = `<select class="border rounded px-1 py-0.5 text-xs w-full">
+      <option value="0" ${!isPulled ? "selected" : ""}>未拉單</option>
+      <option value="1" ${isPulled ? "selected" : ""}>已拉單</option>
+    </select>`;
+    const select = cell.querySelector("select");
+    select.focus();
+    select.addEventListener("change", () => { committed = true; finishInlineEdit(cell, po, field, select.value); });
+    select.addEventListener("blur", () => {
+      setTimeout(() => { if (!committed && cell.dataset.editing) { delete cell.dataset.editing; renderRows(); } }, 0);
+    });
+    return;
+  }
+
+  if (field === "filed_date") {
+    cell.innerHTML = `<input type="date" class="border rounded px-1 py-0.5 text-xs w-full" value="${esc(current)}">`;
+    const input = cell.querySelector("input");
+    input.focus();
+    input.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") input.blur();
+      if (ev.key === "Escape") { committed = true; delete cell.dataset.editing; renderRows(); }
+    });
+    input.addEventListener("blur", () => {
+      if (committed) return;
+      if (input.value && input.value !== current) { committed = true; finishInlineEdit(cell, po, field, input.value); }
+      else { delete cell.dataset.editing; renderRows(); }
+    });
+    return;
+  }
+
+  const list = field === "po_status" ? CONFIG.po_statuses
+    : field === "order_type" ? CONFIG.order_types
+    : field === "shipping_method" ? CONFIG.shipping_methods
+    : CONFIG.receiving_statuses;
+  const opts = (list || []).filter(Boolean)
+    .map(v => `<option value="${esc(v)}" ${v === current ? "selected" : ""}>${esc(v)}</option>`).join("");
+  cell.innerHTML = `<select class="border rounded px-1 py-0.5 text-xs w-full">${opts}</select>`;
+  const select = cell.querySelector("select");
+  select.focus();
+  select.addEventListener("change", () => { committed = true; finishInlineEdit(cell, po, field, select.value); });
+  select.addEventListener("blur", () => {
+    setTimeout(() => { if (!committed && cell.dataset.editing) { delete cell.dataset.editing; renderRows(); } }, 0);
+  });
+}
+
+$("#tbody").addEventListener("click", e => {
+  const cell = e.target.closest(".inline-cell");
+  if (!cell || cell.dataset.editing) return;
+  startInlineEdit(cell);
+});
+
+// 顏色標記：點單號旁的空白處切換，點單號本身還是照舊開彈窗。
+$("#tbody").addEventListener("click", async e => {
+  if (e.target.closest("[data-open]")) return;
+  const cell = e.target.closest(".flag-cell");
+  if (!cell) return;
+  if (!requireOperator()) return;
+  const po = cell.dataset.flag;
+  const info = rowInfo.get(po);
+  const next = !(info && info.flagged);
+  const res = await fetch("/api/pos/flag", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ operator: operator(), po_numbers: [po], flagged: next }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error, "err"); return; }
+  await loadOrders();
+});
+
+// Shift+勾選＝選取一段範圍（像 Gmail、檔案總管那樣）。checkbox 的
+// click 事件會帶 shiftKey，但 click 觸發時畫面還沒重繪，等到 change
+// 事件才是最終勾選狀態，所以先在 mousedown 記下 shiftKey，change 時
+// 再讀出來用——這樣重繪 tbody（把原本的 checkbox 換掉）也不會有問題，
+// 因為 change 已經是這次互動最後一個事件了。
+let lastCheckedRow = null;
+let shiftHeld = false;
+
+$("#tbody").addEventListener("mousedown", e => {
+  if (e.target.closest(".row-check")) shiftHeld = e.shiftKey;
 });
 
 $("#tbody").addEventListener("change", e => {
   const cb = e.target.closest(".row-check");
   if (!cb) return;
-  const id = Number(cb.dataset.id);
-  cb.checked ? selected.add(id) : selected.delete(id);
+  const po = cb.dataset.po;
+
+  if (shiftHeld && lastCheckedRow && lastCheckedRow !== po) {
+    const idxCur = ROWS.findIndex(r => r.po_number === po);
+    const idxLast = ROWS.findIndex(r => r.po_number === lastCheckedRow);
+    if (idxCur !== -1 && idxLast !== -1) {
+      const [from, to] = idxCur < idxLast ? [idxCur, idxLast] : [idxLast, idxCur];
+      const checked = cb.checked;
+      for (let i = from; i <= to; i++) {
+        checked ? selected.add(ROWS[i].po_number) : selected.delete(ROWS[i].po_number);
+      }
+      lastCheckedRow = po;
+      renderRows();
+      return;
+    }
+  }
+
+  cb.checked ? selected.add(po) : selected.delete(po);
+  lastCheckedRow = po;
   updateSelectedInfo();
 });
 
 $("#check-all").addEventListener("change", e => {
-  ROWS.forEach(r => e.target.checked ? selected.add(r.id) : selected.delete(r.id));
+  ROWS.forEach(r => e.target.checked ? selected.add(r.po_number) : selected.delete(r.po_number));
   renderRows();
-});
-
-$("#operator").addEventListener("change", e => {
-  localStorage.setItem("oms_operator", e.target.value);
-  if (e.target.value) $("#operator-warning").classList.add("hidden");
 });
 
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to"].forEach(s => $(s).value = "");
-  ["#f-line", "#f-brand", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-pulled"]
+  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-shipping", "#f-pulled"]
     .forEach(s => $(s).value = "");
   $("#f-review").checked = false;
+  $("#f-flagged").checked = false;
   filters._alert = ""; PAGE = 1; loadOrders();
 });
 $("#btn-prev").addEventListener("click", () => { if (PAGE > 1) { PAGE--; loadOrders(); } });
@@ -711,15 +1812,809 @@ $("#stat-review-card").addEventListener("click", () => {
 $("#stat-alert-card").addEventListener("click", () => {
   filters._alert = "changed_after_pull"; $("#f-review").checked = false; PAGE = 1; loadOrders();
 });
+// ---------------------------------------------------------------- 設定
+let ACCOUNT = { user: "", is_admin: false, users: [], admins: [] };
+
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, data };
+}
+
+function switchSettingsTab(name) {
+  document.querySelectorAll(".st-tab").forEach(b => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("border-brand-600", on);
+    b.classList.toggle("text-brand-700", on);
+    b.classList.toggle("border-transparent", !on);
+    b.classList.toggle("text-ink-500", !on);
+  });
+  document.querySelectorAll(".st-pane").forEach(p => {
+    p.classList.toggle("hidden", p.dataset.pane !== name);
+  });
+}
+
+function renderUserList() {
+  const box = $("#st-userlist");
+  box.innerHTML = ACCOUNT.users.map(u => {
+    const admin = ACCOUNT.admins.includes(u);
+    const isMe = u === ACCOUNT.user;
+    return `<div class="flex items-center gap-2 px-3 py-2">
+      <span class="flex-1">${esc(u)}${isMe ? '<span class="text-xs text-ink-400">（你）</span>' : ""}
+        ${admin ? '<span class="ml-1 text-[10px] bg-brand-100 text-brand-700 rounded px-1.5 py-0.5">管理員</span>' : ""}</span>
+      <button data-reset="${esc(u)}" class="text-xs text-brand-700 hover:underline">重設密碼</button>
+      <button data-admin="${esc(u)}" data-make="${admin ? "0" : "1"}"
+              class="text-xs text-ink-500 hover:underline">${admin ? "取消管理員" : "設為管理員"}</button>
+      ${isMe ? "" : `<button data-del="${esc(u)}" class="text-xs text-red-600 hover:underline">刪除</button>`}
+    </div>`;
+  }).join("");
+}
+
+async function loadAccount() {
+  ACCOUNT = await (await fetch("/api/account")).json();
+  $("#st-me").textContent = ACCOUNT.user;
+  document.querySelectorAll('[data-tab="users"], [data-tab="data"], [data-tab="sync"]')
+    .forEach(b => b.classList.toggle("hidden", !ACCOUNT.is_admin));
+  if (ACCOUNT.is_admin) renderUserList();
+  if (ACCOUNT.is_admin) {
+    $("#st-sync-url").value = `${location.origin}/api/sync/verified-qty`;
+    const t = await (await fetch("/api/account/sync-token")).json();
+    $("#st-sync-token").dataset.value = t.token;
+    $("#st-sync-token").value = "•".repeat(t.token.length);
+  }
+}
+
+$("#btn-settings").addEventListener("click", async () => {
+  await loadAccount();
+  await loadSignSettings();
+  switchSettingsTab("password");
+  ["#st-old", "#st-new", "#st-new2", "#st-confirm"].forEach(s => $(s).value = "");
+  $("#dlg-settings").showModal();
+});
+
+// ── 驗收單簽名 ──────────────────────────────────────────
+// 取代原本要開 Google Colab 貼程式碼的作業方式。簽名圖存在系統裡，
+// 阿姨只要選 PDF、按一顆按鈕就好。
+let SIGN_STATE = { hasSignature: false, settings: null, lastBatch: null, isAdmin: false };
+
+// 簽名圖預覽帶時間戳，不然換了新簽名瀏覽器還是給你看快取的舊圖，
+// 會以為沒存成功。
+function signaturePreviewUrl() {
+  return `/api/sign/signature/preview?t=${Date.now()}`;
+}
+
+// 操作結果不能只丟在畫面右上角小小一條 toast——使用者的眼睛在對話框
+// 中間，右上角那條很容易完全沒注意到。這裡在操作區塊本身正下方插入
+// 一條橫幅，跟 toast 雙軌並行，橫幅負責「你現在看的這個畫面發生了
+// 什麼事」。
+function showBanner(sel, message, kind = "ok") {
+  const el = $(sel);
+  if (!el) return;
+  const styles = {
+    ok:   "bg-emerald-50 border-emerald-300 text-emerald-800",
+    err:  "bg-red-50 border-red-300 text-red-800",
+    warn: "bg-amber-50 border-amber-300 text-amber-800",
+  };
+  el.className = `border rounded-lg p-3 text-sm ${styles[kind] || styles.ok}`;
+  el.textContent = message;
+  el.classList.remove("hidden");
+}
+
+async function loadSignSettings() {
+  const data = await (await fetch("/api/sign/settings")).json();
+  SIGN_STATE.settings = data.settings;
+  SIGN_STATE.hasSignature = !!data.signature;
+  SIGN_STATE.isAdmin = data.is_admin;
+  return data;
+}
+
+// ── 我的簽名圖（在「驗收單批次簽名」視窗裡管理，不放在設定——每個人
+// 都要用到，塞進管理員才常開的設定頁反而增加一次沒必要的跳轉）──
+
+function renderSignatureBlock() {
+  $("#sign-nosig").classList.toggle("hidden", SIGN_STATE.hasSignature);
+  $("#sign-ready").classList.toggle("hidden", !SIGN_STATE.hasSignature);
+  if (SIGN_STATE.hasSignature) {
+    $("#sign-preview").src = signaturePreviewUrl();
+    $("#sign-owner").textContent = ACCOUNT ? ACCOUNT.user : "";
+    $("#sign-keyword").textContent = SIGN_STATE.settings.keyword;
+  }
+}
+
+$("#sign-sig-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/sign/signature", { method: "POST", body: fd });
+  const data = await res.json();
+  e.target.value = "";
+  if (!res.ok) { showBanner("#sign-banner", data.error || "上傳失敗。", "err"); return; }
+  await loadSignSettings();
+  renderSignatureBlock();
+  showBanner("#sign-banner", `${data.message}（${data.width}×${data.height}）`, "ok");
+});
+
+$("#btn-sign-del").addEventListener("click", async () => {
+  if (!confirm("確定要移除你的簽名圖嗎？移除後就不能用批次簽名了。")) return;
+  const res = await fetch("/api/sign/signature", { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok) { showBanner("#sign-banner", data.error || "移除失敗。", "err"); return; }
+  await loadSignSettings();
+  renderSignatureBlock();
+  showBanner("#sign-banner", data.message, "ok");
+});
+
+function switchSignTab(name) {
+  document.querySelectorAll(".sg-tab").forEach(b => {
+    const on = b.dataset.sgtab === name;
+    b.classList.toggle("border-brand-600", on);
+    b.classList.toggle("text-brand-700", on);
+    b.classList.toggle("border-transparent", !on);
+    b.classList.toggle("text-ink-500", !on);
+  });
+  document.querySelectorAll(".sg-pane").forEach(p => {
+    p.classList.toggle("hidden", p.dataset.sgpane !== name);
+  });
+  // 「開始簽名／下載全部」只在簽名那頁有意義，切到別頁要收起來
+  const onRun = name === "run";
+  $("#btn-sign-run").classList.toggle("hidden", !onRun);
+  $("#btn-sign-zip").classList.toggle("hidden", !onRun || !SIGN_STATE.lastBatch);
+  if (name === "history") loadSignHistory();
+  if (name === "calibrate") loadSignatureCalibration();
+}
+
+document.querySelectorAll(".sg-tab").forEach(b => {
+  b.addEventListener("click", () => switchSignTab(b.dataset.sgtab));
+});
+
+$("#btn-sign").addEventListener("click", async () => {
+  // ACCOUNT 平常只有打開「設定」才會抓——這裡要顯示「會蓋上 XX 的
+  // 簽名」，沒有登入身分那句話會整個空白，所以沒抓過就先抓一次。
+  if (!ACCOUNT.user) await loadAccount();
+  await loadSignSettings();
+  renderSignatureBlock();
+  $("#sign-sig-file").value = "";
+  $("#sign-files").value = "";
+  $("#sign-result").classList.add("hidden");
+  $("#sign-result").innerHTML = "";
+  $("#sign-banner").classList.add("hidden");
+  SIGN_STATE.lastBatch = null;
+  switchSignTab("run");
+  $("#dlg-sign").showModal();
+});
+
+// ── 驗收單簽名 SOP：一組固定的投影片圖片，純前端翻頁 ──────
+// clip：那一頁有沒有對應的動態示範影片。純點按鈕的步驟看圖就夠，
+// 只有真的要「看動作」的（拖曳、選檔案、按下去等結果）才配影片。
+const SOP_SLIDES = [
+  { img: "00_cover.png" },
+  {
+    img: "01_overview.png",
+    title: "總覽：簽名怎麼運作",
+    bullets: [
+      "系統會自動找到欄位、蓋上你的簽名，不用每份都手動對位置。",
+      "簽名圖只要上傳一次，之後每次簽名都會自動套用同一張——不用每份都重傳。",
+      "每個人的簽名圖各自獨立，系統會記錄「誰在什麼時候簽了哪張單」。",
+    ],
+  },
+  {
+    img: "02_step1_open.png", clip: "01_open",
+    title: "第 1 步．打開「驗收單簽名」",
+    bullets: [
+      "登入系統後，畫面右上角可以看到「驗收單簽名」按鈕（金色）。",
+      "點一下就會打開簽名視窗。",
+    ],
+  },
+  {
+    img: "03_step2_upload_sig.png", clip: "02_upload_sig",
+    title: "第 2 步．上傳你的簽名圖（只需一次）",
+    bullets: [
+      "還沒上傳過簽名圖時，系統會提醒你先上傳。",
+      "點「Choose File」選一張簽名圖片（PNG／JPG，小於 2MB），或直接拖曳進框框。",
+      "上傳成功後會顯示預覽圖，之後每次簽名都自動套用，不用再傳。",
+    ],
+  },
+  {
+    img: "04_step2b_sig_saved.png", clip: "02_upload_sig",
+    title: "上傳成功：確認一下簽名內容",
+    bullets: [
+      "看到綠色的「簽名圖已儲存」代表上傳成功。",
+      "上面會顯示簽名圖預覽，以及「會蓋上＿的簽名」「找哪個欄位蓋章」的說明。",
+      "簽錯人／簽名圖需要換一張？按右邊「移除簽名」重新上傳即可。",
+    ],
+  },
+  {
+    img: "05_step3_choose_pdf.png", clip: "03_sign",
+    title: "第 3 步．選擇驗收單 PDF，開始簽名",
+    bullets: [
+      "在下方「選擇要簽名的驗收單 PDF」按 Choose Files，可以一次選多份（或直接拖曳整批進去）。",
+      "選好後按右下角紅色「開始簽名」。",
+    ],
+  },
+  {
+    img: "06_step4_result.png", clip: "03_sign",
+    title: "第 4 步．查看結果、下載簽好的檔案",
+    bullets: [
+      "上方綠色訊息會告訴你「幾份簽好了、共蓋了幾處」。",
+      "每一份檔案會列出結果、抓到的 PO 單號、蓋了幾處，右邊可以單份下載。",
+      "簽多份時可以按「下載全部（ZIP）」一次拿到所有簽好的檔案。",
+    ],
+  },
+  {
+    img: "07_step5_history.png", clip: "04_history",
+    title: "第 5 步．事後查詢：誰在什麼時候簽了哪張單",
+    bullets: [
+      "切到「歷史紀錄」分頁，可以用 PO 單號篩選查詢。",
+      "每一筆都記錄簽名時間、PO 單號、檔名、簽名人、蓋了幾處，隨時可以重新下載。",
+      "檔案本體有保留天數（超過就只清檔案本身），但「誰簽了哪張單」這筆帳會永久保留。",
+    ],
+  },
+  {
+    img: "08_appendix_calibration.png", clip: "05_calibrate",
+    title: "附錄．位置校正（管理者專區，一般不用碰）",
+    bullets: [
+      "只有酷澎改版面、或換了新的驗收單樣式時才需要重新校正一次。",
+      "上傳一份真的驗收單，直接拖曳金色方框到簽名要蓋的位置、拉右下角調大小。",
+      "校正一次，之後所有人的簽名都會照這個位置蓋——因為記錄的是「相對於欄位文字的偏移」。",
+    ],
+  },
+];
+let sopIndex = 0;
+
+function stopSopVideo() {
+  const video = $("#sop-slide-video");
+  video.pause();
+  video.classList.add("hidden");
+  video.innerHTML = "";
+  video.load();               // 放掉已經載進來的影片，不然切頁後還在背景緩衝
+}
+
+function renderSopSlide() {
+  const slide = SOP_SLIDES[sopIndex];
+  stopSopVideo();
+  $("#sop-page-label").textContent = `${sopIndex + 1} / ${SOP_SLIDES.length}`;
+  $("#btn-sop-prev").disabled = sopIndex === 0;
+  const isLast = sopIndex === SOP_SLIDES.length - 1;
+  $("#btn-sop-next").innerHTML = isLast
+    ? '<i class="bi bi-check-lg"></i> 看完了'
+    : '下一頁 <i class="bi bi-chevron-right"></i>';
+
+  if (slide.clip) {
+    // 放兩種格式讓瀏覽器自己選放得動的那個：webm（VP9）免權利金、
+    // 到哪個瀏覽器內建解碼器都吃得下去；mp4（H.264）給不支援 webm
+    // 的瀏覽器（例如較舊的 Safari）當備援。
+    const video = $("#sop-slide-video");
+    video.innerHTML = `
+      <source src="${STATIC_URL}sop/${slide.clip}.webm" type="video/webm">
+      <source src="${STATIC_URL}sop/${slide.clip}.mp4" type="video/mp4">`;
+    video.load();
+    video.classList.remove("hidden");
+    $("#sop-slide-img").classList.add("hidden");
+    video.play().catch(() => {});
+  } else {
+    $("#sop-slide-img").src = `${STATIC_URL}sop/${slide.img}`;
+    $("#sop-slide-img").classList.remove("hidden");
+  }
+
+  $("#sop-caption").classList.toggle("hidden", !slide.title);
+  if (slide.title) {
+    $("#sop-caption-title").textContent = slide.title;
+    $("#sop-caption-bullets").innerHTML = (slide.bullets || [])
+      .map(b => `<li>${b}</li>`).join("");
+  }
+
+  document.querySelectorAll("#sop-dots > span").forEach((dot, i) => {
+    dot.classList.toggle("bg-[#D2AB75]", i === sopIndex);
+    dot.classList.toggle("bg-ink-200", i !== sopIndex);
+  });
+}
+
+function buildSopDots() {
+  $("#sop-dots").innerHTML = SOP_SLIDES.map((_, i) =>
+    `<span data-dot="${i}" class="w-2 h-2 rounded-full cursor-pointer bg-ink-200"></span>`).join("");
+  document.querySelectorAll("#sop-dots [data-dot]").forEach(dot => {
+    dot.addEventListener("click", () => { sopIndex = Number(dot.dataset.dot); renderSopSlide(); });
+  });
+}
+
+$("#btn-sign-sop").addEventListener("click", () => {
+  sopIndex = 0;
+  if (!$("#sop-dots").children.length) buildSopDots();
+  renderSopSlide();
+  $("#dlg-sign-sop").showModal();
+});
+$("#btn-sop-prev").addEventListener("click", () => {
+  if (sopIndex > 0) { sopIndex--; renderSopSlide(); }
+});
+$("#btn-sop-next").addEventListener("click", () => {
+  if (sopIndex < SOP_SLIDES.length - 1) { sopIndex++; renderSopSlide(); }
+  else $("#dlg-sign-sop").close();
+});
+$("#dlg-sign-sop").addEventListener("keydown", e => {
+  if (e.key === "ArrowRight") $("#btn-sop-next").click();
+  if (e.key === "ArrowLeft") $("#btn-sop-prev").click();
+});
+// 關掉視窗時一定要把影片停掉，不然關了還在背景播
+$("#dlg-sign-sop").addEventListener("close", stopSopVideo);
+$("#btn-sop-print").addEventListener("click", () => {
+  const win = window.open("", "_blank");
+  const imgs = SOP_SLIDES.map(f =>
+    `<img src="${STATIC_URL}sop/${f.img}" style="width:100%; page-break-after:always; display:block;">`).join("");
+  win.document.write(`<html><head><title>驗收單簽名 SOP</title></head>
+    <body style="margin:0">${imgs}</body></html>`);
+  win.document.close();
+  win.onload = () => win.print();
+});
+
+$("#btn-sign-run").addEventListener("click", async () => {
+  const files = $("#sign-files").files;
+  if (!files.length) { showBanner("#sign-banner", "請先選要簽名的 PDF。", "warn"); return; }
+
+  const btn = $("#btn-sign-run");
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = `<i class="bi bi-hourglass-split"></i> 簽名中…`;
+
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f);
+  try {
+    const res = await fetch("/api/sign/run", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) { showBanner("#sign-banner", data.error || "簽名失敗。", "err"); return; }
+
+    SIGN_STATE.lastBatch = data.ok_count ? data.batch_id : null;
+    $("#btn-sign-zip").classList.toggle("hidden", !data.ok_count);
+
+    const rows = data.results.map(r => r.status === "ok"
+      ? `<div class="flex items-center justify-between border-b py-1.5 gap-2">
+           <span class="truncate"><i class="bi bi-check-circle-fill text-emerald-600"></i>
+             ${esc(r.filename)}
+             ${r.po_number ? `<span class="text-ink-400 font-mono text-xs">${esc(r.po_number)}</span>` : ""}</span>
+           <span class="text-xs text-ink-500 whitespace-nowrap">蓋了 ${r.sign_count} 處
+             <a href="/api/sign/docs/${r.doc_id}/download" class="text-brand-600 hover:underline ml-2">下載</a></span>
+         </div>`
+      : `<div class="flex items-center justify-between border-b py-1.5 gap-2">
+           <span class="truncate"><i class="bi bi-x-circle-fill text-red-600"></i> ${esc(r.filename)}</span>
+           <span class="text-xs text-red-700 text-right">${esc(r.message)}</span>
+         </div>`).join("");
+
+    $("#sign-result").innerHTML = `
+      <div class="flex gap-2">
+        <div class="flex-1 text-center py-2 rounded-lg bg-emerald-50 text-emerald-800 font-semibold">
+          簽好 ${data.ok_count} 份</div>
+        <div class="flex-1 text-center py-2 rounded-lg ${data.fail_count ? "bg-red-50 text-red-800" : "bg-ink-50 text-ink-400"} font-semibold">
+          沒處理 ${data.fail_count} 份</div>
+      </div>
+      <div class="border rounded-lg px-3 py-1 max-h-64 overflow-auto">${rows}</div>`;
+    $("#sign-result").classList.remove("hidden");
+    showBanner("#sign-banner", data.message, data.fail_count ? "warn" : "ok");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
+$("#btn-sign-zip").addEventListener("click", () => {
+  if (!SIGN_STATE.lastBatch) return;
+  location.href = `/api/sign/batches/${SIGN_STATE.lastBatch}/download`;
+});
+
+// ── 歷史紀錄：查詢、勾選刪除、清除舊檔案 ──────────────────
+
+let SGH_SELECTED = new Set();
+
+async function loadSignHistory() {
+  const po = encodeURIComponent($("#sgh-po").value.trim());
+  const data = await (await fetch(`/api/sign/history?po_number=${po}`)).json();
+  SGH_SELECTED = new Set([...SGH_SELECTED].filter(id => data.rows.some(r => r.id === id)));
+  $("#sgh-stored").textContent =
+    `目前存放 ${(data.stored_bytes / 1048576).toFixed(1)} MB`
+    + (data.retention_days ? `　保留 ${data.retention_days} 天（到期自動清檔案）` : "　永久保留");
+  $("#sgh-body").innerHTML = data.rows.length ? data.rows.map(r => `
+    <tr class="border-t">
+      <td class="px-2 py-1.5">
+        <input type="checkbox" class="sgh-check w-3.5 h-3.5" data-id="${r.id}" ${SGH_SELECTED.has(r.id) ? "checked" : ""}></td>
+      <td class="px-2 py-1.5 whitespace-nowrap">${esc(r.created_at)}</td>
+      <td class="px-2 py-1.5 font-mono">${esc(r.po_number) || "—"}</td>
+      <td class="px-2 py-1.5 truncate max-w-[220px]" title="${esc(r.filename)}">${esc(r.filename)}</td>
+      <td class="px-2 py-1.5">${esc(r.operator)}</td>
+      <td class="px-2 py-1.5 text-right">${r.sign_count || "—"}</td>
+      <td class="px-2 py-1.5">${r.status === "ok"
+        ? `<span class="badge b-green">已簽</span>`
+        : `<span class="badge b-red" title="${esc(r.message)}">失敗</span>`}</td>
+      <td class="px-2 py-1.5">${r.status === "ok" && !r.purged
+        ? `<a href="/api/sign/docs/${r.id}/download" class="text-brand-600 hover:underline">下載</a>`
+        : r.purged ? `<span class="text-ink-300">已清除</span>` : "—"}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="8" class="px-2 py-6 text-center text-ink-300">沒有簽名紀錄。</td></tr>`;
+  updateSghSelCount();
+}
+
+function updateSghSelCount() {
+  $("#sgh-sel-count").textContent = SGH_SELECTED.size;
+  $("#btn-sgh-delete").disabled = SGH_SELECTED.size === 0;
+}
+
+$("#sgh-body").addEventListener("change", e => {
+  const box = e.target.closest(".sgh-check");
+  if (!box) return;
+  const id = Number(box.dataset.id);
+  box.checked ? SGH_SELECTED.add(id) : SGH_SELECTED.delete(id);
+  updateSghSelCount();
+});
+
+$("#sgh-check-all").addEventListener("change", e => {
+  document.querySelectorAll(".sgh-check").forEach(box => {
+    box.checked = e.target.checked;
+    const id = Number(box.dataset.id);
+    e.target.checked ? SGH_SELECTED.add(id) : SGH_SELECTED.delete(id);
+  });
+  updateSghSelCount();
+});
+
+$("#btn-sgh-delete").addEventListener("click", async () => {
+  if (!SGH_SELECTED.size) return;
+  if (!confirm(`確定要刪除選取的 ${SGH_SELECTED.size} 筆紀錄嗎？這個動作無法復原。`)) return;
+  const { ok, data } = await postJSON("/api/sign/history/delete",
+    { doc_ids: [...SGH_SELECTED] });
+  if (!ok) { showBanner("#sgh-banner", data.error || "刪除失敗。", "err"); return; }
+  SGH_SELECTED.clear();
+  await loadSignHistory();
+  showBanner("#sgh-banner", data.message, "ok");
+});
+
+$("#btn-sgh-search").addEventListener("click", loadSignHistory);
+$("#sgh-po").addEventListener("keydown", e => { if (e.key === "Enter") loadSignHistory(); });
+
+// ── 簽名位置校正精靈（「驗收單批次簽名」視窗裡的一個分頁，開放
+// 所有人使用——這是全公司共用一份的設定，改了大家的簽名位置都會
+// 跟著變）──────────────────────────────────────────────
+// 上傳一份真的驗收單，直接在圖上拖曳／縮放調整簽名位置，取代原本
+// SOP 教人去改程式碼裡四個數字的做法。位置存成「相對於關鍵字欄位
+// 的偏移量」（PDF 點數），不是頁面絕對座標，所以校正一次就能套用到
+// 所有批次、所有頁面，不用每張都調。
+
+let CAL = null; // { dpi, image_width, image_height, keyword_rect_px, displayScale }
+let CAL_DRAG = null; // 拖曳／縮放狀態
+
+async function loadSignatureCalibration() {
+  const data = await loadSignSettings();
+  $("#sg-keyword").value = data.settings.keyword;
+  $("#sg-width").value = data.settings.width;
+  $("#sg-height").value = data.settings.height;
+  $("#sg-offx").value = data.settings.offset_x;
+  $("#sg-offy").value = data.settings.offset_y;
+  $("#sg-retention").value = data.settings.retention_days;
+  $("#sg-banner").classList.add("hidden");
+
+  // 這是全公司共用一份的設定，開放所有人都能調——不是誰的私人東西。
+  // 唯一的保險是讓大家看得到「上次是誰、什麼時候動過」，萬一哪天
+  // 簽名突然蓋歪了，一眼就知道要去問誰，不用瞎猜。
+  renderLastCalibratedBy(data.settings);
+
+  // 有校正過的範例就直接重新渲染出來，不用再傳一次檔案
+  try {
+    const res = await fetch("/api/sign/calibrate/current"
+      + `?keyword=${encodeURIComponent(data.settings.keyword)}`);
+    if (res.ok) {
+      renderCalibration(await res.json());
+      return;
+    }
+  } catch (e) { /* 還沒校正過，忽略 */ }
+  $("#sg-cal-area").classList.add("hidden");
+  $("#sg-cal-hint").classList.add("hidden");
+  $("#btn-sg-cal-apply").classList.add("hidden");
+  $("#sg-cal-empty").classList.remove("hidden");
+}
+
+function ptToNativePx(pt) { return pt * (CAL.dpi / 72); }
+function nativePxToPt(px) { return px * (72 / CAL.dpi); }
+
+function renderLastCalibratedBy(settings) {
+  if (settings.updated_by) {
+    $("#sg-cal-lastby").textContent =
+      `上次由 ${settings.updated_by} 於 ${settings.updated_at} 調整過。`;
+    $("#sg-cal-lastby").classList.remove("hidden");
+  } else {
+    $("#sg-cal-lastby").classList.add("hidden");
+  }
+}
+
+function renderCalibration(data) {
+  CAL = { dpi: data.dpi, image_width: data.image_width, image_height: data.image_height,
+          keyword_rect_px: data.keyword_rect_px, displayScale: 1 };
+  $("#sg-cal-empty").classList.add("hidden");
+  $("#sg-cal-area").classList.remove("hidden");
+  $("#sg-cal-hint").classList.remove("hidden");
+  $("#btn-sg-cal-apply").classList.remove("hidden");
+
+  const img = $("#sg-cal-img");
+  img.onload = () => {
+    // img.onload 觸發時瀏覽器不保證已經跑完排版——data: URI 幾乎是
+    // 立即解碼完成，這裡讀 clientWidth 常常搶在 reflow 前面，量到
+    // 舊的／還沒套用 max-w-full 限制前的寬度，算出來的縮放比例就是
+    // 錯的（簽名框位置會整個跑掉，跟看到的圖對不上）。等兩個
+    // animation frame，確保排版已經定案再量。
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      CAL.displayScale = img.clientWidth / CAL.image_width;
+      positionCalibrationBoxes();
+    }));
+  };
+  img.src = `data:image/png;base64,${data.image_b64}`;
+
+  // 簽名圖有的話疊上去看真實效果，沒有就用純色框讓人知道大概蓋在哪
+  const sigImg = $("#sg-cal-sigimg");
+  if (SIGN_STATE.hasSignature) {
+    sigImg.src = signaturePreviewUrl();
+    sigImg.classList.remove("hidden");
+  } else {
+    sigImg.classList.add("hidden");
+  }
+}
+
+function positionCalibrationBoxes() {
+  const s = CAL.displayScale;
+  const [kx0, ky0, kx1, ky1] = CAL.keyword_rect_px;
+  const kw = $("#sg-cal-kwbox");
+  kw.style.left = `${kx0 * s}px`; kw.style.top = `${ky0 * s}px`;
+  kw.style.width = `${(kx1 - kx0) * s}px`; kw.style.height = `${(ky1 - ky0) * s}px`;
+
+  // 簽名框初始位置：用目前存的設定值（相對關鍵字欄位的偏移）換算回來
+  const settings = SIGN_STATE.settings;
+  const sigNativeX = kx0 + ptToNativePx(settings.offset_x);
+  const sigNativeY = ky1 + ptToNativePx(settings.offset_y);
+  const sigNativeW = ptToNativePx(settings.width);
+  const sigNativeH = ptToNativePx(settings.height);
+  const box = $("#sg-cal-sigbox");
+  box.style.left = `${sigNativeX * s}px`; box.style.top = `${sigNativeY * s}px`;
+  box.style.width = `${sigNativeW * s}px`; box.style.height = `${sigNativeH * s}px`;
+}
+
+$("#sg-cal-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("keyword", $("#sg-keyword").value);
+  const res = await fetch("/api/sign/calibrate/upload", { method: "POST", body: fd });
+  const data = await res.json();
+  e.target.value = "";
+  if (!res.ok) { showBanner("#sg-banner", data.error || "上傳失敗。", "err"); return; }
+  renderCalibration(data);
+  showBanner("#sg-banner", "已找到欄位，拖曳下面的金色方框調整簽名位置。", "ok");
+});
+
+// 拖曳移動、拉右下角圓點縮放——都是滑鼠事件手動算，不依賴任何外部
+// 套件。座標全部先換算成「圖片原生像素」再存，跟顯示縮放比例脫鉤，
+// 不管視窗多寬、瀏覽器縮放多少都準。
+(function () {
+  const box = $("#sg-cal-sigbox");
+  const handle = $("#sg-cal-handle");
+  const area = $("#sg-cal-area");
+
+  function startDrag(e) {
+    if (!CAL) return;
+    e.preventDefault();
+    CAL_DRAG = {
+      mode: "move", startX: e.clientX, startY: e.clientY,
+      left: box.offsetLeft, top: box.offsetTop,
+    };
+  }
+  function startResize(e) {
+    if (!CAL) return;
+    e.preventDefault(); e.stopPropagation();
+    CAL_DRAG = {
+      mode: "resize", startX: e.clientX, startY: e.clientY,
+      width: box.offsetWidth, height: box.offsetHeight,
+    };
+  }
+  function onMove(e) {
+    if (!CAL_DRAG) return;
+    const dx = e.clientX - CAL_DRAG.startX, dy = e.clientY - CAL_DRAG.startY;
+    if (CAL_DRAG.mode === "move") {
+      box.style.left = `${Math.max(0, CAL_DRAG.left + dx)}px`;
+      box.style.top = `${Math.max(0, CAL_DRAG.top + dy)}px`;
+    } else {
+      box.style.width = `${Math.max(10, CAL_DRAG.width + dx)}px`;
+      box.style.height = `${Math.max(10, CAL_DRAG.height + dy)}px`;
+    }
+  }
+  function onUp() { CAL_DRAG = null; }
+
+  box.addEventListener("mousedown", startDrag);
+  handle.addEventListener("mousedown", startResize);
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+})();
+
+$("#btn-sg-cal-apply").addEventListener("click", async () => {
+  if (!CAL) return;
+  const s = CAL.displayScale;
+  const box = $("#sg-cal-sigbox");
+  const [kx0, , , ky1] = CAL.keyword_rect_px;
+
+  const sigNativeX = box.offsetLeft / s, sigNativeY = box.offsetTop / s;
+  const sigNativeW = box.offsetWidth / s, sigNativeH = box.offsetHeight / s;
+
+  const offsetX = Math.round(nativePxToPt(sigNativeX - kx0));
+  const offsetY = Math.round(nativePxToPt(sigNativeY - ky1));
+  const width = Math.round(nativePxToPt(sigNativeW));
+  const height = Math.round(nativePxToPt(sigNativeH));
+
+  const { ok, data } = await postJSON("/api/sign/settings", {
+    keyword: $("#sg-keyword").value, width, height,
+    offset_x: offsetX, offset_y: offsetY,
+    retention_days: $("#sg-retention").value,
+  });
+  if (!ok) { showBanner("#sg-banner", data.error || "儲存失敗。", "err"); return; }
+  SIGN_STATE.settings = data.settings;
+  $("#sg-width").value = width; $("#sg-height").value = height;
+  $("#sg-offx").value = offsetX; $("#sg-offy").value = offsetY;
+  renderLastCalibratedBy(data.settings);
+  showBanner("#sg-banner", "位置已套用，之後每次簽名都會蓋在這裡。", "ok");
+});
+
+$("#btn-sg-save").addEventListener("click", async () => {
+  const { ok, data } = await postJSON("/api/sign/settings", {
+    keyword: $("#sg-keyword").value,
+    width: $("#sg-width").value, height: $("#sg-height").value,
+    offset_x: $("#sg-offx").value, offset_y: $("#sg-offy").value,
+    retention_days: $("#sg-retention").value,
+  });
+  if (!ok) { showBanner("#sg-banner", data.error || "儲存失敗。", "err"); return; }
+  SIGN_STATE.settings = data.settings;
+  renderLastCalibratedBy(data.settings);
+  showBanner("#sg-banner", "簽名設定已儲存。", "ok");
+});
+
+document.querySelectorAll(".st-tab").forEach(b => {
+  b.addEventListener("click", () => switchSettingsTab(b.dataset.tab));
+});
+
+$("#btn-save-password").addEventListener("click", async () => {
+  const nw = $("#st-new").value;
+  if (nw !== $("#st-new2").value) { toast("兩次新密碼不一樣。", "warn"); return; }
+  const { ok, data } = await postJSON("/api/account/password",
+    { old_password: $("#st-old").value, new_password: nw });
+  if (!ok) { toast(data.error || "改密碼失敗。", "err"); return; }
+  ["#st-old", "#st-new", "#st-new2"].forEach(s => $(s).value = "");
+  toast(data.message, "ok");
+});
+
+$("#btn-add-user").addEventListener("click", async () => {
+  const { ok, data } = await postJSON("/api/account/users", {
+    username: $("#st-newuser").value,
+    password: $("#st-newpass").value,
+    is_admin: $("#st-newadmin").checked,
+  });
+  if (!ok) { toast(data.error || "新增失敗。", "err"); return; }
+  $("#st-newuser").value = ""; $("#st-newpass").value = ""; $("#st-newadmin").checked = false;
+  await loadAccount();
+  toast(data.message, "ok");
+});
+
+$("#st-userlist").addEventListener("click", async e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  if (btn.dataset.reset) {
+    const pw = prompt(`要把「${btn.dataset.reset}」的密碼重設成什麼？（至少 6 個字）`);
+    if (!pw) return;
+    const { ok, data } = await postJSON("/api/account/password",
+      { username: btn.dataset.reset, new_password: pw });
+    toast(ok ? data.message : (data.error || "重設失敗。"), ok ? "ok" : "err");
+    return;
+  }
+
+  if (btn.dataset.admin) {
+    const { ok, data } = await postJSON("/api/account/admin",
+      { username: btn.dataset.admin, is_admin: btn.dataset.make === "1" });
+    if (!ok) { toast(data.error || "調整失敗。", "err"); return; }
+    await loadAccount();
+    toast(data.message, "ok");
+    return;
+  }
+
+  if (btn.dataset.del) {
+    if (!confirm(`確定要刪除帳號「${btn.dataset.del}」？\n他做過的修改歷程會保留。`)) return;
+    const { ok, data } = await postJSON("/api/account/users/delete",
+      { username: btn.dataset.del });
+    if (!ok) { toast(data.error || "刪除失敗。", "err"); return; }
+    await loadAccount();
+    toast(data.message, "ok");
+  }
+});
+
+$("#btn-reset-data").addEventListener("click", async () => {
+  if (!confirm("最後確認：所有訂單資料都會被刪除，確定要繼續？")) return;
+  const { ok, data } = await postJSON("/api/account/reset-data", {
+    confirm: $("#st-confirm").value,
+    keep_logs: $("#st-keeplogs").checked,
+  });
+  if (!ok) { toast(data.error || "清除失敗。", "err"); return; }
+  $("#st-confirm").value = "";
+  $("#dlg-settings").close();
+  toast(data.message, "ok");
+  PAGE = 1;
+  loadOrders();
+});
+
+$("#btn-sync-token-show").addEventListener("click", () => {
+  const input = $("#st-sync-token");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  input.value = showing ? "•".repeat(input.dataset.value.length) : input.dataset.value;
+  $("#btn-sync-token-show").textContent = showing ? "顯示" : "隱藏";
+});
+
+$("#btn-sync-token-regen").addEventListener("click", async () => {
+  if (!confirm("換一把新的通行碼？換完舊的立刻失效，記得回去工具那邊也要改。")) return;
+  const { ok, data } = await postJSON("/api/account/sync-token/regenerate", {});
+  if (!ok) { toast(data.error || "換新失敗。", "err"); return; }
+  $("#st-sync-token").dataset.value = data.token;
+  $("#st-sync-token").type = "text";
+  $("#st-sync-token").value = data.token;
+  $("#btn-sync-token-show").textContent = "隱藏";
+  toast("已換一把新的通行碼，記得同步更新工具設定。");
+});
+
 $("#btn-upload").addEventListener("click", () => { if (requireOperator()) $("#dlg-upload").showModal(); });
 $("#btn-export").addEventListener("click", () => { if (requireOperator()) $("#dlg-export").showModal(); });
+$("#btn-logs").addEventListener("click", () => { LOG_PAGE = 1; $("#dlg-logs").showModal(); loadLogs(); });
+$("#btn-log-search").addEventListener("click", () => { LOG_PAGE = 1; loadLogs(); });
+$("#btn-log-reset").addEventListener("click", () => {
+  ["#l-po", "#l-from", "#l-to"].forEach(x => $(x).value = "");
+  ["#l-field", "#l-operator", "#l-source"].forEach(x => $(x).value = "");
+  LOG_PAGE = 1; loadLogs();
+});
+$("#btn-log-prev").addEventListener("click", () => { if (LOG_PAGE > 1) { LOG_PAGE--; loadLogs(); } });
+$("#btn-log-next").addEventListener("click", () => { LOG_PAGE++; loadLogs(); });
+$("#btn-log-export").addEventListener("click", exportLogs);
+$("#l-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-log-search").click(); });
 $("#btn-preview").addEventListener("click", doPreview);
 $("#btn-commit").addEventListener("click", doCommit);
-$("#btn-save").addEventListener("click", saveEdit);
+$("#btn-po-save").addEventListener("click", savePo);
 $("#btn-do-export").addEventListener("click", doExport);
 $("#x-profile").addEventListener("change", syncProfileNote);
-$("#btn-confirm-review").addEventListener("click", confirmReview);
-$("#btn-unpull").addEventListener("click", unpull);
+// 複製選取的 PO 單號給酷澎後台的驗收工具貼上——不只一個人在上傳整合表、
+// 誰都可能是那批單的負責人，用「畫面上看到、勾了什麼」當依據最直觀，
+// 不用去猜規則（哪些單該驗、哪些不用）。
+async function copySelectedPoNumbers() {
+  const pos = [...selected];
+  if (!pos.length) return;
+  const text = pos.join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`已複製 ${pos.length} 張 PO 單號，到酷澎後台驗收工具貼上即可。`, "ok");
+  } catch (e) {
+    // Clipboard API 在非 HTTPS 或被瀏覽器政策擋住的環境會直接丟例外，
+    // 退回用隱藏 textarea + execCommand 這個舊招式再試一次。
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let copied = false;
+    try { copied = document.execCommand("copy"); } catch (e2) { /* 兩種都失敗 */ }
+    document.body.removeChild(ta);
+    if (copied) {
+      toast(`已複製 ${pos.length} 張 PO 單號，到酷澎後台驗收工具貼上即可。`, "ok");
+    } else {
+      toast("自動複製被瀏覽器擋住了，請從跳出的視窗手動複製。", "warn");
+      window.prompt(`手動複製以下 ${pos.length} 個 PO 單號（Ctrl+C）：`, text);
+    }
+  }
+}
+
+$("#ab-copy-po").addEventListener("click", copySelectedPoNumbers);
+$("#ab-clear").addEventListener("click", clearSelection);
+$("#ab-review").addEventListener("click", abReview);
+$("#ab-status-toggle").addEventListener("click", openStatusPanel);
+$("#ab-pull-on").addEventListener("click", () => openPullPanel(true));
+$("#ab-pull-off").addEventListener("click", () => openPullPanel(false));
 $("#f-po").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 $("#f-keyword").addEventListener("keydown", e => { if (e.key === "Enter") $("#btn-search").click(); });
 

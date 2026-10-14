@@ -209,6 +209,15 @@ def _display(field, value):
     return str(value)
 
 
+def desired_ship(row):
+    """整合表如果自己就帶了「出貨數量」欄，那才是 OP 真正要出的量，
+    比死板地拿「下單數量」複製過去準——酷澎談好折讓、少出貨這些，
+    整合表裡的出貨數量欄位會先反映出來。檔案沒帶這欄（None）才退回
+    用下單數量頂著。"""
+    file_ship = row.get("qty_file_ship")
+    return file_ship if file_ship is not None else row.get("qty_coupang")
+
+
 def diff_rows(conn, rows):
     """比對檔案與資料庫，回傳分類結果。此函式不寫任何資料。"""
     keys = [(r["po_number"], r["sku_id"]) for r in rows]
@@ -220,7 +229,7 @@ def diff_rows(conn, rows):
         placeholders = ",".join(["(?,?)"] * len(chunk))
         flat = [v for pair in chunk for v in pair]
         cur.execute(
-            f"SELECT * FROM orders WHERE (po_number, sku_id) IN ({placeholders})",
+            f"SELECT * FROM order_rows WHERE (po_number, sku_id) IN ({placeholders})",
             flat,
         )
         for db_row in cur.fetchall():
@@ -253,7 +262,19 @@ def diff_rows(conn, rows):
                 "critical": field in CRITICAL_FIELDS,
             })
 
-        if not changes:
+        # 出貨數量不是酷澎欄位（COUPANG_FIELDS 沒有它，因為資料庫裡的
+        # qty_ship 名稱跟整合表的「出貨數量」欄不是同一件事、不能直接
+        # 拿同名比對），所以獨立算一次：現在整合表算出來「應該要出多少」
+        # 跟資料庫現在存的出貨數量，兩者是否不一樣。
+        ship = desired_ship(row)
+        ship_changed = ship is not None and not _same(old.get("qty_ship"), ship)
+
+        # 這個品項先前被判定「酷澎移除」過，現在又出現在檔案裡——
+        # 不管其他欄位有沒有變，都要當成一次異動處理，才能在 commit
+        # 階段解除 removed_from_coupang 標記、把出貨數量重新同步回來。
+        revived = bool(old.get("removed_from_coupang"))
+
+        if not changes and not ship_changed and not revived:
             identical.append(row)
         else:
             updated.append({
@@ -264,10 +285,40 @@ def diff_rows(conn, rows):
                 "qty_ship": old["qty_ship"],
                 "qty_ship_overridden": bool(old["qty_ship_overridden"]),
                 "changes": changes,
-                "after_pull": bool(old["is_pulled"]) and any(c["critical"] for c in changes),
+                "desired_ship": ship,
+                "ship_changed": ship_changed,
+                "revived": revived,
+                "after_pull": bool(old["is_pulled"]) and (
+                    any(c["critical"] for c in changes) or ship_changed or revived),
             })
 
-    return {"new": new_rows, "updated": updated, "identical": identical}
+    # 找出「這次檔案有這張 PO，但資料庫裡這張 PO 底下的某個品項，這次
+    # 檔案卻沒帶到」的品項。酷澎把某個品項的下單數量下修到 0 時，後台
+    # 匯出的整合表會直接整列消失，不會留一列數量 0；只看「這一列有沒有
+    # 出現在檔案裡」沒辦法跟「OP 只上傳片段整合表」分開，所以要縮小範圍
+    # 到「這張 PO 本身確實有出現在這次檔案裡」，才能安全認定是真的被
+    # 移除，而不是誤判成片段上傳。
+    removed = []
+    file_pos = {r["po_number"] for r in rows}
+    file_keys = set(keys)
+    if file_pos:
+        pos_list = list(file_pos)
+        for i in range(0, len(pos_list), 300):
+            chunk = pos_list[i:i + 300]
+            placeholders = ",".join(["?"] * len(chunk))
+            cur.execute(
+                f"""SELECT * FROM order_rows WHERE po_number IN ({placeholders})
+                    AND removed_from_coupang = 0""",
+                chunk,
+            )
+            for db_row in cur.fetchall():
+                dkey = (db_row["po_number"], db_row["sku_id"])
+                if dkey in file_keys:
+                    continue
+                removed.append(dict(db_row))
+
+    return {"new": new_rows, "updated": updated, "identical": identical,
+            "removed": removed}
 
 
 def _same(a, b):
