@@ -574,7 +574,43 @@ def mixed_tests(c, preview, orders):
     pl = c.get("/api/shopee/purchase/plan", query_string={"fulfil": "供應商直送", "from": "2026-12-01", "to": "2026-12-01"}).get_json()["orders"]
     mi = next(i for g in pl for i in g["items"] if i["supplier_sku_id"] == "M10273409_QMN")
     check("瑪氏商品總表有這個料號、但單位不同 → 講清楚有哪個單位、少了哪個（不是只說找不到）",
-          mi["blocking"] and mi["problems"] == ["瑪氏商品總表有 M10273409 的箱，沒有盒，請至瑪氏出貨頁更新商品總表"], str(mi["problems"]))
+          mi["blocking"] and mi["problems"] == ["瑪氏商品總表有 M10273409 的箱，沒有盒，請按「補商品資料」填寫"], str(mi["problems"]))
+
+    print("\n【18】補商品資料：瑪氏新品在面板直接補進商品總表（Jerry 2026-10-14：不用改 Excel 再到瑪氏出貨頁重傳）")
+    oid = mi["order_id"]
+    g = c.get("/api/shopee/mars_product", query_string={"order_id": oid}).get_json()
+    check("視窗資料：料號、單位、蝦皮品名、同料號的箱那列（可帶入品類）、三個品類", g["code"] == "M10273409" and g["unit"] == "盒" and not g["exists"]
+          and [x["unit"] for x in g["siblings"]] == ["箱"] and g["siblings"][0]["category"] == "Chocolate" and len(g["categories"]) == 3, str(g)[:300])
+    pg_item = next(i for gg in orders(**{"from": "2026-12-01", "to": "2026-12-01"})["orders"] for i in gg["items"] if i["line"] == "寶僑")
+    check("不是瑪氏的品項 → 400", c.post("/api/shopee/mars_product", json={"order_id": pg_item["id"], "category": "Chocolate", "box_qty": 12}).status_code == 400)
+    add = lambda **kw: c.post("/api/shopee/mars_product", json={"order_id": oid, **kw})  # noqa: E731
+    check("沒選品類 → 400", add(box_qty=12).status_code == 400)
+    check("箱入數 0、小數、文字 → 400 講清楚", all(add(category="Chocolate", box_qty=v).status_code == 400 for v in (0, 1.5, "abc", ""))
+          and "箱入數" in add(category="Chocolate", box_qty="").get_json()["error"])
+    r = add(category="Chocolate", box_qty=12, inner_label="V", mars_code="60003112", price="30.5", shelf_days=364)
+    check("填好存進商品總表", r.status_code == 200 and r.get_json()["unit"] == "盒", str(r.get_json()))
+    pl = c.get("/api/shopee/purchase/plan", query_string={"fulfil": "供應商直送", "from": "2026-12-01", "to": "2026-12-01"}).get_json()["orders"]
+    mi = next(i for gg in pl for i in gg["items"] if i["supplier_sku_id"] == "M10273409_QMN")
+    check("補完那品就不擋了：箱入數 12、6 盒除不盡（餘 6）改成要修改數量，品類、中標用補的",
+          mi["conv"] == 12 and mi["problems"] and "除不盡" in mi["problems"][0] and mi["unit_group"] == "盒_CHO_需貼中標", str(mi)[:300])
+    check("再補一次 → 409（已經有了）", add(category="Chocolate", box_qty=12, inner_label="V").status_code == 409)
+    logs = [l for l in c.get("/api/master/logs?scope=shopee&limit=50").get_json()["logs"] if l["field"] == "shopee_mars_product"]
+    check("歷程記下誰補了什麼", len(logs) == 1 and "箱入數 12" in logs[0]["new_value"] and "需貼中標" in logs[0]["new_value"], str(logs)[:200])
+    st = c.get("/api/mars/status").get_json()
+    check("瑪氏出貨頁狀態列出蝦皮特選補登的品項", st["manual"] == ["M10273409（盒）"], str(st.get("manual")))
+    master = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples", "mars", "fake", "假_瑪氏商品總表.xlsx")
+    up_m = lambda data, name: c.post("/api/mars/products/import", data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data").get_json()  # noqa: E731
+    d = up_m(open(master, "rb").read(), "假_瑪氏商品總表.xlsx")
+    sr = c.get("/api/mars/products", query_string={"q": "M10273409"}).get_json()["rows"]
+    check("重傳總表 Excel（裡面還沒有這品）→ 補登的那品保留、Excel 沒有的其他列照樣蓋掉",
+          d["kept_manual"] == ["M10273409（盒）"] and [(x["unit"], x["manual_by"]) for x in sr] == [("盒", "Jerry")], str(d.get("kept_manual")) + str(sr))
+    wb = openpyxl.load_workbook(master); ws = wb["商品表"]
+    ws.append(["60003112", "Chocolate", "M&M'S", "M10273409", "M&M'S 精選片裝", 31, 1, 12, 12, "", "", "盒", "Q", 12, "V", 364, "", ""])
+    buf = io.BytesIO(); wb.save(buf)
+    d = up_m(buf.getvalue(), "補進去的.xlsx")
+    sr = c.get("/api/mars/products", query_string={"q": "M10273409"}).get_json()["rows"]
+    check("Excel 補進去之後再傳 → 以 Excel 為準（不再標補登）", d["kept_manual"] == [] and [(x["unit"], x["manual_by"], x["name"]) for x in sr] == [("盒", "", "M&M'S 精選片裝")]
+          and c.get("/api/mars/status").get_json()["manual"] == [], str(sr))
 
 
 def ship_tests(c, preview, orders, up):

@@ -269,6 +269,21 @@
     <div class="flex items-center gap-2 flex-wrap"><button id="da-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button>
       <button id="da-clear" class="btn btn-o hidden"><i class="bi bi-arrow-counterclockwise"></i> 取消修改，回到原始數量</button></div>
   </div></dialog>
+<dialog id="dlg-mp" style="width:min(560px,96vw)"><div class="dh"><i class="bi bi-plus-square"></i><span id="dm-title">補商品資料</span><button class="x" data-close="dlg-mp" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div class="facts" id="dm-facts"></div>
+    <div class="kbd" id="dm-sib"></div>
+    <label class="block kbd">品類（必填）<select id="dm-cat" class="inp" style="width:100%"></select></label>
+    <label class="block kbd">箱入數（必填，一箱幾<span class="dm-u"></span>）<input id="dm-box" class="inp" inputmode="numeric" style="width:100%"></label>
+    <div class="kbd">中盒貼標（必填）　<span class="chip" data-l="V" id="dm-lv">需貼中標</span> <span class="chip" data-l="" id="dm-ln">不貼中標</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      <label class="block kbd">瑪氏貨號<input id="dm-mc" class="inp fn" style="width:100%"></label>
+      <label class="block kbd">系統價格（未稅）<input id="dm-price" class="inp" inputmode="decimal" style="width:100%"></label>
+      <label class="block kbd">效期天<input id="dm-days" class="inp" inputmode="numeric" style="width:100%"></label>
+    </div>
+    <div class="kbd">瑪氏貨號用於勇信核對缺貨，價格會帶到瑪氏採購單；不確定可先空白，之後補進總表 Excel。</div>
+    <div class="flex items-center gap-2 flex-wrap"><button id="dm-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存到商品總表</button></div>
+  </div></dialog>
 <dialog id="dlg-ship" style="width:min(980px,96vw)"><div class="dh"><i class="bi bi-box-seam"></i><span id="ds-title">效期批次與出貨量</span><button class="x" data-close="dlg-ship" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">
     <div class="facts" id="ds-facts"></div>

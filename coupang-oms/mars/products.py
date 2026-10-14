@@ -105,23 +105,33 @@ def api_import_mars_products():
     conn = get_conn()
     try:
         before = {r["yf_sku"] for r in _rows(conn.execute("SELECT DISTINCT yf_sku FROM mst_mars_products"))}
+        # 在蝦皮特選補登、Excel 裡還沒有的品項留著（Jerry 2026-10-14）；Excel 有了就以 Excel 為準
+        new_keys = {(r["yf_sku"], r["unit"]) for r in rows}
+        keep = [m for m in _rows(conn.execute("SELECT * FROM mst_mars_products WHERE COALESCE(manual_by, '') != ''"))
+                if (m["yf_sku"], m["unit"]) not in new_keys]
         conn.execute("DELETE FROM mst_mars_products")
         for r in rows:
             conn.execute(f"INSERT INTO mst_mars_products ({', '.join(COLS)}) VALUES ({', '.join('?' * len(COLS))})",
                          [r[c] for c in COLS])
-        codes = {r["yf_sku"] for r in rows}
+        kcols = COLS + ("manual_by", "manual_at")
+        for m in keep:
+            conn.execute(f"INSERT INTO mst_mars_products ({', '.join(kcols)}) VALUES ({', '.join('?' * len(kcols))})",
+                         [m[c] for c in kcols])
+        codes = {r["yf_sku"] for r in rows} | {m["yf_sku"] for m in keep}
         conn.execute("INSERT INTO mst_mars_uploads (filename, operator, uploaded_at, rows_total, codes) VALUES (?,?,?,?,?)",
                      (up.filename, operator, now(), len(rows), len(codes)))
         added, removed = sorted(codes - before), sorted(before - codes)
         _log(conn, LINE, "", "", "", "mars_products", "瑪氏商品總表", f"{len(before)} 個料號", f"{len(codes)} 個料號",
-             operator, "import", f"{up.filename}；新增 {len(added)}、拿掉 {len(removed)}")
+             operator, "import", f"{up.filename}；新增 {len(added)}、拿掉 {len(removed)}"
+             + (f"；保留系統補登 {len(keep)} 品" if keep else ""))
         conn.commit()
     finally:
         conn.close()
     by_cat = collections.Counter(cat_code(r["category"]) or "?" for r in rows if r["unit"] == "箱")
     return jsonify({"ok": True, "filename": up.filename, "rows": len(rows), "codes": len(codes),
                     "by_category": dict(by_cat), "added": len(added), "removed": len(removed),
-                    "added_examples": added[:5], "removed_examples": removed[:5], "warnings": warnings[:50]})
+                    "added_examples": added[:5], "removed_examples": removed[:5], "warnings": warnings[:50],
+                    "kept_manual": [f"{m['yf_sku']}（{m['unit']}）" for m in keep]})
 
 
 @mars_bp.route("/api/mars/products")
@@ -140,7 +150,7 @@ def api_search_mars_products():
     try:
         total = conn.execute(f"SELECT COUNT(*) AS n FROM mst_mars_products WHERE {' AND '.join(where)}", params).fetchone()["n"]
         rows = _rows(conn.execute(
-            f"SELECT yf_sku, unit, mars_code, name, category, box_qty, inner_label, shelf_days, note FROM mst_mars_products "
+            f"SELECT yf_sku, unit, mars_code, name, category, box_qty, inner_label, shelf_days, note, manual_by, manual_at FROM mst_mars_products "
             f"WHERE {' AND '.join(where)} ORDER BY yf_sku, unit LIMIT 100", params))
     finally:
         conn.close()
@@ -153,6 +163,8 @@ def api_mars_status():
     try:
         last = _row(conn.execute("SELECT * FROM mst_mars_uploads ORDER BY id DESC LIMIT 1"))
         n = conn.execute("SELECT COUNT(DISTINCT yf_sku) AS n FROM mst_mars_products").fetchone()["n"]
+        manual = [f"{r['yf_sku']}（{r['unit']}）" for r in _rows(conn.execute(
+            "SELECT yf_sku, unit FROM mst_mars_products WHERE COALESCE(manual_by, '') != '' ORDER BY yf_sku, unit"))]
         dates = [r["d"] for r in _rows(conn.execute(
             "SELECT DISTINCT delivery_date AS d, line FROM mst_orders WHERE delivery_date != '' ORDER BY delivery_date"))
             if _group_of(r["line"], _line_groups()) == LINE]
@@ -168,7 +180,7 @@ def api_mars_status():
                 last_imp = {k: b[k] for k in ("id", "filename", "operator", "committed_at")}; break
     finally:
         conn.close()
-    return jsonify({"last_upload": last, "codes": n, "dates": sorted(set(dates)), "last_order_import": last_imp,
+    return jsonify({"last_upload": last, "codes": n, "manual": manual, "dates": sorted(set(dates)), "last_order_import": last_imp,
                     "split_by_unit": SPLIT_BY_UNIT})
 
 

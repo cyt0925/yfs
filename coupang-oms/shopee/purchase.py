@@ -27,7 +27,7 @@ import xlrd
 from openpyxl.styles import Font, PatternFill
 from xlutils.copy import copy as xl_copy
 
-from mars.common import cat_code
+from mars.common import CAT_FULL, cat_code
 
 from .common import *  # noqa: F401,F403
 from .orders import order_no
@@ -235,8 +235,8 @@ def item_plan(it, conv, adj, eip, other_units=()):
         p["problems"].append(f"已回填 EIP 採購單號 {eip['eip_po']}；要重新產出請先清除單號")
         p["blocking"] = True
     if conv is None:
-        p["problems"].append((f"瑪氏商品總表有 {it['base_code']} 的{'、'.join(other_units)}，沒有{p['unit']}，請至瑪氏出貨頁更新商品總表" if other_units
-                              else f"瑪氏商品總表找不到 {it['base_code']}（{p['unit']}），請至瑪氏出貨頁更新商品總表") if line == MARS
+        p["problems"].append((f"瑪氏商品總表有 {it['base_code']} 的{'、'.join(other_units)}，沒有{p['unit']}，請按「補商品資料」填寫" if other_units
+                              else f"瑪氏商品總表找不到 {it['base_code']}（{p['unit']}），請按「補商品資料」填寫") if line == MARS
                              else f"價格本找不到 {code3}，請更新{line}價格本")
         p["blocking"] = True
         return p
@@ -323,6 +323,97 @@ def api_purchase_plan():
     finally:
         conn.close()
     return jsonify({"orders": orders, "conv": st})
+
+
+# ── 補登瑪氏商品（Jerry 2026-10-14）──────────────────────────────────────────
+# 瑪氏新品不在商品總表就產不了 EIP／瑪氏採購單。以前要改 Alice 的 Excel、再到瑪氏出貨頁整份重傳；
+# 需求書只說商品總表是對照來源、要可維護（3.2、第十三章），沒說只能改 Excel，所以在面板直接補。
+# 存進同一份 mst_mars_products（酷澎瑪氏也用得到），manual_by 記是誰補的；之後上傳 Excel 不會蓋掉，Excel 有了才以 Excel 為準。
+MARS_UNITS = ("箱", "盒", "包")
+
+
+def _mars_item(conn, order_id):
+    it = _row(conn.execute("SELECT * FROM shp_orders WHERE id = ?", (order_id,)))
+    if it is None:
+        return None, None, (jsonify({"error": "找不到這個品項，請重新整理頁面。"}), 404)
+    if it["line"] != MARS:
+        return None, None, (jsonify({"error": "只有瑪氏的品項要補瑪氏商品總表。"}), 400)
+    unit = it["unit_name"] or UNIT_CODES.get(it["unit_code"] or "", "")
+    if unit not in MARS_UNITS:
+        return None, None, (jsonify({"error": f"單位「{unit or '不明'}」不是箱、盒、包，無法補登。"}), 400)
+    return it, unit, None
+
+
+@shopee_bp.route("/api/shopee/mars_product")
+def api_mars_product_get():
+    """補商品資料視窗：這一品的料號、單位、蝦皮品名，和同料號其他單位那幾列（可帶入品類、瑪氏貨號、價格）。"""
+    conn = get_conn()
+    try:
+        it, unit, err = _mars_item(conn, request.args.get("order_id"))
+        if err:
+            return err
+        same = _rows(conn.execute("SELECT * FROM mst_mars_products WHERE yf_sku = ? ORDER BY unit", (it["base_code"],)))
+    finally:
+        conn.close()
+    return jsonify({"code": it["base_code"], "unit": unit, "name": it["sku_name"], "exists": any(r["unit"] == unit for r in same),
+                    "siblings": [r for r in same if r["unit"] != unit],
+                    "categories": [{"value": v, "label": CAT_FULL[c]} for v, c in (("Chocolate", "CHO"), ("Gum", "GUM"), ("Petcare", "PET"))]})
+
+
+def _num(v, kind, label, required=False):
+    s_ = str(v if v is not None else "").strip().replace(",", "")
+    if s_ == "":
+        if required:
+            raise ValueError(f"請填寫{label}。")
+        return None
+    try:
+        n = float(s_)
+    except ValueError:
+        raise ValueError(f"{label}要填數字。") from None
+    if n <= 0 if kind == "int" else n < 0:
+        raise ValueError(f"{label}要大於 0。" if kind == "int" else f"{label}不能是負數。")
+    if kind == "int":
+        if not n.is_integer():
+            raise ValueError(f"{label}要填整數。")
+        return int(n)
+    return n
+
+
+@shopee_bp.route("/api/shopee/mars_product", methods=["POST"])
+def api_mars_product_add():
+    p = request.get_json(silent=True) or {}
+    cat = str(p.get("category") or "").strip()
+    if not cat_code(cat):
+        return jsonify({"error": "請選擇品類。"}), 400
+    try:
+        box = _num(p.get("box_qty"), "int", "箱入數", required=True)
+        price = _num(p.get("price"), "float", "系統價格")
+        days = _num(p.get("shelf_days"), "int", "效期天")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    label = "V" if str(p.get("inner_label") or "").strip().upper() == "V" else ""
+    mars_code = str(p.get("mars_code") or "").strip()
+    operator = _operator()
+    conn = get_conn()
+    try:
+        it, unit, err = _mars_item(conn, p.get("order_id"))
+        if err:
+            return err
+        code = it["base_code"]
+        if _row(conn.execute("SELECT id FROM mst_mars_products WHERE yf_sku = ? AND unit = ?", (code, unit))):
+            return jsonify({"error": f"商品總表已經有 {code}（{unit}），請重新整理頁面。"}), 409
+        name = re.sub(r"^【[^】]*】", "", it["sku_name"] or "").strip()[:120]
+        conn.execute("""INSERT INTO mst_mars_products (yf_sku, unit, mars_code, category, name, price, unit_code, box_qty, inner_label,
+                        shelf_days, manual_by, manual_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     (code, unit, mars_code, cat, name, price, it["unit_code"] or "", box, label, days, operator, now()))
+        _log(conn, MARS, order_no(it), it["supplier_sku_id"], "", "shopee_mars_product", "補登瑪氏商品總表", "",
+             f"{code}（{unit}）{cat}、箱入數 {box}、{'需貼中標' if label else '不貼中標'}"
+             + (f"、瑪氏貨號 {mars_code}" if mars_code else "") + (f"、價格 {price:g}" if price is not None else "")
+             + (f"、效期天 {days}" if days else ""), operator, "manual", "在蝦皮特選補登；總表 Excel 裡還沒有")
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "code": code, "unit": unit})
 
 
 @shopee_bp.route("/api/shopee/purchase/adjust", methods=["POST"])

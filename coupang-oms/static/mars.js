@@ -27,7 +27,7 @@ async function searchProducts() {
   if (!d.rows.length) { $("#mp-res").innerHTML = `<div class="text-sm neg">商品總表裡沒有「${esc(q)}」。新品要先補進 Alice 的「自動化_Mars整合商品資料」，再重新上傳。</div>`; return; }
   $("#mp-res").innerHTML = `<div class="tbl-wrap" style="max-height:40vh"><table class="t" style="white-space:nowrap"><thead><tr><th>永豐料號</th><th>單位</th><th>瑪氏貨號</th><th>品名</th><th>品類</th>
     <th class="num">箱入數</th><th>中盒貼標</th><th class="num">效期天</th><th>備註</th></tr></thead><tbody>
-    ${d.rows.map(r => `<tr><td class="fn">${esc(r.yf_sku)}</td><td>${esc(r.unit)}</td><td class="fn">${esc(r.mars_code)}</td><td style="white-space:normal;min-width:240px">${esc(r.name)}</td><td>${esc(r.category)}</td>
+    ${d.rows.map(r => `<tr><td class="fn">${esc(r.yf_sku)}${r.manual_by ? `<div class="kbd" style="color:var(--warn)" title="${esc(r.manual_by)} ${esc((r.manual_at || "").slice(0, 16))}">蝦皮特選補登</div>` : ""}</td><td>${esc(r.unit)}</td><td class="fn">${esc(r.mars_code)}</td><td style="white-space:normal;min-width:240px">${esc(r.name)}</td><td>${esc(r.category)}</td>
       <td class="num">${r.box_qty == null ? `<span class="neg">空白</span>` : Number(r.box_qty)}</td><td>${esc(r.inner_label) || "—"}</td>
       <td class="num">${r.shelf_days == null ? "—" : r.shelf_days}</td><td class="text-sm">${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>`;
 }
@@ -37,6 +37,7 @@ async function loadStatus() {
   DATES = d.dates || [];
   const u = d.last_upload;
   $("#mp-status").innerHTML = u ? `上次上傳 ${esc(u.uploaded_at.slice(0, 16))} · ${esc(u.operator)} · ${esc(u.filename)} · <b style="color:var(--m8)">${d.codes}</b> 個料號`
+      + ((d.manual || []).length ? `<div class="mt-1" style="color:var(--warn)"><i class="bi bi-info-circle"></i> 其中 ${d.manual.length} 品是在蝦皮特選補登的，總表 Excel 裡還沒有：${d.manual.slice(0, 8).map(esc).join("、")}${d.manual.length > 8 ? "…" : ""}。請補進 Excel；重新上傳時這些品項會保留。</div>` : "")
     : `<span class="neg">尚未上傳</span>：拆單需依商品總表區分品類與中標，請先上傳 Alice 的「自動化_Mars整合商品資料」。`;
   $("#od-status").innerHTML = d.dates.length ? `已匯入瑪氏訂單的到貨日：${d.dates.slice(-6).map(md).join("、")}${d.dates.length > 6 ? " …" : ""}${d.last_order_import ? `<br>最近一次匯入 ${esc(d.last_order_import.committed_at.slice(0, 16))} · ${esc(d.last_order_import.operator)} · ${esc(d.last_order_import.filename)}` : ""}`
     : `<span class="neg">尚無瑪氏訂單</span>：請上傳 Kate 系統匯出的訂單彙總表。`;
@@ -86,6 +87,7 @@ async function uploadMaster(f) {
     const d = await api("/api/mars/products/import", { method: "POST", body: fd });
     const cats = Object.entries(d.by_category).map(([k, v]) => `${k} ${v}`).join("、");
     $("#mp-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 已讀取 ${d.codes} 個料號（${d.rows} 列，${esc(cats)}）${d.added || d.removed ? `，與上一版相比：新增 ${d.added} 個、移除 ${d.removed} 個` : ""}。</span>`
+      + ((d.kept_manual || []).length ? `<div style="color:var(--warn)">保留在蝦皮特選補登的 ${d.kept_manual.length} 品（Excel 裡還沒有）：${d.kept_manual.map(esc).join("、")}</div>` : "")
       + (d.warnings.length ? `<details class="kbd"><summary>${d.warnings.length} 列有問題（已略過或標示）</summary>${d.warnings.map(esc).join("<br>")}</details>` : "");
     toast("商品總表已更新"); await loadStatus(); loadSplits();
   } catch (err) { $("#mp-msg").innerHTML = `<span class="neg">${esc(err.message)}</span>`; }

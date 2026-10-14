@@ -801,6 +801,8 @@ CREATE TABLE IF NOT EXISTS mst_mars_products (
     shelf_days      INTEGER,                 -- P 效期天
     note            TEXT DEFAULT '',         -- Q 備註（有換號紀錄 10254053>60019810>60023881）
     po_case_note    TEXT DEFAULT '',         -- R 採購單箱備註（小白標等）
+    manual_by       TEXT DEFAULT '',         -- 在蝦皮特選補登的人（Excel 上傳的是空白）；上傳 Excel 時補登的不會被蓋掉
+    manual_at       TEXT DEFAULT '',
     UNIQUE(yf_sku, unit)
 );
 
@@ -1362,6 +1364,12 @@ def _migrate_master_columns(conn):
     # 2026-09-30：瑪氏採購單各倉的特殊需求加註，缺欄就補。
     if _table_exists(conn, "mst_mars_warehouses") and "special_note" not in _cols(conn, "mst_mars_warehouses"):
         conn.execute("ALTER TABLE mst_mars_warehouses ADD COLUMN special_note TEXT DEFAULT ''")
+    # 2026-10-14：瑪氏新品可以在蝦皮特選直接補登（Jerry：不用改 Excel 再到瑪氏出貨頁重傳），記下是誰補的。
+    if _table_exists(conn, "mst_mars_products"):
+        have = _cols(conn, "mst_mars_products")
+        for col in ("manual_by", "manual_at"):
+            if col not in have:
+                conn.execute(f"ALTER TABLE mst_mars_products ADD COLUMN {col} TEXT DEFAULT ''")
     # v3 → v4：訂單列記住「哪一批匯入帶進來／最後改到」。用批次 id 而不是時間戳，因為同一秒
     # 內連按兩次確認匯入時間戳會撞在一起。舊資料用時間戳盡量回填。
     if _table_exists(conn, "mst_orders"):

@@ -400,6 +400,38 @@ $("#b-go").addEventListener("click", async () => {
 
 /* ── 修改下採數量（需求 10.5：除不盡不自動進位或捨去，人改＋寫原因） ── */
 let ADJ = null;
+/* 補商品資料：瑪氏新品不在商品總表，直接在這裡補（Jerry 2026-10-14：不用改 Excel、再到瑪氏出貨頁重傳） */
+let MP = null, MP_LABEL = null;
+async function openMarsProduct(id) {
+  let d; try { d = await api(`/api/shopee/mars_product?order_id=${id}`); } catch (err) { return toast(err.message, "err"); }
+  if (d.exists) { toast(`商品總表已經有 ${d.code}（${d.unit}），重新整理後即可產出。`); return refresh(); }
+  MP = { id, ...d }; const sib = d.siblings[0];
+  $("#dm-title").textContent = `補商品資料：${d.code}（${d.unit}）`;
+  $("#dm-facts").innerHTML = `<span>永豐料號 <b class="fn">${esc(d.code)}</b></span><span>單位 <b>${esc(d.unit)}</b></span><span>${esc((d.name || "").slice(0, 60))}</span>`;
+  $("#dm-sib").innerHTML = sib ? `商品總表已有這個料號的${d.siblings.map(x => esc(x.unit)).join("、")}，已帶入品類、中盒貼標、瑪氏貨號、價格、效期天；<b>箱入數請依${esc(d.unit)}填寫</b>。` : "";
+  $("#dm-cat").innerHTML = `<option value="">請選擇</option>` + d.categories.map(c => `<option value="${esc(c.value)}">${esc(c.label)}</option>`).join("");
+  $("#dm-cat").value = sib ? (d.categories.find(c => c.value.toLowerCase() === (sib.category || "").toLowerCase()) || {}).value || "" : "";
+  $$("#dlg-mp .dm-u").forEach(x => { x.textContent = d.unit; });
+  $("#dm-box").value = ""; $("#dm-mc").value = sib ? sib.mars_code || "" : ""; $("#dm-price").value = sib && sib.price != null ? sib.price : "";
+  $("#dm-days").value = sib && sib.shelf_days != null ? sib.shelf_days : "";
+  MP_LABEL = sib ? ((sib.inner_label || "").toUpperCase() === "V" ? "V" : "") : null;
+  $("#dm-lv").classList.toggle("on", MP_LABEL === "V"); $("#dm-ln").classList.toggle("on", MP_LABEL === "");
+  $("#dlg-mp").showModal(); $("#dm-cat").focus();
+}
+["#dm-lv", "#dm-ln"].forEach(s => $(s).addEventListener("click", () => {
+  MP_LABEL = $(s).dataset.l; $("#dm-lv").classList.toggle("on", MP_LABEL === "V"); $("#dm-ln").classList.toggle("on", MP_LABEL === "");
+}));
+$("#dm-save").addEventListener("click", async () => {
+  if (!$("#dm-cat").value) return toast("請選擇品類", "err");
+  if (!$("#dm-box").value.trim()) return toast("請填寫箱入數", "err");
+  if (MP_LABEL === null) return toast("請選擇中盒貼標", "err");
+  try {
+    await post("/api/shopee/mars_product", { order_id: MP.id, category: $("#dm-cat").value, box_qty: $("#dm-box").value.trim(), inner_label: MP_LABEL,
+      mars_code: $("#dm-mc").value.trim(), price: $("#dm-price").value.trim(), shelf_days: $("#dm-days").value.trim() });
+    toast(`${MP.code}（${MP.unit}）已補進瑪氏商品總表`); $("#dlg-mp").close(); refresh();
+  } catch (err) { toast(err.message, "err"); }
+});
+
 function openAdj(id) {
   let p = null, g = null;
   for (const x of [SIDE && SIDE.buy, ...PLAN.orders].filter(Boolean)) { const y = x.items.find(i => i.order_id === id); if (y) { p = y; g = x; break; } }
@@ -822,8 +854,8 @@ function renderSide() {
     if (p) {
       more += `<div class="sd-kv"><span>轉換率 <b>${fmt(p.conv)}</b></span><span>下採數量 <b>${fmt(p.use_qty)}</b>${p.adj ? "（已修改）" : ""}</span>
         <span>EIP 採購數量 <b>${p.out_qty == null ? "—" : fmt(p.out_qty)}</b> ${esc(p.out_unit || "")}${p.cases != null && p.out_unit !== "箱" ? `（${fmt(p.cases)} 箱）` : ""}</span>${p.unit_group ? `<span>EIP 檔：${esc(p.unit_group)}</span>` : ""}</div>`;
-      if (g.todo.includes("buy")) more += p.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}${/瑪氏出貨頁/.test(x)
-        ? ` <a class="lnk" href="/mars" target="_blank" rel="noopener">開啟瑪氏出貨頁</a>` : ""}</div>`).join("");   // 已產出的單不再列產出前的檢查
+      if (g.todo.includes("buy")) more += p.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("");
+      if (g.todo.includes("buy") && p.problems.some(x => /^瑪氏商品總表(找不到|有 )/.test(x))) acts += `<button class="btn btn-p btn-sm sd-mp" data-id="${i.id}"><i class="bi bi-plus-square"></i> 補商品資料</button>`;   // 已產出的單不再列產出前的檢查
       if ((p.rem || p.adj) && !(p.eip && p.eip.eip_po)) acts += `<button class="btn ${p.rem ? "btn-p" : "btn-o"} btn-sm sd-adj" data-id="${i.id}"><i class="bi bi-pencil"></i> 修改數量</button>`;
     }
     if (z) {
@@ -884,6 +916,7 @@ function renderSide() {
   }));
   $$("#side a.ver").forEach(a => a.addEventListener("click", () => openVersions(a.dataset.id, a.dataset.t)));
   $$("#side .sd-adj").forEach(b => b.addEventListener("click", () => openAdj(Number(b.dataset.id))));
+  $$("#side .sd-mp").forEach(b => b.addEventListener("click", () => openMarsProduct(Number(b.dataset.id))));
   $$("#side .sd-ship").forEach(b => b.addEventListener("click", () => openShip(Number(b.dataset.id))));
   $$("#side .sd-short").forEach(b => b.addEventListener("click", () => openShort(Number(b.dataset.id))));
   $$("#side .sd-po-save").forEach(b => b.addEventListener("click", () => saveEip(b.dataset.id, $(`#side .sd-po[data-id="${b.dataset.id}"]`).value)));
