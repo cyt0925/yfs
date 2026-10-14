@@ -765,7 +765,7 @@ def main():
         pg.fill("#da-reason", "與業務確認改為整箱"); pg.click("#da-save"); pg.wait_for_selector("#dlg-adj[open]", state="detached", timeout=5000)
         pg.wait_for_function("document.querySelector('#side').innerText.includes('已修改')", timeout=10000); pg.wait_for_timeout(300)
         check("存好後：清單變可產出、右側下採 198 已修改、EIP 66 箱、出現「產出這張單的 EIP 採購單」", "可產出" in pg.inner_text("#b-tbl tr.og >> nth=0") and "198" in pg.inner_text("#side")
-              and "EIP 66 箱" in pg.inner_text("#side") and pg.is_visible("#side .sd-regen"), pg.inner_text("#side")[:400])
+              and "EIP 採購數量 66 箱" in pg.inner_text("#side") and pg.is_visible("#side .sd-regen"), pg.inner_text("#side")[:400])
         pg.click("#b-all")
         with pg.expect_download(timeout=15000) as dl:
             pg.click("#b-go")
@@ -857,7 +857,7 @@ def main():
         pg.click("#k-tbl tr.og[data-k='POTWCTWA26102099M']")
         pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('POTWCTWA26102099M') && document.querySelectorAll('#side .sd-it').length > 0", timeout=10000)
         side = pg.inner_text("#side")
-        check("右側面板：下修紀錄來源勇信核對、沒有填缺貨按鈕（寫由勇信配送明細表核對）、可直接產這張單的通知", "勇信核對" in side and "缺貨由勇信配送明細表核對" in side
+        check("右側面板：下修紀錄來源勇信核對、沒有填缺貨按鈕（寫依勇信配送明細表核對）、可直接產這張單的通知", "勇信核對" in side and "瑪氏的缺貨依勇信配送明細表核對" in side and side.count("勇信配送明細表核對") == 1
               and pg.query_selector("#side .sd-short") is None and pg.is_visible("#side .sd-notify"), side[:400])
         stage("all")
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")

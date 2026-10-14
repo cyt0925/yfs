@@ -360,7 +360,7 @@ function renderPlan() {
     h += `<tr class="og ${g.supported && g.blocking ? "blk" : ""} ${g.supported ? "" : "lock"}" data-k="${esc(k)}">
       <td>${!pick && g.supported && g.blocking ? BLK_ICON : `<input type="checkbox" class="ck b-ck" data-k="${esc(k)}" ${BSEL.has(k) ? "checked" : ""} ${pick ? "" : "disabled"}>`}</td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
-      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil === "供應商直送" ? "直送" : g.fulfil)}</td>
+      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil)}</td>
       <td class="num opt">${g.items.length}</td><td class="num">${fmt(g.qty)}</td><td>${st}</td></tr>`;
   }
   if (!list.length) h += emptyRow(9);
@@ -442,7 +442,7 @@ function renderEips() {
   const list = eipList($("#e-all").classList.contains("on"));
   $("#e-mars").classList.toggle("hidden", !EIPS.some(e => e.mars && e.eip_po));
   $("#e-tbl").innerHTML = `<thead><tr><th>到貨日</th><th>倉別</th><th>線別</th><th class="opt">履約方式</th><th>檔名（點選重新下載）</th><th class="num opt">品項</th><th class="num">數量</th><th>蝦皮訂單</th><th class="opt">產出</th><th>EIP 採購單號</th></tr></thead><tbody>
-    ${list.map(e => `<tr class="${e.eip_po ? "lock" : ""}"><td class="nw">${esc(e.expected_date)}</td><td class="nw">${esc(e.warehouse_name)}</td><td class="nw">${esc(e.line)}</td><td class="nw opt">${esc(e.fulfil === "供應商直送" ? "直送" : e.fulfil)}</td>
+    ${list.map(e => `<tr class="${e.eip_po ? "lock" : ""}"><td class="nw">${esc(e.expected_date)}</td><td class="nw">${esc(e.warehouse_name)}</td><td class="nw">${esc(e.line)}</td><td class="nw opt">${esc(e.fulfil)}</td>
       <td><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.mars ? `<div class="mt-1">${e.eip_po
         ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</a>`
         : `<button class="btn btn-o btn-sm" disabled title="請先回填 EIP 採購單號"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</button>`}</div>` : ""}</td><td class="num opt">${e.rows}</td><td class="num">${fmt(e.qty)}</td>
@@ -800,7 +800,7 @@ function renderSide() {
   const pendDiffs = d.diffs.filter(x => !x.confirmed);
   $("#sd-title").innerHTML = `<b class="fn" style="font-size:15px;color:var(--ink)">${esc(g.order_no)}</b>${g.po_id && g.pr_id ? `<div class="kbd fn">${esc(g.pr_id)}</div>` : ""}
     <div class="facts" style="margin-top:4px"><span>${esc(g.line)}</span><span>${wh(g.warehouse)}</span><span>到貨 <b>${esc(g.expected_date)}</b></span>
-      <span>${esc(g.fulfil)} <a class="lnk sd-ff" title="修改履約方式">改</a></span></div>
+      <span>履約方式 <b>${esc(g.fulfil)}</b></span><button class="btn btn-o btn-sm sd-ff"><i class="bi bi-pencil"></i> 修改履約方式</button></div>
     <div class="mt-1">${nextBadges(g)}</div>`;
   let h = "";
   if (pendDiffs.length) h += `<div class="alert al-bad"><b><i class="bi bi-exclamation-triangle-fill"></i> 蝦皮重傳後有 ${pendDiffs.length} 處不同</b>，確認後才能往下處理：
@@ -812,30 +812,31 @@ function renderSide() {
   const isBad = i => { const p = buy.get(i.id), z = ship.get(i.id); return !!((g.todo.includes("buy") && p && p.blocking) || (z && z.blocking && !z.dispatch)); };
   const items = [...g.items.filter(isBad), ...g.items.filter(i => !isBad(i))], nBad = g.items.filter(isBad).length;
   h += `<div class="sd-sec"><div class="h"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）${nBad
-    ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理，排在最前面</span>` : ""}</div><div class="b">`;
+    ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理，排在最前面</span>` : ""}</div><div class="b">
+    ${g.line === "瑪氏" && d.short ? `<div class="kbd" style="padding:6px 0">瑪氏的缺貨依勇信配送明細表核對，PDF 請拖曳至上方「上傳檔案」。</div>` : ""}`;
   for (const i of items) {
     const p = buy.get(i.id), z = ship.get(i.id), k = sh.get(i.id), unit = i.unit_name || i.unit_code;
-    const kv = [`原始 <b>${fmt(i.qty_original)}</b>`, i.inbound_ids ? `入庫單 <span class="fn">${esc(i.inbound_ids)}</span>` : "", `<a class="lnk ver" data-id="${i.id}" data-t="${esc(i.supplier_sku_id)}">第 ${i.version} 版</a>`];
+    const kv = [`原始訂購量 <b>${fmt(i.qty_original)}</b>`, i.inbound_ids ? `入庫單號 <span class="fn">${esc(i.inbound_ids)}</span>` : "",
+      i.version > 1 ? `<a class="lnk ver" data-id="${i.id}" data-t="${esc(i.supplier_sku_id)}">蝦皮重傳過 ${i.version - 1} 次，查看各版本</a>` : ""];
     let more = "", acts = "";
     if (p) {
-      more += `<div class="sd-kv"><span>轉換率 <b>${fmt(p.conv)}</b></span><span>下採 <b>${fmt(p.use_qty)}</b>${p.adj ? "（已修改）" : ""}</span>
-        <span>EIP <b>${p.out_qty == null ? "—" : fmt(p.out_qty)}</b> ${esc(p.out_unit || "")}${p.cases != null && p.out_unit !== "箱" ? `（${fmt(p.cases)} 箱）` : ""}</span>${p.unit_group ? `<span>${esc(p.unit_group)}</span>` : ""}</div>`;
+      more += `<div class="sd-kv"><span>轉換率 <b>${fmt(p.conv)}</b></span><span>下採數量 <b>${fmt(p.use_qty)}</b>${p.adj ? "（已修改）" : ""}</span>
+        <span>EIP 採購數量 <b>${p.out_qty == null ? "—" : fmt(p.out_qty)}</b> ${esc(p.out_unit || "")}${p.cases != null && p.out_unit !== "箱" ? `（${fmt(p.cases)} 箱）` : ""}</span>${p.unit_group ? `<span>EIP 檔：${esc(p.unit_group)}</span>` : ""}</div>`;
       if (g.todo.includes("buy")) more += p.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}${/瑪氏出貨頁/.test(x)
         ? ` <a class="lnk" href="/mars" target="_blank" rel="noopener">開啟瑪氏出貨頁</a>` : ""}</div>`).join("");   // 已產出的單不再列產出前的檢查
       if ((p.rem || p.adj) && !(p.eip && p.eip.eip_po)) acts += `<button class="btn ${p.rem ? "btn-p" : "btn-o"} btn-sm sd-adj" data-id="${i.id}"><i class="bi bi-pencil"></i> 修改數量</button>`;
     }
     if (z) {
-      more += `<div class="sd-kv">${z.dispatch ? "" : `<span>EC 可用 <b>${fmt(z.ec)}</b></span><span>符合效期 <b>${fmt(z.qualified)}</b></span>`}<span>出貨 <b>${fmt(z.final)}</b>${z.adj ? "（已修改）" : ""}</span>
-        ${z.short ? `<span class="neg">缺 ${fmt(z.short)}${z.reasons.length ? `（${esc(z.reasons.join("、"))}）` : ""}</span>` : ""}${z.alloc.length ? `<span>效期 ${z.alloc.map(a => `${esc(a.exp)}×${fmt(a.qty)}`).join("、")}</span>` : ""}</div>`;
+      more += `<div class="sd-kv">${z.dispatch ? "" : `<span>EC 可用量 <b>${fmt(z.ec)}</b></span><span>符合效期量 <b>${fmt(z.qualified)}</b></span>`}<span>出貨量 <b>${fmt(z.final)}</b>${z.adj ? "（已修改）" : ""}</span>
+        ${z.short ? `<span class="neg">缺貨 ${fmt(z.short)}${z.reasons.length ? `（${esc(z.reasons.join("、"))}）` : ""}</span>` : ""}${z.alloc.length ? `<span>出貨效期 ${z.alloc.map(a => `${esc(a.exp)}（${fmt(a.qty)}）`).join("、")}</span>` : ""}</div>`;
       more += z.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("") + z.warnings.map(x => `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(x)}</div>`).join("");
       if (!z.dispatch && z.life && z.lots.length) acts += `<button class="btn ${z.warnings.length ? "btn-p" : "btn-o"} btn-sm sd-ship" data-id="${i.id}"><i class="bi bi-box-seam"></i> 效期批次／改出貨量</button>`;
     }
     if (k) {
-      if (k.rounds.length) more += `<div class="sd-kv"><span>可出貨 <b>${fmt(k.final)}</b></span><span class="neg">累計下修 ${fmt(k.cut)}</span>
+      if (k.rounds.length) more += `<div class="sd-kv"><span>可出貨量 <b>${fmt(k.final)}</b></span><span class="neg">累計下修 ${fmt(k.cut)}</span>
         ${k.pending ? `<span class="badge b-warn">待通知</span>` : k.notified_round ? `<span class="badge b-ok">已通知第 ${k.notified_round} 次</span>` : ""}</div>
         <div class="kbd">${k.rounds.map(r => `${roundText(r)}（${esc(r.source)}${r.reasons.length ? "，" + esc(r.reasons.join("、")) : ""}）`).join("<br>")}</div>`;
-      if (k.edit_round) acts += `<button class="btn ${k.pending ? "btn-p" : "btn-o"} btn-sm sd-short" data-id="${i.id}"><i class="bi bi-dash-circle"></i> ${k.rounds.length && !k.pending ? `第 ${k.edit_round} 次缺貨` : k.pending ? "修改缺貨" : "填缺貨"}</button>`;
-      else if (g.line === "瑪氏" && !i.removed) more += `<div class="kbd">缺貨由勇信配送明細表核對（PDF 丟最上方上傳）</div>`;
+      if (k.edit_round) acts += `<button class="btn ${k.pending ? "btn-p" : "btn-o"} btn-sm sd-short" data-id="${i.id}"><i class="bi bi-dash-circle"></i> ${k.rounds.length && !k.pending ? `填第 ${k.edit_round} 次缺貨` : k.pending ? "修改缺貨" : "填缺貨"}</button>`;
     }
     h += `<div class="sd-it ${i.removed ? "muted" : ""}"><div class="r"><span class="fn" style="font-weight:700;color:var(--ink)">${esc(i.supplier_sku_id)}</span>
         <span style="flex:1;min-width:0">${esc((i.sku_name || "").slice(0, 40))}</span><span class="nw"><b style="font-size:15px">${fmt(i.qty)}</b> ${esc(unit)}</span></div>
@@ -848,8 +849,8 @@ function renderSide() {
   if (d.buy) h += `<div class="sd-sec"><div class="h"><i class="bi bi-file-earmark-spreadsheet"></i> EIP 採購單 <span class="kbd">${d.eips.length ? `${d.eips.length} 份` : "尚未產出"}</span></div><div class="b">
     ${d.eips.map(e => `<div class="sd-it"><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>
       <div class="flex items-center gap-2 mt-1 flex-wrap"><input class="inp fn sd-po" data-id="${e.id}" value="${esc(e.eip_po)}" placeholder="EIP 採購單號，例：PO202610001" style="width:220px">
-        <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm sd-po-save" data-id="${e.id}">儲存</button>
-        ${e.mars ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</a>` : `<span class="kbd">回填後可下載瑪氏採購單</span>`) : ""}</div>
+        <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm sd-po-save" data-id="${e.id}">儲存單號</button>
+        ${e.mars ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 下載瑪氏採購單</a>` : `<span class="kbd">回填後可下載瑪氏採購單</span>`) : ""}</div>
       ${e.eip_po ? `<div class="kbd">${esc(e.updated_by)} ${esc((e.updated_at || "").slice(5, 16).replace("T", " "))} 回填</div>` : ""}</div>`).join("")
       || `<div class="kbd">尚未產出。</div>`}
     ${g.todo.includes("buy") ? (d.buy.blocking ? `<div class="kbd neg mt-1">先修正上面標紅的品項，才能產出 EIP 採購單。</div>`
