@@ -92,7 +92,7 @@ def parse_conv(data, filename=""):
 
 
 def conv_status(conn):
-    """各線別轉換率的來源狀態。瑪氏用瑪氏出貨頁上傳的商品總表（不在這裡傳）。"""
+    """各線別轉換率的來源狀態。瑪氏用瑪氏商品總表（跟瑪氏出貨頁共用；蝦皮特選的上傳入口也收）。"""
     st = {}
     for r in _rows(conn.execute("SELECT line, COUNT(*) AS n, SUM(CASE WHEN box_qty IS NULL THEN 1 ELSE 0 END) AS blank, "
                                 "MAX(updated_at) AS at FROM shp_conv GROUP BY line")):

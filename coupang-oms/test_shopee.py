@@ -600,7 +600,10 @@ def mixed_tests(c, preview, orders):
     check("瑪氏出貨頁狀態列出蝦皮特選補登的品項", st["manual"] == ["M10273409（盒）"], str(st.get("manual")))
     master = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples", "mars", "fake", "假_瑪氏商品總表.xlsx")
     up_m = lambda data, name: c.post("/api/mars/products/import", data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data").get_json()  # noqa: E731
-    d = up_m(open(master, "rb").read(), "假_瑪氏商品總表.xlsx")
+    rd = c.post("/api/shopee/drop", data={"file": (io.BytesIO(open(master, "rb").read()), "假_瑪氏商品總表.xlsx")}, content_type="multipart/form-data")
+    d = rd.get_json()
+    check("瑪氏商品總表丟蝦皮特選的上傳入口 → 認成瑪氏商品總表、走瑪氏出貨頁同一支匯入（Jerry 2026-10-14）",
+          rd.status_code == 200 and rd.headers.get("X-Shopee-Kind") == "mars" and d["codes"] == 8, str((rd.status_code, rd.headers.get("X-Shopee-Kind"), str(d)[:120])))
     sr = c.get("/api/mars/products", query_string={"q": "M10273409"}).get_json()["rows"]
     check("重傳總表 Excel（裡面還沒有這品）→ 補登的那品保留、Excel 沒有的其他列照樣蓋掉",
           d["kept_manual"] == ["M10273409（盒）"] and [(x["unit"], x["manual_by"]) for x in sr] == [("盒", "Jerry")], str(d.get("kept_manual")) + str(sr))

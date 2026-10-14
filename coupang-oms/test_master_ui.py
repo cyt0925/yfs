@@ -668,6 +668,7 @@ def main():
         pg.wait_for_selector("#fresh span", timeout=8000)
         check("上傳區右邊第一個是「蝦皮採購單未匯入」（黃色），不是只列參考資料", pg.inner_text("#fresh span >> nth=0").strip() == "蝦皮採購單未匯入"
               and "w" in (pg.get_attribute("#fresh span >> nth=0", "class") or ""), pg.inner_text("#fresh"))
+        check("上傳區也列瑪氏商品總表（跟瑪氏出貨頁共用，前面 6b 傳過）", "瑪氏商品總表 今天" in pg.inner_text("#fresh"), pg.inner_text("#fresh"))
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.set_input_files("#file", sp1); pg.wait_for_selector(".pv .ok", timeout=15000)
         check("上傳採購單 → 預覽：蝦皮採購單、新增 2 項、沒選履約方式不能按確認", "蝦皮採購單" in pg.inner_text(".pv") and "新增 2 項" in pg.inner_text(".pv").replace("\n", " ")

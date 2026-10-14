@@ -55,6 +55,8 @@ async function dropOne(f) {
   if (kind === "conv") toast(Object.entries(d.lines).map(([l, x]) => `${l}價格本已更新：${fmt(x.count)} 筆（原 ${fmt(x.before)} 筆）${x.blank ? `，其中 ${fmt(x.blank)} 筆箱入數空白` : ""}`).join("\n")
     + (d.warnings.length ? `\n${d.warnings.slice(0, 3).join("\n")}` : ""));
   else if (kind === "stock") toast(`已更新${d.label}：${f.name}（${fmt(d.rows)} 列）` + (d.notes.length ? `\n${d.notes.join("\n")}` : ""));
+  else if (kind === "mars") toast(`已更新瑪氏商品總表：${fmt(d.codes)} 個料號（${fmt(d.rows)} 列）${d.added || d.removed ? `，新增 ${d.added}、移除 ${d.removed}` : ""}`
+    + ((d.kept_manual || []).length ? `\n保留在蝦皮特選補登的 ${d.kept_manual.length} 品（Excel 裡還沒有）` : "") + (d.warnings.length ? `\n${d.warnings.slice(0, 3).join("\n")}` : ""));
   else if (kind === "yx") { showYx(d); return false; }
   return true;
 }
@@ -62,7 +64,7 @@ async function dropOne(f) {
 /* 上傳區右邊：蝦皮採購單／入庫單最後一次匯入、價格本、庫存資料什麼時候更新的（點了到「資料與設定」）。
    蝦皮採購單排第一個：只列參考資料會讓人以為全部傳好了（Jerry 2026-10-13：「上面有寫要上傳蝦皮採購單嗎??」） */
 async function loadFresh() {
-  let c, k, u; try { [c, k, u] = await Promise.all([api("/api/shopee/conv"), api("/api/shopee/stock"), api("/api/shopee/uploads")]); } catch (err) { return; }
+  let c, k, u, m; try { [c, k, u, m] = await Promise.all([api("/api/shopee/conv"), api("/api/shopee/stock"), api("/api/shopee/uploads"), api("/api/mars/status")]); } catch (err) { return; }
   const md = t => t ? `${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))}` : "";
   const today = iso(new Date(Date.now() - new Date().getTimezoneOffset() * 6e4));
   const chips = [["purchase", "蝦皮採購單"], ["inbound", "蝦皮入庫單"]].map(([kind, label]) => {
@@ -73,6 +75,9 @@ async function loadFresh() {
   });
   chips.push(...["寶僑", "紙潔"].map(l => { const x = c.lines[l]; return x ? `<span title="${esc(x.file || "")}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${l}價格本 ${md(x.updated_at)}</span>`
     : `<span class="w"><i class="bi bi-exclamation-circle"></i> ${l}價格本未上傳</span>`; }));
+  const mu = m.last_upload;     // 瑪氏商品總表跟瑪氏出貨頁共用，這裡也能傳
+  chips.push(mu ? `<span title="${esc(mu.filename)}${(m.manual || []).length ? `；蝦皮特選補登 ${m.manual.length} 品` : ""}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> 瑪氏商品總表 ${mu.uploaded_at.slice(0, 10) === today ? "今天" : md(mu.uploaded_at)}</span>`
+    : `<span class="w"><i class="bi bi-exclamation-circle"></i> 瑪氏商品總表未上傳</span>`);
   for (const kk of KIND_ORDER) {
     const x = k.stock[kk];
     if (!x) { chips.push(`<span class="w"><i class="bi bi-exclamation-circle"></i> ${KIND_LABEL[kk]}未上傳</span>`); continue; }
