@@ -190,7 +190,8 @@ def apply(conn, upload, acts, fulfil, operator):
 
 @shopee_bp.route("/shopee")
 def shopee_page():
-    return render_template("shopee.html", logged_in_user=_operator(), fulfils=FULFILS,
+    from master.common import _is_admin
+    return render_template("shopee.html", logged_in_user=_operator(), fulfils=FULFILS, is_admin=_is_admin(),
                            build_version=current_app.config.get("BUILD_VERSION", ""))
 
 

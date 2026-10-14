@@ -612,6 +612,46 @@ def mixed_tests(c, preview, orders):
     check("Excel 補進去之後再傳 → 以 Excel 為準（不再標補登）", d["kept_manual"] == [] and [(x["unit"], x["manual_by"], x["name"]) for x in sr] == [("盒", "", "M&M'S 精選片裝")]
           and c.get("/api/mars/status").get_json()["manual"] == [], str(sr))
 
+    print("\n【19】清除資料、刪除歷程紀錄（只有管理員；Jerry 2026-10-14）")
+    users = app_module.get_users(); users.setdefault("Jerry", "pw"); users.setdefault("Alice", "pw")
+    app_module._write_users(users, {"Jerry"})
+    def as_user(name):
+        with c.session_transaction() as s_:
+            s_["user"] = name
+    cn = db.get_conn()
+    cn.execute("INSERT INTO edit_logs (order_id, po_number, sku_id, field, field_label, old_value, new_value, operator, source, note, changed_at) "
+               "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (1, "PO_TEST_DEL", "SKU1", "qty", "數量", "1", "2", "Jerry", "manual", "", "2026-10-14T09:00:00"))
+    cn.commit(); cn.close()
+    as_user("Alice")
+    check("一般同事：歷程看得到但不能刪、蝦皮特選看不到清除資料", c.get("/api/master/logs?scope=shopee").get_json()["can_delete"] is False
+          and c.post("/api/master/logs/delete", json={"items": [{"src": "mst", "id": 1}]}).status_code == 403
+          and c.post("/api/shopee/reset", json={"confirm": "清空資料"}).status_code == 403 and 'id="reset-box"' not in c.get("/shopee").get_data(as_text=True))
+    as_user("Jerry")
+    lg = c.get("/api/master/logs?scope=shopee&limit=500").get_json()
+    check("管理員：可以刪、每筆帶來源；蝦皮特選的資料與設定有清除資料", lg["can_delete"] is True and all(l["src"] == "mst" for l in lg["logs"])
+          and 'id="reset-box"' in c.get("/shopee").get_data(as_text=True))
+    two = lg["logs"][:2]
+    cp = next(l for l in c.get("/api/master/logs?scope=all&q=PO_TEST_DEL").get_json()["logs"] if l["po_number"] == "PO_TEST_DEL")
+    r = c.post("/api/master/logs/delete", json={"items": [{"src": "mst", "id": x["id"]} for x in two] + [{"src": "coupang", "id": cp["id"]}]})
+    left = {l["id"] for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"]}
+    check("勾兩筆蝦皮特選的、一筆酷澎訂單管理系統的 → 刪掉 3 筆、只刪勾的那幾筆", r.get_json().get("deleted") == 3 and not ({x["id"] for x in two} & left)
+          and len(left) == len(lg["logs"]) - 2 and not c.get("/api/master/logs?scope=all&q=PO_TEST_DEL").get_json()["logs"], str(r.get_json()))
+    check("什麼都沒勾 → 400", c.post("/api/master/logs/delete", json={"items": []}).status_code == 400)
+    n_conv = c.get("/api/shopee/conv").get_json()["lines"]
+    n_mars = db.get_conn().execute("SELECT COUNT(*) AS n FROM mst_mars_products").fetchone()["n"]
+    check("沒照著打「清空資料」→ 400；一個範圍都沒勾 → 400", c.post("/api/shopee/reset", json={"confirm": "清空"}).status_code == 400
+          and c.post("/api/shopee/reset", json={"confirm": "清空資料", "orders": False, "refs": False}).status_code == 400)
+    r = c.post("/api/shopee/reset", json={"confirm": "清空資料", "orders": True, "refs": False, "logs": False})
+    logs = c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"]
+    check("只清訂單、保留歷程：訂單沒了、價格本還在、多一筆「清除資料」紀錄", r.status_code == 200 and "歷程紀錄保留" in r.get_json()["message"]
+          and orders(**{"from": "", "to": ""})["all_orders"]["count"] == 0 and c.get("/api/shopee/conv").get_json()["lines"] == n_conv
+          and any(l["field"] == "shopee_reset" for l in logs) and len(logs) > 1, r.get_data(as_text=True)[:200])
+    r = c.post("/api/shopee/reset", json={"confirm": "清空資料", "orders": False, "refs": True, "logs": True})
+    check("再清參考資料、歷程一起刪：價格本、庫存資料沒了，蝦皮特選歷程 0 筆，瑪氏商品總表沒被動到",
+          r.status_code == 200 and not c.get("/api/shopee/conv").get_json()["lines"].get("寶僑")
+          and not c.get("/api/shopee/stock").get_json()["stock"] and c.get("/api/master/logs?scope=shopee").get_json()["logs"] == []
+          and db.get_conn().execute("SELECT COUNT(*) AS n FROM mst_mars_products").fetchone()["n"] == n_mars, r.get_data(as_text=True)[:200])
+
 
 def ship_tests(c, preview, orders, up):
     import xlwt

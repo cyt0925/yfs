@@ -241,6 +241,20 @@
     <summary style="cursor:pointer;font-weight:700">通知紀錄 <span class="kbd">（可再複製文字、下載明細）</span></summary>
     <div class="tbl-wrap mt-3" style="max-height:360px"><table class="t" id="k-hist"></table></div>
   </details>
+  {% if is_admin %}
+  <details class="card p-4" id="reset-box" style="border-color:#fca5a5">
+    <summary style="cursor:pointer;font-weight:700;color:#b91c1c"><i class="bi bi-trash3"></i> 清除資料 <span class="kbd">（限管理員；清除後無法復原）</span></summary>
+    <div class="mt-3 space-y-2">
+      <label class="block"><input type="checkbox" id="rs-orders" checked> <b>訂單資料</b>
+        <span class="kbd">蝦皮採購單／入庫單、各版本與差異、EIP 採購單與回填單號、修改的數量、拋單檔、缺貨與通知紀錄、上傳紀錄</span></label>
+      <label class="block"><input type="checkbox" id="rs-refs"> <b>參考資料</b> <span class="kbd">價格本、庫存資料（EC 即時庫存、竹運庫存效期表、竹運商品主檔）</span></label>
+      <label class="block"><input type="checkbox" id="rs-logs" checked> <b>一併刪除蝦皮特選的歷程紀錄</b></label>
+      <div class="kbd">蝦皮倉資料、拋單檔收件資料、效期標準是設定，不會清除；在蝦皮特選補登的瑪氏商品屬於共用的商品總表，也不會清除。</div>
+      <div class="flex items-center gap-2 flex-wrap"><span class="kbd">請輸入「清空資料」以確認</span><input id="rs-confirm" class="inp" placeholder="清空資料" autocomplete="off" style="width:140px">
+        <button id="rs-go" class="btn btn-sm" style="background:#b91c1c;color:#fff;border-color:#b91c1c"><i class="bi bi-trash3"></i> 清除</button></div>
+    </div>
+  </details>
+  {% endif %}
 </div>
 </main>
 <!-- 右側面板（改版第二次）：點一張單，這張單的全部在這裡看、在這裡改；清單不被蓋住 -->

@@ -6,6 +6,7 @@
   資料來源是 mst_logs（商品主檔自動化那套歷程），用 /api/master/logs 的 scope 參數篩這一頁相關的；
   選「全部紀錄」（scope=all）時另外合併酷澎訂單管理系統的 edit_logs（Jerry 2026-10-07）。
   Jerry 2026-10-02：每個工具都要能查歷程。
+  Jerry 2026-10-14：歷程要可以刪，只有管理員能刪（勾選後「刪除勾選的 N 筆」，/api/master/logs/delete）。
 #}
 {% set _scope = hist_scope or 'all' %}
 {% set _color = hist_color or '#fff' %}
@@ -32,6 +33,8 @@
   .hs-src.import { background:#dbeafe; color:#1d4ed8; } .hs-src.system { background:#fef3c7; color:#92400e; }
   .hs-new { font-weight:700; } .hs-old { color:#94a3b8; text-decoration:line-through; }
   .hs-empty { padding:28px; text-align:center; color:#64748b; }
+  .hs-del { background:#b91c1c; } .hs-del:disabled { opacity:.45; cursor:not-allowed; }
+  .hs-adm { display:none; align-items:center; gap:8px; } .hs-adm.on { display:inline-flex; }
 </style>
 <button type="button" class="hs-btn" id="hs-open" title="{{ '全部操作與修改紀錄' if _scope == 'all' else '本頁相關的操作與修改紀錄' }}"><i class="bi bi-clock-history"></i> 歷程紀錄</button>
 <dialog id="hs-dlg">
@@ -46,6 +49,8 @@
       <input id="hs-from" type="date" title="起始日期"><span class="hs-cnt">～</span><input id="hs-to" type="date" title="結束日期">
       <button type="button" class="hs-go" id="hs-go"><i class="bi bi-search"></i> 查詢</button>
       <span class="hs-cnt" id="hs-count"></span>
+      <span class="hs-adm" id="hs-adm"><label class="hs-cnt" style="color:#334155"><input type="checkbox" id="hs-all"> 全選目前列出的</label>
+        <button type="button" class="hs-go hs-del" id="hs-del" disabled><i class="bi bi-trash3"></i> <span id="hs-del-t">刪除勾選的 0 筆</span></button></span>
       <span style="flex:1"></span>
       <button type="button" class="hs-go" id="hs-csv" style="background:#fff;color:#0f172a;border:1px solid #cbd5e1"><i class="bi bi-download"></i> 匯出 CSV</button>
     </div>
@@ -57,7 +62,12 @@
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const SRC = { import: "匯入", manual: "手動", system: "系統" };
-  let LAST = [];
+  let LAST = [], CAN_DEL = false; const PICK = new Set();      // 管理員才能刪（Jerry 2026-10-14）
+  const keyOf = l => `${l.src || "mst"}:${l.id}`;
+  function syncPick() {
+    $("#hs-del-t").textContent = `刪除勾選的 ${PICK.size} 筆`; $("#hs-del").disabled = !PICK.size;
+    $("#hs-all").checked = LAST.length > 0 && PICK.size === LAST.length;
+  }
   function params() {
     const p = new URLSearchParams({ limit: "500", scope: $("#hs-scope").value, q: $("#hs-q").value.trim() });
     if ($("#hs-from").value) p.set("from", $("#hs-from").value);
@@ -68,11 +78,15 @@
     $("#hs-table").innerHTML = `<tr><td class="hs-empty">載入中…</td></tr>`;
     const res = await fetch(`/api/master/logs?${params()}`); const d = await res.json().catch(() => ({}));
     if (!res.ok) { $("#hs-table").innerHTML = `<tr><td class="hs-empty">${esc(d.error || "無法載入歷程紀錄")}</td></tr>`; return; }
-    LAST = d.logs || [];
+    LAST = d.logs || []; CAN_DEL = !!d.can_delete; PICK.clear();
+    $("#hs-adm").classList.toggle("on", CAN_DEL && LAST.length > 0);
     $("#hs-count").textContent = LAST.length ? `共 ${LAST.length} 筆${LAST.length >= 500 ? "（僅顯示最近 500 筆，請縮小期間或輸入關鍵字）" : ""}` : "";
     const fmt = v => v == null || v === "" ? "" : esc(v);
-    $("#hs-table").innerHTML = `<thead><tr><th>時間</th><th>操作人員</th><th>系統</th><th>來源</th><th>線別</th><th>PO 單號</th><th>國條／SKU ID</th><th>項目</th><th>修改前 → 修改後</th><th>原因</th><th>備註</th></tr></thead><tbody>` +
-      (LAST.map(l => `<tr><td class="k">${esc((l.changed_at || "").slice(0, 16))}</td><td>${esc(l.operator)}</td><td class="k">${esc(l.system)}</td><td><span class="hs-src ${esc(l.source)}">${SRC[l.source] || esc(l.source)}</span></td><td class="k">${esc(l.line)}</td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode || l.sku_id)}</td><td>${esc(l.field_label)}</td><td>${l.old_value || l.new_value ? `<span class="hs-old">${fmt(l.old_value)}</span>${l.old_value ? " → " : ""}<span class="hs-new">${fmt(l.new_value)}</span>` : ""}</td><td class="k">${esc(l.reason)}</td><td class="k">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="11" class="hs-empty">查無紀錄</td></tr>`) + `</tbody>`;
+    const ck = l => CAN_DEL ? `<td><input type="checkbox" class="hs-ck" data-k="${esc(keyOf(l))}"></td>` : "";
+    $("#hs-table").innerHTML = `<thead><tr>${CAN_DEL ? "<th></th>" : ""}<th>時間</th><th>操作人員</th><th>系統</th><th>來源</th><th>線別</th><th>PO 單號</th><th>國條／SKU ID</th><th>項目</th><th>修改前 → 修改後</th><th>原因</th><th>備註</th></tr></thead><tbody>` +
+      (LAST.map(l => `<tr>${ck(l)}<td class="k">${esc((l.changed_at || "").slice(0, 16))}</td><td>${esc(l.operator)}</td><td class="k">${esc(l.system)}</td><td><span class="hs-src ${esc(l.source)}">${SRC[l.source] || esc(l.source)}</span></td><td class="k">${esc(l.line)}</td><td class="mono">${esc(l.po_number)}</td><td class="mono">${esc(l.barcode || l.sku_id)}</td><td>${esc(l.field_label)}</td><td>${l.old_value || l.new_value ? `<span class="hs-old">${fmt(l.old_value)}</span>${l.old_value ? " → " : ""}<span class="hs-new">${fmt(l.new_value)}</span>` : ""}</td><td class="k">${esc(l.reason)}</td><td class="k">${esc(l.note)}</td></tr>`).join("") || `<tr><td colspan="12" class="hs-empty">查無紀錄</td></tr>`) + `</tbody>`;
+    document.querySelectorAll("#hs-table .hs-ck").forEach(c => c.addEventListener("change", () => { c.checked ? PICK.add(c.dataset.k) : PICK.delete(c.dataset.k); syncPick(); }));
+    syncPick();
   }
   function csv() {
     const head = ["時間", "操作人員", "系統", "來源", "線別", "PO 單號", "SKU ID", "國條", "項目", "修改前", "修改後", "原因", "備註"];
@@ -87,5 +101,17 @@
   $("#hs-q").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
   $("#hs-scope").addEventListener("change", load);
   $("#hs-csv").addEventListener("click", csv);
+  $("#hs-all").addEventListener("change", () => {
+    PICK.clear(); if ($("#hs-all").checked) LAST.forEach(l => PICK.add(keyOf(l)));
+    document.querySelectorAll("#hs-table .hs-ck").forEach(c => { c.checked = PICK.has(c.dataset.k); }); syncPick();
+  });
+  $("#hs-del").addEventListener("click", async () => {
+    if (!PICK.size || !confirm(`確定刪除 ${PICK.size} 筆歷程紀錄？刪除後無法復原。`)) return;
+    const items = [...PICK].map(k => { const [src, id] = k.split(":"); return { src, id: Number(id) }; });
+    const res = await fetch("/api/master/logs/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(d.error || "刪除失敗"); return; }
+    await load(); $("#hs-count").textContent = `已刪除 ${d.deleted} 筆。` + $("#hs-count").textContent;
+  });
 })();
 </script>

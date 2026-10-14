@@ -959,6 +959,15 @@ function showSettings(on) {
   else { loadFresh(); refresh(); }
 }
 $("#btn-set").addEventListener("click", () => showSettings($("#view-set").classList.contains("hidden")));
+/* 清除資料（限管理員；Jerry 2026-10-14） */
+if ($("#rs-go")) $("#rs-go").addEventListener("click", async () => {
+  const body = { orders: $("#rs-orders").checked, refs: $("#rs-refs").checked, logs: $("#rs-logs").checked, confirm: $("#rs-confirm").value.trim() };
+  if (!body.orders && !body.refs) return toast("請至少勾選一項清除範圍", "err");
+  if (body.confirm !== "清空資料") return toast("請輸入「清空資料」以確認", "err");
+  if (!confirm(`確定清除${[body.orders && "訂單資料", body.refs && "參考資料"].filter(Boolean).join("、")}？清除後無法復原。`)) return;
+  try { const r = await post("/api/shopee/reset", body); toast(r.message); $("#rs-confirm").value = ""; closeSide(); showSettings(true); }
+  catch (err) { toast(err.message, "err"); }
+});
 $("#set-back").addEventListener("click", () => showSettings(false));
 
 /* 上傳了還沒按「確認匯入」就重新整理：把預覽卡片放回來 */

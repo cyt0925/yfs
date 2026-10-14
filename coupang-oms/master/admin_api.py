@@ -151,7 +151,7 @@ def _coupang_logs(conn, po, q, d_from, d_to, limit):
         f"""SELECT id, po_number, sku_id, field, field_label, old_value, new_value, operator, source, note, changed_at
             FROM edit_logs WHERE {' AND '.join(where)} ORDER BY changed_at DESC, id DESC LIMIT ?""", params + [limit]))
     for r in rows:
-        r.update(line="", barcode="", reason="", system="酷澎訂單管理系統")
+        r.update(line="", barcode="", reason="", system="酷澎訂單管理系統", src="coupang")
     return rows
 
 
@@ -186,12 +186,41 @@ def api_logs():
         from portal import system_of
         for r in rows:
             r["system"] = system_of("mst_logs", r.get("field"), r.get("note"))
+            r["src"] = "mst"
         # 「全部紀錄」也要看得到酷澎訂單管理系統的紀錄（edit_logs）：首頁「最近操作紀錄」有列，
         # 點進來卻查不到會讓人以為沒記到（Jerry 2026-10-07）。各工具頁的本頁紀錄、商品主檔的歷程分頁不合併。
         if scope == "all" and not barcode:
             rows = sorted(rows + _coupang_logs(conn, po, q, d_from, d_to, limit),
                           key=lambda r: (r.get("changed_at") or "", r.get("id") or 0), reverse=True)[:limit]
-        return jsonify({"logs": rows})
+        return jsonify({"logs": rows, "can_delete": _is_admin()})
     finally:
         conn.close()
+
+
+@master_bp.route("/api/master/logs/delete", methods=["POST"])
+def api_logs_delete():
+    """刪除歷程紀錄（Jerry 2026-10-14：「歷程記錄要可以刪除」；只有管理員）。
+    畫面上勾哪幾筆刪哪幾筆：mst（各工具頁、商品主檔的 mst_logs）和 coupang（酷澎訂單管理系統的 edit_logs，「全部紀錄」才看得到）分開帶 id。"""
+    if not _is_admin():
+        return jsonify({"error": "只有管理員可以刪除歷程紀錄。"}), 403
+    items = (request.get_json(silent=True) or {}).get("items") or []
+    ids = {"mst": set(), "coupang": set()}
+    for it in items if isinstance(items, list) else []:
+        src, i = (it or {}).get("src"), norm_int((it or {}).get("id"))
+        if src in ids and i:
+            ids[src].add(i)
+    if not ids["mst"] and not ids["coupang"]:
+        return jsonify({"error": "請勾選要刪除的紀錄。"}), 400
+    conn = get_conn()
+    try:
+        n = 0
+        for src, table in (("mst", "mst_logs"), ("coupang", "edit_logs")):
+            got = sorted(ids[src])
+            for k in range(0, len(got), 500):
+                part = got[k:k + 500]
+                n += conn.execute(f"DELETE FROM {table} WHERE id IN ({','.join('?' * len(part))})", part).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "deleted": n})
 
