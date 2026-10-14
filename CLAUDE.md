@@ -16,9 +16,12 @@
 2. 升 `coupang-oms/app.py` 最上面的 `BUILD_VERSION`，否則無法確認部署有沒有生效
 3. 推完去 Render 後台看部署是不是綠燈，並打開正式站確認右下角版本號
 
-**Jerry 2026-10-14：以後改完直接推正式站，不用等他說「OK 推正式站」。** 上面三點照做：
-兩支測試（加 test_master、test_mars、test_shopee 的 SQLite＋PostgreSQL、test_master_ui、check_chinese）全過、
-開發分支推上去後 GitHub 三項檢查綠燈，才把正式站分支快轉過去；推完請 Jerry 看右下角版本號。
+**Jerry 2026-10-14：以後改完直接推正式站，不用等他說「OK 推正式站」。** 推完請 Jerry 看右下角版本號。
+**本機只跑跟改動有關的測試**（Jerry 2026-10-14「改成跟改動有關的測試 我相信你」，全部跑一次要十幾分鐘），其餘交給 CI：
+- 改到 `app.py`、`importer.py`、酷澎訂單畫面 → `test_flow`；`purchase.py` → `test_purchase`；`master/` → `test_master`＋`test_mars`；
+  `mars/` → `test_mars`；`shopee/` → `test_shopee`；`db.py`、`master/common.py`、`normalize.py` 這種共用的 → 全部。
+- 有動到 SQL 的，相關那幾支在 PostgreSQL 也跑；動到畫面（templates、static）就跑 `test_master_ui`；`check_chinese` 每次都跑（很快）。
+- 開發分支推上去後 **GitHub 三項檢查（全部測試）綠燈**，才把正式站分支快轉過去。紅燈不推。
 
 `main` 不是部署來源，只是參考快照。
 
