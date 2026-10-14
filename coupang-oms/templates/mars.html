@@ -82,6 +82,19 @@
   table.t tr.sp.g1 td:first-child { box-shadow:inset 4px 0 0 var(--teal); }
   table.t tr.sp:hover td { background:var(--m0); }
   .ver { position:fixed; right:10px; bottom:8px; font-size:11px; color:var(--muted); }
+  /* 拆單底稿填 EIP 採購單號（Jerry 2026-10-14） */
+  #dlg-fe { border:none; border-radius:14px; padding:0; width:min(860px,96vw); max-height:90vh; box-shadow:0 30px 80px rgba(0,0,0,.35); }
+  #dlg-fe::backdrop { background:rgba(15,23,42,.55); }
+  #dlg-fe .fe-h { background:var(--m8); color:#fff; padding:12px 18px; display:flex; align-items:center; gap:10px; font-weight:700; }
+  #dlg-fe .fe-h button { margin-left:auto; background:none; border:none; color:#fff; font-size:16px; cursor:pointer; opacity:.85; }
+  #dlg-fe .fe-b { padding:16px 18px; overflow:auto; max-height:calc(90vh - 50px); }
+  .fe-cnt { display:flex; gap:14px; flex-wrap:wrap; margin:12px 0 8px; font-size:14px; }
+  .fe-cnt b { font-size:18px; }
+  .fe-ok { color:var(--ok); } .fe-warn { color:#b45309; } .fe-bad { color:#b91c1c; }
+  .fe-tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+  .fe-tbl th { background:#f1f5f9; text-align:left; padding:6px 8px; position:sticky; top:0; white-space:nowrap; }
+  .fe-tbl td { padding:5px 8px; border-bottom:1px solid #e2e8f0; }
+  .fe-tbl tr.y td { background:#fff8e1; } .fe-tbl tr.r td { background:#ffe4e6; }
 </style>
 </head>
 <body>
@@ -148,6 +161,7 @@
       <span class="chip" id="f-noeip" title="只列出還沒填 EIP 採購單號的拆單表">只看還沒填 EIP 單號的</span>
       <select id="f-sort" class="inp" style="width:auto" title="拆單表的排列順序"><option value="date">依到貨日排序</option><option value="wh">依倉別排序</option></select>
       <div class="flex-1"></div>
+      <button id="btn-fe" class="btn btn-o" title="把 OP 的拆單底稿丟進來，系統比對後自動填好 EIP 採購單號那一欄"><i class="bi bi-file-earmark-check"></i> 底稿填 EIP 採購單號</button>
       <button id="btn-gen" class="btn btn-p"><i class="bi bi-download"></i> 下載 EIP 採購單</button>
       <button id="btn-emma-sel" class="btn btn-o" disabled title="將勾選的拆單合併成一個 EMMA 匯入檔"><i class="bi bi-check2-square"></i> 合併下載 EMMA 匯入檔（勾選）</button>
       <button id="btn-emma-all" class="btn btn-o" title="將此期間的拆單全部合併成一個 EMMA 匯入檔"><i class="bi bi-file-earmark-spreadsheet"></i> 下載 EMMA 匯入檔（全部）</button>
@@ -240,6 +254,15 @@
 </main>
 <div id="toasts"></div>
 <div class="ver">版本 {{ build_version }}</div>
+<dialog id="dlg-fe"><div class="fe-h"><i class="bi bi-file-earmark-check"></i> 底稿填 EIP 採購單號<button type="button" id="fe-x" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="fe-b">
+    <div class="text-sm muted">上傳拆單底稿（.xlsx），系統依「單號＋SKU No.」對應已回填的 EIP 採購單號，填入「拆解訂單」頁的 EIP 採購單號欄（表頭「想改倉庫」）。
+      檔案其他內容不變；對不到的留空並標黃，原本填的與系統不同時不覆蓋並標紅。</div>
+    <label class="dzbox mt-3" id="fe-dz"><i class="bi bi-cloud-arrow-up"></i><div><b>將拆單底稿拖曳至此</b>，或點選檔案<div class="kbd">.xlsx</div></div>
+      <input type="file" id="fe-file" accept=".xlsx,.xlsm" class="hidden"></label>
+    <div id="fe-msg" class="text-sm mt-2"></div>
+    <div id="fe-out"></div>
+  </div></dialog>
 <script src="{{ url_for('static', filename='mars.js') }}?v={{ build_version }}"></script>
 </body>
 </html>

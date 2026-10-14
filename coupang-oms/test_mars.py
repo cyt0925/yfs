@@ -710,6 +710,47 @@ def main():
     check("有劃到的記一筆歷程（驗收單缺貨劃線、寫劃掉幾品）", any(l["field"] == "mars_receipt" and "整列劃掉 1 品" in (l["new_value"] or "") for l in logs), str([l for l in logs if l["field"] == "mars_receipt"][:1]))
     check("壞檔、不是 PDF → 預覽寫原因、原檔不變", c.post("/api/mars/receipts/preview", data={"file": (io.BytesIO(b"x"), "x.txt")}, content_type="multipart/form-data").get_json()["files"][0]["error"] == "不是 PDF 檔")
 
+    print("\n【8h】拆單底稿填 EIP 採購單號（Jerry 2026-10-14：OP 的底稿那欄不用再一列一列手填）")
+    cn = db.get_conn()
+    sp = [dict(x) for x in cn.execute("SELECT id, eip_po, delivery_date, items_json FROM mst_mars_splits WHERE items_json != '[]' ORDER BY id").fetchall()]
+    cn.close()
+    A = next(x for x in sp if x["eip_po"] and len(json.loads(x["items_json"])) >= 2)       # 一份有兩品、已回填
+    C = next(x for x in sp if x["eip_po"] and x["id"] != A["id"])                           # 另一份已回填（拿來測手填不同）
+    B = next((x for x in sp if not x["eip_po"]), None)                                       # 還沒回填
+    ia = json.loads(A["items_json"])
+    wbd = openpyxl.Workbook(); wbd.active.title = "整合表"; wbd.active.append(["OP 自己的整合表，不能被動到"])
+    wsd = wbd.create_sheet("拆解訂單")
+    wsd.append(["交期", "想改交期", "倉庫", "想改倉庫", "單號", "No.", "SKU No.", "條碼", "", "永豐料號", "品名"])
+    num = lambda v: int(v) if str(v).isdigit() else v  # noqa: E731 — Excel 裡單號、SKU 常是數字
+    day = lambda x: datetime.datetime.strptime(x["delivery_date"], "%Y-%m-%d")  # noqa: E731 — 交期在 Excel 裡是日期
+    rows_ = [(ia[0], None, day(A)), (ia[1], A["eip_po"], day(A)), (json.loads(C["items_json"])[0], "PO209999999", day(C))]
+    if B:
+        rows_.append((json.loads(B["items_json"])[0], None, day(B)))
+    rows_.append(({"po_number": "99999999999999", "sku_id": "123456789", "yf_sku": "M00000000"}, None, "2026-10-21"))
+    for i, (it, pre, dd) in enumerate(rows_, 1):
+        wsd.append([dd, None, "TAO5", pre, num(it["po_number"]), i, num(it["sku_id"]), "", None, it.get("yf_sku", ""), "測試品"])
+    bd = io.BytesIO(); wbd.save(bd); bdata = bd.getvalue()
+    fe = lambda url, data, name: c.post(url, data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data")  # noqa: E731
+    r = fe("/api/mars/fill_eip/preview", bdata, "拆單_1021.xlsx"); d = r.get_json()
+    st = [x["status"] for x in d.get("rows", [])]
+    check("預覽：找到「拆解訂單」頁；空的填入、相同不動、手填不同的標出來、還沒回填的、找不到的", r.status_code == 200 and d["sheet"] == "拆解訂單"
+          and st == ["fill", "same", "diff"] + (["pending"] if B else []) + ["missing"] and d["rows"][0]["eip"] == A["eip_po"], str(d)[:400])
+    r = fe("/api/mars/fill_eip", bdata, "拆單_1021.xlsx")
+    check("下載：檔名加「_已填EIP採購單號」", r.status_code == 200 and "%E5%B7%B2%E5%A1%ABEIP" in r.headers.get("Content-Disposition", "") and r.headers.get("X-Mars-Filled") == "1",
+          str(r.headers.get("Content-Disposition")))
+    wbo = openpyxl.load_workbook(io.BytesIO(r.data)); wso = wbo["拆解訂單"]
+    vals = [wso.cell(i, 4).value for i in range(2, 2 + len(rows_))]
+    fills = [wso.cell(i, 4).fill.fgColor.rgb if wso.cell(i, 4).fill and wso.cell(i, 4).fill.fill_type else "" for i in range(2, 2 + len(rows_))]
+    check("填好的檔：第 1 列填入、第 2 列原樣、第 3 列手填的不蓋掉且標紅、對不到的留空標黃；其他頁原封不動",
+          vals[0] == A["eip_po"] and vals[1] == A["eip_po"] and vals[2] == "PO209999999" and vals[-1] is None
+          and fills[0] == "" and fills[2].endswith("FFC7CE") and fills[-1].endswith("FFF2CC") and (not B or (vals[3] is None and fills[3].endswith("FFF2CC")))
+          and wbo["整合表"]["A1"].value == "OP 自己的整合表，不能被動到", str((vals, fills)))
+    check("歷程記一筆", any(l["field"] == "mars_fill_eip" and "填入 1 列" in l["new_value"] for l in c.get("/api/master/logs?scope=mars&limit=50").get_json()["logs"]))
+    check("舊版 .xls → 400 講清楚", fe("/api/mars/fill_eip/preview", b"x", "a.xls").status_code == 400)
+    wbx = openpyxl.Workbook(); wbx.active.append(["隨便", "表頭"]); bx = io.BytesIO(); wbx.save(bx)
+    r = fe("/api/mars/fill_eip/preview", bx.getvalue(), "x.xlsx")
+    check("不是拆單底稿 → 400 講要哪幾欄", r.status_code == 400 and "單號" in r.get_json()["error"], str(r.get_json()))
+
     print("\n【9】清除資料")
     app_module._write_users(app_module.get_users(), {"Jerry", "小真"})
     r = c.post("/api/master/reset", json={"confirm": "清空資料", "orders": True, "products": True})

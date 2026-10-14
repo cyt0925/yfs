@@ -355,6 +355,16 @@ def main():
                        content_type="multipart/form-data").status_code == 200
         pg.goto(f"{base}/mars"); pg.wait_for_selector("#sp-table thead"); pg.wait_for_timeout(500)
         check("瑪氏出貨頁打得開、商品總表狀態寫出 7 個料號", "7" in pg.inner_text("#mp-status") and "假_瑪氏商品總表" in pg.inner_text("#mp-status"), pg.inner_text("#mp-status")[:120])
+        pg.click("#btn-fe"); pg.wait_for_selector("#dlg-fe[open]", timeout=5000)
+        check("拆單旁「底稿填 EIP 採購單號」→ 打開視窗、有拖曳框", pg.is_visible("#fe-dz") and "單號＋SKU No." in pg.inner_text("#dlg-fe"))
+        wbf = openpyxl.Workbook(); wsf = wbf.active; wsf.title = "拆解訂單"
+        wsf.append(["交期", "想改交期", "倉庫", "想改倉庫", "單號", "No.", "SKU No.", "條碼", "", "永豐料號", "品名"])
+        wsf.append(["2026-10-21", None, "TAO5", None, "99999999999999", 1, "123", "", None, "M00000000", "對不到的品"])
+        fp = os.path.join(tempfile.gettempdir(), "ui_拆單底稿.xlsx"); wbf.save(fp)
+        pg.set_input_files("#fe-file", fp); pg.wait_for_selector("#fe-out .fe-cnt", timeout=10000)
+        check("丟底稿 → 列出幾列、對不到的列出來標黃、沒有可填的就不能下載", "對不到" in pg.inner_text("#fe-out") and "系統裡找不到" in pg.inner_text("#fe-out")
+              and pg.is_disabled("#fe-go"), pg.inner_text("#fe-out")[:200])
+        pg.click("#fe-x")
         pg.fill("#mp-q", "m36752197"); pg.wait_for_selector("#mp-res table", timeout=5000)
         check("商品總表搜尋：打小寫料號 → 列出箱盒包三列、寫共 3 筆、有箱入數", pg.eval_on_selector_all("#mp-res tbody tr", "els => els.length") == 3
               and "共 3 筆" in pg.inner_text("#mp-q-n") and "144" in pg.inner_text("#mp-res"), pg.inner_text("#mp-res")[:200])
@@ -375,7 +385,7 @@ def main():
         check("月曆：9 月有訂單的天亮起來、格子裡有箱數和 PO 數", pg.eval_on_selector_all("#cal .day.has", "els => els.length") >= 2 and "箱" in pg.inner_text("#cal .day.has >> nth=0") and "PO" in pg.inner_text("#cal .day.has >> nth=0"), pg.inner_text("#cal .day.has >> nth=0")[:60])
         pg.click("#cal .day[data-date='2026-09-18']"); pg.wait_for_timeout(800)
         check("點月曆 9/18 → 起訖都變 9/18、那格變深色", pg.input_value("#d-from") == "2026-09-18" and pg.input_value("#d-to") == "2026-09-18" and pg.eval_on_selector("#cal .day[data-date='2026-09-18']", "e => e.classList.contains('on')"))
-        check("五個上傳處都有看得見的虛線拖曳框（多了 ⑥ 驗收單）", pg.eval_on_selector_all(".dzbox", "els => els.length") == 5)
+        check("五個上傳處都有看得見的虛線拖曳框（多了 ⑥ 驗收單）", pg.eval_on_selector_all(".dzbox:not(#fe-dz)", "els => els.length") == 5)
         check("9/18：5 份拆單表、都是「還沒產出」，但單號格子和每列按鈕已經能用、一條 PO 標題列寫拆成 5 份", pg.eval_on_selector_all("#sp-table tr.sp", "els => els.length") == 5
               and pg.eval_on_selector_all("#sp-table .st-new", "els => els.length") == 5 and not pg.is_disabled("#sp-table input.eip")
               and pg.eval_on_selector_all("#sp-table button.eipf", "els => els.length") == 5

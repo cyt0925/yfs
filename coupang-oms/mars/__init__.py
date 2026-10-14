@@ -19,6 +19,6 @@ from flask import Blueprint
 
 mars_bp = Blueprint("mars", __name__)
 
-from . import products, po, emma, split, shortage, receipt  # noqa: E402,F401 — 讓路由生效
+from . import products, po, emma, split, shortage, receipt, fill_eip  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["mars_bp"]

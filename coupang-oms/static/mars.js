@@ -329,6 +329,32 @@ async function downloadBlob(url, opts, fallback, okMsg) {
     return res;
   } catch (e) { toast(e.message, "err"); return null; }
 }
+/* 拆單底稿填 EIP 採購單號（Jerry 2026-10-14：OP 的底稿那欄要自己一列一列填，系統裡已經有答案） */
+let FE_FILE = null;
+$("#btn-fe").addEventListener("click", () => { FE_FILE = null; $("#fe-msg").innerHTML = ""; $("#fe-out").innerHTML = ""; $("#dlg-fe").showModal(); });
+$("#fe-x").addEventListener("click", () => $("#dlg-fe").close());
+$("#fe-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) feLoad(f); });
+["dragenter", "dragover"].forEach(ev => $("#fe-dz").addEventListener(ev, e => { e.preventDefault(); }));
+$("#fe-dz").addEventListener("drop", e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) feLoad(f); });
+async function feLoad(f) {
+  FE_FILE = f; $("#fe-out").innerHTML = ""; $("#fe-msg").innerHTML = `<span class="muted">比對 ${esc(f.name)} 中…</span>`;
+  const fd = new FormData(); fd.append("file", f);
+  let d; try { d = await api("/api/mars/fill_eip/preview", { method: "POST", body: fd }); } catch (e) { $("#fe-msg").innerHTML = `<span class="neg">${esc(e.message)}</span>`; return; }
+  $("#fe-msg").innerHTML = "";
+  const c = d.counts, miss = c.pending + c.multi + c.missing, bad = d.rows.filter(r => !["fill", "same"].includes(r.status));
+  let h = `<div class="fe-cnt"><span>「${esc(d.sheet)}」${d.rows.length} 列：</span><span class="fe-ok">已填入 <b>${c.fill}</b> 列</span>${c.same ? `<span>原本已填、相同 <b>${c.same}</b> 列</span>` : ""}
+    ${miss ? `<span class="fe-warn">對不到 <b>${miss}</b> 列（留空、標黃）</span>` : ""}${c.diff ? `<span class="fe-bad">原本填的與系統不同 <b>${c.diff}</b> 列（未覆蓋、標紅）</span>` : ""}</div>`;
+  if (bad.length) h += `<div class="tbl-wrap" style="max-height:40vh"><table class="fe-tbl"><thead><tr><th>列</th><th>單號</th><th>SKU No.</th><th>永豐料號</th><th>品名</th><th>原本</th><th>系統</th><th>說明</th></tr></thead><tbody>
+    ${bad.map(r => `<tr class="${r.status === "diff" ? "r" : "y"}"><td>${r.row}</td><td class="fn">${esc(r.po)}</td><td class="fn">${esc(r.sku)}</td><td class="fn">${esc(r.yf)}</td><td>${esc(r.name)}</td><td class="fn">${esc(r.was)}</td><td class="fn">${esc(r.eip)}</td><td>${esc(r.text)}</td></tr>`).join("")}</tbody></table></div>`;
+  h += `<div class="flex items-center gap-2 mt-3"><button id="fe-go" class="btn btn-p" ${c.fill ? "" : "disabled"}><i class="bi bi-download"></i> 下載填好的檔案</button>
+    ${c.fill ? "" : `<span class="text-sm muted">沒有可以填的列。</span>`}</div>`;
+  $("#fe-out").innerHTML = h;
+  $("#fe-go").addEventListener("click", async () => {
+    const fd2 = new FormData(); fd2.append("file", FE_FILE);
+    await downloadBlob("/api/mars/fill_eip", { method: "POST", body: fd2 }, FE_FILE.name, `已下載填好 ${c.fill} 列 EIP 採購單號的底稿`);
+  });
+}
+
 $("#btn-po").addEventListener("click", async () => {
   $("#btn-po").disabled = true;
   try {
