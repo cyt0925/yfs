@@ -29,6 +29,7 @@ python3 -m http.server 8791   # 然後開 http://localhost:8791/index.html
 - 開發分支：`claude/sop-search-website-3uq026`
 - 線上：<https://cyt0925.github.io/yfs/>
 - 沒有自動化測試。改完 `index.html` 用 Playwright 實際點過搜尋、篩選、流程圖切換。
+- 動到列印（`#printArea`、`@media print`）要用 Playwright 印成 PDF 看分頁，不能只看畫面。
 
 ## 環境注意
 

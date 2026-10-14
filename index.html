@@ -610,6 +610,77 @@ body:not(.signed-in) .signout{display:none}
 .wf-mdcol-h{font-size:12.5px;font-weight:700;color:var(--ink-2);margin-bottom:8px}
 .wf-mdcol-h.off{color:var(--muted)}
 @media(max-width:760px){.wf-mdsplit{grid-template-columns:1fr}}
+
+/* ── 列印（Jerry 2026-10-14：右鍵列印版面會跑掉，做一顆列印按鈕） ──
+   兩層：1) 按「列印」→ 只印這一份 SOP，另外排成列印用版面（#printArea），步驟全部展開、附圖一起印；
+         2) 沒按按鈕直接 Ctrl+P／右鍵列印 → 至少把標題列、搜尋、篩選、沒展開的卡片藏起來。 */
+.ch-acts{display:flex;align-items:center;gap:10px}
+.print-btn{white-space:nowrap}
+#printArea{display:none}
+@media print{
+  :root,:root[data-theme="dark"]{
+  --ink:#1a2430; --ink-2:#3a4757; --muted:#6b7787;
+  --paper:#f4f5f2; --card:#ffffff; --line:#e2e5df; --line-2:#eceee9;
+  --accent:#cf1428; --accent-ink:#a10f1f; --accent-wash:#fbe6e8;
+  --brand-mars:#b4531f; --brand-mars-wash:#f6e9e0;
+  --brand-pg:#1d63b8; --brand-pg-wash:#e3eef9;
+  --brand-cpg:#2f8f5b; --brand-cpg-wash:#e2f1e7;
+  --brand-cross:#8155a7; --brand-cross-wash:#efe7f6;
+  --brand-gen:#5c6470; --brand-gen-wash:#ecedf0;
+  --m-consign:#b45309; --m-consign-wash:#f7ecdb;
+  --m-buyout:#4046c7; --m-buyout-wash:#e6e7fb;
+  --m-loan:#7c3aed; --m-loan-wash:#efe6fc;
+  --d-direct:#3a7ca5; --d-hct:#5a6b45;
+  --shadow:0 1px 2px rgba(26,36,48,.05),0 8px 24px rgba(26,36,48,.06);
+  --radius:14px;
+  --sans:"PingFang TC","Noto Sans TC","Microsoft JhengHei","Hiragino Sans GB",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+;--paper:#fff;--card:#fff;color-scheme:light}
+  @page{size:A4;margin:14mm 14mm 16mm}
+  html,body{background:#fff!important}
+  /* 2) 沒按按鈕直接列印 */
+  body:not(.print-one) header,body:not(.print-one) .search-row,body:not(.print-one) #kwSuggest,body:not(.print-one) #srcNote,
+  body:not(.print-one) #activeChips,body:not(.print-one) .filters,body:not(.print-one) .card:not(.open),body:not(.print-one) .card-tools,
+  body:not(.print-one) .expand-ind,body:not(.print-one) .print-btn,body:not(.print-one) #toast,body:not(.print-one) .lightbox,
+  body:not(.print-one) .step-h .caret,body:not(.print-one) .img-flag,body:not(.print-one) #srcBadge,body:not(.print-one) #refreshBtn,
+  body:not(.print-one) #editModeBtn,body:not(.print-one) #authArea,body:not(.print-one) #mFilter,body:not(.print-one) #whoAmI{display:none!important}
+  body:not(.print-one) .layout{display:block}
+  body:not(.print-one) .grid{display:block}
+  body:not(.print-one) .card.open{break-inside:auto;box-shadow:none;border-color:#ccc}
+  body:not(.print-one) .step-body{display:block!important}
+  body:not(.print-one) .step-h{break-after:avoid}
+  /* 1) 按「列印」：只留 #printArea */
+  body.print-one>*:not(#printArea){display:none!important}
+  body.print-one #printArea{display:block;font-family:var(--sans);color:#1a2430;font-size:11pt;line-height:1.7}
+  .pr-top{display:flex;justify-content:space-between;gap:10pt;font-size:8.5pt;color:#6b7787;border-bottom:1px solid #c9ccc6;padding-bottom:4pt;margin-bottom:10pt}
+  .pr-title{font-size:17pt;font-weight:800;line-height:1.35;margin:0 0 5pt;color:#1a2430}
+  .pr-code{font-family:var(--mono);font-size:9.5pt;color:#6b7787;margin-left:6pt;white-space:nowrap}
+  .pr-chips{margin:0 0 3pt}
+  .pr-chips span{display:inline-block;border:1px solid #b9bdb6;border-radius:999px;padding:0 7pt;font-size:9pt;font-weight:600;margin:0 4pt 4pt 0;line-height:1.6}
+  .pr-meta{font-size:9.5pt;color:#555;margin:0 0 6pt}
+  .pr-meta span+span::before{content:"·";margin:0 6pt;color:#aaa}
+  .pr-sec{margin-top:11pt}
+  .pr-h{font-size:10pt;font-weight:800;color:#a10f1f;letter-spacing:.06em;border-left:3px solid #cf1428;padding-left:6pt;margin:0 0 5pt;break-after:avoid}
+  .pr-sec p{margin:2pt 0}
+  .pr-flow{border:1px solid #c9ccc6;border-radius:5pt;padding:6pt 9pt;background:#f6f6f4;font-size:10.5pt;line-height:1.8}
+  .pr-flow b{color:#a10f1f}
+  .pr-roles{width:100%;border-collapse:collapse;font-size:10.5pt}
+  .pr-roles td{border:1px solid #c9ccc6;padding:3pt 7pt;vertical-align:top}
+  .pr-roles td:first-child{font-weight:700;white-space:nowrap;width:1%;background:#f6f6f4}
+  .pr-step{border:1px solid #d9ddd6;border-radius:5pt;padding:5pt 9pt 6pt;margin:0 0 6pt}
+  .pr-step .pr-body>p:first-child{break-before:avoid}
+  .pr-step-h{display:flex;gap:6pt;align-items:baseline;font-weight:700;font-size:10.8pt;margin:0 0 2pt;break-after:avoid}
+  .pr-num{flex:none;min-width:16pt;height:16pt;border-radius:4pt;background:#fbe6e8;color:#a10f1f;font-size:9pt;font-weight:800;display:inline-grid;place-items:center;line-height:1}
+  .pr-step .pr-body{font-size:10.5pt;color:#3a4757}
+  .pr-sub{font-weight:700;color:#a10f1f;margin:5pt 0 2pt;padding-left:6pt;border-left:2px solid #cf1428}
+  .pr-imgs{margin:4pt 0}
+  .pr-imgs img{display:block;max-width:100%;max-height:88mm;width:auto;height:auto;border:1px solid #c9ccc6;border-radius:4pt;break-inside:avoid}
+  .pr-empty{color:#888;font-style:italic}
+  .pr-exc{list-style:none;margin:0;padding:0}
+  .pr-exc li{border-left:3px solid #b45309;padding:2pt 0 2pt 7pt;margin:0 0 4pt;font-size:10.5pt}
+  .pr-tags span{display:inline-block;font-size:9pt;color:#555;border:1px solid #d9ddd6;border-radius:999px;padding:0 6pt;margin:0 4pt 3pt 0}
+  .pr-foot{display:flex;justify-content:space-between;gap:10pt;margin-top:14pt;border-top:1px solid #c9ccc6;padding-top:5pt;font-size:8.5pt;color:#6b7787}
+}
 </style>
 </head>
 <body>
@@ -796,6 +867,56 @@ function renderBlock(b){
   return `<p class="bp">${lab}${hl(b.x)}</p>`;
 }
 
+
+// ── 列印一份 SOP（Jerry 2026-10-14）────────────────────────────────────────
+// 不直接印畫面：另外用資料排一份列印版（#printArea），步驟全展開、附圖一起印，印完就清掉。
+function printBlock(b){
+  if(b.t==='img') return `<div class="pr-imgs"><img src="${esc(b.x)}" alt=""></div>`;
+  if(b.t==='h') return `<div class="pr-sub">${esc(b.x)}</div>`;
+  return `<p>${b.label?`<b>${esc(b.label)}：</b>`:''}${esc(b.x)}</p>`;
+}
+function printSopHTML(d){
+  const chips=[brandLabel[d.brand]||d.brand, d.platform!=='通用'?d.platform:'', ...(d.modes||[]), (d.delivery&&d.delivery!=='－')?d.delivery:'', d.status||'']
+    .filter(Boolean).map(x=>`<span>${esc(x)}</span>`).join('');
+  const roles=(d.roles&&d.roles.length)?`<div class="pr-sec"><div class="pr-h">角色與職責</div><table class="pr-roles"><tbody>${d.roles.map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</tbody></table></div>`:'';
+  const steps=(d.steps||[]).map((st,i)=>{
+    const blocks=parseBlocks(st[1]);
+    const body=blocks.length?blocks.map(printBlock).join(''):'<span class="pr-empty">（本步驟以系統操作截圖為主，無文字細節）</span>';
+    return `<div class="pr-step"><div class="pr-step-h"><span class="pr-num">${i+1}</span><span>${esc(st[0])}</span></div><div class="pr-body">${body}</div></div>`;
+  }).join('');
+  const exc=(d.exceptions&&d.exceptions.length)?`<div class="pr-sec"><div class="pr-h">異常處理</div><ul class="pr-exc">${d.exceptions.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div>`:'';
+  const tags=(d.tags&&d.tags.length)?`<div class="pr-sec"><div class="pr-h">關鍵字</div><div class="pr-tags">${d.tags.map(t=>`<span>#${esc(t)}</span>`).join('')}</div></div>`:'';
+  const today=new Date().toLocaleDateString('zh-TW',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const url=location.href.split('#')[0].split('?')[0];
+  return `<div class="pr-top"><span>永豐商店 · 電子商務部　營運 SOP</span><span>${esc(d.codeShow||d.code)}</span></div>
+    <h1 class="pr-title">${esc(d.title)}<span class="pr-code">${esc(d.codeShow||d.code)}</span></h1>
+    <div class="pr-chips">${chips}</div>
+    <div class="pr-meta"><span>版本 ${esc(d.version)}</span><span>${esc(d.date)}</span><span>${esc(d.author)}</span></div>
+    ${d.purpose?`<div class="pr-sec"><div class="pr-h">目的</div><p>${esc(d.purpose)}</p></div>`:''}
+    ${d.overview?`<div class="pr-sec"><div class="pr-h">流程總覽</div><div class="pr-flow">${esc(d.overview).replace(/→/g,'<b>→</b>')}</div></div>`:''}
+    ${roles}
+    <div class="pr-sec"><div class="pr-h">操作步驟（${(d.steps||[]).length} 步）</div>${steps}</div>
+    ${exc}${tags}
+    <div class="pr-foot"><span>列印日期 ${esc(today)}</span><span>內容以線上版本為準：${esc(url)}</span></div>`;
+}
+function printSop(code){
+  const d=DATA.find(x=>x.code===code); if(!d) return;
+  let area=document.getElementById('printArea');
+  if(!area){ area=document.createElement('div'); area.id='printArea'; document.body.appendChild(area); }
+  area.innerHTML=printSopHTML(d);
+  document.body.classList.add('print-one');
+  const waits=[...area.querySelectorAll('img')].map(im=>im.complete?Promise.resolve():new Promise(r=>{ im.onload=im.onerror=r; }));
+  Promise.race([Promise.all(waits), new Promise(r=>setTimeout(r,8000))]).then(()=>{ window.print(); setTimeout(printDone,1500); });  // 附圖載好才印；afterprint 沒觸發就用計時器還原
+}
+function printDone(){ document.body.classList.remove('print-one'); const a=document.getElementById('printArea'); if(a) a.innerHTML=''; }
+window.addEventListener('afterprint',printDone);
+// Ctrl+P／⌘P：有展開的 SOP 就印那一份（流程圖的視窗開著就印視窗那份）；都沒有就照瀏覽器原本的列印
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.altKey||e.shiftKey||String(e.key).toLowerCase()!=='p') return;
+  if(document.body.classList.contains('print-one')) return;
+  let c=document.querySelector('#wfCardModalBack.show .card[data-code]')||document.querySelector('#grid .card.open[data-code]');
+  if(c){ e.preventDefault(); printSop(c.dataset.code); }
+});
 const PLATFORM_ORDER=["酷澎","博客來","PCHOME","MOMO","雅虎","蝦皮","東森","UberEats","遠時","通用"];
 const state={q:"",brand:new Set(),platform:new Set(),mode:new Set(),delivery:new Set(),kw:new Set(),sort:"default",view:"grid"};
 
@@ -973,10 +1094,11 @@ function card(d){
     ${d.purpose?`<p class="ch-preview">${hl(d.purpose)}</p>`:''}
     <div class="ch-foot">
       <div class="ch-meta"><span>版本 ${esc(d.version)}</span><span>${esc(d.date)}</span><span>${esc(d.author)}</span></div>
-      <span class="expand-ind">${openCards.has(d.code)?'收合':'展開細節'}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg></span>
+      <span class="ch-acts">${openCards.has(d.code)?'<button type="button" class="btn btn-sm print-btn" title="只印這一份 SOP，步驟與附圖全部展開">🖨 列印</button>':''}<span class="expand-ind">${openCards.has(d.code)?'收合':'展開細節'}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m6 9 6 6 6-6"/></svg></span></span>
     </div>`;
   head.onclick=()=>{ openCards.has(d.code)?openCards.delete(d.code):openCards.add(d.code); render(); };
+  const pb=head.querySelector('.print-btn'); if(pb) pb.onclick=e=>{ e.stopPropagation(); printSop(d.code); };
   c.appendChild(head);
 
   if(openCards.has(d.code)){
@@ -1771,9 +1893,9 @@ function wfCardModalHTML(d,focusStage){
     else if(!matchedAny) focusNote=`<p style="font-size:11.5px;color:var(--muted);margin:0 0 10px">🔖 已人工標註，但沒有任何一步對應到「${esc(focusTrunk.name)}」。</p>`;
     else focusNote=`<p style="font-size:11.5px;color:var(--muted);margin:0 0 10px">🔖 已用外框標出對應「${esc(focusTrunk.name)}」的步驟（人工逐份標註，非關鍵字判斷）。</p>`;
   }
-  return `<div class="card open">
+  return `<div class="card open" data-code="${esc(d.code)}">
     <div class="card-head">
-      <div class="ch-top"><h3>${hl(d.title)}</h3><span class="code">${esc(d.codeShow||d.code)}</span></div>
+      <div class="ch-top"><h3>${hl(d.title)}</h3><span class="code">${esc(d.codeShow||d.code)}</span><button type="button" class="btn btn-sm print-btn" title="只印這一份 SOP，步驟與附圖全部展開" onclick="printSop('${esc(d.code)}')">🖨 列印</button></div>
       <div class="chip-row">
         <span class="chip ${BRAND_CHIP_CLASS[d.brand]||('brand-'+d.brand)}">${brandLabelHTML(d.brand)}</span>
         ${d.platform==='通用'?'':`<span class="chip ${PLAT_LOGO[d.platform]?'cp-chip':'plat'}">${platLabelHTML(d.platform)}</span>`}
