@@ -850,10 +850,13 @@ def short_tests(c, orders):
     a = it(plan(), L, "4987176232878_CNN")
     check("第 2 次：140 → 120，第 1 次的紀錄還在、累計下修 70", r.get_json()["round"] == 2 and [(x["round"], x["before"], x["after"]) for x in a["rounds"]] == [(1, 190, 140), (2, 140, 120)]
           and a["cut"] == 70 and a["rounds"][0]["notified"], str(a["rounds"]))
+    rn = it(plan(), L, "4987176232878_RNN")
+    save({"order_id": rn["order_id"], "short": 2, "reasons": ["庫存不足"], "note": "同一張單另一個 SKU 第一次缺"})
     r = c.post("/api/shopee/short/notify", json={"order_nos": [L]})
-    t = c.get(f"/api/shopee/short/notify/{r.get_json()['id']}").get_json()["messages"][0]
-    check("第 2 次的通知：第二次通知、缺貨寫累計、下修至 120", t.startswith("【蝦皮缺貨下修通知｜第二次通知】") and "訂購190／可出貨120／缺貨70" in t
-          and "處理方式：下修至120" in t, t)
+    ms2 = c.get(f"/api/shopee/short/notify/{r.get_json()['id']}").get_json()["messages"]; t = ms2[0]
+    check("同一張 PR 一個 SKU 第 2 次、另一個第 1 次 → 下修合成一則（Jerry 2026-10-14），標題用第二次通知、每品標第幾次、缺貨寫累計、下修至 120",
+          len(ms2) == 1 and t.startswith("【蝦皮缺貨下修通知｜第二次通知】") and "下修SKU（2項）：" in t and "訂購190／可出貨120／缺貨70" in t
+          and "處理方式：下修至120" in t and "拉拉褲(XXL)26片（第2次）" in t and "4987176232878_RNN" in t and "箱購(XXL)26片X4包（第1次）" in t, t)
     r = save({"order_id": oid, "short": 1, "reasons": ["庫存不足"]})
     check("寶僑兩次都通知過 → 不能再填（400）", r.status_code == 400 and "2 次" in r.get_json()["error"], r.get_json()["error"])
     cc = it(plan(), C, "1022257_PNN")

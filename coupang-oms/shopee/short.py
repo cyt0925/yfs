@@ -206,22 +206,26 @@ def api_short_save():
 
 # ── 通知蝦皮（LINE 文字＋Excel 明細） ───────────────────────────────────────
 def line_messages(groups):
-    """照 Alice 的 LINE 機器人訊息：一張 PR、一種處理（刪單／下修）、同一次通知一則。刪單在前、下修在後。"""
+    """照 Alice 的 LINE 機器人訊息：一張 PR 的刪單合成一則、下修合成一則，刪單在前、下修在後（Jerry 2026-10-14：
+    同一張訂單的訊息要合併，不然要複製好幾次；下修跟刪單分開）。同一則裡混到不同次的，標題用最高那次，每品後面標第幾次。"""
     buckets = collections.OrderedDict()
     for g in groups:
         for p in g["items"]:
             if not p["pending"]:
                 continue
             kind = "刪單" if not p["final"] else "下修"
-            key = (p["pr_id"] or g["order_no"], 0 if kind == "刪單" else 1, p["rounds"][-1]["round"])
+            key = (p["pr_id"] or g["order_no"], 0 if kind == "刪單" else 1)
             buckets.setdefault(key, {"g": g, "kind": kind, "items": []})["items"].append(p)
     msgs = []
-    for (pr, _k, rnd), b in sorted(buckets.items(), key=lambda kv: kv[0]):
+    for (pr, _k), b in sorted(buckets.items(), key=lambda kv: kv[0]):
         g, kind, its = b["g"], b["kind"], b["items"]
+        rounds = {p["rounds"][-1]["round"] for p in its}
+        rnd = max(rounds)
         out = [f"【蝦皮缺貨{kind}通知｜{ROUND_TXT.get(rnd, f'第{rnd}次通知')}】", f"賣場：{MARKET.get(g['line'], g['line'])}", f"PR ID：{pr}",
                f"預計到貨日：{g['expected_date'] or ''}", f"到貨倉別：{g['warehouse'] or ''}", "", f"{kind}SKU（{len(its)}項）："]
         for i, p in enumerate(its, 1):
-            out += [f"{i}. PO ID：{p['po_id'] or '尚未產生'}", f"蝦皮SKU ID：{p['shopee_sku_id']}", f"{p['supplier_sku_id']} {p['name']}"]
+            tag = f"（第{p['rounds'][-1]['round']}次）" if len(rounds) > 1 else ""
+            out += [f"{i}. PO ID：{p['po_id'] or '尚未產生'}", f"蝦皮SKU ID：{p['shopee_sku_id']}", f"{p['supplier_sku_id']} {p['name']}{tag}"]
             if kind == "下修":
                 out += [f"訂購{p['orig']}／可出貨{p['final']}／缺貨{p['cut']}", f"處理方式：下修至{p['final']}"]
             out.append("")
