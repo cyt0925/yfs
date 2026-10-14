@@ -16,6 +16,10 @@
 2. 升 `coupang-oms/app.py` 最上面的 `BUILD_VERSION`，否則無法確認部署有沒有生效
 3. 推完去 Render 後台看部署是不是綠燈，並打開正式站確認右下角版本號
 
+**Jerry 2026-10-14：以後改完直接推正式站，不用等他說「OK 推正式站」。** 上面三點照做：
+兩支測試（加 test_master、test_mars、test_shopee 的 SQLite＋PostgreSQL、test_master_ui、check_chinese）全過、
+開發分支推上去後 GitHub 三項檢查綠燈，才把正式站分支快轉過去；推完請 Jerry 看右下角版本號。
+
 `main` 不是部署來源，只是參考快照。
 
 ## 這是什麼
