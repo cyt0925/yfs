@@ -157,6 +157,21 @@ def main():
           and len(ws_) == 1 and "PO1" in ws_[0] and "兩個都有訂" in ws_[0] and "先算給 M10290449" in ws_[0], str(ws_))
     check("同一個貨號分 M10281733 和 M10281733-1（有包單位）→ 對到同一個貨號，不算衝突", canon.get("10281733") == "10281733" and "10281733" not in cf)
     check("上傳結果只列真的衝突那一組，講清楚比對時怎麼處理", d["code_conflicts"] == ["瑪氏貨號 10214470 對到 2 個料號（M10214470、M10290449）：比對勇信表時看採購單訂的是哪個；都沒訂的話先照 M10290449"], str(d["code_conflicts"]))
+    L = lambda **kw: c.get("/api/mars/products/list?" + "&".join(f"{k}={v}" for k, v in kw.items())).get_json()   # noqa: E731
+    d = L(); row = {r["yf_sku"]: r for r in L(per=100)["rows"]}
+    check("商品總表檢視：13 個料號一個一列；數字：有換號 5（假檔本來就有 2 個有換號紀錄）、停產 1、對到兩個料號 1 組、補登 0；預設每頁 20",
+          d["counts"] == {"all": 13, "changed": 5, "dead": 1, "conflict": 1, "manual": 0} and d["total"] == 13 and d["per"] == 20 and d["pages"] == 1, str(d["counts"]))
+    r9 = row["M10290449"]; r4 = row["M10214470"]
+    check("M10290449：現在 60037559、舊號 10214470›10290449、標衝突且是預設；M10214470：現在 10214470、標衝突不是預設、寫都沒訂先照 M10290449",
+          r9["mars_code"] == "60037559" and r9["old_codes"] == ["10214470", "10290449"] and r9["conflicts"] == [{"code": "10214470", "others": ["M10214470"], "default_sku": "M10290449", "is_default": True}]
+          and r4["conflicts"] == [{"code": "10214470", "others": ["M10290449"], "default_sku": "M10290449", "is_default": False}], f"{r9['conflicts']} {r4['conflicts']}")
+    check("M10279583 停產、貨號已轉給 M10408285；M10408285 從 M10279583 轉來、備註文字只剩「轉」以外的字",
+          row["M10279583"]["dead"] and row["M10279583"]["to"] == ["M10408285"] and row["M10408285"]["from"] == ["M10279583"] and row["M10408285"]["note_text"] == "", str(row["M10408285"]))
+    check("M10281733-1 跟 M10281733 同一個貨號、不算衝突；單位欄箱盒包合起來", row["M10281733-1"]["same_code"] == ["M10281733"] and not row["M10281733-1"]["conflicts"]
+          and row["M10281733-1"]["units"] == "箱" and row[next(iter(row))]["units"] in ("箱盒包", "箱"), str(row["M10281733-1"]))
+    check("篩選：停產 1、對到兩個料號 2 列、有換號 5；搜尋舊號 10214470 → 兩個料號都找到；兩個關鍵字都要符合；每頁 5 → 3 頁",
+          L(filter="dead")["total"] == 1 and L(filter="conflict")["total"] == 2 and L(filter="changed")["total"] == 5 and L(q="10214470")["total"] == 2
+          and L(q="牛肉 60037559")["total"] == 1 and L(per=5)["pages"] == 3 and L(per=5, page=9)["page"] == 3, str([L(filter=f)["total"] for f in ("dead", "conflict", "changed")]))
     d = up(c, "/api/mars/products/import", MASTER).get_json()
     check("假檔原本那 7 個料號沒有衝突", d["codes"] == 7 and d["code_conflicts"] == [])
     sr = lambda q: c.get("/api/mars/products", query_string={"q": q}).get_json()  # noqa: E731

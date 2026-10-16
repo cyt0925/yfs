@@ -236,6 +236,65 @@ def api_search_mars_products():
     return jsonify({"rows": rows, "total": total})
 
 
+_NOTE_WORDS = re.compile(r"\d{8}|轉貨號|停產|轉|>")
+
+
+@mars_bp.route("/api/mars/products/list")
+def api_list_mars_products():
+    """商品總表檢視（Jerry 2026-10-16 示意圖定案）：一個料號一列（箱盒包合起來），看得到現在的貨號、換過的舊號、停產、
+    對到兩個料號、蝦皮特選補登；只看不能改（要改去 Alice 的價格本；Excel 沒有的用蝦皮特選「補商品資料」）。
+    filter：all／changed（有換號）／dead（停產）／conflict（對到兩個料號）／manual（補登）；q 空白隔開多個關鍵字，舊號也查得到。"""
+    words = [w.lower() for w in str(request.args.get("q") or "").split() if w][:5]
+    flt = request.args.get("filter") or "all"
+    try:
+        page = max(1, int(request.args.get("page") or 1)); per = min(100, max(5, int(request.args.get("per") or 20)))
+    except ValueError:
+        page, per = 1, 20
+    conn = get_conn()
+    try:
+        conflicts = {}
+        _code_canon(conn, conflicts)
+        rows = _rows(conn.execute("SELECT yf_sku, unit, mars_code, name, shelf_days, note, manual_by, manual_at, item_code, item_code2, category, brand "
+                                  "FROM mst_mars_products ORDER BY yf_sku, unit"))
+    finally:
+        conn.close()
+    by = collections.OrderedDict()
+    for r in rows:
+        by.setdefault(r["yf_sku"], []).append(r)
+    cur_of, claims = {}, {}        # 現在貨號 → [料號]；備註裡的舊號 → [料號]（誰說這個號碼是它換掉的）
+    for yf, rs in by.items():
+        if rs[0]["mars_code"]:
+            cur_of.setdefault(rs[0]["mars_code"], []).append(yf)
+        for c in re.findall(r"\d{8}", rs[0]["note"] or ""):
+            if c != rs[0]["mars_code"]:
+                claims.setdefault(c, []).append(yf)
+    items = []
+    for yf, rs in by.items():
+        r0 = rs[0]; note = r0["note"] or ""; code = r0["mars_code"] or ""
+        olds = list(dict.fromkeys(c for c in re.findall(r"\d{8}", note) if c != code))
+        cfs = []
+        for c in [code] + olds:
+            cf = conflicts.get(c)
+            if cf and c not in [x["code"] for x in cfs]:
+                cfs.append({"code": c, "others": [y for y in conflict_skus(cf) if y != yf], "default_sku": cf["targets"][cf["default"]][0],
+                            "is_default": yf in cf["targets"][cf["default"]]})
+        items.append({"yf_sku": yf, "name": r0["name"], "mars_code": code, "old_codes": olds, "note_text": " ".join(_NOTE_WORDS.sub(" ", note).split()),
+                      "shelf_days": r0["shelf_days"], "units": "".join(sorted({r["unit"] for r in rs}, key=lambda u: "箱盒包".find(u))),
+                      "dead": "停產" in note, "manual_by": r0["manual_by"] or "", "manual_at": r0["manual_at"] or "",
+                      "from": sorted({y for c in olds for y in cur_of.get(c, []) if y != yf}),          # 舊號是別人現在的貨號 → 從它轉來
+                      "to": sorted(y for y in claims.get(code, []) if y != yf) if code else [],          # 自己的貨號被別人寫成舊號 → 已轉給它
+                      "same_code": sorted(y for y in cur_of.get(code, []) if y != yf) if code else [], "conflicts": cfs,
+                      "_text": " ".join(str(v or "") for r in rs for v in (r["yf_sku"], r["mars_code"], r["name"], r["note"], r["item_code"], r["item_code2"], r["category"], r["brand"])).lower()})
+    counts = {"all": len(items), "changed": sum(1 for i in items if i["old_codes"]), "dead": sum(1 for i in items if i["dead"]),
+              "conflict": len(conflicts), "manual": sum(1 for i in items if i["manual_by"])}
+    keep = {"all": lambda i: True, "changed": lambda i: i["old_codes"], "dead": lambda i: i["dead"], "conflict": lambda i: i["conflicts"],
+            "manual": lambda i: i["manual_by"]}.get(flt, lambda i: True)
+    sel = [i for i in items if keep(i) and all(w in i["_text"] for w in words)]
+    pages = max(1, -(-len(sel) // per)); page = min(page, pages)
+    out = [{k: v for k, v in i.items() if k != "_text"} for i in sel[(page - 1) * per: page * per]]
+    return jsonify({"rows": out, "total": len(sel), "page": page, "pages": pages, "per": per, "counts": counts})
+
+
 @mars_bp.route("/api/mars/status")
 def api_mars_status():
     conn = get_conn()
@@ -269,4 +328,4 @@ def mars_page():
                            build_version=current_app.config.get("BUILD_VERSION", ""))
 
 
-__all__ = ["parse_master", "load_products", "api_import_mars_products", "api_mars_status", "mars_page"]
+__all__ = ["parse_master", "load_products", "api_import_mars_products", "api_search_mars_products", "api_list_mars_products", "api_mars_status", "mars_page"]

@@ -14,22 +14,52 @@ const STATUS = { new: "未產出", generated: "已產出，待填 EIP 採購單�
 let VIEW = null, OPEN = new Set(), CHECKED = new Set();
 let DATES = [], Q = "", NOEIP = false, SORT = "date";        // 有瑪氏訂單的到貨日（搜尋全部日期用）、搜尋字、只看還沒填 EIP 單號的
 
-/* ── 商品總表 ── */
-/* 查商品總表（Jerry 2026-10-13：「瑪氏沒有搜尋功能喔」）：蝦皮特選、拆單說找不到某料號時，在這裡直接查 */
-let MPQ_T = 0;
-$("#mp-q").addEventListener("input", () => { clearTimeout(MPQ_T); MPQ_T = setTimeout(searchProducts, 250); });
-async function searchProducts() {
-  const q = $("#mp-q").value.trim();
-  if (!q) { $("#mp-res").innerHTML = ""; $("#mp-q-n").textContent = ""; return; }
-  let d; try { d = await api(`/api/mars/products?${new URLSearchParams({ q })}`); } catch (err) { $("#mp-res").innerHTML = `<span class="neg">${esc(err.message)}</span>`; return; }
-  if (q !== $("#mp-q").value.trim()) return;           // 打字比查詢快，只顯示最後一次
-  $("#mp-q-n").textContent = d.total > d.rows.length ? `共 ${d.total} 筆，先列 ${d.rows.length} 筆` : `共 ${d.total} 筆`;
-  if (!d.rows.length) { $("#mp-res").innerHTML = `<div class="text-sm neg">商品總表裡沒有「${esc(q)}」。新品要先補進 Alice 的「自動化_Mars整合商品資料」，再重新上傳。</div>`; return; }
-  $("#mp-res").innerHTML = `<div class="tbl-wrap" style="max-height:40vh"><table class="t" style="white-space:nowrap"><thead><tr><th>永豐料號</th><th>單位</th><th>瑪氏貨號</th><th>品名</th><th>品類</th>
-    <th class="num">箱入數</th><th>中盒貼標</th><th class="num">效期天</th><th>備註</th></tr></thead><tbody>
-    ${d.rows.map(r => `<tr><td class="fn">${esc(r.yf_sku)}${r.manual_by ? `<div class="kbd" style="color:var(--warn)" title="${esc(r.manual_by)} ${esc((r.manual_at || "").slice(0, 16))}">蝦皮特選補登</div>` : ""}</td><td>${esc(r.unit)}</td><td class="fn">${esc(r.mars_code)}</td><td style="white-space:normal;min-width:240px">${esc(r.name)}</td><td>${esc(r.category)}</td>
-      <td class="num">${r.box_qty == null ? `<span class="neg">空白</span>` : Number(r.box_qty)}</td><td>${esc(r.inner_label) || "—"}</td>
-      <td class="num">${r.shelf_days == null ? "—" : r.shelf_days}</td><td class="text-sm">${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>`;
+/* ── 商品總表檢視（Jerry 2026-10-16 示意圖定案）：卡片上一排數字，點了在下面展開那一類；一個料號一列；只看不能改 ── */
+let MP = { filter: "all", page: 1, q: "" }, MPQ_T = 0, MP_OPEN = false;
+const MP_F = [["all", "全部"], ["changed", "有換號"], ["dead", "停產"], ["conflict", "對到兩個料號"], ["manual", "蝦皮特選補登"]];
+$("#mp-q").addEventListener("input", () => { clearTimeout(MPQ_T); MPQ_T = setTimeout(() => { MP.q = $("#mp-q").value.trim(); MP.page = 1; MP_OPEN = true; loadProducts(); }, 250); });
+function mpChips(el, counts, inCard) {
+  el.innerHTML = MP_F.map(([k, lab]) => {
+    const n = counts[k] || 0, warn = k === "conflict" && n;
+    const text = inCard && k === "all" ? `<b>${n}</b> 個料號` : `${lab} <b>${n}</b>${k === "conflict" ? " 組" : ""}`;
+    return `<span class="chip${!inCard && MP.filter === k ? " on" : ""}${warn ? " warn" : ""}" data-f="${k}">${warn ? `<i class="bi bi-exclamation-triangle-fill" style="margin-right:4px"></i>` : ""}${text}</span>`;
+  }).join("");
+  el.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+    MP.filter = c.dataset.f; MP.page = 1; MP_OPEN = true; loadProducts();
+    if (inCard) $("#mp-list").scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+}
+function mpStatus(r) {
+  const out = [];
+  for (const cf of r.conflicts || []) {
+    out.push(`<span class="badge st-changed">${esc(cf.code)} 也對到 ${cf.others.map(esc).join("、")}</span>${cf.is_default ? ` <span class="badge st-generated">預設對這個</span>` : ""}`
+      + (cf.is_default ? "" : `<div class="kbd" style="color:var(--warn)">勇信表印這個號碼時，看採購單訂的是哪個；都沒訂先照 ${esc(cf.default_sku)}。如果這個料號已經停產，請在價格本備註寫「停產」。</div>`));
+  }
+  if (r.dead) out.push(`<span class="badge st-new">停產</span>${r.to.length ? ` <span class="kbd">${esc(r.mars_code)} 已轉給 ${r.to.map(esc).join("、")}</span>` : ""}`);
+  if (r.manual_by) out.push(`<span class="badge st-filled">蝦皮特選補登</span> <span class="kbd">${esc(r.manual_by)} ${esc((r.manual_at || "").slice(0, 10))} · Excel 裡還沒有</span>`);
+  if (r.same_code.length) out.push(`<span class="kbd">跟 ${r.same_code.map(esc).join("、")} 同一個貨號</span>`);
+  return out.join("<br>");
+}
+async function loadProducts() {
+  let d; try { d = await api(`/api/mars/products/list?${new URLSearchParams({ q: MP.q, filter: MP.filter, page: MP.page })}`); } catch (err) { toast(err.message, "err"); return; }
+  if (MP.q !== $("#mp-q").value.trim()) return;           // 打字比查詢快，只顯示最後一次
+  mpChips($("#mp-counts"), d.counts, true); mpChips($("#mp-filters"), d.counts, false);
+  const res = $("#mp-res"); res.classList.toggle("hidden", !MP_OPEN);
+  if (!MP_OPEN) return;
+  if (!d.rows.length) {
+    res.innerHTML = MP.q ? `<div class="text-sm neg">商品總表裡沒有「${esc(MP.q)}」。新品要先補進 Alice 的「自動化_Mars整合商品資料」，再重新上傳。</div>`
+      : `<div class="text-sm muted">這一類沒有料號。</div>`;
+    return;
+  }
+  res.innerHTML = `<div class="tbl-wrap" style="max-height:60vh"><table class="t"><thead><tr><th>永豐料號</th><th>品名</th><th>瑪氏貨號（現在）</th><th>換過的舊號</th>
+    <th class="num">效期天</th><th>單位</th><th>狀態</th></tr></thead><tbody>
+    ${d.rows.map(r => `<tr class="${r.dead ? "mp-dead" : ""}${r.conflicts.length ? " mp-conf" : ""}"><td class="fn">${esc(r.yf_sku)}</td><td>${esc(r.name)}</td><td class="fn">${esc(r.mars_code) || "—"}</td>
+      <td class="mp-old fn">${r.old_codes.map(c => `<s>${esc(c)}</s>`).join(" › ")}${r.from.length ? `<span class="kbd" style="margin-left:6px">從 ${r.from.map(esc).join("、")} 轉來</span>` : ""}${r.note_text ? `<span class="kbd" style="margin-left:6px">${esc(r.note_text)}</span>` : ""}</td>
+      <td class="num">${r.shelf_days == null ? "—" : r.shelf_days}</td><td>${esc(r.units.split("").join(" "))}</td><td>${mpStatus(r)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="flex items-center gap-2 mt-2 text-sm muted" id="mp-pages"><span>第 ${d.page}／${d.pages} 頁 · 共 ${d.total} 個料號 · 每頁 ${d.per} 個</span>
+    <span style="margin-left:auto"><button class="btn btn-o btn-sm" id="mp-prev" ${d.page <= 1 ? "disabled" : ""}>上一頁</button> <button class="btn btn-o btn-sm" id="mp-next" ${d.page >= d.pages ? "disabled" : ""}>下一頁</button></span></div>`;
+  $("#mp-prev").addEventListener("click", () => { MP.page--; loadProducts(); });
+  $("#mp-next").addEventListener("click", () => { MP.page++; loadProducts(); });
 }
 
 async function loadStatus() {
@@ -44,6 +74,7 @@ async function loadStatus() {
   const up = d.dates.filter(x => x >= today());
   if (!$("#d-from").value) { const first = up[0] || d.dates[d.dates.length - 1] || today(); $("#d-from").value = $("#d-to").value = first; }
   CAL_MONTH = CAL_MONTH || $("#d-from").value.slice(0, 7);
+  loadProducts();                                           // 卡片上的那排數字（不等它，月曆先畫）
   await loadCalendar();
 }
 

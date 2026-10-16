@@ -365,12 +365,20 @@ def main():
         check("丟底稿 → 列出幾列、對不到的列出來標黃、沒有可填的就不能下載", "對不到" in pg.inner_text("#fe-out") and "系統裡找不到" in pg.inner_text("#fe-out")
               and pg.is_disabled("#fe-go"), pg.inner_text("#fe-out")[:200])
         pg.click("#fe-x")
+        pg.wait_for_selector("#mp-counts .chip", timeout=5000)
+        cnt = " ".join(pg.inner_text("#mp-counts").split())          # chip 是 inline-flex，inner_text 會把數字和字拆成兩行
+        check("商品總表卡片上一排數字：7 個料號、有換號／停產／對到兩個料號／補登；清單平常收起來", "7 個料號" in cnt and "停產 0" in cnt
+              and "對到兩個料號 0 組" in cnt and pg.is_hidden("#mp-res"), cnt)
         pg.fill("#mp-q", "m36752197"); pg.wait_for_selector("#mp-res table", timeout=5000)
-        check("商品總表搜尋：打小寫料號 → 列出箱盒包三列、寫共 3 筆、有箱入數", pg.eval_on_selector_all("#mp-res tbody tr", "els => els.length") == 3
-              and "共 3 筆" in pg.inner_text("#mp-q-n") and "144" in pg.inner_text("#mp-res"), pg.inner_text("#mp-res")[:200])
+        check("搜尋：打小寫料號 → 一個料號一列、單位寫箱 盒 包、共 1 個料號", pg.eval_on_selector_all("#mp-res tbody tr", "els => els.length") == 1
+              and "箱 盒 包" in pg.inner_text("#mp-res") and "共 1 個料號" in pg.inner_text("#mp-res"), pg.inner_text("#mp-res")[:200])
         pg.fill("#mp-q", "M60013313"); pg.wait_for_function("document.querySelector('#mp-res').innerText.includes('沒有')", timeout=5000)
         check("查不到 → 寫「商品總表裡沒有」並說要補進 Alice 的總表再上傳", "商品總表裡沒有「M60013313」" in pg.inner_text("#mp-res") and "重新上傳" in pg.inner_text("#mp-res"))
         pg.fill("#mp-q", ""); pg.wait_for_timeout(400)
+        pg.click("#mp-counts .chip[data-f=dead]"); pg.wait_for_function("document.querySelector('#mp-res').innerText.includes('這一類沒有料號')", timeout=5000)
+        check("點卡片上的「停產」→ 下面展開那一類（假檔沒有停產 → 寫這一類沒有料號）、篩選鈕亮起來", pg.eval_on_selector("#mp-filters .chip.on", "e => e.dataset.f") == "dead")
+        pg.click("#mp-filters .chip[data-f=all]"); pg.wait_for_selector("#mp-res table", timeout=5000)
+        check("點「全部」→ 7 個料號一列一個、有分頁說明", pg.eval_on_selector_all("#mp-res tbody tr", "els => els.length") == 7 and "第 1／1 頁" in pg.inner_text("#mp-pages"))
         pg.click("#lm-btn"); pg.wait_for_timeout(200)
         check("線別工具：瑪氏那欄有「瑪氏出貨」而且標目前在這", pg.eval_on_selector("#lm-pop a.lm-item.on", "e => e.innerText").startswith("瑪氏出貨"))
         pg.keyboard.press("Escape")

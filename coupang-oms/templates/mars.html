@@ -48,6 +48,10 @@
   .al-bad { background:var(--badbg); color:#7f1d1d; border:1px solid #fecaca; } .al-warn { background:var(--warnbg); color:#78350f; border:1px solid #fde68a; }
   .chip { display:inline-flex; align-items:center; padding:3px 10px; border-radius:999px; font-size:12.5px; border:1px solid var(--m2); background:var(--m0); color:var(--m8); cursor:pointer; }
   .chip.on { background:var(--m8); color:#fff; border-color:var(--m8); }
+  .chip b { margin:0 3px; }          /* inline-flex 會吃掉數字旁邊的空白，補回間距 */
+  .chip.warn { border-color:#f59e0b; background:var(--warnbg); color:var(--warn); } .chip.warn.on { background:var(--warn); color:#fff; }
+  table.t tr.mp-dead td { color:var(--muted); } table.t tr.mp-conf td { background:#fffbeb; }
+  .mp-old { color:var(--muted); } .mp-old s { color:#94a3b8; }
   .sum { display:flex; flex-wrap:wrap; gap:8px 22px; align-items:baseline; } .sum span { white-space:nowrap; } .sum b { font-size:18px; color:var(--m8); margin-right:3px; }
   .steps { display:flex; gap:6px; flex-wrap:wrap; font-size:12px; }
   .steps span { padding:2px 9px; border-radius:999px; background:rgba(255,255,255,.14); } .steps span.on { background:var(--teal); color:var(--m9); font-weight:700; }
@@ -140,12 +144,19 @@
       <label class="dzbox mt-3" title="Alice 維護的「自動化_Mars整合商品資料」，有更新時重新上傳即可。"><i class="bi bi-cloud-arrow-up"></i><div><b>將瑪氏商品總表拖曳至此</b>，或點選檔案<div class="kbd">.xlsx，整份覆蓋</div></div>
         <input type="file" id="mp-file" accept=".xlsx" class="hidden"></label>
       <div id="mp-msg" class="text-sm mt-2"></div>
-      <div class="mt-3 flex items-center gap-2 flex-wrap">
-        <input id="mp-q" class="inp" placeholder="查商品總表：永豐料號、瑪氏貨號、品名" style="width:300px" title="可用空白隔開多個關鍵字，全部符合才列出；備註裡的舊料號也查得到">
-        <span id="mp-q-n" class="text-sm muted"></span>
-      </div>
-      <div id="mp-res" class="mt-2"></div>
+      <div id="mp-counts" class="mt-3 flex items-center gap-2 flex-wrap" title="點一個數字，下面就展開那一類"></div>
     </div>
+  </section>
+
+  <!-- 商品總表檢視（Jerry 2026-10-16 示意圖定案）：參考資料，平常收起來只剩這一行；點上面的數字或打字搜尋才展開。只看不能改。 -->
+  <section class="card p-4" id="mp-list" style="margin-top:16px">
+    <div class="flex items-center gap-3 flex-wrap">
+      <b>商品總表</b>
+      <input id="mp-q" class="inp" placeholder="查：永豐料號、瑪氏貨號（舊號也行）、品名" style="width:320px" title="可用空白隔開多個關鍵字，全部符合才列出；備註裡的舊號也查得到">
+      <div id="mp-filters" class="flex items-center gap-2 flex-wrap"></div>
+      <span class="kbd" style="margin-left:auto">只看、不能改。要改請改 Alice 的價格本再重新上傳；Excel 裡沒有的品項，用蝦皮特選的「補商品資料」。</span>
+    </div>
+    <div id="mp-res" class="mt-3 hidden"></div>
   </section>
 
   <!-- ① 拆單 ＋ ② 回填 ＋ ③ 每份的瑪氏採購單 -->
