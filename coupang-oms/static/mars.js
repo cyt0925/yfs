@@ -88,7 +88,7 @@ async function uploadMaster(f) {
     const cats = Object.entries(d.by_category).map(([k, v]) => `${k} ${v}`).join("、");
     $("#mp-msg").innerHTML = `<span style="color:var(--ok)"><i class="bi bi-check-circle"></i> 已讀取 ${d.codes} 個料號（${d.rows} 列，${esc(cats)}）${d.added || d.removed ? `，與上一版相比：新增 ${d.added} 個、移除 ${d.removed} 個` : ""}。</span>`
       + ((d.kept_manual || []).length ? `<div style="color:var(--warn)">保留在蝦皮特選補登的 ${d.kept_manual.length} 品（Excel 裡還沒有）：${d.kept_manual.map(esc).join("、")}</div>` : "")
-      + ((d.code_conflicts || []).length ? `<div style="color:var(--warn)"><b>${d.code_conflicts.length} 個瑪氏貨號對到兩個料號</b>（勇信缺貨比對時會先照第一個對，請確認備註的換號紀錄）：<br>${d.code_conflicts.map(esc).join("<br>")}</div>` : "")
+      + ((d.code_conflicts || []).length ? `<div style="color:var(--warn)"><b>${d.code_conflicts.length} 個瑪氏貨號對到兩個料號</b>（比對勇信表時看採購單訂的是哪個料號，兩個都有訂才需要人工確認；其中一個已經停產的話，請在價格本備註寫「停產」）：<br>${d.code_conflicts.map(esc).join("<br>")}</div>` : "")
       + (d.warnings.length ? `<details class="kbd"><summary>${d.warnings.length} 列有問題（已略過或標示）</summary>${d.warnings.map(esc).join("<br>")}</details>` : "");
     toast("商品總表已更新"); await loadStatus(); loadSplits();
   } catch (err) { $("#mp-msg").innerHTML = `<span class="neg">${esc(err.message)}</span>`; }

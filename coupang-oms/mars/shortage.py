@@ -24,7 +24,7 @@ import pymupdf
 from master.orders_api import _apply_item_edit
 
 from .common import *  # noqa: F401,F403
-from .products import _code_canon, conflict_warnings, load_products   # noqa: F401 — shopee/yx.py 從這裡拿 _code_canon
+from .products import _code_canon, item_code, load_products, merge_conflicts, sku_codes
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "purchase_templates", "coupang_downgrade.xlsx")
 REASON_TEXT = "4. 供應商庫存不足"
@@ -150,11 +150,11 @@ def _num_same(a, b):
         return a == b
 
 
-def _item_rows(s, items, canon, orig, take):
-    """一份拆單的品項 → 比對列。take(貨號, 第幾個品項, 訂購箱數) 回傳勇信出了幾箱。"""
+def _item_rows(s, items, ident, orig, take):
+    """一份拆單的品項 → 比對列。ident(品項) 回它的貨號身分；take(貨號, 第幾個品項, 訂購箱數) 回傳勇信出了幾箱。"""
     rows = []
     for ii, it in enumerate(items):
-        c = canon.get(it.get("mars_code") or "", it.get("mars_code") or "")
+        c = ident(it)
         box = it.get("box_file") or 0
         qty0 = _orig_qty(orig.get((s["po_number"], it["sku_id"])))
         ordered = round(qty0 / box, 4) if qty0 is not None and box else (it.get("cases") or 0)
@@ -193,6 +193,9 @@ def compare(conn, pages, skip_pos=()):
     還沒填 EIP 單號的那份對不到 PDF，不能當成缺（Jerry 2026-10-08 TAO3：號碼沒填齊，其實有出），列出來要人先補。"""
     conflicts = {}
     canon = _code_canon(conn, conflicts)
+    skus = sku_codes(conn)
+    ident = lambda it: item_code(it.get("yf_sku"), it.get("mars_code"), skus, canon, conflicts)   # noqa: E731
+    ctx_warnings = []
     skip = {str(x) for x in skip_pos}
     # 重跑也要看得到：已經因勇信缺貨改成 0 的品項，訂購量用改之前的（看歷程裡第一次「缺貨／勇信出…」那筆的舊值），
     # 不然按過確認再跑一次，全部變「沒缺」、下修檔就少了那些（Jerry 2026-10-08 第二次跑拿到「沒有缺貨品項」）
@@ -206,7 +209,7 @@ def compare(conn, pages, skip_pos=()):
         d = by_eip.setdefault(p["eip_po"], {"qty": collections.Counter(), "pages": [], "names": {}})
         d["pages"].append(p["page"])
         for it in p["items"]:
-            c = canon.get(it["code"], it["code"])
+            c = it["code"] if it["code"] in conflicts else canon.get(it["code"], it["code"])   # 有衝突的等看到那張單訂了什麼再決定
             d["qty"][c] += it["qty"] or 0
             d["names"].setdefault(c, it["name"])
     all_splits = _rows(conn.execute("SELECT * FROM mst_mars_splits ORDER BY id"))
@@ -230,7 +233,8 @@ def compare(conn, pages, skip_pos=()):
         last_of = {}
         for gi, (_, its) in enumerate(loaded):
             for ii, it in enumerate(its):
-                last_of[canon.get(it.get("mars_code") or "", it.get("mars_code") or "")] = (gi, ii)
+                last_of[ident(it)] = (gi, ii)
+        merge_conflicts(eip, d, conflicts, canon, set(last_of), ctx_warnings)
         left = collections.Counter(d["qty"]); seen = set(); entries = []
         for gi, (x, items) in enumerate(loaded):
             def take(c, ii, ordered, gi=gi):
@@ -238,7 +242,7 @@ def compare(conn, pages, skip_pos=()):
                 got = left.get(c, 0) if last_of.get(c) == (gi, ii) else min(left.get(c, 0), ordered)
                 left[c] -= got
                 return got
-            e = _entry(x, eip, d["pages"], _item_rows(x, items, canon, orig, take))
+            e = _entry(x, eip, d["pages"], _item_rows(x, items, ident, orig, take))
             entries.append(e); found[x["id"]] = e
         # 勇信有出、但這個號碼的拆單都沒訂的貨號，掛在第一份
         entries[0]["extra"] = [{"mars_code": c, "name": d["names"].get(c, ""), "cases": q} for c, q in d["qty"].items() if c not in seen and q]
@@ -262,7 +266,7 @@ def compare(conn, pages, skip_pos=()):
         no_eip_all += [{"po_number": po, "filename": x["filename"]} for x in no_eip]
         entries = [found[x["id"]] for x in in_pdf]
         for x in absent:                 # 有號碼、勇信表上沒有 → 核不到就是缺（0 箱）
-            entries.append(_entry(x, x["eip_po"], [], _item_rows(x, json.loads(x["items_json"] or "[]"), canon, orig, lambda c, ii, o: 0), True))
+            entries.append(_entry(x, x["eip_po"], [], _item_rows(x, json.loads(x["items_json"] or "[]"), ident, orig, lambda c, ii, o: 0), True))
         if not entries:
             continue
         every_zero = all(r["shipped"] == 0 for y in entries for r in y["items"]) and any(r["ordered"] for y in entries for r in y["items"])
@@ -282,8 +286,7 @@ def compare(conn, pages, skip_pos=()):
                "scope_pos": len(scope), "skipped_pos": sum(1 for p in scope if p["skipped"]),
                "absent_files": sum(1 for p in pos for y in p["splits"] if y["not_in_pdf"]), "no_eip_files": len(no_eip_all)}
     return {"pos": pos, "unknown": unknown, "scope": scope, "skip_pos": sorted(skip), "no_eip": no_eip_all,
-            "page_warnings": [w for p in pages for w in p["warnings"]]
-            + conflict_warnings({it["code"] for p in pages for it in p["items"]}, conflicts, canon),
+            "page_warnings": [w for p in pages for w in p["warnings"]] + ctx_warnings,
             "warehouses": sorted(whs), "ship_dates": sorted(dates), "summary": summary}
 
 

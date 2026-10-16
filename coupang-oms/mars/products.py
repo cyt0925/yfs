@@ -85,34 +85,77 @@ COLS = ("yf_sku", "unit", "mars_code", "category", "brand", "name", "price", "pe
 def _code_canon(conn, conflicts=None):
     """任何出現過的瑪氏貨號（含備註裡的舊貨號）→ 商品總表現在用的貨號。
 
-    同一個號碼對到兩個料號時（Alice 2026-10-16 價格本實際有 4 組，例如 M10279583 自己的貨號 10279583、
-    M10408285 的備註寫「10279583 轉」）：備註有「停產」的那個讓給還在賣的；都還在賣就照料號順序取第一個，
-    並記到 conflicts {號碼: [料號, ...]} 讓畫面提醒人工確認。同一個貨號分兩個料號（M10281733、M10281733-1 有包單位）
-    對到的是同一個貨號，不算衝突。"""
-    cands = {}      # 號碼 → {目前貨號: (停產?, [料號])}
+    同一個號碼對到兩個料號時（Alice 2026-10-16 價格本實際有 4 組）：備註有「停產」的讓給還在賣的（3 組）；
+    都還在賣的（10214470：M10214470 自己的貨號、也是 M10290449 備註裡換掉的舊號）記到 conflicts，比對勇信表時
+    看那張採購單訂的是哪個料號（resolve_code）；都沒訂就先照「把這個號碼換掉的那個」（M10290449，較新；Jerry 2026-10-16）。
+    conflicts = {號碼: {"targets": {目前貨號: [料號, ...]}, "default": 目前貨號}}。
+    同一個貨號分兩個料號（M10281733、M10281733-1 有包單位）對到的是同一個貨號，不算衝突。"""
+    cands = {}      # 號碼 → {目前貨號: {"dead": 都停產?, "skus": [...], "former": 這個號碼是它換掉的舊號?}}
     for r in _rows(conn.execute("SELECT DISTINCT yf_sku, mars_code, note FROM mst_mars_products WHERE mars_code != '' ORDER BY yf_sku")):
         dead = "停產" in (r["note"] or "")
         for code in [r["mars_code"]] + re.findall(r"\d{8}", r["note"] or ""):
-            t = cands.setdefault(code, {}).setdefault(r["mars_code"], [dead, []])
-            t[0] = t[0] and dead
-            if r["yf_sku"] not in t[1]:
-                t[1].append(r["yf_sku"])
+            t = cands.setdefault(code, {}).setdefault(r["mars_code"], {"dead": True, "skus": [], "former": code != r["mars_code"]})
+            t["dead"] = t["dead"] and dead
+            if r["yf_sku"] not in t["skus"]:
+                t["skus"].append(r["yf_sku"])
     canon = {}
     for code, targets in cands.items():
-        alive = {k: v for k, v in targets.items() if not v[0]} or targets
-        canon[code] = next(iter(alive))
+        alive = {k: v for k, v in targets.items() if not v["dead"]} or targets
+        best = sorted(alive, key=lambda k: (not alive[k]["former"], alive[k]["skus"][0]))[0]
+        canon[code] = best
         if len(alive) > 1 and conflicts is not None:
-            conflicts[code] = sorted(y for _d, ys in alive.values() for y in ys)
+            conflicts[code] = {"targets": {k: list(v["skus"]) for k, v in alive.items()}, "default": best}
     return canon
 
 
-def conflict_warnings(codes, conflicts, canon):
-    """PDF（或任何來源）用到的號碼裡有對到兩個料號的 → 一句提醒。"""
+def sku_codes(conn):
+    """永豐料號 → 商品總表現在的瑪氏貨號。"""
+    return {r["yf_sku"]: r["mars_code"] for r in _rows(conn.execute("SELECT DISTINCT yf_sku, mars_code FROM mst_mars_products WHERE mars_code != ''"))}
+
+
+def item_code(yf_sku, snap_code, skus, canon, conflicts):
+    """拆單／EIP 品項的貨號身分：照料號查商品總表現在的貨號（拆單時存的可能是舊號）；
+    那個號碼本身有衝突就直接用它——品項的料號已經很明確，不用猜。"""
+    code = skus.get(yf_sku or "") or (snap_code or "")
+    return code if code in conflicts else canon.get(code, code)
+
+
+def resolve_code(code, conflicts, canon, present):
+    """勇信表上的號碼 → 這張採購單上要算給哪個貨號。回 (貨號, 要不要人工確認)。
+    有衝突的號碼看 present（這張單品項的貨號）：只有一個在單上就是它；兩個都在才要人確認（先給預設）；都不在用預設。"""
+    if code not in conflicts:
+        return canon.get(code, code), False
+    hit = [t for t in conflicts[code]["targets"] if t in present]
+    if len(hit) == 1:
+        return hit[0], False
+    return conflicts[code]["default"], len(hit) > 1
+
+
+def conflict_skus(cf):
+    return sorted(s for v in cf["targets"].values() for s in v)
+
+
+def conflict_warnings(codes, conflicts):
+    """上傳商品總表時列出：這些號碼對到兩個料號，比對時怎麼處理。"""
     out = []
     for code in sorted(c for c in codes if c in conflicts):
-        first = next(y for y in conflicts[code] if y.lstrip("M").split("-")[0] == canon[code]) if any(y.lstrip("M").split("-")[0] == canon[code] for y in conflicts[code]) else conflicts[code][0]
-        out.append(f"瑪氏貨號 {code} 在商品總表對到 {len(conflicts[code])} 個料號（{'、'.join(conflicts[code])}），先照 {first} 比對，請人工確認")
+        cf = conflicts[code]
+        out.append(f"瑪氏貨號 {code} 對到 {len(conflict_skus(cf))} 個料號（{'、'.join(conflict_skus(cf))}）：比對勇信表時看採購單訂的是哪個；都沒訂的話先照 {cf['targets'][cf['default']][0]}")
     return out
+
+
+def merge_conflicts(eip, d, conflicts, canon, present, warnings, extra_keys=()):
+    """一張採購單：PDF 上有衝突的號碼算給哪個貨號，把 qty／names（和 extra_keys 指的其他字典）併過去；兩個都有訂的記提醒。"""
+    for code in [k for k in d["qty"] if k in conflicts]:
+        target, ask = resolve_code(code, conflicts, canon, present)
+        if ask:
+            warnings.append(f"{eip}：勇信表上的瑪氏貨號 {code} 對到 {'、'.join(conflict_skus(conflicts[code]))}，這張單兩個都有訂，"
+                            f"先算給 {conflicts[code]['targets'][target][0]}，請人工確認")
+        if target != code:
+            d["qty"][target] += d["qty"].pop(code)
+            d["names"].setdefault(target, d["names"].pop(code, ""))
+            for k in extra_keys:
+                d[k][target] = d[k].get(target, []) + d[k].pop(code, [])
 
 
 def load_products(conn):
@@ -159,8 +202,8 @@ def api_import_mars_products():
              + (f"；保留系統補登 {len(keep)} 品" if keep else ""))
         conn.commit()
         conflicts = {}
-        canon = _code_canon(conn, conflicts)
-        code_conflicts = conflict_warnings(conflicts, conflicts, canon)
+        _code_canon(conn, conflicts)
+        code_conflicts = conflict_warnings(conflicts, conflicts)
     finally:
         conn.close()
     by_cat = collections.Counter(cat_code(r["category"]) or "?" for r in rows if r["unit"] == "箱")

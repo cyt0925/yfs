@@ -22,7 +22,8 @@
 """
 import datetime as _dt
 
-from mars.shortage import _code_canon, conflict_warnings, parse_yx_pdf
+from mars.products import _code_canon, item_code, merge_conflicts, sku_codes
+from mars.shortage import parse_yx_pdf
 
 from .common import *  # noqa: F401,F403
 from .orders import order_no
@@ -54,6 +55,8 @@ def compare(conn, pages, skip_eips=()):
     skip = {int(x) for x in skip_eips if str(x).strip().isdigit()}
     conflicts = {}
     canon = _code_canon(conn, conflicts)
+    skus = sku_codes(conn)
+    ctx_warnings = []
     st = ship_settings(conn)
     by_eip = collections.OrderedDict()
     for p in pages:
@@ -62,7 +65,7 @@ def compare(conn, pages, skip_eips=()):
         d = by_eip.setdefault(p["eip_po"], {"qty": collections.Counter(), "pages": [], "names": {}, "batches": collections.defaultdict(list)})
         d["pages"].append(p["page"])
         for it in p.get("items") or []:
-            c = canon.get(it["code"], it["code"])
+            c = it["code"] if it["code"] in conflicts else canon.get(it["code"], it["code"])   # 有衝突的等看到那張單訂了什麼再決定
             d["qty"][c] += it.get("qty") or 0
             d["names"].setdefault(c, it.get("name") or "")
             d["batches"][c] += [dict(b) for b in it.get("batches") or []] or (
@@ -110,7 +113,7 @@ def compare(conn, pages, skip_eips=()):
             box = s.get("conv") or 0
             a = adj.get(o["id"])
             use = a["qty_after"] if a and a["qty_before"] == o["qty"] else (o["qty"] or 0)
-            code = canon.get(s.get("mars_code") or "", s.get("mars_code") or "")
+            code = item_code(o["base_code"], s.get("mars_code"), skus, canon, conflicts)
             rs = rounds.get(o["id"], [])
             out.append({"order_id": o["id"], "order_no": order_no(o), "pr_id": o["pr_id"] or "", "po_id": o["po_id"] or "",
                         "supplier_sku_id": o["supplier_sku_id"], "shopee_sku_id": o["shopee_sku_id"], "yf_sku": o["base_code"],
@@ -172,6 +175,7 @@ def compare(conn, pages, skip_eips=()):
         for gi, (_b, its) in enumerate(rows):
             for ii, r in enumerate(its):
                 last[r["mars_code"]] = (gi, ii)
+        merge_conflicts(eip_po, d, conflicts, canon, set(last), ctx_warnings, extra_keys=("batches",))
         # 每個貨號：每批效期夠不夠（同一份 EIP 到貨日一樣，效期天看第一個訂這個貨號的品項）
         info = {}
         for gi, (b, its) in enumerate(rows):
@@ -211,7 +215,7 @@ def compare(conn, pages, skip_eips=()):
                "locked": sum(1 for r in todo if r["locked"]), "warns": sum(1 for r in todo if r["warn"]),
                "expiry_short": sum(1 for r in todo if R_EXP in r["reasons"])}
     page_warnings = [w for p in pages for w in (p.get("warnings") or []) if "讀不到倉別" not in w]   # 倉別本來就看系統裡 EIP 的
-    page_warnings += conflict_warnings({it["code"] for p in pages for it in (p.get("items") or [])}, conflicts, canon)
+    page_warnings += ctx_warnings
     return {"eips": out, "unknown": unknown, "no_eip": no_eip, "page_warnings": page_warnings, "dates": dates,
             "warehouses": whs, "summary": summary, "skip_eips": sorted(skip)}
 

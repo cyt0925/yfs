@@ -4,6 +4,7 @@
 
 執行：python test_mars.py（設了 DATABASE_URL 就跑 PostgreSQL）
 """
+import collections
 import datetime
 import io
 import json
@@ -140,11 +141,22 @@ def main():
     check("停產的讓位：10279583 是 M10279583（停產）自己的貨號、也是 M10408285 備註裡的舊號 → 對到 10408285，不算衝突",
           canon.get("10279583") == "10408285" and "10279583" not in cf, f"{canon.get('10279583')} {cf}")
     check("備註鏈每一個舊號都對到現在的貨號：10214470 之外的 10290449 → 60037559", canon.get("10290449") == "60037559" and canon.get("10230369") == "10279583")
-    check("都還在賣的才算衝突：10214470 是 M10214470 自己的、也是 M10290449 備註裡的 → 照料號順序先對 M10214470，記成衝突",
-          canon.get("10214470") == "10214470" and cf.get("10214470") == ["M10214470", "M10290449"], f"{canon.get('10214470')} {cf}")
+    check("都還在賣的才算衝突：10214470 是 M10214470 自己的、也是 M10290449 換掉的舊號 → 記成衝突，預設對較新的 M10290449（Jerry 2026-10-16）",
+          canon.get("10214470") == "60037559" and cf.get("10214470") == {"targets": {"10214470": ["M10214470"], "60037559": ["M10290449"]}, "default": "60037559"}, f"{canon.get('10214470')} {cf}")
+    conn_ = db.get_conn(); sk = mpd.sku_codes(conn_); conn_.close()
+    check("品項的貨號身分照料號查：M10214470 → 10214470（有衝突也不猜）、M10290449 拆單時存的舊號 10214470 → 現在的 60037559",
+          mpd.item_code("M10214470", "10214470", sk, canon, cf) == "10214470" and mpd.item_code("M10290449", "10214470", sk, canon, cf) == "60037559")
+    r1 = mpd.resolve_code("10214470", cf, canon, {"10214470", "99999999"}); r2 = mpd.resolve_code("10214470", cf, canon, {"60037559"})
+    r3 = mpd.resolve_code("10214470", cf, canon, {"10214470", "60037559"}); r4 = mpd.resolve_code("10214470", cf, canon, set())
+    check("勇信表印 10214470：單上只訂 M10214470 → 算給它；只訂 M10290449 → 算給它；兩個都訂 → 先給預設並要人確認；都沒訂 → 預設、不問",
+          r1 == ("10214470", False) and r2 == ("60037559", False) and r3 == ("60037559", True) and r4 == ("60037559", False), f"{r1} {r2} {r3} {r4}")
+    check("沒衝突的號碼照舊對：10279583 → 10408285", mpd.resolve_code("10279583", cf, canon, set()) == ("10408285", False))
+    dd = {"qty": collections.Counter({"10214470": 5, "10408285": 2}), "names": {"10214470": "牛肉"}}; ws_ = []
+    mpd.merge_conflicts("PO1", dd, cf, canon, {"10214470", "60037559"}, ws_)
+    check("兩個都訂的那張單：箱數併到預設的貨號，並提醒「這張單兩個都有訂」", dd["qty"] == {"60037559": 5, "10408285": 2} and dd["names"].get("60037559") == "牛肉"
+          and len(ws_) == 1 and "PO1" in ws_[0] and "兩個都有訂" in ws_[0] and "先算給 M10290449" in ws_[0], str(ws_))
     check("同一個貨號分 M10281733 和 M10281733-1（有包單位）→ 對到同一個貨號，不算衝突", canon.get("10281733") == "10281733" and "10281733" not in cf)
-    check("上傳結果只列真的衝突那一組，講清楚先照哪個對", d["code_conflicts"] == ["瑪氏貨號 10214470 在商品總表對到 2 個料號（M10214470、M10290449），先照 M10214470 比對，請人工確認"], str(d["code_conflicts"]))
-    check("勇信表上沒用到衝突的號碼就不提醒；用到了才提醒", mpd.conflict_warnings({"10279583", "10281733"}, cf, canon) == [] and len(mpd.conflict_warnings({"10214470", "10279583"}, cf, canon)) == 1)
+    check("上傳結果只列真的衝突那一組，講清楚比對時怎麼處理", d["code_conflicts"] == ["瑪氏貨號 10214470 對到 2 個料號（M10214470、M10290449）：比對勇信表時看採購單訂的是哪個；都沒訂的話先照 M10290449"], str(d["code_conflicts"]))
     d = up(c, "/api/mars/products/import", MASTER).get_json()
     check("假檔原本那 7 個料號沒有衝突", d["codes"] == 7 and d["code_conflicts"] == [])
     sr = lambda q: c.get("/api/mars/products", query_string={"q": q}).get_json()  # noqa: E731
