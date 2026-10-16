@@ -610,6 +610,22 @@ def main():
     check("已經有「退貨」時再跑一次不會重複加",
           app_module.get_config()["receiving_statuses"] == already)
 
+    print("\n【21b】類型選項補上「贈品」（Jerry 2026-10-16，既有安裝一次性補寫）")
+    old_cfg = dict(app_module.get_config())
+    old_cfg["order_types"] = ["一般", "NS", "補單", "拆單"]
+    app_module.save_json("config.json", old_cfg)
+    app_module._ensure_order_type_gift()
+    types = app_module.get_config()["order_types"]
+    check("補寫後類型選項是 一般／NS／補單／拆單／贈品，原本的都在、贈品加在最後", types == ["一般", "NS", "補單", "拆單", "贈品"], types)
+    app_module._ensure_order_type_gift()
+    check("已經有「贈品」時再跑一次不會重複加", app_module.get_config()["order_types"] == types)
+    check("畫面拿到的選項清單有「贈品」", "贈品" in client.get("/api/config").get_json()["order_types"])
+    gift_ver = client.get(f"/api/pos/{ot_po}").get_json()["header"]["version"]
+    r = client.put(f"/api/pos/{ot_po}", json={"po_version": gift_ver, "order_type": "贈品"})
+    gift_after = client.get(f"/api/pos/{ot_po}").get_json()
+    check("PO 類型可以改成「贈品」，整張單的品項一起改", r.status_code == 200 and all(s_["order_type"] == "贈品" for s_ in gift_after["skus"]),
+          f"{r.status_code} {r.get_data(as_text=True)[:200]}")
+
     def mkpdf(text="出貨確認（廠商簽名）", po="13000000478171", blank=False):
         d = pymupdf.open(); p = d.new_page()
         if not blank:

@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS orders (
     sku_id            TEXT NOT NULL,
 
     -- === 酷澎來源欄位：只有匯入能改，改動一律寫歷程 ===
-    order_type        TEXT DEFAULT '',      -- 一般 / NS / 補單 / 拆單
+    order_type        TEXT DEFAULT '',      -- 一般 / NS / 補單 / 拆單 / 贈品
     parent_po         TEXT DEFAULT '',      -- 拆單的原訂單，供血緣追蹤
     line              TEXT DEFAULT '',      -- 線別
     brand             TEXT DEFAULT '',

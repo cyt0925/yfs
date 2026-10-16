@@ -41,7 +41,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-16.1"
+BUILD_VERSION = "2026-10-16.2"
 
 app = Flask(__name__)
 
@@ -301,7 +301,7 @@ def get_config():
         "operators": ["OP"],
         "po_statuses": ["已建立", "已回覆", "處理中", "已完成", "修改中", "已取消"],
         "receiving_statuses": ["未驗收", "完成", "異常", "重啟", "退貨"],
-        "order_types": ["一般", "NS", "補單", "拆單"],
+        "order_types": ["一般", "NS", "補單", "拆單", "贈品"],
         "shipping_methods": ["原廠(EM)", "竹運(CUP)"],
     })
 
@@ -355,6 +355,16 @@ def _ensure_shipping_methods_option():
     cfg = get_config()
     if not cfg.get("shipping_methods"):
         cfg["shipping_methods"] = ["原廠(EM)", "竹運(CUP)"]
+        save_json("config.json", cfg)
+
+
+def _ensure_order_type_gift():
+    """類型選項加「贈品」（Jerry 2026-10-16），補進既有安裝裡——道理跟補「退貨」一樣：
+    正式站的選項清單存在資料庫，只改 defaults 檔案沒有用。只在清單裡沒有時才加在最後面。"""
+    cfg = get_config()
+    types = list(cfg.get("order_types") or [])
+    if "贈品" not in types:
+        cfg["order_types"] = types + ["贈品"]
         save_json("config.json", cfg)
 
 
@@ -461,6 +471,7 @@ def _ensure_po_summary_profile():
 
 _ensure_receiving_status_option()
 _ensure_shipping_methods_option()
+_ensure_order_type_gift()
 _ensure_export_profile_columns()
 _ensure_po_summary_profile()
 _ensure_po_summary_amount_column()
