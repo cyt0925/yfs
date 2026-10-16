@@ -22,7 +22,7 @@
 """
 import datetime as _dt
 
-from mars.shortage import _code_canon, parse_yx_pdf
+from mars.shortage import _code_canon, conflict_warnings, parse_yx_pdf
 
 from .common import *  # noqa: F401,F403
 from .orders import order_no
@@ -52,7 +52,8 @@ def _need(shelf, expected_date, st):
 
 def compare(conn, pages, skip_eips=()):
     skip = {int(x) for x in skip_eips if str(x).strip().isdigit()}
-    canon = _code_canon(conn)
+    conflicts = {}
+    canon = _code_canon(conn, conflicts)
     st = ship_settings(conn)
     by_eip = collections.OrderedDict()
     for p in pages:
@@ -210,6 +211,7 @@ def compare(conn, pages, skip_eips=()):
                "locked": sum(1 for r in todo if r["locked"]), "warns": sum(1 for r in todo if r["warn"]),
                "expiry_short": sum(1 for r in todo if R_EXP in r["reasons"])}
     page_warnings = [w for p in pages for w in (p.get("warnings") or []) if "讀不到倉別" not in w]   # 倉別本來就看系統裡 EIP 的
+    page_warnings += conflict_warnings({it["code"] for p in pages for it in (p.get("items") or [])}, conflicts, canon)
     return {"eips": out, "unknown": unknown, "no_eip": no_eip, "page_warnings": page_warnings, "dates": dates,
             "warehouses": whs, "summary": summary, "skip_eips": sorted(skip)}
 

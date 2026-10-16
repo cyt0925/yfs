@@ -124,6 +124,29 @@ def main():
     check("單位不是箱盒包的列跳過、Category 認不得的列標出來", d["codes"] == 8 and any("打" in w for w in d["warnings"]) and any("Candy" in w for w in d["warnings"]), str(d["warnings"]))
     d = up(c, "/api/mars/products/import", MASTER).get_json()
     check("再傳原本那份＝整份覆蓋：跟上一版比拿掉 1 個", d["codes"] == 7 and d["removed"] == 1 and d["removed_examples"] == ["M00000001"], str(d)[:160])
+    # 換號：同一個瑪氏貨號對到兩個料號（Alice 2026-10-16 真價格本的 4 組情況照抄進假檔）
+    wb = openpyxl.load_workbook(MASTER); ws = wb["商品表"]
+    for row in [["10279583", "Petcare", "Cesar", "M10279583", "舊西莎", 1, 1, 1, 1, "", "", "箱", "R", 1, "", 1, "10230369 轉>停產", ""],
+                ["10408285", "Petcare", "Cesar", "M10408285", "新西莎", 1, 1, 1, 1, "", "", "箱", "R", 1, "", 1, "10279583 轉", ""],
+                ["10214470", "Petcare", "Cesar", "M10214470", "牛肉A", 1, 1, 1, 1, "", "", "箱", "R", 1, "", 1, "", ""],
+                ["60037559", "Petcare", "Cesar", "M10290449", "牛肉B", 1, 1, 1, 1, "", "", "箱", "R", 1, "", 1, "10214470>10290449>60037559", ""],
+                ["10281733", "Gum", "Doublemint", "M10281733", "青箭", 1, 1, 1, 1, "", "", "箱", "R", 1, "", 1, "", ""],
+                ["10281733", "Gum", "Doublemint", "M10281733-1", "青箭 包", 1, 1, 1, 1, "", "", "箱", "R", 1, "", 1, "有包單位", ""]]:
+        ws.append(row)
+    buf = io.BytesIO(); wb.save(buf)
+    d = up(c, "/api/mars/products/import", buf.getvalue(), "換號.xlsx").get_json()
+    import mars.products as mpd
+    conn_ = db.get_conn(); cf = {}; canon = mpd._code_canon(conn_, cf); conn_.close()
+    check("停產的讓位：10279583 是 M10279583（停產）自己的貨號、也是 M10408285 備註裡的舊號 → 對到 10408285，不算衝突",
+          canon.get("10279583") == "10408285" and "10279583" not in cf, f"{canon.get('10279583')} {cf}")
+    check("備註鏈每一個舊號都對到現在的貨號：10214470 之外的 10290449 → 60037559", canon.get("10290449") == "60037559" and canon.get("10230369") == "10279583")
+    check("都還在賣的才算衝突：10214470 是 M10214470 自己的、也是 M10290449 備註裡的 → 照料號順序先對 M10214470，記成衝突",
+          canon.get("10214470") == "10214470" and cf.get("10214470") == ["M10214470", "M10290449"], f"{canon.get('10214470')} {cf}")
+    check("同一個貨號分 M10281733 和 M10281733-1（有包單位）→ 對到同一個貨號，不算衝突", canon.get("10281733") == "10281733" and "10281733" not in cf)
+    check("上傳結果只列真的衝突那一組，講清楚先照哪個對", d["code_conflicts"] == ["瑪氏貨號 10214470 在商品總表對到 2 個料號（M10214470、M10290449），先照 M10214470 比對，請人工確認"], str(d["code_conflicts"]))
+    check("勇信表上沒用到衝突的號碼就不提醒；用到了才提醒", mpd.conflict_warnings({"10279583", "10281733"}, cf, canon) == [] and len(mpd.conflict_warnings({"10214470", "10279583"}, cf, canon)) == 1)
+    d = up(c, "/api/mars/products/import", MASTER).get_json()
+    check("假檔原本那 7 個料號沒有衝突", d["codes"] == 7 and d["code_conflicts"] == [])
     sr = lambda q: c.get("/api/mars/products", query_string={"q": q}).get_json()  # noqa: E731
     allm = sr("m")
     code0, name0 = allm["rows"][0]["yf_sku"], allm["rows"][0]["name"]

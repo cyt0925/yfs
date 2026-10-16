@@ -24,7 +24,7 @@ import pymupdf
 from master.orders_api import _apply_item_edit
 
 from .common import *  # noqa: F401,F403
-from .products import load_products
+from .products import _code_canon, conflict_warnings, load_products   # noqa: F401 — shopee/yx.py 從這裡拿 _code_canon
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "purchase_templates", "coupang_downgrade.xlsx")
 REASON_TEXT = "4. 供應商庫存不足"
@@ -134,16 +134,6 @@ def parse_yx_pdf(data, filename=""):
     return pages
 
 
-def _code_canon(conn):
-    """任何出現過的瑪氏貨號（含備註裡的舊貨號）→ 商品總表現在用的貨號。"""
-    canon = {}
-    for r in _rows(conn.execute("SELECT DISTINCT mars_code, note FROM mst_mars_products WHERE mars_code != ''")):
-        canon.setdefault(r["mars_code"], r["mars_code"])
-        for old in re.findall(r"\d{8}", r["note"] or ""):
-            canon.setdefault(old, r["mars_code"])
-    return canon
-
-
 def _orig_qty(v):
     """歷程的舊值是文字（"32"、"32.0"），轉回數字；空的就當沒有。"""
     try:
@@ -201,7 +191,8 @@ def compare(conn, pages, skip_pos=()):
     **核不到就是缺**——整張缺的單勇信根本不會印在這份表上（早上就說不出的那批下午的表也不會有），不能等人記得去勾。
     人可以取消勾選「這次不出」的 PO（skip_pos），那張就整張不核、不改、不進下修檔。
     還沒填 EIP 單號的那份對不到 PDF，不能當成缺（Jerry 2026-10-08 TAO3：號碼沒填齊，其實有出），列出來要人先補。"""
-    canon = _code_canon(conn)
+    conflicts = {}
+    canon = _code_canon(conn, conflicts)
     skip = {str(x) for x in skip_pos}
     # 重跑也要看得到：已經因勇信缺貨改成 0 的品項，訂購量用改之前的（看歷程裡第一次「缺貨／勇信出…」那筆的舊值），
     # 不然按過確認再跑一次，全部變「沒缺」、下修檔就少了那些（Jerry 2026-10-08 第二次跑拿到「沒有缺貨品項」）
@@ -291,7 +282,8 @@ def compare(conn, pages, skip_pos=()):
                "scope_pos": len(scope), "skipped_pos": sum(1 for p in scope if p["skipped"]),
                "absent_files": sum(1 for p in pos for y in p["splits"] if y["not_in_pdf"]), "no_eip_files": len(no_eip_all)}
     return {"pos": pos, "unknown": unknown, "scope": scope, "skip_pos": sorted(skip), "no_eip": no_eip_all,
-            "page_warnings": [w for p in pages for w in p["warnings"]],
+            "page_warnings": [w for p in pages for w in p["warnings"]]
+            + conflict_warnings({it["code"] for p in pages for it in p["items"]}, conflicts, canon),
             "warehouses": sorted(whs), "ship_dates": sorted(dates), "summary": summary}
 
 

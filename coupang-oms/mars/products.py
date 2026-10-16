@@ -82,6 +82,39 @@ COLS = ("yf_sku", "unit", "mars_code", "category", "brand", "name", "price", "pe
         "pcs_per_case", "item_code", "item_code2", "unit_code", "box_qty", "inner_label", "shelf_days", "note", "po_case_note")
 
 
+def _code_canon(conn, conflicts=None):
+    """任何出現過的瑪氏貨號（含備註裡的舊貨號）→ 商品總表現在用的貨號。
+
+    同一個號碼對到兩個料號時（Alice 2026-10-16 價格本實際有 4 組，例如 M10279583 自己的貨號 10279583、
+    M10408285 的備註寫「10279583 轉」）：備註有「停產」的那個讓給還在賣的；都還在賣就照料號順序取第一個，
+    並記到 conflicts {號碼: [料號, ...]} 讓畫面提醒人工確認。同一個貨號分兩個料號（M10281733、M10281733-1 有包單位）
+    對到的是同一個貨號，不算衝突。"""
+    cands = {}      # 號碼 → {目前貨號: (停產?, [料號])}
+    for r in _rows(conn.execute("SELECT DISTINCT yf_sku, mars_code, note FROM mst_mars_products WHERE mars_code != '' ORDER BY yf_sku")):
+        dead = "停產" in (r["note"] or "")
+        for code in [r["mars_code"]] + re.findall(r"\d{8}", r["note"] or ""):
+            t = cands.setdefault(code, {}).setdefault(r["mars_code"], [dead, []])
+            t[0] = t[0] and dead
+            if r["yf_sku"] not in t[1]:
+                t[1].append(r["yf_sku"])
+    canon = {}
+    for code, targets in cands.items():
+        alive = {k: v for k, v in targets.items() if not v[0]} or targets
+        canon[code] = next(iter(alive))
+        if len(alive) > 1 and conflicts is not None:
+            conflicts[code] = sorted(y for _d, ys in alive.values() for y in ys)
+    return canon
+
+
+def conflict_warnings(codes, conflicts, canon):
+    """PDF（或任何來源）用到的號碼裡有對到兩個料號的 → 一句提醒。"""
+    out = []
+    for code in sorted(c for c in codes if c in conflicts):
+        first = next(y for y in conflicts[code] if y.lstrip("M").split("-")[0] == canon[code]) if any(y.lstrip("M").split("-")[0] == canon[code] for y in conflicts[code]) else conflicts[code][0]
+        out.append(f"瑪氏貨號 {code} 在商品總表對到 {len(conflicts[code])} 個料號（{'、'.join(conflicts[code])}），先照 {first} 比對，請人工確認")
+    return out
+
+
 def load_products(conn):
     """{(永豐料號, 單位): 商品}、{永豐料號: {單位: 商品}}"""
     rows = _rows(conn.execute("SELECT * FROM mst_mars_products"))
@@ -125,10 +158,13 @@ def api_import_mars_products():
              operator, "import", f"{up.filename}；新增 {len(added)}、拿掉 {len(removed)}"
              + (f"；保留系統補登 {len(keep)} 品" if keep else ""))
         conn.commit()
+        conflicts = {}
+        canon = _code_canon(conn, conflicts)
+        code_conflicts = conflict_warnings(conflicts, conflicts, canon)
     finally:
         conn.close()
     by_cat = collections.Counter(cat_code(r["category"]) or "?" for r in rows if r["unit"] == "箱")
-    return jsonify({"ok": True, "filename": up.filename, "rows": len(rows), "codes": len(codes),
+    return jsonify({"ok": True, "filename": up.filename, "rows": len(rows), "codes": len(codes), "code_conflicts": code_conflicts,
                     "by_category": dict(by_cat), "added": len(added), "removed": len(removed),
                     "added_examples": added[:5], "removed_examples": removed[:5], "warnings": warnings[:50],
                     "kept_manual": [f"{m['yf_sku']}（{m['unit']}）" for m in keep]})
