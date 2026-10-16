@@ -505,6 +505,25 @@ def main():
     check("同一品兩批效期（照 TAO5 真檔排法）：箱數照舊加總 19、效期串起來，另外記每批幾箱、什麼效期（蝦皮特選比允收效期用）",
           two["qty"] == 19 and two["expiry"] == "2027-11-21、2027-11-22"
           and two["batches"] == [{"qty": 17, "expiry": "2027-11-21"}, {"qty": 2, "expiry": "2027-11-22"}], str(two))
+    def _pdf(pages_lines):
+        d_ = _pm.open()
+        for lines_ in pages_lines:
+            pg_ = d_.new_page(); y_ = 40
+            for ln in lines_:
+                pg_.insert_text((40, y_), ln, fontname="china-t", fontsize=9); y_ += 14
+        return d_.tobytes()
+    head = lambda n: ["桃園市大園區高鐵北路三段100號", "BMS100211-永豐商店-酷澎-TAO1", f"{n} / 2 頁", "指送日期：2026/10/19",  # noqa: E731
+                      "配 送 明 細 表(預排鮮度)", "產品編號", "產品名稱", "入數", "配送數量", "NO.", "收貨單號：PO202610296-酷澎-T"]
+    tao1 = msx.parse_yx_pdf(_pdf([
+        head(1) + ["5888010406572", "6", "SHEBA鮮饌包 鮪魚及雞肉 1:2:12", "10C", "633G1PCHP4", "2028/08/15",
+                   "5888010406573", "7", "SHEBA鮮饌包 鮪魚(吞拿魚)及鯖魚 1:2:12", "155C", "627E1PCHP2", "2028/07/02"],
+        head(2) + ["395C", "627E1PCHP4", "2028/07/02", "備註:箱麥", "合計箱數:560"]]), "TAO1.pdf")
+    it7 = next((i for i in tao1[0]["items"] if i["code"] == "10406573"), {}) if tao1 else {}
+    check("續頁也印了表頭和收貨單號、第 7 品兩批效期跨頁（Jerry 2026-10-16 TAO1 PO202610296）→ 接回同一張：155＋395＝550、合計 560 對得上、不提醒",
+          len(tao1) == 1 and tao1[0]["cont_pages"] == [2] and it7.get("qty") == 550 and [b["qty"] for b in it7.get("batches", [])] == [155, 395]
+          and tao1[0]["total"] == 560 and not tao1[0]["warnings"], str(tao1)[:400])
+    orph = msx.parse_yx_pdf(_pdf([["收貨單號：PO202610297-酷澎-T", "1 / 1 頁", "395C", "2028/07/02", "5888010406573", "10C", "合計箱數:405"]]), "孤兒.pdf")
+    check("一張單開頭就有箱數、前面沒有品項 → 不默默丟掉，提醒「395 箱接不到品項」", any("395 箱接不到品項" in w for w in orph[0]["warnings"]), str(orph[0]["warnings"]))
     check("產品編號 58880＋貨號、配送數量 4C 的讀法", msx.QTY_RE.match("4C  ") and msx._mars_code("060019810") == "60019810" and msx._mars_code("10266398") == "10266398")
     r = up(c, "/api/mars/shortage/compare", pdf, "假_勇信.pdf"); res = r.get_json()
     check("比對：對到 1 張 PO，一個品項少 1 箱＝部分缺，其他沒缺；PO202609999 系統沒有 → 列未知", r.status_code == 200 and res["summary"]["pos"] == 1 and res["summary"]["partial"] == 1
@@ -538,6 +557,22 @@ def main():
     check("有記歷程：出貨數量、原因缺貨、說明寫勇信出幾箱", any(l["field"] == "qty_ship" and "勇信出" in json.dumps(l, ensure_ascii=False) and "缺貨" in json.dumps(l, ensure_ascii=False) for l in logs), str([l for l in logs if l["field"] == "qty_ship"][:1]))
     v = splits(c, "2026-09-29", "2026-09-30"); tb = next(x for x in v["splits"] if x["id"] == tgt["id"])
     check("已送 EIP 的那份快照跟著改：狀態還是已回填（不是 EIP 送出後訂單有變）、數量是新的", tb["status"] == "filled" and next(i for i in tb["items"] if i["sku_id"] == it0["sku_id"])["qty_ship"] == row0["new_qty"], f"{tb['status']} {tb.get('diff')}")
+    # Jerry 2026-10-16 TAO1 PO202610296：跨頁兩批效期讀漏、誤判缺貨，OP 已經按確認改小了。讀法修好後重跑 → 沒缺，要能改回原數量
+    pdf_ok = yx_pdf([("PO202609305", "TAO3", "2026/09/29", [(i["mars_code"], int(i["cases"]), "2027/08/11") for i in [it0] + others])])
+    res_ok = up(c, "/api/mars/shortage/compare", pdf_ok, "修好後重跑.pdf").get_json()
+    row_ok = next(it for it in res_ok["pos"][0]["splits"][0]["items"] if it["sku_id"] == it0["sku_id"])
+    check("前次誤判缺貨、已改小，重跑這次沒缺 → 標「改回原數量」：現在是改小的數、要改回原本的數、下修檔不列它",
+          row_ok["status"] == "ok" and row_ok["restore"] and row_ok["now_qty"] == row0["new_qty"] and row_ok["new_qty"] == before and res_ok["downgrade_rows"] == 0, str(row_ok))
+    check("本來就沒缺、也沒被改過的品項不會標改回", not any(it["restore"] for it in res_ok["pos"][0]["splits"][0]["items"] if it["sku_id"] != it0["sku_id"]))
+    r = c.post("/api/mars/shortage/apply", json={"result": res_ok}); d_ok = r.get_json()
+    o_ok = next(o for o in c.get("/api/master/orders?month=2026-09&q=13000000699901").get_json()["rows"] if o["sku_id"] == it0["sku_id"])
+    lg = [l for l in c.get("/api/master/logs?q=13000000699901&limit=1000").get_json()["logs"] if l["field"] == "qty_ship" and l["sku_id"] == it0["sku_id"]]
+    check("按確認：改回 1 筆、系統出貨數量回到原本的、沒有下修檔、歷程記原因「其他」說明改回原數量",
+          r.status_code == 200 and d_ok["changed"] == 1 and "不需酷澎下修檔" in d_ok.get("error", "") and o_ok["qty_ship"] == before
+          and any("改回原數量" in json.dumps(l, ensure_ascii=False) and "其他" in json.dumps(l, ensure_ascii=False) for l in lg), f"{d_ok} {o_ok['qty_ship']} {lg[:1]}")
+    res_ok2 = up(c, "/api/mars/shortage/compare", pdf_ok, "修好後重跑.pdf").get_json()
+    check("改回後再跑一次 → 不再標改回（不會重複改）", not any(it["restore"] for y in res_ok2["pos"][0]["splits"] for it in y["items"]), str(res_ok2["pos"][0]["splits"][0]["items"])[:300])
+    v = splits(c, "2026-09-29", "2026-09-30")
     # 整張不出：勇信表上根本不會有那張，要人勾「勇信沒出這份」
     for i, x in enumerate([x for x in v["splits"] if not x["eip_po"]]):
         put(x["id"], {"eip_po": f"PO20260931{i}"})

@@ -457,17 +457,17 @@ function renderYx() {
     h += `<tr class="pog"><td colspan="9"><i class="bi bi-receipt"></i> PO ${esc(p.po_number)}<span class="kbd">${md(p.delivery_date)} 到貨 · ${esc(p.warehouse)}${p.full ? ` · <b style="color:var(--bad)">整張不出</b>` : ""}${p.full_note && !p.full ? ` · ${esc(p.full_note)}` : ""}${p.missing_splits.length ? ` · <span style="color:var(--bad)">另有 ${p.missing_splits.length} 份還沒填 EIP 單號、無法核對</span>` : ""}</span></td></tr>`;
     for (const y of p.splits) for (const it of y.items) {
       const st = YX_ST[it.status]; const target = p.full ? 0 : it.new_qty;
-      h += `<tr><td class="fn muted">${esc(p.po_number)}</td><td class="fn">${esc(y.eip_po)}${y.not_in_pdf ? `<div class="kbd" style="color:var(--bad)">表上沒有</div>` : ""}</td><td class="fn">${esc(it.yf_sku)}</td><td>${esc(it.product_name)}</td><td class="num">${fmt(it.ordered)}</td><td class="num"><b>${fmt(it.shipped)}</b></td><td class="num">${it.short ? `<span class="neg">${fmt(it.short)}</span>` : ""}</td><td><span class="badge ${st[1]}">${st[0]}</span></td><td class="num">${it.status === "over" ? `<span class="kbd">不調整</span>` : (it.status === "ok" && !p.full) ? `<span class="kbd">${fmt(it.qty_ship)}</span>` : `${fmt(it.qty_ship)} → <b>${fmt(target)}</b>`}</td></tr>`;
+      h += `<tr><td class="fn muted">${esc(p.po_number)}</td><td class="fn">${esc(y.eip_po)}${y.not_in_pdf ? `<div class="kbd" style="color:var(--bad)">表上沒有</div>` : ""}</td><td class="fn">${esc(it.yf_sku)}</td><td>${esc(it.product_name)}</td><td class="num">${fmt(it.ordered)}</td><td class="num"><b>${fmt(it.shipped)}</b></td><td class="num">${it.short ? `<span class="neg">${fmt(it.short)}</span>` : ""}</td><td><span class="badge ${st[1]}">${st[0]}</span></td><td class="num">${it.status === "over" ? `<span class="kbd">不調整</span>` : it.restore && !p.full ? `${fmt(it.now_qty)} → <b>${fmt(target)}</b><div class="kbd">前次誤判缺貨，改回原數量</div>` : (it.status === "ok" && !p.full) ? `<span class="kbd">${fmt(it.qty_ship)}</span>` : `${fmt(it.qty_ship)} → <b>${fmt(target)}</b>`}</td></tr>`;
     }
   }
   if (!r.pos.length) h += `<tr><td colspan="9" class="muted" style="padding:16px;text-align:center">這些 PDF 中的採購單在系統裡都找不到對應的拆單表。</td></tr>`;
   h += `</tbody></table></div>`;
-  const nChange = r.pos.reduce((a, p) => a + p.splits.reduce((b, y) => b + y.items.filter(it => p.full ? it.status !== "over" : (it.status === "partial" || it.status === "none")).length, 0), 0);
+  const nChange = r.pos.reduce((a, p) => a + p.splits.reduce((b, y) => b + y.items.filter(it => p.full ? it.status !== "over" : (it.status === "partial" || it.status === "none" || it.restore)).length, 0), 0);
   h += `<div class="flex items-center gap-2 mt-3 flex-wrap">
     <button id="yx-apply" class="btn btn-p" ${!r.pos.length ? "disabled" : ""}><i class="bi bi-check2-circle"></i> 確認修改 ${nChange} 筆出貨數量並下載酷澎下修檔（${r.downgrade_rows} 列）</button>
     <button id="yx-file-only" class="btn btn-o" ${!r.downgrade_rows ? "disabled" : ""} title="不修改系統數量，只下載酷澎下修檔">只下載酷澎下修檔</button>
     <button id="yx-clear" class="btn btn-o">清除並重新上傳</button>
-    <span class="kbd">修改會記入歷程紀錄（原因：缺貨）；已送 EIP 的拆單也會一併更新。</span></div>`;
+    <span class="kbd">修改會記入歷程紀錄（原因：缺貨；前次誤判、改回原數量的記為「其他」）；已送 EIP 的拆單也會一併更新。</span></div>`;
   $("#yx-result").innerHTML = h; $("#yx-result").classList.remove("hidden");
   $("#yx-clear").addEventListener("click", () => { YX = null; YX_FILES = []; YX_SKIP = new Set(); $("#yx-result").classList.add("hidden"); $("#yx-result").innerHTML = ""; });
   $("#yx-result").querySelectorAll("input.yx-scope").forEach(c => c.addEventListener("change", () => { c.checked ? YX_SKIP.delete(c.dataset.po) : YX_SKIP.add(c.dataset.po); compareYx(YX_FILES, true); }));

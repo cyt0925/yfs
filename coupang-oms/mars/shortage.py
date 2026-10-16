@@ -35,6 +35,7 @@ EXP_RE = re.compile(r"^(\d{4})/(\d{2})/(\d{2})\s*$")
 TOTAL_RE = re.compile(r"合計箱數[：:]\s*(\d+)")
 WH_RE = re.compile(r"永豐商店\s*-?\s*酷澎\s*-\s*([A-Za-z0-9]+)")      # TAO3 寫「永豐商店酷澎-TAO3」，TAO5 寫「永豐商店-酷澎-TAO5」
 SHIP_RE = re.compile(r"指送日期[：:]\s*(\d{4})/(\d{2})/(\d{2})")
+PAGE_RE = re.compile(r"(\d+)\s*/\s*(\d+)\s*頁")                       # 「1 / 2 頁」
 
 
 def _mars_code(code_tail):
@@ -42,8 +43,10 @@ def _mars_code(code_tail):
     return code_tail[1:] if len(code_tail) == 9 and code_tail.startswith("0") else code_tail
 
 
-def _read_items(lines, items):
-    """把一頁的文字行接到 items 後面。cur 從上一頁最後一個品項接著讀（品項跨頁時，續頁開頭可能還是上一個品項的箱數、效期）。"""
+def _read_items(lines, items, orphans=None):
+    """把一頁的文字行接到 items 後面。cur 從上一頁最後一個品項接著讀（品項跨頁時，續頁開頭可能還是上一個品項的箱數、效期，
+    例如 TAO1 PO202610296 M10406573：155C 在第 1 頁最下面、另一批 395C 在第 2 頁最上面，要加總成 550）。
+    orphans：前面沒有任何品項就出現的箱數（接不到人），讓呼叫的人提醒。"""
     cur = items[-1] if items else None
     for ln in lines:
         cm = CODE_RE.match(ln)
@@ -51,6 +54,9 @@ def _read_items(lines, items):
             cur = {"code": _mars_code(cm.group(1)), "raw_code": ln, "qty": None, "expiry": "", "name": "", "batches": []}
             items.append(cur); continue
         if cur is None:
+            qm = QTY_RE.match(ln)
+            if qm and orphans is not None:
+                orphans.append(int(qm.group(1)))
             continue
         qm = QTY_RE.match(ln)
         if qm:
@@ -81,6 +87,15 @@ def parse_yx_pdf(data, filename=""):
         lines = [ln.strip() for ln in text.splitlines()]
         m = PO_RE.search(text)
         tot = TOTAL_RE.search(text)
+        pg = PAGE_RE.search(text)
+        prev = pages[-1] if pages else None
+        if m and prev and prev["eip_po"] == m.group(1) and prev["total"] is None and prev["_last"] == pno - 1 \
+                and (not pg or int(pg.group(1)) > 1):
+            # 續頁也印了表頭和收貨單號（TAO1 PO202610296 第 2 頁）：同一張單、上一頁還沒到合計箱數 → 接回上一張，不當新的一張
+            _read_items(lines, prev["items"])
+            prev["total"] = int(tot.group(1)) if tot else None
+            prev["cont_pages"].append(pno); prev["_last"] = pno
+            continue
         if not m:
             prev = pages[-1] if pages else None
             if prev and prev["eip_po"] and prev["total"] is None and prev["_last"] == pno - 1:
@@ -93,9 +108,12 @@ def parse_yx_pdf(data, filename=""):
                               "warnings": [f"第 {pno} 頁找不到收貨單號"], "cont_pages": [], "_last": pno})
             continue
         wh = WH_RE.search(text); sd = SHIP_RE.search(text)
+        orphans = []
+        items = _read_items(lines, [], orphans)
         pages.append({"page": pno, "eip_po": m.group(1), "warehouse": wh.group(1).upper() if wh else "",
                       "ship_date": f"{sd.group(1)}-{sd.group(2)}-{sd.group(3)}" if sd else "",
-                      "items": _read_items(lines, []), "total": int(tot.group(1)) if tot else None, "warnings": [],
+                      "items": items, "total": int(tot.group(1)) if tot else None,
+                      "warnings": [f"第 {pno} 頁開頭有 {q} 箱接不到品項（可能是上一頁最後一品的另一批效期），請人工核對" for q in orphans],
                       "cont_pages": [], "_last": pno})
     for p in pages:
         if not p["eip_po"]:
@@ -134,6 +152,14 @@ def _orig_qty(v):
         return None
 
 
+def _num_same(a, b):
+    """550 和 550.0 算一樣（PostgreSQL 回小數、拆單快照存整數）。"""
+    try:
+        return abs(float(a) - float(b)) < 1e-6
+    except (TypeError, ValueError):
+        return a == b
+
+
 def _item_rows(s, items, canon, orig, take):
     """一份拆單的品項 → 比對列。take(貨號, 第幾個品項, 訂購箱數) 回傳勇信出了幾箱。"""
     rows = []
@@ -151,10 +177,14 @@ def _item_rows(s, items, canon, orig, take):
             status = "partial"
         else:
             status = "over"
+        new_qty = int(round(shipped * box)) if box else None
+        # 前一次比對誤判缺貨、已經確認改小了，這次重跑沒缺 → 改回原數量（Jerry 2026-10-16 TAO1 PO202610296 跨頁兩批效期誤判）
+        restore = status == "ok" and qty0 is not None and new_qty is not None and not _num_same(it.get("qty_ship"), new_qty)
         rows.append({"sku_id": it["sku_id"], "yf_sku": it.get("yf_sku"), "purchase_code": it.get("purchase_code"), "mars_code": c,
                      "product_name": it.get("product_name"), "unit": it.get("unit"), "box_file": box,
                      "qty_ship": qty0 if qty0 is not None else it.get("qty_ship"), "ordered": ordered, "shipped": shipped,
-                     "short": max(ordered - shipped, 0), "status": status, "new_qty": int(round(shipped * box)) if box else None})
+                     "short": max(ordered - shipped, 0), "status": status, "new_qty": new_qty,
+                     "restore": restore, "now_qty": it.get("qty_ship")})
     return rows
 
 
@@ -318,14 +348,18 @@ def apply_changes(conn, result, operator):
                 if r["status"] == "over":
                     continue                                    # 出得比訂得多：不動，要人看
                 new_qty = 0 if p["full"] else r["new_qty"]
-                if new_qty is None or r["status"] == "ok" and not p["full"]:
+                restore = r["status"] == "ok" and not p["full"] and r.get("restore")
+                if new_qty is None or r["status"] == "ok" and not p["full"] and not restore:
                     continue
                 o = _row(conn.execute("SELECT * FROM mst_orders WHERE po_number = ? AND sku_id = ?", (p["po_number"], r["sku_id"])))
                 if o is None:
                     notes.append(f"{p['po_number']} {r['sku_id']}：系統裡找不到這筆訂單，沒改"); continue
-                if not _same(o["qty_ship"], new_qty):
-                    note = f"勇信出 {r['shipped']} 箱，訂 {r['ordered']} 箱" + ("；整張 PO 不出" if p["full"] else "")
-                    sets, vals, n = _apply_item_edit(conn, o, {"qty_ship": new_qty}, operator, reason=("缺貨", note))
+                if not _num_same(o["qty_ship"], new_qty):
+                    if restore:
+                        why = ("其他", f"勇信缺貨重新比對沒缺（勇信出 {r['shipped']} 箱，訂 {r['ordered']} 箱），改回原數量")
+                    else:
+                        why = ("缺貨", f"勇信出 {r['shipped']} 箱，訂 {r['ordered']} 箱" + ("；整張 PO 不出" if p["full"] else ""))
+                    sets, vals, n = _apply_item_edit(conn, o, {"qty_ship": new_qty}, operator, reason=why)
                     if n:
                         sets += ["updated_at = ?", "version = version + 1"]; vals.append(now())
                         conn.execute(f"UPDATE mst_orders SET {', '.join(sets)} WHERE id = ?", vals + [o["id"]])
