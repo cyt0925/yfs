@@ -236,7 +236,7 @@ def api_search_mars_products():
     return jsonify({"rows": rows, "total": total})
 
 
-_NOTE_WORDS = re.compile(r"\d{8}|轉貨號|停產|轉|>")
+_NOTE_CHAIN = re.compile(r"^(?:\d{8}|[>›]|轉貨號|轉|停產|\s)+")     # 備註開頭的換號鏈：10247136 轉貨號 ／ 10214470>10290449>60037559 ／ 10230369 轉>停產
 
 
 @mars_bp.route("/api/mars/products/list")
@@ -265,7 +265,7 @@ def api_list_mars_products():
     for yf, rs in by.items():
         if rs[0]["mars_code"]:
             cur_of.setdefault(rs[0]["mars_code"], []).append(yf)
-        for c in re.findall(r"\d{8}", rs[0]["note"] or ""):
+        for c in dict.fromkeys(re.findall(r"\d{8}", rs[0]["note"] or "")):      # 同一個號碼在備註出現兩次只算一次
             if c != rs[0]["mars_code"]:
                 claims.setdefault(c, []).append(yf)
     items = []
@@ -278,7 +278,7 @@ def api_list_mars_products():
             if cf and c not in [x["code"] for x in cfs]:
                 cfs.append({"code": c, "others": [y for y in conflict_skus(cf) if y != yf], "default_sku": cf["targets"][cf["default"]][0],
                             "is_default": yf in cf["targets"][cf["default"]]})
-        items.append({"yf_sku": yf, "name": r0["name"], "mars_code": code, "old_codes": olds, "note_text": " ".join(_NOTE_WORDS.sub(" ", note).split()),
+        items.append({"yf_sku": yf, "name": r0["name"], "mars_code": code, "old_codes": olds, "note_text": _NOTE_CHAIN.sub("", note).strip(),   # 鏈之後的字照原樣留（外箱條碼有更新、11/7 換(…)）
                       "shelf_days": r0["shelf_days"], "units": "".join(sorted({r["unit"] for r in rs}, key=lambda u: "箱盒包".find(u))),
                       "dead": "停產" in note, "manual_by": r0["manual_by"] or "", "manual_at": r0["manual_at"] or "",
                       "from": sorted({y for c in olds for y in cur_of.get(c, []) if y != yf}),          # 舊號是別人現在的貨號 → 從它轉來
