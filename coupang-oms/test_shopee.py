@@ -1032,6 +1032,37 @@ def flow_tests(c, orders):
           and any(r["source"] == "勇信核對" for x in N_["short"]["items"] for r in x["rounds"]), str(N_["eips"]))
     check("找不到的單 → 404；沒給單號 → 400", side("POXXXXXXXX").status_code == 404 and c.get("/api/shopee/order").status_code == 400)
 
+    print("\n【20】上傳價格本後直接講：還在等價格的品項找到了沒有（Becky 2026-10-16「更新價格本了 是不是得重拋採購單？」）")
+
+    def up(url, data, name):
+        return c.post(url, data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data")
+
+    def imp(data, fulfil):
+        uid = up("/api/shopee/import/preview", data, "PurchaseOrder_t.xlsx").get_json()["upload_id"]
+        return c.post("/api/shopee/import/commit", json={"upload_id": uid, "fulfil": fulfil}).get_json()
+
+    def plan(fulfil):
+        return {g["order_no"]: g for g in c.get("/api/shopee/purchase/plan", query_string={"fulfil": fulfil}).get_json()["orders"]}
+
+    def item(g, sup):
+        return next(p for p in g["items"] if p["supplier_sku_id"] == sup)
+    imp(purchase_xlsx([("90000000001_1", "1077777_PNN", "新品 五月花 甲", 24, "Pcs"), ("90000000001_2", "1055555_PNN", "新品 五月花 乙", 12, "Pcs")],
+                      pr="PRTWCOTWA202610169001", po="POTWCTWA26101690Z", date="2026-10-28"), "供應商直送")
+    old = price_xlsx({"紙品價格本": [("1022257P", "瓶", "橘子工坊浴廁清潔劑", 12)]})
+    r = up("/api/shopee/conv/import", old, "紙潔價格本整合.xlsx").get_json(); pz = r["pending"]["紙潔"]
+    miss = {x["code3"]: x["name"] for x in pz["missing"]}
+    check("價格本還沒有新品 → 列出這兩個找不到、帶品名，沒有找到的", miss.get("1077777P") == "新品 五月花 甲" and miss.get("1055555P") == "新品 五月花 乙"
+          and not pz["fixed"] and pz["waiting"] >= 2, str(pz))
+    new = price_xlsx({"紙品價格本": [("1022257P", "瓶", "橘子工坊浴廁清潔劑", 12), ("1077777P", "包", "新品 五月花 甲", 12), ("1055555P", "包", "新品 五月花 乙", None)]})
+    r = up("/api/shopee/conv/import", new, "紙潔價格本整合.xlsx").get_json(); pz = r["pending"]["紙潔"]
+    check("重新整理後再傳（PM 補上了）→ 原本找不到 2 個、這次找到 1 個；另 1 個有了但沒箱入數，分開講", pz["was_blocked"] >= 2 and [x["code3"] for x in pz["fixed"]] == ["1077777P"]
+          and [x["code3"] for x in pz["no_box"]] == ["1055555P"] and not any(x["code3"] in ("1077777P", "1055555P") for x in pz["missing"]), str(pz))
+    pl = plan("供應商直送").get("POTWCTWA26101690Z")
+    check("不用重拋：訂單那邊直接對到新的價格本（甲有轉換率、乙寫沒有箱入數）", pl is not None and item(pl, "1077777_PNN")["conv"] == 12
+          and any("沒有箱入數" in x for x in item(pl, "1055555_PNN")["problems"]), str(pl)[:300] if pl else "沒有這張單")
+    r = up("/api/shopee/conv/import", price_xlsx({"價格本整合": [("4987176232878C", "包", "幫寶適", 4)]}), "PG價格本整合.xlsx").get_json()
+    check("別的線別（寶僑）上傳不影響紙潔那兩個的狀態，只講寶僑自己的", set(r["pending"]) == {"寶僑"}, str(r["pending"]))
+
 
 if __name__ == "__main__":
     main()

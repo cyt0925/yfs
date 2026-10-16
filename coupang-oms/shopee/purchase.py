@@ -117,6 +117,23 @@ def api_conv():
         conn.close()
 
 
+def _waiting_items(conn, line):
+    """還沒產採購單、要用這個線別價格本的品項（竹運採購進貨、供應商直送；還沒掛到任何 EIP）→ {料號3: 品名}。"""
+    marks = ",".join("?" * len(BUY_FULFILS))
+    out = {}
+    for r in _rows(conn.execute(f"SELECT base_code, unit_code, sku_name FROM shp_orders o WHERE line = ? AND removed = 0 AND fulfil IN ({marks}) "
+                                "AND NOT EXISTS (SELECT 1 FROM shp_eip_items i WHERE i.order_id = o.id) ORDER BY id", [line, *BUY_FULFILS])):
+        if r["base_code"]:
+            out.setdefault((r["base_code"] or "") + (r["unit_code"] or ""), r["sku_name"] or "")
+    return out
+
+
+def _conv_gaps(conn, codes):
+    """codes 裡價格本找不到的、有但沒有箱入數的（跟產採購單時的查法一樣，不分線別）。"""
+    have = _conv_map(conn, codes)
+    return {c for c in codes if c not in have}, {c for c in codes if c in have and not box_of(have[c])}
+
+
 @shopee_bp.route("/api/shopee/conv/import", methods=["POST"])
 def api_conv_import():
     """上傳價格本：檔案裡出現的線別整份換掉（別的線別不動）。"""
@@ -140,8 +157,11 @@ def api_conv_import():
     operator, stamp = _operator(), now()
     conn = get_conn()
     try:
-        result = {}
+        result, pending = {}, {}
         for line, rs in by_line.items():
+            # Becky 2026-10-16：「更新價格本了 是不是得重拋採購單？」——上傳完直接講還在等價格的品項找到了沒有
+            waiting = _waiting_items(conn, line)
+            miss0, nobox0 = _conv_gaps(conn, set(waiting))
             before = conn.execute("SELECT COUNT(*) AS n FROM shp_conv WHERE line = ?", (line,)).fetchone()["n"]
             conn.execute("DELETE FROM shp_conv WHERE line = ?", (line,))
             for r in rs:
@@ -150,9 +170,13 @@ def api_conv_import():
                                                               r["name"], f.filename, operator, stamp))
             blank = sum(1 for r in rs if not r["box_qty"])
             result[line] = {"count": len(rs), "before": before, "blank": blank}
+            miss1, nobox1 = _conv_gaps(conn, set(waiting))
+            named = lambda cs: [{"code3": c, "name": waiting[c]} for c in sorted(cs)]   # noqa: E731
+            pending[line] = {"waiting": len(waiting), "was_blocked": len(miss0 | nobox0), "fixed": named((miss0 | nobox0) - miss1 - nobox1),
+                             "missing": named(miss1), "no_box": named(nobox1)}
             _log(conn, line, "", "", "", "shopee_conv", "價格本", f"{before} 筆", f"{len(rs)} 筆（箱入數空白 {blank} 筆）", operator, "import", f.filename)
         conn.commit()
-        return jsonify({"ok": True, "lines": result, "warnings": warns, "status": conv_status(conn)})
+        return jsonify({"ok": True, "lines": result, "pending": pending, "warnings": warns, "status": conv_status(conn)})
     finally:
         conn.close()
 

@@ -8,7 +8,12 @@
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = n => n == null || n === "" ? "—" : Number(n).toLocaleString("zh-TW");
-function toast(msg, kind) { const t = document.createElement("div"); t.className = "toast" + (kind === "err" ? " err" : ""); t.textContent = msg; $("#toasts").appendChild(t); setTimeout(() => t.remove(), kind === "err" ? 6000 : 2800); }
+function toast(msg, kind) {
+  const t = document.createElement("div"); t.className = "toast" + (kind === "err" ? " err" : kind === "warn" ? " warn" : ""); t.textContent = msg; $("#toasts").appendChild(t);
+  // 有要人處理的（warn：價格本上傳後還有品項找不到）留久一點、點一下才關；長的訊息也多留幾秒讀完
+  if (kind === "warn") { t.title = "點一下關閉"; t.addEventListener("click", () => t.remove()); setTimeout(() => t.remove(), 30000); }
+  else setTimeout(() => t.remove(), kind === "err" ? 6000 : msg.length > 60 ? 7000 : 2800);
+}
 async function api(url, opts = {}) {
   const res = await fetch(url, opts); let data = {}; try { data = await res.json(); } catch (e) {}
   if (!res.ok) throw Object.assign(new Error([data.error || `伺服器錯誤（${res.status}）`, ...(data.details || []).slice(0, 8)].join("\n")), { status: res.status, data });
@@ -52,13 +57,26 @@ async function dropOne(f) {
   const kind = res.headers.get("X-Shopee-Kind");
   if (kind === "orders") { renderPreview(box, d); return false; }
   box.remove();
-  if (kind === "conv") toast(Object.entries(d.lines).map(([l, x]) => `${l}價格本已更新：${fmt(x.count)} 筆（原 ${fmt(x.before)} 筆）${x.blank ? `，其中 ${fmt(x.blank)} 筆箱入數空白` : ""}`).join("\n")
-    + (d.warnings.length ? `\n${d.warnings.slice(0, 3).join("\n")}` : ""));
+  if (kind === "conv") toast(Object.entries(d.lines).map(([l, x]) => `${l}價格本已更新：${fmt(x.count)} 筆（原 ${fmt(x.before)} 筆）${x.blank ? `，其中 ${fmt(x.blank)} 筆箱入數空白` : ""}`
+      + convPending((d.pending || {})[l])).join("\n")
+    + (d.warnings.length ? `\n${d.warnings.slice(0, 3).join("\n")}` : ""), (Object.values(d.pending || {}).some(p => p.missing.length || p.no_box.length)) ? "warn" : undefined);
   else if (kind === "stock") toast(`已更新${d.label}：${f.name}（${fmt(d.rows)} 列）` + (d.notes.length ? `\n${d.notes.join("\n")}` : ""));
   else if (kind === "mars") toast(`已更新瑪氏商品總表：${fmt(d.codes)} 個料號（${fmt(d.rows)} 列）${d.added || d.removed ? `，新增 ${d.added}、移除 ${d.removed}` : ""}`
     + ((d.kept_manual || []).length ? `\n保留在蝦皮特選補登的 ${d.kept_manual.length} 品（Excel 裡還沒有）` : "") + (d.warnings.length ? `\n${d.warnings.slice(0, 3).join("\n")}` : ""));
   else if (kind === "yx") { showYx(d); return false; }
   return true;
+}
+
+/* 價格本上傳後：還在等價格、不能產採購單的品項找到了沒有（Becky 2026-10-16「更新價格本了 是不是得重拋採購單？」——不用重拋，這裡直接講） */
+function convPending(p) {
+  if (!p || !p.waiting) return "";
+  const list = xs => xs.slice(0, 5).map(x => `${x.code3}${x.name ? `（${x.name.slice(0, 14)}）` : ""}`).join("、") + (xs.length > 5 ? ` 等 ${xs.length} 個` : "");
+  const out = [];
+  if (p.was_blocked) out.push(`原本找不到價格的 ${p.was_blocked} 個品項，這次找到 ${p.fixed.length} 個`);
+  if (p.missing.length) out.push(`還有 ${p.missing.length} 個價格本裡沒有：${list(p.missing)}`);
+  if (p.no_box.length) out.push(`${p.no_box.length} 個價格本有、但沒有箱入數：${list(p.no_box)}`);
+  if (!out.length || (!p.missing.length && !p.no_box.length)) out.push(`待產採購單的品項都找得到價格了，不用重拋訂單，直接到「待產採購單」產出即可`);
+  return "\n" + out.join("\n");
 }
 
 /* 上傳區右邊：蝦皮採購單／入庫單最後一次匯入、價格本、庫存資料什麼時候更新的（點了到「資料與設定」）。
