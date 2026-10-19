@@ -286,14 +286,14 @@ td.neg { color: var(--st-critical); }
       <section class="card"><div class="sec-h"><h2>每月統計</h2><span class="hint">點選有底線的數字可查看改單明細</span></div><div class="tbl-wrap"><table class="log st" id="st-months"></table></div></section>
       <div class="bottom">
         <section class="card"><div class="sec-h"><h2>改單原因</h2><span class="hint">酷澎修改、我方修改都算；金額差是這些改單讓出貨金額少了多少</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
-        <section class="card"><div class="sec-h"><h2>改單類型</h2><span class="hint">一次改單可能同時改數量與到貨日，所以合計可能大於改單次數</span></div><div class="tbl-wrap"><table class="log st" id="st-kinds"></table></div></section>
+        <section class="card"><div class="sec-h"><h2>改單類型</h2><span class="hint">一次改單可能同時改數量與到貨日，所以各類型加起來可能大於改單次數</span></div><div class="tbl-wrap"><table class="log st" id="st-kinds"></table></div></section>
       </div>
       <section class="card"><div class="sec-h"><h2>改單次數最多的 PO</h2></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
       <details class="card st-how"><summary>計算方式說明</summary>
         <div>PO 依目前到貨日歸入月份；未排到貨日的另列「未排日期」。</div>
         <div>「曾改單的 PO」指修改歷程中至少有一次改單的 PO。同一張 PO、同一來源、同一時間的變動算一次：整張 PO 改到貨日時每個品項各記一筆，但同一次操作只算一次。</div>
         <div>訂單彙總表會匯進酷澎訂單管理系統和商品主檔自動化兩個地方，兩邊都會記酷澎改了什麼。統計時兩邊合起來算，同一個改動只算一次，時間用先匯入的那一邊。</div>
-        <div>「酷澎修改」指訂單彙總表上的下單數量、出貨數量、到貨日、倉別與上次不同，或品項從檔案中消失。「我方修改」指在兩個系統裡人工修改出貨數量、到貨日或倉別；改回訂單彙總表的數字不算。</div>
+        <div>「酷澎修改」指訂單彙總表上的下單數量、出貨數量、到貨日、倉別與上次不同，或品項從檔案中消失。「我方修改」指在酷澎訂單管理系統、商品主檔自動化人工修改出貨數量、到貨日或倉別，以及瑪氏出貨確認勇信缺貨後修改的出貨數量；改回訂單彙總表的數字不算。兩者分的是誰修改，修改的原因看「改單原因」。</div>
         <div>原始下單、目前出貨用金額（數量 × 下單單價）計算，因為同一張單有箱、盒、包，數量直接相加沒有意義。原始下單是兩個系統最早看到的下單數量；目前出貨是最近更新那一邊的出貨數量，品項移除算 0。</div>
         <div>少出分兩段：「進系統前就少了」是第一次匯入時，訂單彙總表的出貨數量就已經比下單數量少（在 Kate 的系統先改的），這部分沒有改單紀錄，也不能補原因；「進系統後才改」是匯入之後的變動，每一次都有改單紀錄，原因在待補清單補。改單原因表的金額差只算得到進系統後的部分。</div>
         <div>酷澎拆單時，原單被拿掉的品項如果出現在拆出來的新單裡（原訂單欄），新單那一項接回原單計算，不算少出，也不算新的下單。只有酷澎訂單管理系統有存原訂單欄。</div>
@@ -579,13 +579,16 @@ td.neg { color: var(--st-critical); }
       + d.reasons.map(r => `<tr><td>${r === "待補" ? "⚠ 待補" : esc(r)}</td><td class="num">${n(t.reasons[r], { reason: r })}</td><td class="num${(t.reason_amount[r] || 0) < 0 ? " neg" : ""}">${t.reason_amount[r] ? money(t.reason_amount[r]) : ""}</td>`
         + `<td>${t.reasons[r] ? `<div class="rbar${r === "待補" ? " todo" : ""}" style="width:${(t.reasons[r] / rmax) * 100}%"></div>` : ""}</td></tr>`).join("")
       + `<tr class="tot"><td>合計</td><td class="num">${n(t.events, {})}</td><td class="num">${money(Object.values(t.reason_amount).reduce((a, b) => a + b, 0))}</td><td></td></tr></tbody>`;
-    const kinds = [["改數量（酷澎）", "qty_c", { source: "import", kind: "qty" }], ["改數量（我方）", "qty_m", { source: "manual", kind: "qty" }],
-      ["　其中下修", "qty_down", { kind: "qty", dir: "down" }], ["　其中上修", "qty_up", { kind: "qty", dir: "up" }], ["　其中有上有下", "qty_mixed", { kind: "qty", dir: "mixed" }],
-      ["改到貨日（酷澎）", "date_c", { source: "import", kind: "date" }], ["改到貨日（我方）", "date_m", { source: "manual", kind: "date" }],
-      ["改倉別（酷澎）", "wh_c", { source: "import", kind: "wh" }], ["改倉別（我方）", "wh_m", { source: "manual", kind: "wh" }], ["品項遭移除（酷澎）", "gone_c", { source: "import", kind: "gone" }]];
-    $("#st-kinds").innerHTML = `<thead><tr><th>類型</th>${rows.map(m => `<th class="num">${esc(mTh(m))}</th>`).join("")}</tr></thead><tbody>`
-      + kinds.filter(([, k]) => !k.startsWith("qty_") || ["qty_c", "qty_m"].includes(k) || rows.some(m => m.kinds[k]))
-        .map(([label, k, f]) => `<tr${label.startsWith("　") ? ' class="sub"' : ""}><td>${esc(label)}</td>${rows.map(m => `<td class="num">${n(m.kinds[k], { ...mf(m), ...f })}</td>`).join("")}</tr>`).join("") + `</tbody>`;
+    // 改單類型：酷澎修改、我方修改左右對照，數字是選的期間加起來（Jerry 2026-10-19 看示意圖選 A）；我方不會有品項遭移除
+    const tk = t.kinds;
+    const kinds = [["改數量", "qty", ""], ["下修", "qty", "down"], ["上修", "qty", "up"], ["有上有下", "qty", "mixed"], ["改到貨日", "date", ""], ["改倉別", "wh", ""], ["品項遭移除", "gone", ""]];
+    $("#st-kinds").innerHTML = `<thead><tr><th>類型</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th class="num">合計</th></tr></thead><tbody>`
+      + kinds.filter(([, , dir]) => dir !== "mixed" || tk.qty_mixed_c || tk.qty_mixed_m).map(([label, kind, dir]) => {
+        const key = side => dir ? `qty_${dir}_${side}` : `${kind}_${side}`, f = dir ? { kind, dir } : { kind };
+        const c = tk[key("c")] || 0, m = kind === "gone" ? null : tk[key("m")] || 0;
+        return `<tr${dir ? ' class="sub"' : ""}><td>${dir ? "　" : ""}${esc(label)}</td><td class="num">${n(c, { ...f, source: "import" })}</td>`
+          + `<td class="num">${m === null ? `<span class="k">—</span>` : n(m, { ...f, source: "manual" })}</td><td class="num">${n(c + (m || 0), f)}</td></tr>`;
+      }).join("") + `</tbody>`;
     $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th>原因</th></tr></thead><tbody>`
       + (d.top_pos.map(p => `<tr><td class="num" style="text-align:left">${esc(p.po_number)}</td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${n(p.events, { po: p.po_number })}</td><td class="num">${n(p.coupang, { po: p.po_number, source: "import" })}</td><td class="num">${n(p.manual, { po: p.po_number, source: "manual" })}</td><td>${esc(p.reasons)}</td></tr>`).join("")
         || `<tr><td colspan="8" class="k" style="padding:18px">此期間查無曾改單的 PO</td></tr>`) + `</tbody>`;

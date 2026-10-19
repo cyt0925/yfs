@@ -749,12 +749,16 @@ function renderStats(d, minutes) {
   $("#st-reasons").innerHTML = `<thead><tr><th>原因</th>${rows.map(m => `<th class="num">${esc(stMonthTh(m))}</th>`).join("")}</tr></thead><tbody>`
     + d.reasons.map(r => `<tr><td>${esc(r)}</td>${rows.map(m => `<td class="num">${stN(m.reasons[r], { ...mf(m), reason: r })}</td>`).join("")}</tr>`).join("")
     + `<tr style="font-weight:700;background:#f8fafc"><td>改單合計</td>${rows.map(m => `<td class="num">${stN(m.events, mf(m))}</td>`).join("")}</tr></tbody>`;
-  const kindRows = [["改數量（酷澎）", "qty_c", { source: "import", kind: "qty" }], ["改數量（我方）", "qty_m", { source: "manual", kind: "qty" }],
-    ["　其中下修", "qty_down", { kind: "qty", dir: "down" }], ["　其中上修", "qty_up", { kind: "qty", dir: "up" }], ["　其中上修與下修", "qty_mixed", { kind: "qty", dir: "mixed" }],
-    ["改到貨日（酷澎）", "date_c", { source: "import", kind: "date" }], ["改到貨日（我方）", "date_m", { source: "manual", kind: "date" }],
-    ["改倉別（酷澎）", "wh_c", { source: "import", kind: "wh" }], ["改倉別（我方）", "wh_m", { source: "manual", kind: "wh" }], ["品項移除（酷澎）", "gone_c", { source: "import", kind: "gone" }]];
-  $("#st-kinds").innerHTML = `<thead><tr><th>類型</th>${rows.map(m => `<th class="num">${esc(stMonthTh(m))}</th>`).join("")}</tr></thead><tbody>`
-    + kindRows.filter(([, k]) => !k.startsWith("qty_") || ["qty_c", "qty_m"].includes(k) || rows.some(m => m.kinds[k])).map(([label, k, f]) => `<tr ${label.startsWith("　") ? 'class="muted"' : ""}><td>${esc(label)}</td>${rows.map(m => `<td class="num">${stN(m.kinds[k], { ...mf(m), ...f })}</td>`).join("")}</tr>`).join("") + `</tbody>`;
+  // 改單類型：酷澎修改、我方修改左右對照，數字是選的期間加起來（跟 YFS 訂單系統的改單統計一樣，Jerry 2026-10-19）
+  const tk = t.kinds;
+  const kindRows = [["改數量", "qty", ""], ["下修", "qty", "down"], ["上修", "qty", "up"], ["有上有下", "qty", "mixed"], ["改到貨日", "date", ""], ["改倉別", "wh", ""], ["品項遭移除", "gone", ""]];
+  $("#st-kinds").innerHTML = `<thead><tr><th>類型</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th class="num">合計</th></tr></thead><tbody>`
+    + kindRows.filter(([, , dir]) => dir !== "mixed" || tk.qty_mixed_c || tk.qty_mixed_m).map(([label, kind, dir]) => {
+      const key = side => dir ? `qty_${dir}_${side}` : `${kind}_${side}`, f = dir ? { kind, dir } : { kind };
+      const c = tk[key("c")] || 0, m = kind === "gone" ? null : tk[key("m")] || 0;
+      return `<tr ${dir ? 'class="muted"' : ""}><td>${dir ? "　" : ""}${esc(label)}</td><td class="num">${stN(c, { ...f, source: "import" })}</td>`
+        + `<td class="num">${m === null ? "—" : stN(m, { ...f, source: "manual" })}</td><td class="num">${stN(c + (m || 0), f)}</td></tr>`;
+    }).join("") + `</tbody>`;
   $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th>原因</th></tr></thead><tbody>`
     + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${stN(p.events, { po: p.po_number })}</td><td class="num">${stN(p.coupang, { po: p.po_number, source: "import" })}</td><td class="num">${stN(p.manual, { po: p.po_number, source: "manual" })}</td><td>${esc(p.reasons)}</td></tr>`).join("") || `<tr><td colspan="8" class="muted p-4 text-center">這段期間沒有曾改單的 PO</td></tr>`) + `</tbody>`;
   $("#st-top").querySelectorAll(".st-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));

@@ -266,7 +266,7 @@ def main():
         check("剛剛改的那筆算進「我方修改」，原因表有缺貨", "我方修改" in pg.inner_text("#st-kpi"))
         check("每月表有 9 月那列", "2026-09" in pg.inner_text("#st-months"))
         check("原因表列出大項（酷澎倉限制／原廠／產銷缺貨／運能（沒車）／酷澎要求／我方作業／其他）和待補", all(r in pg.inner_text("#st-reasons") for r in ["酷澎倉限制", "原廠／產銷缺貨", "運能（沒車）", "酷澎要求", "我方作業", "其他", "待補"]))
-        check("「改了什麼」表有改數量／改到貨日／改倉別／品項移除", all(r in pg.inner_text("#st-kinds") for r in ["改數量", "改到貨日", "改倉別", "品項移除"]))
+        check("「改了什麼」表有改數量／改到貨日／改倉別／品項遭移除，欄是酷澎修改／我方修改／合計", all(r in pg.inner_text("#st-kinds") for r in ["改數量", "改到貨日", "改倉別", "品項遭移除", "酷澎修改", "我方修改", "合計"]))
         check("數字是藍色可點的", pg.eval_on_selector_all("#tab-stats .st-n", "els => els.length") >= 3)
         pg.click('#st-reasons .st-n >> nth=0'); pg.wait_for_timeout(900)
         check("點原因表的數字 → 明細視窗打開、標題寫幾次", pg.evaluate("document.getElementById('dlg-stev').open") and "次" in pg.inner_text("#stev-title"))
@@ -656,6 +656,9 @@ def main():
             check("9 月有改單紀錄可以點", False, pg.inner_text("#st-months"))
         # 待補原因（Jerry 2026-10-19）：勾兩筆一起補、單筆下拉選了就存
         pg.wait_for_selector("#pd-table tbody tr", timeout=8000)
+        kh = pg.inner_text("#st-kinds thead")
+        check("改單類型左右對照：欄是酷澎修改／我方修改／合計，不再寫「改數量（酷澎）」（Jerry 2026-10-19）",
+              all(x in kh for x in ("酷澎修改", "我方修改", "合計")) and "（酷澎）" not in pg.inner_text("#st-kinds") and "下修" in pg.inner_text("#st-kinds"), pg.inner_text("#st-kinds"))
         check("金額：每月統計有原始下單、改單原因表有金額差，待補清單沒有（Jerry 2026-10-19）",
               "金額差" in pg.inner_text("#st-reasons") and "金額差" not in pg.inner_text("#pd-table") and "原始下單" in pg.inner_text("#st-months"))
         n0 = int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0)

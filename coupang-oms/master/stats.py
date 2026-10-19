@@ -403,6 +403,7 @@ def _build_stats(conn, month_from, month_to, line_group, include_test=False):
             s["kinds"][f"{k}_{side}"] += 1
         if "qty" in e["kinds"] and e["qty_dir"]:
             s["kinds"][f"qty_{e['qty_dir']}"] += 1
+            s["kinds"][f"qty_{e['qty_dir']}_{side}"] += 1      # 下修／上修也分酷澎修改、我方修改（Jerry 2026-10-19 選「左右對照」）
 
     months = {}
     order = (_month_span(month_from, month_to) if month_from else sorted({p["month"] for p in keep.values()} - {UNDATED})) + [UNDATED]
@@ -444,7 +445,12 @@ def _event_rows(keep, events):
     return rows
 
 
-KIND_KEYS = ["qty_c", "qty_m", "qty_down", "qty_up", "qty_mixed", "date_c", "date_m", "wh_c", "wh_m", "gone_c"]
+KIND_KEYS = ["qty_c", "qty_m", "qty_down", "qty_up", "qty_mixed", "date_c", "date_m", "wh_c", "wh_m", "gone_c",
+             "qty_down_c", "qty_down_m", "qty_up_c", "qty_up_m", "qty_mixed_c", "qty_mixed_m"]
+# 改單類型表：一列一個類型，欄是酷澎修改／我方修改／合計（Jerry 2026-10-19 看示意圖選 A）。(名稱, 酷澎修改的 key, 我方修改的 key；None＝我方不會有)
+KIND_ROWS = [("改數量", "qty_c", "qty_m"), ("　下修", "qty_down_c", "qty_down_m"), ("　上修", "qty_up_c", "qty_up_m"),
+             ("　有上有下", "qty_mixed_c", "qty_mixed_m"), ("改到貨日", "date_c", "date_m"), ("改倉別", "wh_c", "wh_m"),
+             ("品項遭移除", "gone_c", None)]
 
 
 def _empty_month(label):
@@ -565,13 +571,16 @@ def api_stats_export():
     _style(ws2, hdr2, bold, head, tot, total_row=True)
 
     wsk = wb.create_sheet("改了什麼")
-    hdrk = ["月份", "改數量（酷澎）", "改數量（我方）", "其中下修", "其中上修", "其中上修與下修",
-            "改到貨日（酷澎）", "改到貨日（我方）", "改倉別（酷澎）", "改倉別（我方）", "品項移除（酷澎）"]
+    hdrk = ["月份", "類型", "酷澎修改", "我方修改", "合計"]          # 跟畫面一樣左右對照；一個月一段，最後一段是合計
     wsk.append(hdrk)
     for m in d["months"] + [d["total"]]:
         k = m["kinds"]
-        wsk.append([m["month"]] + [k[x] for x in KIND_KEYS])
-    _style(wsk, hdrk, bold, head, tot, total_row=True)
+        for label, kc, km in KIND_ROWS:
+            wsk.append([m["month"], label, k[kc], k[km] if km else None, k[kc] + (k[km] if km else 0)])
+    _style(wsk, hdrk, bold, head, tot, total_row=False)
+    for row in wsk.iter_rows(min_row=wsk.max_row - len(KIND_ROWS) + 1):
+        for c in row:
+            c.font = bold; c.fill = tot
 
     ws3 = wb.create_sheet("改最多次的 PO")
     hdr3 = ["PO 單號", "月份", "線別", "品項數", "改單次數", "酷澎修改", "我方修改", "原因"]
@@ -598,8 +607,8 @@ def api_stats_export():
         "改單事件：同一張 PO、同一來源、同一時間的變動算一次（整張 PO 改期會一個品項記一筆，一次動作不能算很多次）。",
         "兩個系統合起來算：訂單彙總表會匯進酷澎訂單管理系統和商品主檔自動化，兩邊都會記酷澎改了什麼；同一個改動只算一次，用先匯入的那邊的時間。",
         "酷澎修改：訂單彙總表上的下單數量、出貨數量、到貨日、倉別與上次不同，或品項從檔案中消失。",
-        "我方修改：人工修改出貨數量、到貨日、倉別（兩個系統都算）；恢復成訂單彙總表數字／日期不算。",
-        "改單類型：分改數量、改到貨日、改倉別、品項移除，一次改單可能同時屬於多類，各類加總會大於改單次數。改數量再分下修／上修。",
+        "我方修改：在酷澎訂單管理系統、商品主檔自動化人工修改出貨數量、到貨日、倉別，以及瑪氏出貨確認勇信缺貨後改的出貨數量；恢復成訂單彙總表數字／日期不算。",
+        "改單類型：分改數量、改到貨日、改倉別、品項遭移除，酷澎修改、我方修改分開算；一次改單可能同時屬於多類，各類加起來會大於改單次數。改數量再分下修／上修。",
         f"原因：每一次改單都要有，酷澎修改也要。大項：{'、'.join(REASONS)}（草稿）。改的時候已選的照舊對應（缺貨→原廠／產銷缺貨、沒車→運能（沒車））；沒有的列「待補」，在改單統計頁補。",
         "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。金額差是那次改單讓出貨金額變多少。",
         "少出拆兩段：進系統前就少了＝第一次匯入時出貨數量就比下單數量少（在 Kate 系統先改的，沒有改單紀錄）；進系統後才改＝之後的變動（有改單紀錄、有原因）。",

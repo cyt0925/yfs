@@ -308,6 +308,9 @@ def main():
     check("改了什麼：改交期（我們）= 明細裡我們改交期的筆數", k["date_m"] == sum(1 for e in man if "date" in e["kinds"]), str(k))
     check("改了什麼：品項被拿掉（酷澎）≥ 1、下修 ≥ 1", k["gone_c"] >= 1 and k["qty_down"] >= 1, str(k))
     check("下修＋上修＋有上有下 = 改數量總次數", k["qty_down"] + k["qty_up"] + k["qty_mixed"] == k["qty_c"] + k["qty_m"], str(k))
+    check("下修、上修、有上有下也分酷澎修改／我方修改（Jerry 2026-10-19 選左右對照）：兩邊各自加起來等於各自的改數量、兩邊相加等於合併的",
+          all(k[f"qty_{d}_c"] + k[f"qty_{d}_m"] == k[f"qty_{d}"] for d in ("down", "up", "mixed"))
+          and k["qty_down_c"] + k["qty_up_c"] + k["qty_mixed_c"] == k["qty_c"] and k["qty_down_m"] + k["qty_up_m"] + k["qty_mixed_m"] == k["qty_m"], str(k))
     # 「這是測試」：不用選原因、記成「測試」、統計預設不算
     tpo = [x for x in od_pg["facets"]["pos"] if x["po_number"] not in (cross_po,) + tuple(two)][0]["po_number"]
     tdet = client.get(f"/api/master/pos/{tpo}").get_json(); tr0 = tdet["rows"][0]
@@ -333,7 +336,10 @@ def main():
     wsd = wbs["明細"]
     check("明細分頁一次改單一列（含表頭）", wsd.max_row == len(ev) + 1 and [c.value for c in wsd[1]][:3] == ["時間", "月份", "PO 單號"], f"{wsd.max_row} vs {len(ev) + 1}")
     wsk = wbs["改了什麼"]
-    check("改了什麼分頁最後一列是合計、下修欄對得上", wsk.cell(row=wsk.max_row, column=1).value == "合計" and wsk.cell(row=wsk.max_row, column=4).value == k["qty_down"])
+    krows = {(r[0], r[1].strip()): r[2:] for r in wsk.iter_rows(min_row=2, values_only=True)}
+    check("改了什麼分頁跟畫面一樣：類型一列、欄是酷澎修改／我方修改／合計；最後一段是合計、下修對得上、我方沒有品項遭移除",
+          [c.value for c in wsk[1]] == ["月份", "類型", "酷澎修改", "我方修改", "合計"] and wsk.cell(row=wsk.max_row, column=1).value == "合計"
+          and krows[("合計", "下修")] == (k["qty_down_c"], k["qty_down_m"], k["qty_down"]) and krows[("合計", "品項遭移除")] == (k["gone_c"], None, k["gone_c"]), str(list(krows.items())[-7:]))
     ws1 = wbs["每月統計"]; hdr1 = [c.value for c in ws1[1]]
     check("填了分鐘數就多一欄估計工時，最後一列是合計", "估計工時（每次 15 分鐘）" in hdr1 and ws1.cell(row=ws1.max_row, column=1).value == "合計")
     check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == st["total"]["pos"])
