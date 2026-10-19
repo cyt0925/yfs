@@ -38,6 +38,8 @@ PASS, FAIL = [], []
 def check(name, condition, detail=""):
     (PASS if condition else FAIL).append(name)
     print(f"  {'✓' if condition else '✗'} {name}" + (f"  — {detail}" if detail else ""))
+    if not condition and os.environ.get("GITHUB_ACTIONS"):      # CI 的完整紀錄放在外部網址讀不到；失敗項目改用註記，從 API 就看得到
+        print(f"::error title=test_master::{name} — {str(detail)[:400]}".replace("\n", " "))
 
 
 def sign_in(client, username="小真", password="changeme123"):
@@ -991,4 +993,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:  # noqa: BLE001 — 例外也要讓 CI 註記看得到
+        if os.environ.get("GITHUB_ACTIONS"):
+            import traceback
+            tb = traceback.extract_tb(exc.__traceback__)[-1]
+            print(f"::error title=test_master 例外::{type(exc).__name__}: {str(exc)[:300]}（{os.path.basename(tb.filename)} 第 {tb.lineno} 行）".replace("\n", " "))
+        raise
