@@ -102,10 +102,13 @@ def coupang_summary(conn, today):
             "last_import": last_import, "daily_new": daily, "ship_7d": ship}
 
 
-def tasks(conn, today):
-    """今日事項，只回數量大於 0 的。"""
+def tasks(conn, today, pending=0):
+    """今日事項，只回數量大於 0 的。pending：這個月待補原因的改單次數（summary 算改單統計時一起算好傳進來）。"""
     t = _iso(today)
     out = []
+    if pending:
+        out.append({"key": "reasons", "level": "warn", "level_text": "待補", "icon": "bi-chat-square-text",
+                    "title": f"待補改單原因 {pending} 次", "detail": "這個月的改單，勾好幾筆可以一起補", "url": "/portal/stats#pending", "count": int(pending)})
 
     since = f"{_iso(today - _dt.timedelta(days=REVIEW_DAYS - 1))} 00:00:00"
     rows = conn.execute("""SELECT DISTINCT o.po_number AS po FROM orders o
@@ -164,7 +167,8 @@ def change_stats(conn, today):
     tot = d["total"]
     reasons = [{"name": k, "count": v} for k, v in tot.get("reasons", {}).items() if v]
     return {"month": month, "events": tot["events"], "coupang": tot["coupang"], "manual": tot["manual"],
-            "pos": tot["pos"], "changed_pos": tot["changed_pos"], "changed_pct": tot["changed_pct"], "reasons": reasons}
+            "pos": tot["pos"], "changed_pos": tot["changed_pos"], "changed_pct": tot["changed_pct"], "reasons": reasons,
+            "pending": tot.get("pending", 0)}
 
 
 # 最近的動作「系統」欄（Jerry 2026-10-06：「是否可以增加是從哪個系統上做修改的」）。
@@ -218,8 +222,9 @@ def summary(conn, today):
         elif c["key"] == "shopee":
             item.update(_shopee(conn, today), month_boxes=None)    # 蝦皮特選還沒有箱數（第三段才有出貨量）
         channels.append(item)
-    return {"today": _iso(today), "now": db.now(), "channels": channels, "tasks": tasks(conn, today),
-            "changes": change_stats(conn, today), "recent": recent_actions(conn)}
+    changes = change_stats(conn, today)
+    return {"today": _iso(today), "now": db.now(), "channels": channels, "tasks": tasks(conn, today, changes["pending"]),
+            "changes": changes, "recent": recent_actions(conn)}
 
 
 # ---------------------------------------------------------------- 路由

@@ -806,6 +806,15 @@ CREATE TABLE IF NOT EXISTS mst_mars_products (
     UNIQUE(yf_sku, unit)
 );
 
+-- 改單原因（Jerry 2026-10-19 改單統計）：每一次改單一個原因。event_key 是改單統計算出來的那次改單
+-- （import|系統|PO|時間 或 manual|系統|PO|時間），改單本身不存，每次從兩個系統的歷程算。
+CREATE TABLE IF NOT EXISTS mst_change_reasons (
+    event_key   TEXT PRIMARY KEY,
+    reason      TEXT NOT NULL,
+    operator    TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT ''
+);
+
 -- 瑪氏商品總表每次上傳一筆（畫面「上次上傳」）
 CREATE TABLE IF NOT EXISTS mst_mars_uploads (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
