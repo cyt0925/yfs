@@ -249,13 +249,15 @@ def main():
     st = client.get("/api/master/stats?month=2026-09").get_json()
     # 改單統計兩個系統合起來算（2026-10-19）：PO 照兩邊最早的到貨日歸月份。CI 的 PostgreSQL 會先跑 test_flow，酷澎訂單管理那邊也會有 9 月的單
     conn_ = db.get_conn()
-    first = {}
+    first, every = {}, set()
     for tb in ("mst_orders", "orders"):
-        for r in conn_.execute(f"SELECT po_number, delivery_date FROM {tb} WHERE delivery_date != ''").fetchall():
-            first[r["po_number"]] = min(first.get(r["po_number"], "9999"), r["delivery_date"])
+        for r in conn_.execute(f"SELECT po_number, delivery_date FROM {tb}").fetchall():
+            every.add(r["po_number"])
+            if r["delivery_date"]:
+                first[r["po_number"]] = min(first.get(r["po_number"], "9999"), r["delivery_date"])
     conn_.close()
-    all_pos = {po for po, d in first.items() if d.startswith("2026-09")}
-    check("9 月 PO 張數 = 兩個系統裡最早到貨日在 9 月的不同 PO 數", st["total"]["pos"] == len(all_pos), f"{st['total']['pos']} vs {len(all_pos)}")
+    all_pos = {po for po, d in first.items() if d.startswith("2026-09")} | (every - set(first))   # 完全沒到貨日的列在「未排日期」，每個期間都會列
+    check("9 月 PO 張數 = 兩個系統裡最早到貨日在 9 月的不同 PO 數（加上沒排日期的）", st["total"]["pos"] == len(all_pos), f"{st['total']['pos']} vs {len(all_pos)}")
     check("有品項數與 SKU 數，SKU 數 ≤ 品項數", st["total"]["items"] >= st["total"]["skus"] > 0)
     check("被改過的 PO ≥ 1、佔比是整數百分比", st["total"]["changed_pos"] >= 1 and 0 < st["total"]["changed_pct"] <= 100)
     check("改單次數 ≥ 被改過的 PO 數", st["total"]["events"] >= st["total"]["changed_pos"])
