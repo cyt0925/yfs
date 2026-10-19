@@ -28,6 +28,8 @@
   改的時候已經選了的（商品主檔、瑪氏）照舊對應過來；沒有的列「待補」，在改單統計頁勾好幾筆一起補，存在 mst_change_reasons。
 - 原始下單→目前出貨用金額（數量 × 下單單價）：一張單有箱、盒、包，數量直接加起來沒有意思。
   原始＝兩邊最早看到的下單數量；目前＝兩邊最近更新的那筆出貨數量（品項移除算 0）。
+- 品項移除之後又重新出現：重新出現那次也算一次酷澎修改，算「改數量（上修）」，金額差＝被拿掉前的數量 × 單價，
+  跟被拿掉那次的金額差抵掉（東西回來了，目前出貨也有算它）。
 - 少出拆兩段（Jerry 2026-10-19「這怎算的」→「拆成兩段」）：
   進系統前就少了＝第一次匯入時訂單彙總表的出貨數量就比下單數量少（在 Kate 的系統先改的，沒有改單紀錄、沒地方補原因）；
   進系統後才改＝之後的變動（有改單紀錄、有原因）。第一次的出貨數量＝兩邊出貨數量最早那筆紀錄改之前的值，沒紀錄就是現在的值。
@@ -187,10 +189,12 @@ def _import_events(logs, prices):
     ev, first_qty = {}, {}
     for (po, sku, canon), pts in obs.items():
         pts.sort(key=lambda p: (p[0], p[1]))
-        prev = None
+        prev, gone_q = None, None
         for t, sys, v, old, l in pts:
             if prev is not None and v == prev:
                 continue                                   # 另一個系統後來才看到同一個值：不重複算
+            if v == "back" and prev is None:
+                continue                                   # 沒看到被拿掉就說重新出現：沒有東西可以接回來
             before = prev if prev is not None else old
             if canon == "order_qty" and (po, sku) not in first_qty and before != "":
                 first_qty[(po, sku)] = _num(before)
@@ -205,11 +209,15 @@ def _import_events(logs, prices):
                 e["kinds"].add("wh"); e["_wh"].append((before, v))
             elif v == "gone":
                 e["kinds"].add("gone"); e["_gone"] += 1
-                q = _num(old)
-                if q and (po, sku) not in e["_delta"]:
+                q = gone_q = _num(old)
+                if q:
                     e["delta"] -= q * (price or 0)
             else:
-                e["_back"] += 1
+                # 品項重新出現：出貨從 0 回到被拿掉前的數量，算改數量（上修），金額差跟被拿掉那次抵掉（Jerry 2026-10-19 CI 抓到：
+                # 拿掉、重新出現跨了一分鐘，重新出現那次變成「改了什麼」空白、金額差 0 的改單）
+                e["_back"] += 1; e["kinds"].add("qty"); e["qty_dir"].add("up")
+                if gone_q and sku not in e["_delta"]:
+                    e["_delta"][sku] = (1, gone_q * (price or 0))
             prev = v
     return ev, first_qty
 

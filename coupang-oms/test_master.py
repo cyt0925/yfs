@@ -286,7 +286,23 @@ def main():
     other = [e for e in man if e["reason"] == "其他"]
     check("「其他」的說明帶在明細裡", other and any("倉庫說要併車" in e["note"] for e in other), str(other[:1]))
     cp = [e for e in ev if e["source"] == "import"]
-    check("酷澎改的那筆是「品項被拿掉」、原因待補", cp and all("gone" in e["kinds"] and e["reason"] == "待補" and e["pending"] for e in cp), str(cp[:1]))
+    check("酷澎改的是「品項被拿掉」和它重新出現（同一分鐘匯的併成一次；跨分鐘分兩次，重新出現那次算改數量上修）、原因都待補",
+          any("gone" in e["kinds"] for e in cp) and all(e["reason"] == "待補" and e["pending"] for e in cp)
+          and all("品項重新出現" in e["summary"] and e["kinds"] == ["qty"] and e["qty_dir"] == "up" for e in cp if "gone" not in e["kinds"]), str(cp[:2]))
+    # 跨分鐘那種 CI 碰過一次（2026-10-19，11:57 拿掉、11:58 重新出現），直接餵紀錄測，不靠時鐘運氣
+    from master import stats as st_mod
+    def _gb(t1, t2, back_only=False):
+        gone_l = {"po_number": "P1", "sku_id": "S1", "field": "qty_ship", "old_value": 10, "new_value": 0, "operator": "測試", "changed_at": t1,
+                  "note": "本次訂單彙總表中這張 PO 已沒有這個品項，出貨數量歸 0"}
+        back_l = {"po_number": "P1", "sku_id": "S1", "field": "missing_in_file", "old_value": 1, "new_value": 0, "operator": "測試", "changed_at": t2,
+                  "note": "品項重新出現在訂單彙總表"}
+        ev_, _ = st_mod._import_events(([] if back_only else [("m", gone_l)]) + [("m", back_l)], {("P1", "S1"): 100})
+        return sorted(st_mod._finish_events(ev_).values(), key=lambda e: e["when"])
+    gb_split, gb_same, gb_alone = _gb("2030-03-01 10:00:59", "2030-03-01 10:01:00"), _gb("2030-03-01 10:00:10", "2030-03-01 10:00:50"), _gb("", "2030-03-01 10:01:00", True)
+    check("品項拿掉、重新出現跨分鐘：兩次改單，拿掉 −1,000、重新出現算改數量上修 +1,000",
+          [(sorted(e["kinds"]), e["qty_dir"], e["delta"]) for e in gb_split] == [(["gone"], "", -1000.0), (["qty"], "up", 1000.0)], str(gb_split))
+    check("同一分鐘：併成一次，金額差抵掉", [(sorted(e["kinds"]), e["delta"]) for e in gb_same] == [(["gone", "qty"], 0.0)], str(gb_same))
+    check("沒看到拿掉就說重新出現：不算改單", gb_alone == [], str(gb_alone))
     k = st["total"]["kinds"]
     check("改了什麼：改數量（我們）= 明細裡我們改數量的筆數", k["qty_m"] == sum(1 for e in man if "qty" in e["kinds"]), str(k))
     check("改了什麼：改交期（我們）= 明細裡我們改交期的筆數", k["date_m"] == sum(1 for e in man if "date" in e["kinds"]), str(k))
