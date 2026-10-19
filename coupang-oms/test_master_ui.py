@@ -644,9 +644,9 @@ def main():
         pg.click("#btn-yfs"); pg.wait_for_selector("#chs .ch", timeout=15000)
         check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁（網站首頁 /）", pg.url.rstrip("/") == base)
         pg.click("#nav a:has-text('改單統計')"); pg.wait_for_selector("#st-kpi .kpi", timeout=15000); pg.wait_for_timeout(500)
-        check("左側「改單統計」：在 YFS 訂單系統裡看，五張數字卡（含原始下單→目前出貨、待補原因）、待補清單、每月表、原因、改了什麼、改最多次的 PO 都有",
-              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5 and pg.query_selector("#kpi-pend")
-              and "原始下單 → 目前出貨" in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
+        check("左側「改單統計」：在 YFS 訂單系統裡看，四張數字卡（含待補原因；原始下單→目前出貨那張拿掉了，Jerry 2026-10-19）、待補清單、每月表、原因、改了什麼、改最多次的 PO 都有",
+              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4 and pg.query_selector("#kpi-pend")
+              and "原始下單" not in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
               and all(pg.query_selector(sel) for sel in ("#st-months thead", "#st-reasons thead", "#st-kinds thead", "#st-top thead")) and "/api/master/stats/export" in pg.get_attribute("#st-export", "href"))
         pg.fill("#st-from", "2026-09"); pg.dispatch_event("#st-from", "change"); pg.wait_for_timeout(800)
         if pg.query_selector("#st-months .st-n"):
@@ -656,8 +656,8 @@ def main():
             check("9 月有改單紀錄可以點", False, pg.inner_text("#st-months"))
         # 待補原因（Jerry 2026-10-19）：勾兩筆一起補、單筆下拉選了就存
         pg.wait_for_selector("#pd-table tbody tr", timeout=8000)
-        check("金額差只在每月統計：改單原因表、待補清單都沒有（Jerry 2026-10-19）",
-              "金額差" not in pg.inner_text("#st-reasons") and "金額差" not in pg.inner_text("#pd-table") and "原始下單" in pg.inner_text("#st-months"))
+        check("金額：每月統計有原始下單、改單原因表有金額差，待補清單沒有（Jerry 2026-10-19）",
+              "金額差" in pg.inner_text("#st-reasons") and "金額差" not in pg.inner_text("#pd-table") and "原始下單" in pg.inner_text("#st-months"))
         n0 = int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0)
         rows0 = pg.eval_on_selector_all("#pd-table .pd-c", "els => els.length")
         check("待補清單：只看待補、每列一個勾選框和原因下拉，筆數跟數字卡一致（最多先列 50）", n0 > 0 and rows0 == min(n0, 50)
