@@ -227,6 +227,8 @@ def _manual_events(mlogs, clogs, prices):
         note = l.get("note") or ""
         if note and note not in e["note"]:
             e["note"] = f"{e['note']}；{note}" if e["note"] else note
+        if sys == "m" and note.startswith("勇信"):         # 瑪氏出貨的勇信缺貨也記在商品主檔的歷程；跟首頁「最近的動作」一樣分開標（Jerry 2026-10-19）
+            e["label"] = "瑪氏出貨"
         f = l["field"]
         if f == "qty_ship":
             _add_qty(e, "ship", l["sku_id"], _nv("ship", l["old_value"]), _nv("ship", l["new_value"]), prices.get((l["po_number"], l["sku_id"])))
@@ -241,7 +243,7 @@ def _event_row(e, p):
     """給 API／Excel 用的一列。"""
     return {"key": e["key"], "when": e["when"], "po_number": e["po"], "month": p["month"], "lines": "／".join(sorted(p["lines"])),
             "source": e["source"], "source_label": "酷澎修改" if e["source"] == "import" else "我方修改",
-            "system": SYS_LABEL[e["sys"]], "operator": e["operator"], "kinds": sorted(e["kinds"]), "kind_labels": e["kind_labels"],
+            "system": e.get("label") or SYS_LABEL[e["sys"]], "operator": e["operator"], "kinds": sorted(e["kinds"]), "kind_labels": e["kind_labels"],
             "qty_dir": e["qty_dir"], "summary": e["summary"], "delta": e["delta"],
             "reason": e["final_reason"], "reason_from": e["reason_from"], "pending": e["final_reason"] == PENDING, "note": e["note"]}
 

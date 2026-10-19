@@ -605,6 +605,9 @@ def main():
     check("再按一次確認：系統數量已經是對的所以改 0 筆，但下修檔照樣回來、不重複記歷程", r.status_code == 200 and r.headers.get("X-Mars-Changed") == "0" and r.headers.get("X-Mars-Rows") == "1"
           and n_logs2 == n_logs, f"改 {r.headers.get('X-Mars-Changed')} 筆、{r.headers.get('X-Mars-Rows')} 列、歷程 {n_logs}→{n_logs2}")
     logs = c.get("/api/master/logs?q=13000000699901&limit=1000").get_json()["logs"]
+    evm = [e for e in c.get("/api/master/stats/events?month=2026-09").get_json()["events"] if e["po_number"] == "13000000699901" and e["source"] == "manual"]
+    check("改單統計：勇信缺貨改的出貨數量標「瑪氏出貨」、原因對到原廠／產銷缺貨（Jerry 2026-10-19）",
+          evm and all(e["system"] == "瑪氏出貨" for e in evm if "勇信" in e["note"]) and any(e["reason"] == "原廠／產銷缺貨" for e in evm), str([(e["system"], e["reason"], e["note"][:20]) for e in evm]))
     check("有記歷程：出貨數量、原因缺貨、說明寫勇信出幾箱", any(l["field"] == "qty_ship" and "勇信出" in json.dumps(l, ensure_ascii=False) and "缺貨" in json.dumps(l, ensure_ascii=False) for l in logs), str([l for l in logs if l["field"] == "qty_ship"][:1]))
     v = splits(c, "2026-09-29", "2026-09-30"); tb = next(x for x in v["splits"] if x["id"] == tgt["id"])
     check("已送 EIP 的那份快照跟著改：狀態還是已回填（不是 EIP 送出後訂單有變）、數量是新的", tb["status"] == "filled" and next(i for i in tb["items"] if i["sku_id"] == it0["sku_id"])["qty_ship"] == row0["new_qty"], f"{tb['status']} {tb.get('diff')}")
