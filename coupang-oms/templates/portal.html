@@ -264,6 +264,7 @@ td.neg { color: var(--st-critical); }
       <div class="card st-filter">
         <label>期間 <input type="month" id="st-from" class="inp" aria-label="起始月份"></label>
         <label>～ <input type="month" id="st-to" class="inp" aria-label="結束月份"></label>
+        <label title="系統裡所有月份的 PO 一起算（沒排到貨日的也算）"><input type="checkbox" id="st-all"> 全部期間</label>
         <label>線別 <select id="st-line" class="inp"><option value="">全部線別</option></select></label>
         <label title="估計值；工時＝改單次數 × 分鐘數，填 0 則不計算">每次改單約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
         <label title="改單時勾選「這是測試，不算進統計」的改單，預設不計入"><input type="checkbox" id="st-test"> 含測試</label>
@@ -539,9 +540,12 @@ td.neg { color: var(--st-critical); }
   const PD_SEL = new Set();
 
   function qs() {
+    const all = $("#st-all").checked;
+    $("#st-from").disabled = $("#st-to").disabled = all;
     let from = $("#st-from").value, to = $("#st-to").value;
     if (!to || to < from) { to = from; $("#st-to").value = to; }
-    return { from, to, q: `month=${from}&month_to=${to}&line=${encodeURIComponent($("#st-line").value)}&include_test=${$("#st-test").checked ? 1 : 0}` };
+    const rest = `line=${encodeURIComponent($("#st-line").value)}&include_test=${$("#st-test").checked ? 1 : 0}`;
+    return all ? { from: "全部期間", to: "全部期間", all, q: `all=1&${rest}` } : { from, to, all, q: `month=${from}&month_to=${to}&${rest}` };
   }
   async function load() {
     const { from, q } = qs(); if (!from) return;
@@ -653,7 +657,7 @@ td.neg { color: var(--st-critical); }
     $("#st-line").insertAdjacentHTML("beforeend", (meta.groups || []).map(g => `<option>${esc(g)}</option>`).join(""));
     const m = meta.this_month || new Date().toISOString().slice(0, 7);
     $("#st-from").value = m; $("#st-to").value = m;
-    ["#st-from", "#st-to", "#st-line", "#st-min", "#st-test"].forEach(sel => $(sel).addEventListener("change", () => { EV = null; load(); }));
+    ["#st-from", "#st-to", "#st-all", "#st-line", "#st-min", "#st-test"].forEach(sel => $(sel).addEventListener("change", () => { EV = null; PD_SEL.clear(); load(); }));
     load();
   })();
 })();

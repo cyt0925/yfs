@@ -47,6 +47,9 @@ _RESTORE_PREFIXES = ("恢復為整合表", "恢復為訂單彙總表")   # 舊�
 
 
 def _stats_range():
+    """回 (起月, 迄月, 月份清單)；all=1 是全部期間（Jerry 2026-10-19「我也要可以顯示全部的」），回 (None, None, ["全部"])。"""
+    if request.args.get("all") in ("1", "true"):
+        return None, None, ["全部"]
     month = request.args.get("month") or _this_month()
     month_to = request.args.get("month_to") or month
     if not _valid_month(month) or not _valid_month(month_to):
@@ -291,11 +294,11 @@ def _collect(conn, month_from, month_to, line_group, include_test=False):
         by_item[(r["po_number"], r["sku_id"])].append(r)
         if r["unit_price"] is not None:
             prices.setdefault((r["po_number"], r["sku_id"]), _num(r["unit_price"]) or 0)
-    span = set(_month_span(month_from, month_to))
+    span = None if month_from is None else set(_month_span(month_from, month_to))     # None＝全部期間
     keep = {}
     for po, p in pos.items():
         m = _po_month(p["dates"])
-        if m != UNDATED and m not in span:
+        if span is not None and m != UNDATED and m not in span:
             continue
         if line_group and line_group not in p["lines"]:
             continue
@@ -390,7 +393,7 @@ def _build_stats(conn, month_from, month_to, line_group, include_test=False):
             s["kinds"][f"qty_{e['qty_dir']}"] += 1
 
     months = {}
-    order = _month_span(month_from, month_to) + [UNDATED]
+    order = (_month_span(month_from, month_to) if month_from else sorted({p["month"] for p in keep.values()} - {UNDATED})) + [UNDATED]
 
     def add(m, s, p):
         m["pos"] += 1; m["items"] += p["items"]; m["_skus"].update(p["skus"])
@@ -576,7 +579,7 @@ def api_stats_export():
 
     ws4 = wb.create_sheet("怎麼算的")
     for line_text in [
-        f"範圍：{month_from} ～ {month_to}" + (f"，線別 {line}" if line else "，全部線別")
+        ("範圍：全部期間" if month_from is None else f"範圍：{month_from} ～ {month_to}") + (f"，線別 {line}" if line else "，全部線別")
         + ("，含勾了「這是測試」的改單" if _include_test() else f"，不含勾了「這是測試」的改單（這段期間有 {n_test} 次）"),
         "PO 歸屬月份：依目前的到貨日（多個日期取最早那天）。未排日期的另列「未排日期」。",
         "曾改單：這張 PO 在修改歷程裡至少有一次改單事件。",
@@ -598,7 +601,7 @@ def api_stats_export():
     for r in ws4.iter_rows():
         r[0].alignment = Alignment(wrap_text=True, vertical="top")
 
-    label = month_from if month_from == month_to else f"{month_from}～{month_to}"
+    label = "全部期間" if month_from is None else month_from if month_from == month_to else f"{month_from}～{month_to}"
     return _xlsx_response(wb, f"改單統計_{label}.xlsx")
 
 

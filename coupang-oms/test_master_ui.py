@@ -669,6 +669,12 @@ def main():
         pg.select_option("#pd-table select.rsn >> nth=0", "其他")
         pg.wait_for_function(f"!document.querySelector('#kpi-pend .v').innerText.startsWith('{n1}')", timeout=8000)
         check("單筆下拉選「其他」就存起來，待補再少 1", int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0) == n1 - 1)
+        pos_month = int(pg.inner_text("#st-kpi .kpi >> nth=0").split("\n")[1].replace("張", "").replace(",", "").strip())
+        pg.check("#st-all"); pg.wait_for_timeout(1200)
+        pos_all = int(pg.inner_text("#st-kpi .kpi >> nth=0").split("\n")[1].replace("張", "").replace(",", "").strip())
+        check("勾「全部期間」→ 月份欄位不能選、PO 張數 ≥ 單月、匯出網址帶 all=1", pg.is_disabled("#st-from") and pos_all >= pos_month
+              and "all=1" in pg.get_attribute("#st-export", "href"), f"{pos_month} → {pos_all}")
+        pg.uncheck("#st-all"); pg.wait_for_timeout(1000)
         pg.uncheck("#pd-only"); pg.wait_for_timeout(500)
         check("取消「只看待補」→ 補過的也列出來、寫是誰補的", "補" in pg.inner_text("#pd-table") and "酷澎倉限制" in pg.inner_text("#pd-table"))
         pg.goto(f"{base}/master#stats"); pg.wait_for_selector("#tab-stats:not(.hidden)", timeout=15000)

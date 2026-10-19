@@ -895,6 +895,16 @@ def main():
     h12 = [c.value for c in wb12["明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
     check("Excel：明細多「記在哪個系統」「金額差」「原因怎麼來的」；每月統計多待補原因、原始下單金額、目前出貨金額、少出",
           {"記在哪個系統", "金額差", "原因怎麼來的"} <= set(h12) and {"待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
+    sa = client.get("/api/master/stats?all=1").get_json()
+    conn_ = db.get_conn()
+    every_ = {r["po_number"] for tb in ("mst_orders", "orders") for r in conn_.execute(f"SELECT DISTINCT po_number FROM {tb}").fetchall()}
+    conn_.close()
+    check("全部期間（Jerry 2026-10-19）：PO 張數＝兩個系統所有 PO、每個月一列照順序、合計＝各月加總、明細和 Excel 也吃 all=1",
+          sa["total"]["pos"] == len(every_) and [m["month"] for m in sa["months"] if m["month"] != "未排日期"] == sorted(m["month"] for m in sa["months"] if m["month"] != "未排日期")
+          and sum(m["events"] for m in sa["months"]) == sa["total"]["events"] and len(sa["months"]) >= 3
+          and len(client.get("/api/master/stats/events?all=1").get_json()["events"]) == sa["total"]["events"]
+          and "改單統計_全部期間" in unquote(client.get("/api/master/stats/export?all=1").headers.get("Content-Disposition", "")),
+          f"{sa['total']['pos']} vs {len(every_)}；{[m['month'] for m in sa['months']]}")
     check("每月統計多「其中進系統前就少了」「其中進系統後才改」「拆單接回原單的金額」", {"其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"} <= set(m12), str(m12))
 
     # 少出拆兩段＋酷澎拆單接回原單（Jerry 2026-10-19「這怎算的」→「拆成兩段」）；用自己的月份
