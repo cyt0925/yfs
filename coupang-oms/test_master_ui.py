@@ -656,6 +656,8 @@ def main():
             check("9 月有改單紀錄可以點", False, pg.inner_text("#st-months"))
         # 待補原因（Jerry 2026-10-19）：勾兩筆一起補、單筆下拉選了就存
         pg.wait_for_selector("#pd-table tbody tr", timeout=8000)
+        check("金額差只在每月統計：改單原因表、待補清單都沒有（Jerry 2026-10-19）",
+              "金額差" not in pg.inner_text("#st-reasons") and "金額差" not in pg.inner_text("#pd-table") and "原始下單" in pg.inner_text("#st-months"))
         n0 = int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0)
         rows0 = pg.eval_on_selector_all("#pd-table .pd-c", "els => els.length")
         check("待補清單：只看待補、每列一個勾選框和原因下拉，筆數跟數字卡一致（最多先列 50）", n0 > 0 and rows0 == min(n0, 50)

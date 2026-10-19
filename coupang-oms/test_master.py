@@ -911,8 +911,8 @@ def main():
     check("補過的可以改", client.get("/api/master/stats?month=2030-01").get_json()["total"]["reasons"]["我方作業"] == 1)
     wb12 = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))
     h12 = [c.value for c in wb12["明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
-    check("Excel：明細多「記在哪個系統」「金額差」「原因怎麼來的」；每月統計多待補原因、原始下單金額、目前出貨金額、少出",
-          {"記在哪個系統", "金額差", "原因怎麼來的"} <= set(h12) and {"待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
+    check("Excel：明細多「記在哪個系統」「原因怎麼來的」、金額差先不出（Jerry 2026-10-19）；每月統計多待補原因、原始下單金額、目前出貨金額、少出",
+          {"記在哪個系統", "原因怎麼來的"} <= set(h12) and "金額差" not in h12 and not any("金額差" in str(c.value) for c in wb12["改單原因"][1]) and {"待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
     sa = client.get("/api/master/stats?all=1").get_json()
     conn_ = db.get_conn()
     every_ = {r["po_number"] for tb in ("mst_orders", "orders") for r in conn_.execute(f"SELECT DISTINCT po_number FROM {tb}").fetchall()}

@@ -30,6 +30,8 @@
   原始＝兩邊最早看到的下單數量；目前＝兩邊最近更新的那筆出貨數量（品項移除算 0）。
 - 品項移除之後又重新出現：重新出現那次也算一次酷澎修改，算「改數量（上修）」，金額差＝被拿掉前的數量 × 單價，
   跟被拿掉那次的金額差抵掉（東西回來了，目前出貨也有算它）。
+- 每次改單的金額差（delta）、每個原因的金額差（reason_amount）照算、API 有回，但畫面和 Excel 先不出：
+  Jerry 2026-10-19「還不是很確定是否需要這個」，金額只放每月統計（原始下單、目前出貨、少出兩段）。
 - 少出拆兩段（Jerry 2026-10-19「這怎算的」→「拆成兩段」）：
   進系統前就少了＝第一次匯入時訂單彙總表的出貨數量就比下單數量少（在 Kate 的系統先改的，沒有改單紀錄、沒地方補原因）；
   進系統後才改＝之後的變動（有改單紀錄、有原因）。第一次的出貨數量＝兩邊出貨數量最早那筆紀錄改之前的值，沒紀錄就是現在的值。
@@ -556,10 +558,10 @@ def api_stats_export():
     _style(ws, hdr, bold, head, tot, total_row=True)
 
     ws2 = wb.create_sheet("改單原因")
-    hdr2 = ["月份", "改單次數"] + d["reasons"] + [f"{r} 金額差" for r in d["reasons"]]
+    hdr2 = ["月份", "改單次數"] + d["reasons"]          # 金額差先不出（Jerry 2026-10-19：還不確定要不要，金額只放每月統計）
     ws2.append(hdr2)
     for m in d["months"] + [d["total"]]:
-        ws2.append([m["month"], m["events"]] + [m["reasons"].get(r, 0) for r in d["reasons"]] + [m["reason_amount"].get(r, 0) for r in d["reasons"]])
+        ws2.append([m["month"], m["events"]] + [m["reasons"].get(r, 0) for r in d["reasons"]])
     _style(ws2, hdr2, bold, head, tot, total_row=True)
 
     wsk = wb.create_sheet("改了什麼")
@@ -579,11 +581,11 @@ def api_stats_export():
     _style(ws3, hdr3, bold, head, tot, total_row=False)
 
     wsd = wb.create_sheet("明細")
-    hdrd = ["時間", "月份", "PO 單號", "線別", "操作人員", "來源", "記在哪個系統", "改單類型", "修改內容", "金額差", "原因", "原因怎麼來的", "說明"]
+    hdrd = ["時間", "月份", "PO 單號", "線別", "操作人員", "來源", "記在哪個系統", "改單類型", "修改內容", "原因", "原因怎麼來的", "說明"]
     wsd.append(hdrd)
     for r in _event_rows(keep, events):
         wsd.append([r["when"], r["month"], r["po_number"], r["lines"], r["operator"], r["source_label"], r["system"],
-                    r["kind_labels"], r["summary"], r["delta"], r["reason"], r["reason_from"], r["note"]])
+                    r["kind_labels"], r["summary"], r["reason"], r["reason_from"], r["note"]])
     _style(wsd, hdrd, bold, head, tot, total_row=False)
     wsd.column_dimensions["I"].width = 60; wsd.column_dimensions["A"].width = 20
 
@@ -599,7 +601,7 @@ def api_stats_export():
         "我方修改：人工修改出貨數量、到貨日、倉別（兩個系統都算）；恢復成訂單彙總表數字／日期不算。",
         "改單類型：分改數量、改到貨日、改倉別、品項移除，一次改單可能同時屬於多類，各類加總會大於改單次數。改數量再分下修／上修。",
         f"原因：每一次改單都要有，酷澎修改也要。大項：{'、'.join(REASONS)}（草稿）。改的時候已選的照舊對應（缺貨→原廠／產銷缺貨、沒車→運能（沒車））；沒有的列「待補」，在改單統計頁補。",
-        "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。金額差是那次改單讓出貨金額變多少。",
+        "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。",
         "少出拆兩段：進系統前就少了＝第一次匯入時出貨數量就比下單數量少（在 Kate 系統先改的，沒有改單紀錄）；進系統後才改＝之後的變動（有改單紀錄、有原因）。",
         "酷澎拆單：原單拿掉的品項在拆出來的新單裡（原訂單欄），新單那項接回原單算，不算少出、也不算新的下單。",
         "明細分頁：一次改單一列，要自己做樞紐分析就用這一頁。",

@@ -286,7 +286,7 @@ td.neg { color: var(--st-critical); }
       </section>
       <section class="card"><div class="sec-h"><h2>每月統計</h2><span class="hint">點選有底線的數字可查看改單明細</span></div><div class="tbl-wrap"><table class="log st" id="st-months"></table></div></section>
       <div class="bottom">
-        <section class="card"><div class="sec-h"><h2>改單原因</h2><span class="hint">酷澎修改、我方修改都算；金額差是這些改單讓出貨金額少了多少</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
+        <section class="card"><div class="sec-h"><h2>改單原因</h2><span class="hint">酷澎修改、我方修改都算</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
         <section class="card"><div class="sec-h"><h2>改單類型</h2><span class="hint">一次改單可能同時改數量與到貨日，所以合計可能大於改單次數</span></div><div class="tbl-wrap"><table class="log st" id="st-kinds"></table></div></section>
       </div>
       <section class="card"><div class="sec-h"><h2>改單次數最多的 PO</h2></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
@@ -296,7 +296,7 @@ td.neg { color: var(--st-critical); }
         <div>訂單彙總表會匯進酷澎訂單管理系統和商品主檔自動化兩個地方，兩邊都會記酷澎改了什麼。統計時兩邊合起來算，同一個改動只算一次，時間用先匯入的那一邊。</div>
         <div>「酷澎修改」指訂單彙總表上的下單數量、出貨數量、到貨日、倉別與上次不同，或品項從檔案中消失。「我方修改」指在兩個系統裡人工修改出貨數量、到貨日或倉別；改回訂單彙總表的數字不算。</div>
         <div>原始下單、目前出貨用金額（數量 × 下單單價）計算，因為同一張單有箱、盒、包，數量直接相加沒有意義。原始下單是兩個系統最早看到的下單數量；目前出貨是最近更新那一邊的出貨數量，品項移除算 0。</div>
-        <div>少出分兩段：「進系統前就少了」是第一次匯入時，訂單彙總表的出貨數量就已經比下單數量少（在 Kate 的系統先改的），這部分沒有改單紀錄，也不能補原因；「進系統後才改」是匯入之後的變動，每一次都有改單紀錄，原因在待補清單補。改單原因表的金額差只算得到進系統後的部分。</div>
+        <div>少出分兩段：「進系統前就少了」是第一次匯入時，訂單彙總表的出貨數量就已經比下單數量少（在 Kate 的系統先改的），這部分沒有改單紀錄，也不能補原因；「進系統後才改」是匯入之後的變動，每一次都有改單紀錄，原因在待補清單補。</div>
         <div>酷澎拆單時，原單被拿掉的品項如果出現在拆出來的新單裡（原訂單欄），新單那一項接回原單計算，不算少出，也不算新的下單。只有酷澎訂單管理系統有存原訂單欄。</div>
         <div>每一次改單都要有原因，原因只選大項（目前是草稿，待 Alice、Ivan 確認）。改單時已經選過原因的照舊對應：缺貨→原廠／產銷缺貨、沒車→運能（沒車）；沒有原因的列為「待補」。改單時勾選「這是測試，不算進統計」的改單預設不計入，勾選上方「含測試」才會計入。</div>
         <div>估計工時＝改單次數 × 每次改單分鐘數（人工估計）。資料自 2026 年 9 月中系統啟用起才有。</div>
@@ -581,10 +581,10 @@ td.neg { color: var(--st-critical); }
       + (rows.map(m => `<tr${tr(m)}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${fmt(m.items)}</td><td class="num">${fmt(m.skus)}</td><td class="num">${fmt(m.changed_pos)}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td><td class="num">${n(m.events, mf(m))}</td><td class="num">${n(m.coupang, { ...mf(m), source: "import" })}</td><td class="num">${n(m.manual, { ...mf(m), source: "manual" })}</td><td class="num">${money(m.orig_amount)}</td><td class="num">${money(m.cur_amount)}</td><td class="num${m.short_amount < 0 ? " neg" : ""}">${money(m.short_amount)}</td><td class="num">${money(m.pre_amount)}</td><td class="num">${money(m.post_amount)}</td><td class="num">${n(m.pending, { ...mf(m), reason: "待補" })}</td>${minutes ? `<td class="num">${fmt(Math.round(m.events * minutes / 6) / 10)}</td>` : ""}</tr>`).join("")
         || `<tr><td colspan="16" class="k" style="padding:18px">此期間查無訂單</td></tr>`) + `</tbody>`;
     const rmax = Math.max(1, ...d.reasons.map(r => t.reasons[r] || 0));
-    $("#st-reasons").innerHTML = `<thead><tr><th>原因</th><th class="num">次數</th><th class="num">金額差（元）</th><th style="width:38%"></th></tr></thead><tbody>`
-      + d.reasons.map(r => `<tr><td>${r === "待補" ? "⚠ 待補" : esc(r)}</td><td class="num">${n(t.reasons[r], { reason: r })}</td><td class="num${(t.reason_amount[r] || 0) < 0 ? " neg" : ""}">${t.reason_amount[r] ? money(t.reason_amount[r]) : ""}</td>`
+    $("#st-reasons").innerHTML = `<thead><tr><th>原因</th><th class="num">次數</th><th style="width:50%"></th></tr></thead><tbody>`
+      + d.reasons.map(r => `<tr><td>${r === "待補" ? "⚠ 待補" : esc(r)}</td><td class="num">${n(t.reasons[r], { reason: r })}</td>`
         + `<td>${t.reasons[r] ? `<div class="rbar${r === "待補" ? " todo" : ""}" style="width:${(t.reasons[r] / rmax) * 100}%"></div>` : ""}</td></tr>`).join("")
-      + `<tr class="tot"><td>合計</td><td class="num">${n(t.events, {})}</td><td class="num">${money(Object.values(t.reason_amount).reduce((a, b) => a + b, 0))}</td><td></td></tr></tbody>`;
+      + `<tr class="tot"><td>合計</td><td class="num">${n(t.events, {})}</td><td></td></tr></tbody>`;
     const kinds = [["改數量（酷澎）", "qty_c", { source: "import", kind: "qty" }], ["改數量（我方）", "qty_m", { source: "manual", kind: "qty" }],
       ["　其中下修", "qty_down", { kind: "qty", dir: "down" }], ["　其中上修", "qty_up", { kind: "qty", dir: "up" }], ["　其中有上有下", "qty_mixed", { kind: "qty", dir: "mixed" }],
       ["改到貨日（酷澎）", "date_c", { source: "import", kind: "date" }], ["改到貨日（我方）", "date_m", { source: "manual", kind: "date" }],
@@ -612,12 +612,12 @@ td.neg { color: var(--st-critical); }
     const opt = e => `<select class="rsn${e.pending ? " todo" : ""}" data-k="${esc(e.key)}" aria-label="原因">${e.pending ? `<option value="">請選原因</option>` : ""}`
       + choices.map(r => `<option${r === e.reason ? " selected" : ""}>${esc(r)}</option>`).join("") + `</select>`;
     const page = shown.slice(0, PD_SHOW);
-    $("#pd-table").innerHTML = `<thead><tr><th style="width:28px"><input type="checkbox" id="pd-all" aria-label="全選"></th><th>時間</th><th>PO 單號</th><th>線別</th><th>誰改的</th><th>改了什麼</th><th class="num">金額差（元）</th><th>原因</th></tr></thead><tbody>`
+    $("#pd-table").innerHTML = `<thead><tr><th style="width:28px"><input type="checkbox" id="pd-all" aria-label="全選"></th><th>時間</th><th>PO 單號</th><th>線別</th><th>誰改的</th><th>改了什麼</th><th>原因</th></tr></thead><tbody>`
       + (page.map(e => `<tr><td><input type="checkbox" class="pd-c" data-k="${esc(e.key)}"${PD_SEL.has(e.key) ? " checked" : ""} aria-label="勾選"></td><td class="k">${esc(e.when.slice(5, 16))}</td><td class="num" style="text-align:left">${esc(e.po_number)}</td><td>${esc(e.lines)}</td>`
         + `<td class="who"><span class="src ${e.source}">${esc(e.source_label)}${e.source === "manual" && e.operator ? " · " + esc(e.operator) : ""}</span><div class="k" style="font-size:11.5px">${esc(e.system)}</div></td>`
-        + `<td style="max-width:420px">${esc(e.summary)}</td><td class="num${e.delta < 0 ? " neg" : ""}">${e.delta ? money(e.delta) : ""}</td>`
+        + `<td style="max-width:420px">${esc(e.summary)}</td>`
         + `<td>${opt(e)}${e.reason_from ? `<div class="k" style="font-size:11.5px">${esc(e.reason_from)}</div>` : ""}</td></tr>`).join("")
-        || `<tr><td colspan="8" class="k" style="padding:18px">${only ? "這段期間的改單都有原因了。" : "這段期間沒有改單。"}</td></tr>`) + `</tbody>`;
+        || `<tr><td colspan="7" class="k" style="padding:18px">${only ? "這段期間的改單都有原因了。" : "這段期間沒有改單。"}</td></tr>`) + `</tbody>`;
     $("#pd-more").innerHTML = shown.length > page.length ? `共 ${fmt(shown.length)} 次，先列 ${fmt(page.length)} 次 · <a href="#" id="pd-showmore" class="link">再列 50 次</a>` : (shown.length ? `共 ${fmt(shown.length)} 次` : "");
     if ($("#pd-showmore")) $("#pd-showmore").addEventListener("click", ev => { ev.preventDefault(); PD_SHOW += 50; pending(); });
     const sync = () => { $("#pd-n").textContent = PD_SEL.size; $("#pd-apply").disabled = !PD_SEL.size; $("#pd-all").checked = page.length > 0 && page.every(e => PD_SEL.has(e.key)); };
@@ -643,8 +643,8 @@ td.neg { color: var(--st-critical); }
       f.source === "import" ? "酷澎修改" : f.source === "manual" ? "我方修改" : "", f.kind ? ({ qty: "改數量", date: "改到貨日", wh: "改倉別", gone: "品項遭移除" })[f.kind] : "",
       f.dir ? ({ down: "下修", up: "上修", mixed: "有上有下" })[f.dir] : "", f.reason ? `原因：${f.reason}` : ""].filter(Boolean);
     $("#st-dlg-title").textContent = `改單明細 · ${list.length} 次`; $("#st-dlg-sub").textContent = desc.join(" · ");
-    $("#st-dlg-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>改了什麼</th><th class="num">金額差（元）</th><th>原因</th></tr></thead><tbody>`
-      + (list.map(e => `<tr><td class="k">${esc(e.when.slice(0, 16))}</td><td class="num">${esc(e.po_number)}</td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge">${esc(e.source_label)}</span><div class="k">${esc(e.system)}</div></td><td style="max-width:460px">${esc(e.summary)}</td><td class="num">${e.delta ? money(e.delta) : ""}</td><td>${e.reason ? `<span class="badge">${esc(e.reason)}</span>` : ""}${e.note ? `<div class="k">${esc(e.note)}</div>` : ""}</td></tr>`).join("")
+    $("#st-dlg-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>改了什麼</th><th>原因</th></tr></thead><tbody>`
+      + (list.map(e => `<tr><td class="k">${esc(e.when.slice(0, 16))}</td><td class="num">${esc(e.po_number)}</td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge">${esc(e.source_label)}</span><div class="k">${esc(e.system)}</div></td><td style="max-width:460px">${esc(e.summary)}</td><td>${e.reason ? `<span class="badge">${esc(e.reason)}</span>` : ""}${e.note ? `<div class="k">${esc(e.note)}</div>` : ""}</td></tr>`).join("")
         || `<tr><td colspan="8" class="k" style="padding:18px">查無符合條件的改單</td></tr>`) + `</tbody>`;
     $("#st-dlg").showModal();
   }
