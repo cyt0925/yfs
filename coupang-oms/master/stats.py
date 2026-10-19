@@ -28,6 +28,11 @@
   改的時候已經選了的（商品主檔、瑪氏）照舊對應過來；沒有的列「待補」，在改單統計頁勾好幾筆一起補，存在 mst_change_reasons。
 - 原始下單→目前出貨用金額（數量 × 下單單價）：一張單有箱、盒、包，數量直接加起來沒有意思。
   原始＝兩邊最早看到的下單數量；目前＝兩邊最近更新的那筆出貨數量（品項移除算 0）。
+- 少出拆兩段（Jerry 2026-10-19「這怎算的」→「拆成兩段」）：
+  進系統前就少了＝第一次匯入時訂單彙總表的出貨數量就比下單數量少（在 Kate 的系統先改的，沒有改單紀錄、沒地方補原因）；
+  進系統後才改＝之後的變動（有改單紀錄、有原因）。第一次的出貨數量＝兩邊出貨數量最早那筆紀錄改之前的值，沒紀錄就是現在的值。
+- 酷澎拆單（原訂單欄有值、只有酷澎訂單管理有存）：原單被拿掉的品項如果在拆出來的新單裡，新單那項接回原單算，
+  不算少出也不算新的下單（不然原單少出、新單又多一筆下單，少出會算太多）。兩張單都要在統計期間內才接。
 """
 from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyxl 都從這裡來
 
@@ -247,10 +252,30 @@ def _item_rows(conn):
     out = []
     for r in _rows(conn.execute("SELECT po_number, sku_id, line, delivery_date, qty_coupang, qty_ship, qty_file_ship, unit_price, "
                                 "missing_in_file AS gone, first_seen_at, updated_at FROM mst_orders")):
-        r["sys"] = "m"; out.append(r)
-    for r in _rows(conn.execute("SELECT po_number, sku_id, line, delivery_date, qty_coupang, qty_ship, unit_price, "
+        r["sys"] = "m"; r["parent_po"] = ""; out.append(r)
+    for r in _rows(conn.execute("SELECT po_number, sku_id, line, delivery_date, qty_coupang, qty_ship, unit_price, parent_po, "
                                 "removed_from_coupang AS gone, first_seen_at, updated_at FROM orders")):
         r["sys"] = "c"; r["qty_file_ship"] = None; out.append(r)
+    return out
+
+
+def _first_ship(conn, keep):
+    """每個品項第一次看到的出貨數量：兩個系統出貨數量最早那筆紀錄「改之前」的值（沒紀錄的品項不在裡面＝從來沒變過）。"""
+    logs = []
+    for sys_, sql in (("m", "SELECT po_number, sku_id, field, old_value, new_value, note, changed_at FROM mst_logs "
+                            "WHERE po_number != '' AND field IN ('qty_file_ship', 'qty_ship')"),
+                      ("c", "SELECT po_number, sku_id, field, old_value, new_value, note, changed_at FROM edit_logs "
+                            "WHERE po_number != '' AND field = 'qty_ship'")):
+        logs += [(l["changed_at"] or "", sys_, l) for l in _rows(conn.execute(sql)) if l["po_number"] in keep]
+    out = {}
+    for t, _s, l in sorted(logs, key=lambda x: (x[0], x[1])):
+        k = (l["po_number"], l["sku_id"])
+        if k in out:
+            continue
+        before = l["new_value"] if (l["note"] or "").startswith(_KEPT) else l["old_value"]   # 人工調整過的那種：現在的值記在 new_value
+        n = _num(before)
+        if n is not None:
+            out[k] = n
     return out
 
 
@@ -306,19 +331,35 @@ def _collect(conn, month_from, month_to, line_group, include_test=False):
             e["final_reason"], e["reason_from"] = OLD_REASON.get(e["reason"], e["reason"]), "改的時候已選"
         else:
             e["final_reason"], e["reason_from"] = PENDING, ""
-    # 原始下單、目前出貨（金額）：每個品項看兩邊
+    # 原始下單、第一次看到的出貨、目前出貨（數量）：每個品項看兩邊
+    first_ship = _first_ship(conn, keep)
+    amt = {}
     for po, p in keep.items():
-        p["orig_amount"] = p["cur_amount"] = 0.0
         for sku in p["skus"]:
             rows = by_item[(po, sku)]
-            price = prices.get((po, sku)) or 0
             orig = first_qty.get((po, sku))
             if orig is None:
                 first = min(rows, key=lambda r: r["first_seen_at"] or "9")
                 orig = _num(first["qty_coupang"]) or 0
             last = max(rows, key=lambda r: r["updated_at"] or "")
             cur = 0 if last["gone"] else _num(last["qty_ship"] if last["qty_ship"] is not None else (last["qty_file_ship"] if last["qty_file_ship"] is not None else last["qty_coupang"])) or 0
-            p["orig_amount"] += orig * price; p["cur_amount"] += cur * price
+            fs = first_ship.get((po, sku))
+            amt[(po, sku)] = {"price": prices.get((po, sku)) or 0, "orig": orig, "first": cur if fs is None else fs, "cur": cur,
+                              "gone": bool(last["gone"]), "parent": next((r["parent_po"] for r in rows if r.get("parent_po")), ""), "moved": 0.0}
+    # 酷澎拆單：原單拿掉的品項在新單裡 → 新單那項接回原單算（見檔頭）
+    for (po, sku), a in amt.items():
+        par = amt.get((a["parent"], sku)) if a["parent"] and a["parent"] != po else None
+        if par is None or not par["gone"]:
+            continue
+        par["cur"] = a["cur"]; par["moved"] = a["orig"] * a["price"]
+        a["orig"] = a["first"] = a["cur"] = 0
+    for po, p in keep.items():
+        p["orig_amount"] = p["cur_amount"] = p["pre_amount"] = p["post_amount"] = p["moved_amount"] = 0.0
+        for sku in p["skus"]:
+            a = amt[(po, sku)]
+            p["orig_amount"] += a["orig"] * a["price"]; p["cur_amount"] += a["cur"] * a["price"]
+            p["pre_amount"] += (a["first"] - a["orig"]) * a["price"]; p["post_amount"] += (a["cur"] - a["first"]) * a["price"]
+            p["moved_amount"] += a["moved"]
     if include_test:
         return keep, events, 0
     tests = [k for k, e in events.items() if e["final_reason"] == TEST_REASON]
@@ -353,7 +394,8 @@ def _build_stats(conn, month_from, month_to, line_group, include_test=False):
 
     def add(m, s, p):
         m["pos"] += 1; m["items"] += p["items"]; m["_skus"].update(p["skus"])
-        m["orig_amount"] += p["orig_amount"]; m["cur_amount"] += p["cur_amount"]
+        for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount"):
+            m[k] += p[k]
         if s["events"]:
             m["changed_pos"] += 1
         m["events"] += s["events"]; m["coupang"] += s["coupang"]; m["manual"] += s["manual"]
@@ -393,7 +435,7 @@ KIND_KEYS = ["qty_c", "qty_m", "qty_down", "qty_up", "qty_mixed", "date_c", "dat
 def _empty_month(label):
     return {"month": label, "pos": 0, "items": 0, "_skus": set(), "changed_pos": 0,
             "events": 0, "coupang": 0, "manual": 0, "reasons": {}, "reason_amount": {}, "kinds": {},
-            "orig_amount": 0.0, "cur_amount": 0.0}
+            "orig_amount": 0.0, "cur_amount": 0.0, "pre_amount": 0.0, "post_amount": 0.0, "moved_amount": 0.0}
 
 
 def _finish_month(m, reasons=None):
@@ -405,7 +447,8 @@ def _finish_month(m, reasons=None):
     m["reason_amount"] = {k: round(m["reason_amount"].get(k, 0), 2) for k in keys}
     m["pending"] = m["reasons"].get(PENDING, 0)
     m["kinds"] = {k: m["kinds"].get(k, 0) for k in KIND_KEYS}
-    m["orig_amount"], m["cur_amount"] = round(m["orig_amount"], 2), round(m["cur_amount"], 2)
+    for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount"):
+        m[k] = round(m[k], 2)
     m["short_amount"] = round(m["cur_amount"] - m["orig_amount"], 2)
     m["short_pct"] = round((m["orig_amount"] - m["cur_amount"]) * 100 / m["orig_amount"], 1) if m["orig_amount"] else 0
     return m
@@ -484,14 +527,16 @@ def api_stats_export():
 
     ws = wb.active; ws.title = "每月統計"
     hdr = ["月份", "PO 張數", "品項數", "不同 SKU 數", "曾改單的 PO", "曾改單比例", "改單次數",
-           "其中酷澎修改", "其中我方修改", "曾改單的 PO 平均改單次數", "待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"]
+           "其中酷澎修改", "其中我方修改", "曾改單的 PO 平均改單次數", "待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例",
+           "其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"]
     if minutes:
         hdr.append(f"估計工時（每次 {minutes} 分鐘）")
     ws.append(hdr)
     for m in d["months"] + [d["total"]]:
         row = [m["month"], m["pos"], m["items"], m["skus"], m["changed_pos"], f"{m['changed_pct']}%",
                m["events"], m["coupang"], m["manual"], m["per_changed_po"], m["pending"],
-               m["orig_amount"], m["cur_amount"], m["short_amount"], f"{m['short_pct']}%"]
+               m["orig_amount"], m["cur_amount"], m["short_amount"], f"{m['short_pct']}%",
+               m["pre_amount"], m["post_amount"], m["moved_amount"]]
         if minutes:
             row.append(round(m["events"] * minutes / 60, 1))
         ws.append(row)
@@ -542,6 +587,8 @@ def api_stats_export():
         "改單類型：分改數量、改到貨日、改倉別、品項移除，一次改單可能同時屬於多類，各類加總會大於改單次數。改數量再分下修／上修。",
         f"原因：每一次改單都要有，酷澎修改也要。大項：{'、'.join(REASONS)}（草稿）。改的時候已選的照舊對應（缺貨→原廠／產銷缺貨、沒車→運能（沒車））；沒有的列「待補」，在改單統計頁補。",
         "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。金額差是那次改單讓出貨金額變多少。",
+        "少出拆兩段：進系統前就少了＝第一次匯入時出貨數量就比下單數量少（在 Kate 系統先改的，沒有改單紀錄）；進系統後才改＝之後的變動（有改單紀錄、有原因）。",
+        "酷澎拆單：原單拿掉的品項在拆出來的新單裡（原訂單欄），新單那項接回原單算，不算少出、也不算新的下單。",
         "明細分頁：一次改單一列，要自己做樞紐分析就用這一頁。",
         "估計工時：改單次數 × 每次幾分鐘 ÷ 60。每次幾分鐘是人填的，不是系統算的。",
         "資料從系統開始用（2026 年 9 月中）才有，之前 Excel 時代的紀錄不在裡面。",

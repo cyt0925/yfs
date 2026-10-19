@@ -895,6 +895,39 @@ def main():
     h12 = [c.value for c in wb12["明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
     check("Excel：明細多「記在哪個系統」「金額差」「原因怎麼來的」；每月統計多待補原因、原始下單金額、目前出貨金額、少出",
           {"記在哪個系統", "金額差", "原因怎麼來的"} <= set(h12) and {"待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
+    check("每月統計多「其中進系統前就少了」「其中進系統後才改」「拆單接回原單的金額」", {"其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"} <= set(m12), str(m12))
+
+    # 少出拆兩段＋酷澎拆單接回原單（Jerry 2026-10-19「這怎算的」→「拆成兩段」）；用自己的月份
+    def ofile2(rows, name):
+        wb_ = openpyxl.Workbook(); ws_ = wb_.active; ws_.append(hdr + ["原訂單"])
+        for no, (po, sku, qty, ship, date, wh, price, parent) in enumerate(rows, 1):
+            r = {h: None for h in hdr}
+            r.update({"訂單類型": "拆單" if parent else "一般", "線別": "寶僑", "PO單號": po, "到貨倉別": wh, "地址": "桃園市大園區", "交付日期": _dt.datetime.strptime(date, "%Y-%m-%d"),
+                      "NO": no, "SKU ID": sku, "條碼(國條)": "47100" + sku[-8:], "永豐料號": "M" + sku[-7:], "品牌": "測試", "品名": "拆單測試品 " + sku[-3:],
+                      "下單數量(酷澎單位)": qty, "出貨數量": ship, "單位": "箱", "箱入數": 1, "箱數": ship, "酷澎下單單價(含稅)": price})
+            ws_.append([r[h] for h in hdr] + [parent])
+        p_ = os.path.join(tempfile.gettempdir(), name); wb_.save(p_); return p_
+    YPO, YPO2, YC, YD = "13000000999101", "13000000999102", "900000000000201", "900000000000202"
+    w1 = ofile2([(YPO, YC, 40, 30, "2030-02-10", "TAO1", 100, ""), (YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, "")], "拆單_w1.xlsx")
+    codes = [imp_c(w1), imp_m(w1)]
+    t2 = client.get("/api/master/stats?month=2030-02").get_json()["total"]
+    check("進系統前就少了：第一次匯入出貨就比下單少（YC 下單 40、出貨 30）→ 原始 8,000、目前 7,000，全部算進系統前 −1,000、進系統後 0",
+          codes == [200, 200] and t2["orig_amount"] == 8000 and t2["cur_amount"] == 7000 and t2["pre_amount"] == -1000 and t2["post_amount"] == 0 and t2["pending"] == 0,
+          str({k: t2[k] for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "pending")}))
+    _t2.sleep(1.05)
+    w2 = ofile2([(YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, ""), (YPO2, YC, 30, 30, "2030-02-12", "TAO1", 100, YPO)], "拆單_w2.xlsx")
+    codes = [imp_c(w2), imp_m(w2)]
+    t2 = client.get("/api/master/stats?month=2030-02").get_json()["total"]
+    check("酷澎拆單：YC 從原單拿掉、出現在拆出來的新單（原訂單＝原單）→ 接回原單算：原始還是 8,000（新單那項不算新的下單）、目前 7,000、不算少出、拆單接回 3,000",
+          codes == [200, 200] and t2["orig_amount"] == 8000 and t2["cur_amount"] == 7000 and t2["post_amount"] == 0 and t2["moved_amount"] == 3000 and t2["pre_amount"] == -1000,
+          str({k: t2[k] for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount")}))
+    _t2.sleep(1.05)
+    w3 = ofile2([(YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, ""), (YPO2, YC, 30, 25, "2030-02-12", "TAO1", 100, YPO)], "拆單_w3.xlsx")
+    imp_c(w3)
+    t2 = client.get("/api/master/stats?month=2030-02").get_json()["total"]
+    check("拆出來的新單之後再下修 30→25 → 算進系統後才改 −500、目前 6,500；少出 = 進系統前 + 進系統後",
+          t2["cur_amount"] == 6500 and t2["post_amount"] == -500 and t2["short_amount"] == t2["pre_amount"] + t2["post_amount"] == -1500,
+          str({k: t2[k] for k in ("cur_amount", "pre_amount", "post_amount", "short_amount")}))
 
     if db.IS_POSTGRES:
         print("\n【13】v1 舊資料庫升級（SQLite 專用，PostgreSQL 模式略過）")
