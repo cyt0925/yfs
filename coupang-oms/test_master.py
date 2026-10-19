@@ -247,8 +247,15 @@ def main():
 
     print("\n【7b】④ 改單統計：幾張 PO、幾張被改過、改幾次、為什麼")
     st = client.get("/api/master/stats?month=2026-09").get_json()
-    all_pos = {r["po_number"] for r in orders(client, month="2026-09")["rows"]}
-    check("9 月 PO 張數 = 訂單明細裡不同 PO 數", st["total"]["pos"] == len(all_pos), f"{st['total']['pos']} vs {len(all_pos)}")
+    # 改單統計兩個系統合起來算（2026-10-19）：PO 照兩邊最早的到貨日歸月份。CI 的 PostgreSQL 會先跑 test_flow，酷澎訂單管理那邊也會有 9 月的單
+    conn_ = db.get_conn()
+    first = {}
+    for tb in ("mst_orders", "orders"):
+        for r in conn_.execute(f"SELECT po_number, delivery_date FROM {tb} WHERE delivery_date != ''").fetchall():
+            first[r["po_number"]] = min(first.get(r["po_number"], "9999"), r["delivery_date"])
+    conn_.close()
+    all_pos = {po for po, d in first.items() if d.startswith("2026-09")}
+    check("9 月 PO 張數 = 兩個系統裡最早到貨日在 9 月的不同 PO 數", st["total"]["pos"] == len(all_pos), f"{st['total']['pos']} vs {len(all_pos)}")
     check("有品項數與 SKU 數，SKU 數 ≤ 品項數", st["total"]["items"] >= st["total"]["skus"] > 0)
     check("被改過的 PO ≥ 1、佔比是整數百分比", st["total"]["changed_pos"] >= 1 and 0 < st["total"]["changed_pct"] <= 100)
     check("改單次數 ≥ 被改過的 PO 數", st["total"]["events"] >= st["total"]["changed_pos"])
@@ -262,7 +269,8 @@ def main():
     st_pg = client.get("/api/master/stats?month=2026-09&line=寶僑").get_json()
     check("線別篩選：寶僑的 PO 數 < 全部", 0 < st_pg["total"]["pos"] < st["total"]["pos"])
     st_span = client.get("/api/master/stats?month=2026-07&month_to=2026-09").get_json()
-    check("跨月：每個月一列、合計另算", len(st_span["months"]) >= 1 and st_span["total"]["pos"] >= st["total"]["pos"] and all(m["month"] <= "2026-09" for m in st_span["months"]))
+    check("跨月：每個月一列、合計另算（未排日期另列）", len(st_span["months"]) >= 1 and st_span["total"]["pos"] >= st["total"]["pos"]
+          and all(m["month"] <= "2026-09" for m in st_span["months"] if m["month"] != "未排日期"), str([m["month"] for m in st_span["months"]]))
     check("月份格式不對回 400", client.get("/api/master/stats?month=2026/09").status_code == 400)
     ev = client.get("/api/master/stats/events?month=2026-09").get_json()["events"]
     check("明細：一次改單一列，筆數 = 改單次數", len(ev) == st["total"]["events"], f"{len(ev)} vs {st['total']['events']}")
@@ -835,13 +843,13 @@ def main():
         pv_ = upload(client, "/api/master/import/preview", path).get_json()
         return client.post("/api/master/import/commit", json={"batch_id": pv_["batch_id"]}).status_code
     XPO, XA, XB = "13000000999001", "900000000000101", "900000000000102"
-    v1 = ofile([(XPO, XA, 100, 100, "2026-12-10", "TAO1", 500), (XPO, XB, 50, 50, "2026-12-10", "TAO1", 300)], "改單統計_v1.xlsx")
-    v2 = ofile([(XPO, XA, 80, 80, "2026-12-10", "TAO3", 500), (XPO, XB, 50, 50, "2026-12-10", "TAO3", 300)], "改單統計_v2.xlsx")
-    v3 = ofile([(XPO, XA, 60, 60, "2026-12-10", "TAO3", 500), (XPO, XB, 50, 50, "2026-12-10", "TAO3", 300)], "改單統計_v3.xlsx")
+    v1 = ofile([(XPO, XA, 100, 100, "2030-01-15", "TAO1", 500), (XPO, XB, 50, 50, "2030-01-15", "TAO1", 300)], "改單統計_v1.xlsx")
+    v2 = ofile([(XPO, XA, 80, 80, "2030-01-15", "TAO3", 500), (XPO, XB, 50, 50, "2030-01-15", "TAO3", 300)], "改單統計_v2.xlsx")
+    v3 = ofile([(XPO, XA, 60, 60, "2030-01-15", "TAO3", 500), (XPO, XB, 50, 50, "2030-01-15", "TAO3", 300)], "改單統計_v3.xlsx")
     codes = [imp_c(v1), imp_m(v1), imp_c(v2), imp_m(v2), imp_m(v3)]   # v2 小真先匯、商品主檔後來才匯；v3 只匯進商品主檔
     check("同一份訂單彙總表照順序匯進兩個系統都成功", codes == [200] * 5, str(codes))
-    st12 = client.get("/api/master/stats?month=2026-12").get_json()
-    ev12 = [e for e in client.get("/api/master/stats/events?month=2026-12").get_json()["events"] if e["po_number"] == XPO]
+    st12 = client.get("/api/master/stats?month=2030-01").get_json()
+    ev12 = [e for e in client.get("/api/master/stats/events?month=2030-01").get_json()["events"] if e["po_number"] == XPO]
     cp12 = [e for e in ev12 if e["source"] == "import"]
     check("同一個改動只算一次：v2 兩邊都匯過只算 1 次（記在先匯的酷澎訂單管理）、只匯進商品主檔的 v3 也算到 → 酷澎修改共 2 次",
           len(cp12) == 2 and sorted(e["system"] for e in cp12) == ["商品主檔", "酷澎訂單管理"], str([(e["system"], e["summary"]) for e in cp12]))
@@ -862,8 +870,8 @@ def main():
     _t2.sleep(1.05)
     r_ = jput(client, f"/api/master/orders/{ma['id']}", {"version": ma["version"], "qty_ship": 55, "reason": "缺貨"})
     check("商品主檔人改出貨數量、選原因缺貨", r_.status_code == 200, r_.get_data(as_text=True)[:200])
-    st12 = client.get("/api/master/stats?month=2026-12").get_json(); t12 = st12["total"]
-    ev12 = [e for e in client.get("/api/master/stats/events?month=2026-12").get_json()["events"] if e["po_number"] == XPO]
+    st12 = client.get("/api/master/stats?month=2030-01").get_json(); t12 = st12["total"]
+    ev12 = [e for e in client.get("/api/master/stats/events?month=2030-01").get_json()["events"] if e["po_number"] == XPO]
     mc = [e for e in ev12 if e["source"] == "manual" and e["system"] == "酷澎訂單管理"]
     mm = [e for e in ev12 if e["source"] == "manual" and e["system"] == "商品主檔"]
     check("我方修改兩邊都算：酷澎訂單管理那次待補、商品主檔那次照原本選的缺貨→原廠／產銷缺貨（改的時候已選）",
@@ -874,14 +882,14 @@ def main():
     check("補原因：不在清單裡的原因 → 400；沒勾 → 400", client.post("/api/master/stats/reasons", json={"keys": keys, "reason": "亂寫"}).status_code == 400
           and client.post("/api/master/stats/reasons", json={"keys": [], "reason": "酷澎倉限制"}).status_code == 400)
     r_ = client.post("/api/master/stats/reasons", json={"keys": keys, "reason": "酷澎倉限制"})
-    st12 = client.get("/api/master/stats?month=2026-12").get_json(); t12 = st12["total"]
-    ev12 = [e for e in client.get("/api/master/stats/events?month=2026-12").get_json()["events"] if e["po_number"] == XPO]
+    st12 = client.get("/api/master/stats?month=2030-01").get_json(); t12 = st12["total"]
+    ev12 = [e for e in client.get("/api/master/stats/events?month=2030-01").get_json()["events"] if e["po_number"] == XPO]
     check("勾 3 次一起補「酷澎倉限制」→ 待補 0、原因表酷澎倉限制 3、明細寫誰補的", r_.status_code == 200 and r_.get_json()["count"] == 3 and t12["pending"] == 0
           and t12["reasons"]["酷澎倉限制"] == 3 and all("補" in e["reason_from"] for e in ev12 if e["reason"] == "酷澎倉限制"), str(t12["reasons"]))
     check("原因的金額差：酷澎倉限制 = 三次改單的金額差加總", t12["reason_amount"]["酷澎倉限制"] == round(sum(e["delta"] for e in ev12 if e["reason"] == "酷澎倉限制"), 2), str(t12["reason_amount"]))
     r_ = client.post("/api/master/stats/reasons", json={"keys": keys[:1], "reason": "我方作業"})
-    check("補過的可以改", client.get("/api/master/stats?month=2026-12").get_json()["total"]["reasons"]["我方作業"] == 1)
-    wb12 = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2026-12").data))
+    check("補過的可以改", client.get("/api/master/stats?month=2030-01").get_json()["total"]["reasons"]["我方作業"] == 1)
+    wb12 = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))
     h12 = [c.value for c in wb12["明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
     check("Excel：明細多「記在哪個系統」「金額差」「原因怎麼來的」；每月統計多待補原因、原始下單金額、目前出貨金額、少出",
           {"記在哪個系統", "金額差", "原因怎麼來的"} <= set(h12) and {"待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
