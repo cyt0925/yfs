@@ -738,6 +738,9 @@ def ship_tests(c, preview, orders, up):
     j = it(pl, J, "4987176377708_CNN")
     check("逐列扣庫存：後面那張單只剩 EC 51、2029-05-02 用完、2029-05-22 剩 98 → 出 51、缺 29", j["ec"] == 51 and j["final"] == 51 and j["short"] == 29
           and j["alloc"] == [{"exp": "2029-05-22", "qty": 51}], str({k: j[k] for k in ("ec", "final", "alloc")}))
+    check("畫面要講得出來：EC 檔案 132、到貨日較早的 1 張單先用 81；竹運檔案 179、先用 81（Jerry 2026-10-20）；第一張單沒人先用",
+          (j["ec_file"], j["ec_used"], j["ec_users"], j["book_file"], j["book_used"], j["book_users"]) == (132, 81, 1, 179, 81, 1) and a["ec_used"] == 0 and a["book_used"] == 0,
+          str({k: j[k] for k in ("ec_file", "ec_used", "ec_users", "book_file", "book_used", "book_users")}))
     r = c.post("/api/shopee/ship/generate", json={"order_nos": [H, J], **q})
     check("有要處理的（主檔沒年限）→ 整批不產、列出原因", r.status_code == 400 and any("4987176000000_CNN" in x for x in r.get_json()["details"]), str(r.get_json()))
     up("/api/shopee/stock/import", master(("4987176000000C",)), "產品基本資料.xlsx")

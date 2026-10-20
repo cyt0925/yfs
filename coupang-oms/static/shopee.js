@@ -769,12 +769,14 @@ function renderShip() {
     : picks.length ? `請勾選要產出的訂單。${blkHint(zb)}` : blkHint(zb) || "這一步目前沒有可產出的訂單。";
 }
 let SHIPX = null;
+// 檔案是多少、到貨日較早的幾張單先用了多少（Jerry 2026-10-20：EC 可用 231，訂單系統卻是 315，不講清楚會以為是單位換算）
+const usedNote = (file, used, n) => used ? `<span class="kbd">（檔案 ${fmt(file)}，到貨日較早的 ${n} 張單先用 ${fmt(used)}）</span>` : "";
 function openShip(id) {
   let x = null; for (const g of [SIDE && SIDE.ship, ...SHIP.orders].filter(Boolean)) { x = g.items.find(i => i.order_id === id); if (x) break; }
   if (!x) return; SHIPX = x;
   $("#ds-title").textContent = `${x.supplier_sku_id} 效期批次與出貨量`;
-  $("#ds-facts").innerHTML = `<span>${esc((x.name || "").slice(0, 46))}</span><span>訂購量 <b>${fmt(x.qty)}</b> ${esc(x.unit)}</span><span>EC 可用 <b>${fmt(x.ec)}</b>${x.ec < x.qty ? `（不足 ${fmt(x.qty - x.ec)}）` : "（足夠）"}</span>
-    <span>竹運帳面 <b>${fmt(x.book)}</b></span><span>符合效期 <b>${fmt(x.qualified)}</b></span><span>系統建議 <b>${fmt(x.suggest)}</b></span>
+  $("#ds-facts").innerHTML = `<span>${esc((x.name || "").slice(0, 46))}</span><span>訂購量 <b>${fmt(x.qty)}</b> ${esc(x.unit)}</span><span>EC 可用 <b>${fmt(x.ec)}</b>${x.ec < x.qty ? `（不足 ${fmt(x.qty - x.ec)}）` : "（足夠）"}${usedNote(x.ec_file, x.ec_used, x.ec_users)}</span>
+    <span>竹運帳面 <b>${fmt(x.book)}</b>${usedNote(x.book_file, x.book_used, x.book_users)}</span><span>符合效期 <b>${fmt(x.qualified)}</b></span><span>系統建議 <b>${fmt(x.suggest)}</b></span>
     <span>商品年限 <b>${fmt(x.life)}</b> 天（${esc(x.life_src)}）</span><span>效期標準 <b>${esc(x.ratio_text)}</b>，效期需在 <b>${esc(x.threshold)}</b> 以後</span>`;
   const sel = {}; x.alloc.forEach(a => { sel[a.exp] = a.qty; });
   $("#ds-lots").innerHTML = `<thead><tr><th>效期</th><th>製造日期</th><th class="num">到貨時剩餘天數</th><th class="num">剩餘比例</th><th>符合</th><th class="num">可出貨量</th><th class="num">建議順位</th><th>選用</th><th class="num">本次數量</th></tr></thead><tbody>
@@ -1047,7 +1049,7 @@ function renderSide() {
       if ((p.rem || p.adj) && !(p.eip && p.eip.eip_po)) acts += `<button class="btn ${p.rem ? "btn-p" : "btn-o"} btn-sm sd-adj" data-id="${i.id}"><i class="bi bi-pencil"></i> 修改數量</button>`;
     }
     if (z) {
-      more += `<div class="sd-kv">${z.dispatch ? "" : `<span>EC 可用量 <b>${fmt(z.ec)}</b></span><span>符合效期量 <b>${fmt(z.qualified)}</b></span>`}<span>出貨量 <b>${fmt(z.final)}</b>${z.adj ? "（已修改）" : ""}</span>
+      more += `<div class="sd-kv">${z.dispatch ? "" : `<span>EC 可用量 <b>${fmt(z.ec)}</b>${usedNote(z.ec_file, z.ec_used, z.ec_users)}</span><span>符合效期量 <b>${fmt(z.qualified)}</b></span>`}<span>出貨量 <b>${fmt(z.final)}</b>${z.adj ? "（已修改）" : ""}</span>
         ${z.short ? `<span class="neg">缺貨 ${fmt(z.short)}${z.reasons.length ? `（${esc(z.reasons.join("、"))}）` : ""}</span>` : ""}${z.alloc.length ? `<span>出貨效期 ${z.alloc.map(a => `${esc(a.exp)}（${fmt(a.qty)}）`).join("、")}</span>` : ""}</div>`;
       more += z.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("") + z.warnings.map(x => `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(x)}</div>`).join("");
       if (!z.dispatch && z.life && z.lots.length) acts += `<button class="btn ${z.warnings.length ? "btn-p" : "btn-o"} btn-sm sd-ship" data-id="${i.id}"><i class="bi bi-box-seam"></i> 效期批次／改出貨量</button>`;

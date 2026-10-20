@@ -408,12 +408,13 @@ def build_ship(conn, d1="", d2="", line="", order_nos=None):
     mars_life = _mars_life(conn, items)
     ec_left = dict(stock["ec"])
     lots_left = {k: {e: v["qty"] for e, v in d.items()} for k, d in stock["lots"].items()}
+    used = {"ec": collections.defaultdict(list), "lots": collections.defaultdict(list)}   # 誰先用掉了：{key: [(訂單編號, 量)]}，畫面要寫出來
     have = {k: k in status for k in KINDS}
     groups = collections.OrderedDict()
     for it in items:
         g = groups.setdefault(it["_no"], {"order_no": it["_no"], "pr_id": it["pr_id"], "po_id": it["po_id"], "line": it["line"], "warehouse": it["warehouse"],
                                           "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": []})
-        g["items"].append(_ship_item(it, st, stock, ec_left, lots_left, overrides.get(it["id"]), done.get(it["id"]), mars_life, have))
+        g["items"].append(_ship_item(it, st, stock, ec_left, lots_left, overrides.get(it["id"]), done.get(it["id"]), mars_life, have, used))
     out = []
     for g in groups.values():
         its = g["items"]
@@ -430,7 +431,7 @@ def build_ship(conn, d1="", d2="", line="", order_nos=None):
     return out, {"settings": st, "stock": status, "have": have}
 
 
-def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have):
+def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have, used):
     base, unit = it["base_code"] or "", it["unit_name"] or UNIT_CODES.get(it["unit_code"] or "", "")
     code3 = base + (it["unit_code"] or "")
     qty = it["qty"] or 0
@@ -462,6 +463,12 @@ def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have):
     left = lots_left.get(code3, {})
     p["book"] = sum(v for v in left.values() if v > 0)
     lot_info = stock["lots"].get(code3, {})
+    # 畫面上要講清楚「檔案是多少、到貨日較早的幾張單先用了多少」（Jerry 2026-10-20：EC 可用 231，訂單系統卻是 315，以為是單位換算）
+    for k, key, total in (("ec", f"{base}|{unit}", stock["ec"].get(f"{base}|{unit}", 0)), ("book", code3, sum(v["qty"] for v in lot_info.values()))):
+        taken = used["ec" if k == "ec" else "lots"][key]
+        p[f"{k}_file"] = total
+        p[f"{k}_used"] = sum(q for _, q in taken)
+        p[f"{k}_users"] = len({no for no, _ in taken})
     if not life and min(e, p["book"]) > 0:         # 沒貨就不用判斷效期，直接算庫存不足
         p["problems"].append(f"竹運商品主檔沒有 {code3} 的商品年限，無法判斷效期，請上傳最新的竹運商品主檔")
     if arrive and life:
@@ -516,6 +523,9 @@ def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have):
         left[exp] = left.get(exp, 0) - q
     lots_left[code3] = left
     ec_left[f"{base}|{unit}"] = e - p["final"]
+    if p["final"]:
+        used["ec"][f"{base}|{unit}"].append((it["_no"], p["final"]))
+        used["lots"][code3].append((it["_no"], p["final"]))
     p["alloc"] = [{"exp": exp, "qty": q} for exp, q in alloc]
     return p
 
