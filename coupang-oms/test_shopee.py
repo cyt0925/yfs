@@ -719,12 +719,13 @@ def ship_tests(c, preview, orders, up):
     pl = plan()
     H, J = "POTWCTWA26101500H", "POTWCTWA26101500J"
     a = it(pl, H, "4987176377708_CNN")
-    check("同效期不同儲位加總（138）；單一效期挑最早、量又夠的那批（2029-05-22 出 81）；合格基準＝到貨日＋1095×1/3",
-          a["final"] == 81 and a["alloc"] == [{"exp": "2029-05-22", "qty": 81}] and a["threshold"] == "2027-10-20" and a["ratio_text"] == "1/3"
+    check("同效期不同儲位加總（138）；由早到晚扣：2029-05-02 的 41 先出、再從 2029-05-22 出 40（以前單一效期會挑量夠的 05-22 出 81）；合格基準＝到貨日＋1095×1/3",
+          a["final"] == 81 and a["alloc"] == [{"exp": "2029-05-02", "qty": 41}, {"exp": "2029-05-22", "qty": 40}] and a["threshold"] == "2027-10-20" and a["ratio_text"] == "1/3"
           and a["book"] == 179 and not a["blocking"], str({k: a[k] for k in ("final", "alloc", "threshold", "book")}))
     b_it = it(pl, H, "6903148224090_VNN")
-    check("單一效期都不夠 → 先出量最多那批 96，缺 48，提醒合併效期最多可出 144", b_it["final"] == 96 and b_it["short"] == 48
-          and b_it["alloc"] == [{"exp": "2029-07-24", "qty": 96}] and any("最多可出 144" in w for w in b_it["warnings"]), str(b_it["warnings"]))
+    check("一批不夠就混合效期由早到晚扣（2029-06-01 出 91＋2029-07-24 出 53）→ 144、不缺、沒有要人確認的提醒（OP 經 Jerry 2026-10-20）",
+          b_it["final"] == 144 and not b_it["short"] and b_it["alloc"] == [{"exp": "2029-06-01", "qty": 91}, {"exp": "2029-07-24", "qty": 53}]
+          and not b_it["warnings"] and [l["rank"] for l in sorted(b_it["lots"], key=lambda l: l["exp"])] == [1, 2], str((b_it["alloc"], b_it["warnings"])))
     c_it = it(pl, H, "4987176372093_TNN")
     check("EC 只剩 1 → 出 1、提醒少於 12 件蝦皮會拒收", c_it["final"] == 1 and any("少於 12 件" in w for w in c_it["warnings"]), str(c_it["warnings"]))
     d = it(pl, H, "4902430056519_PNN")
@@ -735,7 +736,7 @@ def ship_tests(c, preview, orders, up):
     f_ = it(pl, H, "4987176000000_CNN")
     check("有貨但商品主檔沒有年限 → 擋下來要補主檔（不當成 0 天）", f_["blocking"] and "商品主檔" in f_["problems"][0], str(f_["problems"]))
     j = it(pl, J, "4987176377708_CNN")
-    check("逐列扣庫存：後面那張單只剩 EC 51、2029-05-22 剩 57 → 出 51、缺 29", j["ec"] == 51 and j["final"] == 51 and j["short"] == 29
+    check("逐列扣庫存：後面那張單只剩 EC 51、2029-05-02 用完、2029-05-22 剩 98 → 出 51、缺 29", j["ec"] == 51 and j["final"] == 51 and j["short"] == 29
           and j["alloc"] == [{"exp": "2029-05-22", "qty": 51}], str({k: j[k] for k in ("ec", "final", "alloc")}))
     r = c.post("/api/shopee/ship/generate", json={"order_nos": [H, J], **q})
     check("有要處理的（主檔沒年限）→ 整批不產、列出原因", r.status_code == 400 and any("4987176000000_CNN" in x for x in r.get_json()["details"]), str(r.get_json()))
@@ -752,8 +753,9 @@ def ship_tests(c, preview, orders, up):
     pl = plan()
     b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
     logs = [l for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"] if l["field"] == "shopee_ship_qty"]
-    check("人工合併兩個效期 → 出 144、不缺；記人員、原因、提醒入庫單要依效期拆", r.status_code == 200 and b_it["final"] == 144 and not b_it["short"]
-          and b_it["adj"]["reason"] == "業務確認兩個效期分開入庫" and any("依效期拆開" in w for w in b_it["warnings"]) and logs, str(b_it["warnings"]))
+    check("人工改成 96＋48 → 出 144、不缺；記人員、原因；不再提醒入庫單要拆", r.status_code == 200 and b_it["final"] == 144 and not b_it["short"]
+          and b_it["adj"]["reason"] == "業務確認兩個效期分開入庫" and b_it["adj"]["lots"] == [["2029-07-24", 96], ["2029-06-01", 48]] and not b_it["warnings"] and logs,
+          str((b_it["adj"], b_it["warnings"])))
     check("改成 0 → 刪單，缺 12", r2.status_code == 200 and c_it["final"] == 0 and c_it["short"] == 12)
     r = c.put("/api/shopee/ship/settings", json={"rule": "custom", "ratio": "abc"})
     check("效期比例亂填 → 400", r.status_code == 400)

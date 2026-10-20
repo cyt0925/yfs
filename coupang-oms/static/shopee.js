@@ -708,7 +708,7 @@ async function loadStock() {
     return `<div class="it ${old ? "old" : ""}"><b>${KIND_LABEL[k]}</b> <span class="kbd">${fmt(x.rows_total)} 列</span>${old ? ` <span class="badge b-warn">不是今天的檔</span>` : ""}
       <div class="kbd" title="${esc(x.filename)}">${esc((x.uploaded_at || "").slice(0, 16).replace("T", " "))}　${esc(x.uploaded_by)}${x.file_date ? `　結餘日期 ${esc(x.file_date)}` : ""}</div></div>`;
   }).join("");
-  const st = d.settings; $("#s-rule").value = st.rule; $("#s-mode").value = st.mode; $("#s-ratio").value = st.ratio;
+  const st = d.settings; $("#s-rule").value = st.rule; $("#s-ratio").value = st.ratio;
   $("#s-ratio-box").classList.toggle("hidden", st.rule !== "custom");
 }
 async function saveShipSet(body) {
@@ -716,7 +716,6 @@ async function saveShipSet(body) {
   catch (err) { toast(err.message, "err"); loadStock(); }
 }
 $("#s-rule").addEventListener("change", () => saveShipSet({ rule: $("#s-rule").value }));
-$("#s-mode").addEventListener("change", () => saveShipSet({ mode: $("#s-mode").value }));
 $("#s-ratio").addEventListener("change", () => saveShipSet({ ratio: $("#s-ratio").value.trim() }));
 
 /* ── 竹運出貨：訂單、出貨量、效期批次 ─────────────────────── */

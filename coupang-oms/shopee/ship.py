@@ -12,8 +12,9 @@
   比例預設照蝦皮供應商進倉規範（總保存天數 90 天內 2/3、365 天內 2/5、超過 1/3），也可以改成自訂一個比例（像 Alice 的 U1，常用 0.66）。
 - EC 可用量和竹運合格量都要夠才全出；不夠的話系統建議＝訂購量、EC 剩餘、合格效期量取最小（需求要算可出貨量，Alice 只判可不可出）。
 - 由上到下逐列扣庫存（到貨日早的先），同一份庫存不會分給兩張單（PDF 第 9 節）。已產拋單檔的不再分配。
-- 單一效期（預設，蝦皮同一張入庫單效期要一致）：選最早、量又夠的那個效期（PDF 13.4 FIFO）；都不夠就先出量最多的那一批，
-  人可以自己勾別的效期合併（需求 5.3.1：不自動合併）。混合效期：合格效期由早到晚扣。
+- 多個效期都合格就由早到晚一起扣，不用人再一品一品勾（OP 經 Jerry 2026-10-20：「可以混合多效期出貨，不需要再經過每一次確認」）。
+  原本預設「單一效期」（蝦皮同一張入庫單效期要一致、需求 5.3.1 不自動合併），一批不夠就只出量最多那批、等人勾別的效期合併，拆掉了。
+  人還是可以點開那品改效期、改數量。
 - 缺貨量＝訂購量－最終出貨量。原因：庫存不足（不看效期也不夠）、效期不足（有貨但效期不合格），可同時有。
 - 出貨量大於 0 但少於 12 件提醒：蝦皮進倉規範「以低於 12 pcs 數量入倉的商品，將一律拒收」。
 - 拋單檔照 Jerry 給的「指定到貨日20261007蝦皮(觀音)_PG.xlsx」：訂單單號＝入庫單號、姓名「蝦皮-觀音」、料號＝國條、數量＝出貨量；出貨量 0 不放。
@@ -32,7 +33,7 @@ FULFIL = "竹運出貨"
 KINDS = {"ec": "EC 即時庫存", "lots": "竹運庫存效期表", "life": "竹運商品主檔"}
 MIN_PCS = 12
 SET_KEY = "shopee_ship"
-DEFAULT_SET = {"rule": "shopee", "ratio": 0.66, "mode": "single"}
+DEFAULT_SET = {"rule": "shopee", "ratio": 0.66}      # 以前還有 mode（single／mixed），2026-10-20 一律混合效期，舊存的值不理
 SHOPEE_TIERS = ((90, 2 / 3, "2/3"), (365, 2 / 5, "2/5"), (None, 1 / 3, "1/3"))
 LINE_TAG = {"寶僑": "PG", "紙潔": "紙潔", "瑪氏": "瑪氏"}
 DWH_KEY = "shopee_dispatch_wh"
@@ -261,8 +262,6 @@ def api_ship_settings():
         new = dict(s)
         if p.get("rule") in ("shopee", "custom"):
             new["rule"] = p["rule"]
-        if p.get("mode") in ("single", "mixed"):
-            new["mode"] = p["mode"]
         if "ratio" in p:
             try:
                 r = float(str(p["ratio"]).strip().rstrip("%"))
@@ -363,25 +362,17 @@ def _dispatched(conn, ids):
     return out
 
 
-def _alloc(lots, need, mode):
-    """lots: [{exp, qty}] 已照效期早到晚排、只含合格且有量的。回 [(exp, qty)]。"""
-    if need <= 0 or not lots:
-        return []
-    if mode == "mixed":
-        out, left = [], need
-        for l in lots:
-            take = min(l["qty"], left)
-            if take > 0:
-                out.append((l["exp"], take))
-                left -= take
-            if left <= 0:
-                break
-        return out
-    enough = next((l for l in lots if l["qty"] >= need), None)          # 最早、量又夠的那個效期
-    if enough:
-        return [(enough["exp"], need)]
-    big = max(lots, key=lambda l: (l["qty"], -int(l["exp"].replace("-", ""))))   # 都不夠：先出量最多的那一批（同量取早的）
-    return [(big["exp"], big["qty"])]
+def _alloc(lots, need):
+    """lots: [{exp, qty}] 已照效期早到晚排、只含合格且有量的。由早到晚扣到夠為止，回 [(exp, qty)]。"""
+    out, left = [], need
+    for l in lots:
+        take = min(l["qty"], left)
+        if take > 0:
+            out.append((l["exp"], take))
+            left -= take
+        if left <= 0:
+            break
+    return out
 
 
 def _cap(alloc, cap):
@@ -490,12 +481,9 @@ def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have):
     p["qualified"] = sum(l["qty"] for l in qual)
     p["max_ship"] = max(0, min(qty, e, p["qualified"])) if life else 0
     need = max(0, min(qty, e))                       # EC 只夠這麼多，就照這個量挑效期
-    suggest = _alloc(qual, need, st["mode"])
+    suggest = _alloc(qual, need)
     p["suggest"] = sum(q for _, q in suggest)
-    # 建議順位跟系統怎麼挑一致：單一效期＝量夠的由早到晚、再來量不夠的由多到少；混合效期＝由早到晚
-    order = sorted(qual, key=lambda x: x["exp"]) if st["mode"] == "mixed" else (
-        sorted([l for l in qual if l["qty"] >= need], key=lambda x: x["exp"]) + sorted([l for l in qual if l["qty"] < need], key=lambda x: (-x["qty"], x["exp"])))
-    for i, l in enumerate(order):
+    for i, l in enumerate(sorted(qual, key=lambda x: x["exp"])):      # 建議順位跟系統怎麼挑一致：由早到晚
         l["rank"] = i + 1
     alloc = suggest
     if ov and ov["qty_before"] == qty:
@@ -519,10 +507,6 @@ def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have):
             p["reasons"].append("庫存不足")
     if 0 < p["final"] < MIN_PCS:
         p["warnings"].append(f"出貨量 {p['final']} 少於 {MIN_PCS} 件，蝦皮進倉規範會拒收，建議改成 0（刪單）")
-    if len(alloc) > 1:
-        p["warnings"].append(f"用了 {len(alloc)} 個效期，入庫單要依效期拆開")
-    if st["mode"] == "single" and not p["adj"] and p["short"] and len(qual) > 1 and p["qualified"] > p["final"] and min(qty, e) > p["final"]:
-        p["warnings"].append(f"單一效期不夠；合併效期最多可出 {min(qty, e, p['qualified'])}")
     if not p["inbound_ids"] and p["final"]:
         p["problems"].append("還沒有入庫單號，請先上傳蝦皮入庫單")
     elif "," in p["inbound_ids"] and p["final"]:

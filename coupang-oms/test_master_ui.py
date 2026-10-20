@@ -779,8 +779,8 @@ def main():
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.click("#btn-set"); pg.wait_for_selector("#view-set:not(.hidden)", timeout=5000); pg.click("#up-box summary"); pg.wait_for_timeout(500)
         check("資料與設定：上傳紀錄看得到兩次上傳、可下載原始檔", pg.eval_on_selector_all("#up-tbl a.lnk", "els => els.length") >= 2)
-        check("資料與設定：庫存資料三種都還沒上傳、效期標準與出貨方式", pg.inner_text("#stock-st").count("尚未上傳") == 3
-              and pg.input_value("#s-rule") == "shopee" and pg.input_value("#s-mode") == "single", pg.inner_text("#stock-st"))
+        check("資料與設定：庫存資料三種都還沒上傳、效期標準；沒有「出貨方式」可選（一律混合效期，2026-10-20）", pg.inner_text("#stock-st").count("尚未上傳") == 3
+              and pg.input_value("#s-rule") == "shopee" and pg.query_selector("#s-mode") is None, pg.inner_text("#stock-st"))
         pg.select_option("#s-rule", "custom"); pg.wait_for_timeout(600)
         check("選自訂比例 → 出現比例欄、帶 0.66", pg.is_visible("#s-ratio") and pg.input_value("#s-ratio") == "0.66")
         pg.select_option("#s-rule", "shopee"); pg.wait_for_timeout(600)
