@@ -176,19 +176,37 @@ const STAGE_DEF = [
 ];
 const SDEF = Object.fromEntries(STAGE_DEF.map(x => [x.key, x]));
 
-/* ── 表頭篩選（Jerry 2026-10-19「可以做個篩選嗎，比較好篩出需要的部分」，看示意圖選「跟 Excel 一樣」）──
-   倉別、履約方式、檢查結果這類欄位的表頭有 ▾，點開勾要看的值（後面寫幾張）。到貨日、線別、搜尋還是右上角那組（每一步共用）；
-   表頭篩選只管目前這一步的清單，換一步就清掉。被篩掉的訂單同時取消勾選，免得產出畫面上看不到的單。 */
+/* ── 表頭篩選（Jerry 2026-10-19「可以做個篩選嗎，比較好篩出需要的部分」，看示意圖選「跟 Excel 一樣」；
+   隔天「全部都要」：每一欄都有 ▾，不只倉別、履約方式這幾欄）──
+   點 ▾ 勾要看的值（後面寫幾張，照其他欄的篩選算）；值多的有搜尋框；數字、日期可以排序。到貨日、線別、搜尋還是右上角那組（每一步共用），
+   表頭再篩是在那組的結果裡縮小。表頭篩選只管目前這一步，換一步就清掉。被篩掉的訂單同時取消勾選，免得產出畫面上看不到的單。
+   右側面板開著時有幾欄會收起來，所以數字列寫出篩了哪幾欄，不會不知道為什麼少了。 */
 const HF = {};                                   // {欄位: Set(要看的值)}；沒有這個欄位＝不篩
+let HS = null;                                   // 排序 {k: 欄位, dir: 1 由小到大／-1 由大到小}
 let HF_COLS = {}, HF_ROWS = [], HF_REDRAW = null, HF_UNIT = "張", HF_POP = null, HF_KEY = "";
 const hfPass = (r, skip) => Object.entries(HF).every(([k, s]) => k === skip || !HF_COLS[k] || HF_COLS[k].get(r).some(v => s.has(v)));
-function hfUse(rows, cols, redraw, unit = "張") {  // 每個清單畫之前呼叫，回篩過的列
+const hfCmp = (a, b) => typeof a === "number" && typeof b === "number" ? a - b : String(a).localeCompare(String(b), "zh-Hant", { numeric: true });
+function hfUse(rows, cols, redraw, unit = "張") {  // 每個清單畫之前呼叫，回篩過、排過的列
   HF_COLS = cols; HF_ROWS = rows; HF_REDRAW = redraw; HF_UNIT = unit;
   Object.keys(HF).forEach(k => { if (!cols[k]) delete HF[k]; });
-  return rows.filter(r => hfPass(r));
+  if (HS && !(cols[HS.k] && cols[HS.k].sort)) HS = null;
+  const out = rows.filter(r => hfPass(r));
+  if (!HS) return out;
+  const f = cols[HS.k].sort;
+  return out.map((r, i) => [r, i]).sort((a, b) => hfCmp(f(a[0]), f(b[0])) * HS.dir || a[1] - b[1]).map(x => x[0]);
 }
-const hfTh = (k, cls = "") => `<th class="${cls}${HF[k] ? " hf-on" : ""}">${esc(HF_COLS[k].label)}<button type="button" class="hf-b" data-hf="${k}" title="篩選${esc(HF_COLS[k].label)}" aria-label="篩選${esc(HF_COLS[k].label)}"><i class="bi bi-caret-down-fill"></i></button></th>`;
-const hfNote = n => Object.keys(HF).length ? `<span class="hf-note">篩選後 ${fmt(n)} ${HF_UNIT} · <a href="#" class="hf-clr">清除表頭篩選</a></span>` : "";
+const hfShow = (k, v) => HF_COLS[k] && HF_COLS[k].num && v !== "—" ? fmt(Number(v)) : v;
+const hfWords = c => c.date ? ["由早到晚", "由晚到早"] : ["由小到大", "由大到小"];
+function hfTh(k, cls = "") {
+  const c = HF_COLS[k], s = HS && HS.k === k ? `<i class="bi ${HS.dir > 0 ? "bi-sort-up" : "bi-sort-down"} hf-sorted" title="${hfWords(c)[HS.dir > 0 ? 0 : 1]}"></i>` : "";
+  return `<th class="${cls}${HF[k] ? " hf-on" : ""}">${esc(c.label)}${s}<button type="button" class="hf-b" data-hf="${k}" title="篩選${esc(c.label)}" aria-label="篩選${esc(c.label)}"><i class="bi bi-caret-down-fill"></i></button></th>`;
+}
+function hfNote(n) {          // 數字列最後：篩了哪幾欄（右側面板開著時那幾欄可能收起來了）、怎麼排的
+  const parts = Object.entries(HF).filter(([k]) => HF_COLS[k]).map(([k, s]) => `${HF_COLS[k].label}（${s.size <= 2 ? [...s].map(v => hfShow(k, v)).join("、") : `${s.size} 項`}）`);
+  const srt = HS ? `依${HF_COLS[HS.k].label}${hfWords(HF_COLS[HS.k])[HS.dir > 0 ? 0 : 1]}排` : "";
+  if (!parts.length && !srt) return "";
+  return `<span class="hf-note">${parts.length ? `已篩選：${esc(parts.join("、"))}，篩選後 ${fmt(n)} ${HF_UNIT}` : ""}${parts.length && srt ? "；" : ""}${esc(srt)} · <a href="#" class="hf-clr">清除表頭篩選</a></span>`;
+}
 const hfEmpty = cols => `<tr><td colspan="${cols}" class="muted" style="padding:24px;text-align:center">表頭篩選後沒有符合的${HF_UNIT === "張" ? "訂單" : "資料"}。
   <div class="mt-2"><button class="btn btn-o btn-sm hf-clr"><i class="bi bi-funnel"></i> 清除表頭篩選</button></div></td></tr>`;
 const hfKeep = (sel, shown) => { const v = new Set(shown.map(g => g.order_no)); [...sel].forEach(k => { if (!v.has(k)) sel.delete(k); }); };
@@ -197,7 +215,7 @@ function hfQuick(k, vals, html) {
   const on = !!HF[k] && HF[k].size === vals.length && vals.every(v => HF[k].has(v));
   return vals.length ? `<span class="hf-q${on ? " on" : ""}" data-hf="${k}" data-v="${esc(JSON.stringify(vals))}" role="button" tabindex="0" title="${on ? "取消篩選" : "只看這些"}">${html}</span>` : `<span>${html}</span>`;
 }
-const hfClear = () => { Object.keys(HF).forEach(k => delete HF[k]); hfClose(); };
+const hfClear = () => { Object.keys(HF).forEach(k => delete HF[k]); HS = null; hfClose(); };
 function hfClose() { if (HF_POP) HF_POP.remove(); HF_POP = null; HF_KEY = ""; }
 function hfOpen(btn) {
   const k = btn.dataset.hf, c = HF_COLS[k]; if (!c) return;
@@ -206,9 +224,11 @@ function hfOpen(btn) {
   const rows = HF_ROWS.filter(r => hfPass(r, k)), cnt = new Map();      // 張數照其他欄的篩選算（跟 Excel 一樣）
   rows.forEach(r => new Set(c.get(r)).forEach(v => cnt.set(v, (cnt.get(v) || 0) + 1)));
   const first = c.first || [], grp = c.group || (() => "");
-  const vals = [...cnt.keys()].sort((a, b) => ((first.indexOf(a) + 1 || 99) - (first.indexOf(b) + 1 || 99)) || cnt.get(b) - cnt.get(a) || String(a).localeCompare(String(b), "zh-Hant"));
+  const byVal = c.num || c.date || c.byValue;   // 數字、日期、單號照值排；其他照張數多到少
+  const vals = [...cnt.keys()].sort((a, b) => ((first.indexOf(a) + 1 || 99) - (first.indexOf(b) + 1 || 99))
+    || (byVal ? (a === "—") - (b === "—") || hfCmp(c.num ? Number(a) : a, c.num ? Number(b) : b) : cnt.get(b) - cnt.get(a) || hfCmp(a, b)));
   const on = v => !HF[k] || HF[k].has(v), seen = new Set();
-  const opt = (v, g) => `<label class="hf-o${g ? " hf-in" : ""}"><input type="checkbox" class="ck hf-v" value="${esc(v)}" data-g="${esc(g)}" ${on(v) ? "checked" : ""}><span>${esc(v)}</span><span class="hf-c">${fmt(cnt.get(v))} ${HF_UNIT}</span></label>`;
+  const opt = (v, g) => `<label class="hf-o${g ? " hf-in" : ""}"><input type="checkbox" class="ck hf-v" value="${esc(v)}" data-g="${esc(g)}" ${on(v) ? "checked" : ""}><span>${esc(hfShow(k, v))}</span><span class="hf-c">${fmt(cnt.get(v))} ${HF_UNIT}</span></label>`;
   let h = "";
   for (const v of vals) {
     const g = grp(v);
@@ -216,21 +236,43 @@ function hfOpen(btn) {
     if (seen.has(g)) continue;
     seen.add(g);
     const kids = vals.filter(x => grp(x) === g), n = rows.filter(r => c.get(r).some(x => grp(x) === g)).length;   // 一張單可能同時有好幾個原因
-    h += `<label class="hf-o"><input type="checkbox" class="ck hf-g" data-g="${esc(g)}" ${kids.every(on) ? "checked" : ""}><span>${esc(g)}</span><span class="hf-c">${fmt(n)} ${HF_UNIT}</span></label>`
+    h += `<label class="hf-o hf-gl" data-g="${esc(g)}"><input type="checkbox" class="ck hf-g" data-g="${esc(g)}" ${kids.every(on) ? "checked" : ""}><span>${esc(g)}</span><span class="hf-c">${fmt(n)} ${HF_UNIT}</span></label>`
       + kids.map(x => opt(x, g)).join("");
   }
+  const w = hfWords(c), sorted = d => HS && HS.k === k && HS.dir === d ? " on" : "";
   const pop = document.createElement("div"); pop.id = "hf-pop"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", `篩選${c.label}`);
-  pop.innerHTML = `<div class="hf-t">${esc(c.label)}</div>${h || `<div class="muted">目前沒有可以篩的值。</div>`}
+  pop.innerHTML = `<div class="hf-t">${esc(c.label)}</div>`
+    + (c.sort ? `<div class="hf-s"><button type="button" class="chip hf-sort${sorted(1)}" data-d="1"><i class="bi bi-sort-up"></i> ${w[0]}</button><button type="button" class="chip hf-sort${sorted(-1)}" data-d="-1"><i class="bi bi-sort-down"></i> ${w[1]}</button></div>` : "")
+    + (vals.length > 8 ? `<input class="inp hf-find" placeholder="搜尋${esc(c.label)}" aria-label="搜尋${esc(c.label)}">` : "")
+    + `<div class="hf-list">${h || `<div class="muted">目前沒有可以篩的值。</div>`}</div>
     <div class="hf-a"><button type="button" class="btn btn-o btn-sm hf-all">全選</button><button type="button" class="btn btn-p btn-sm hf-ok">套用</button></div>`;
   document.body.appendChild(pop); HF_POP = pop;
   const r = btn.closest("th").getBoundingClientRect();
   pop.style.left = `${Math.max(8, Math.min(r.left, document.documentElement.clientWidth - pop.offsetWidth - 8))}px`; pop.style.top = `${r.bottom + 4}px`;
-  const boxes = () => [...pop.querySelectorAll("input.hf-v")];
-  const sync = () => { pop.querySelectorAll("input.hf-g").forEach(gb => { gb.checked = boxes().filter(b => b.dataset.g === gb.dataset.g).every(b => b.checked); });
-    pop.querySelector(".hf-ok").disabled = !boxes().some(b => b.checked); };
-  pop.querySelectorAll("input.hf-g").forEach(gb => gb.addEventListener("change", () => { boxes().filter(b => b.dataset.g === gb.dataset.g).forEach(b => { b.checked = gb.checked; }); sync(); }));
+  const boxes = () => [...pop.querySelectorAll("input.hf-v")], shown = b => b.closest("label").style.display !== "none";
+  const sync = () => {
+    pop.querySelectorAll("label.hf-gl").forEach(gl => { const kids = boxes().filter(b => b.dataset.g === gl.dataset.g);
+      gl.querySelector("input").checked = kids.every(b => b.checked); gl.style.display = kids.some(shown) ? "" : "none"; });
+    pop.querySelector(".hf-ok").disabled = !boxes().some(b => b.checked);
+  };
+  pop.querySelectorAll("input.hf-g").forEach(gb => gb.addEventListener("change", () => { boxes().filter(b => b.dataset.g === gb.dataset.g && shown(b)).forEach(b => { b.checked = gb.checked; }); sync(); }));
   boxes().forEach(b => b.addEventListener("change", sync));
-  pop.querySelector(".hf-all").addEventListener("click", () => { boxes().forEach(b => { b.checked = true; }); sync(); });
+  const find = pop.querySelector(".hf-find");
+  if (find) {           // 跟 Excel 一樣：打字後只勾找到的，套用就只看找到的
+    find.addEventListener("input", () => {
+      const q = find.value.trim().toLowerCase();
+      boxes().forEach(b => { const hit = !q || String(hfShow(k, b.value)).toLowerCase().includes(q) || b.value.toLowerCase().includes(q);
+        b.closest("label").style.display = hit ? "" : "none"; b.checked = hit; });
+      sync();
+    });
+    find.addEventListener("keydown", e => { if (e.key === "Enter" && !pop.querySelector(".hf-ok").disabled) pop.querySelector(".hf-ok").click(); });
+    setTimeout(() => find.focus(), 0);
+  }
+  pop.querySelector(".hf-all").addEventListener("click", () => { boxes().filter(shown).forEach(b => { b.checked = true; }); sync(); });
+  pop.querySelectorAll(".hf-sort").forEach(sb => sb.addEventListener("click", () => {
+    const d = Number(sb.dataset.d); HS = HS && HS.k === k && HS.dir === d ? null : { k, dir: d };   // 再點一次取消排序
+    hfClose(); if (HF_REDRAW) HF_REDRAW();
+  }));
   pop.querySelector(".hf-ok").addEventListener("click", () => {
     const pick = boxes().filter(b => b.checked).map(b => b.value);
     if (pick.length === boxes().length) delete HF[k]; else HF[k] = new Set(pick);
@@ -258,9 +300,13 @@ document.addEventListener("keydown", e => {
 });
 window.addEventListener("scroll", e => { if (HF_POP && !HF_POP.contains(e.target)) hfClose(); }, true);
 window.addEventListener("resize", hfClose);
-/* 各清單共用的欄位 */
+/* 各清單共用的欄位（g 是一張訂單；待回填那步是一個 EIP 檔，欄名一樣的也共用） */
+const HF_NO = { label: "訂單編號", get: g => [g.order_no], byValue: true };
+const HF_LINE = { label: "線別", get: g => [g.line || "—"] };
+const HF_DATE = { label: "到貨日", get: g => [g.expected_date || "—"], sort: g => g.expected_date || "", date: true };
 const HF_WH = { label: "倉別", get: g => [wh(g.warehouse)] };
 const HF_FF = { label: "履約方式", get: g => [g.fulfil || "—"] };
+const hfNum = (label, f) => ({ label, num: true, get: g => [f(g) == null ? "—" : String(f(g))], sort: g => f(g) == null ? -Infinity : Number(f(g)) });
 
 /* 清單是空的：分清楚「還沒匯入」「被篩選條件篩掉」「這一步沒事」，並告訴人下一步做什麼 */
 function emptyRow(cols) {
@@ -335,11 +381,12 @@ function nextBadges(g) {
 }
 function render() {
   const all = VIEW.orders.filter(g => inStage(g.order_no));
-  const cols = { wh: HF_WH, ff: HF_FF };
-  if (STAGE === "all") cols.next = { label: "下一步", get: g => g.todo.length ? g.todo.map(k => SDEF[k].act) : ["已處理"] };
+  const cols = { no: HF_NO, line: HF_LINE, date: HF_DATE, wh: HF_WH, ff: HF_FF, items: hfNum("品項", g => g.item_count), qty: hfNum("蝦皮數量", g => g.qty),
+    ship: hfNum("可出貨量", g => g.qty_ship), short: hfNum("缺貨量", g => g.qty_short),
+    next: { label: "下一步", get: g => STAGE === "diff" ? ["確認差異"] : g.todo.length ? g.todo.map(k => SDEF[k].act) : ["已處理"] } };
   const list = hfUse(all, cols, render);
   $("#sum").innerHTML = `<span><b>${all.length}</b> 張訂單</span><span><b>${fmt(all.reduce((a, g) => a + g.item_count, 0))}</b> 個品項</span><span><b>${fmt(all.reduce((a, g) => a + g.qty, 0))}</b> 件（蝦皮數量）</span>${hfNote(list.length)}`;
-  let h = `<thead><tr><th>訂單編號</th><th>線別</th><th>到貨日</th>${hfTh("wh")}${hfTh("ff", "opt")}<th class="num opt">品項</th><th class="num">蝦皮數量</th><th class="num opt">可出貨量</th><th class="num opt">缺貨量</th>${cols.next ? hfTh("next") : "<th>下一步</th>"}</tr></thead><tbody>`;
+  let h = `<thead><tr>${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("wh")}${hfTh("ff", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("ship", "num opt")}${hfTh("short", "num opt")}${hfTh("next")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no;
     h += `<tr class="og ${g.diff_pending ? "pend" : ""}" data-k="${esc(k)}">
@@ -467,14 +514,15 @@ const PLAN_FREE = new Set(["可產出", "瑪氏目前只開放供應商直送", 
 const planChk = g => !g.supported ? [g.line === "瑪氏" ? "瑪氏目前只開放供應商直送" : "認不出線別"] : g.blocking ? whyKeys(g.items) : ["可產出"];
 function renderPlan() {
   const every = PLAN.orders.filter(g => inStage(g.order_no));
-  const list = hfUse(every, { wh: HF_WH, ff: HF_FF, chk: { label: "檢查結果", get: planChk, first: ["可產出"], group: v => PLAN_FREE.has(v) ? "" : NEED } }, renderPlan);
+  const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, wh: HF_WH, ff: HF_FF, items: hfNum("品項", g => g.items.length), qty: hfNum("蝦皮數量", g => g.qty),
+    chk: { label: "檢查結果", get: planChk, first: ["可產出"], group: v => PLAN_FREE.has(v) ? "" : NEED } }, renderPlan);
   hfKeep(BSEL, list);
   const picks = list.filter(canPick), blkList = every.filter(g => g.supported && g.blocking), blk = blkList.length;
   $("#b-sum").innerHTML = `<span><b>${every.length}</b> 張訂單</span>${hfQuick("chk", every.some(canPick) ? ["可產出"] : [], `<b>${every.filter(canPick).length}</b> 張可產出`)}`
     + (blk ? hfQuick("chk", [...new Set(blkList.flatMap(g => whyKeys(g.items)))], `<b style="color:var(--bad)">${blk}</b> 張需先處理`) : "") + hfNote(list.length);
   const all = picks.length && picks.every(g => BSEL.has(g.order_no));
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="b-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選可產出的訂單"></th>
-    <th>訂單編號</th><th>線別</th><th>到貨日</th>${hfTh("wh")}${hfTh("ff")}<th class="num opt">品項</th><th class="num">蝦皮數量</th>${hfTh("chk")}</tr></thead><tbody>`;
+    ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("wh")}${hfTh("ff")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("chk")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no, pick = canPick(g);
     const st = !g.supported ? `<span class="badge b-dim">${esc(g.line === "瑪氏" ? "瑪氏目前只開放供應商直送" : "認不出線別")}</span>`
@@ -594,12 +642,15 @@ function eipList(withFilled) {
 }
 function renderEips() {
   const withFilled = $("#e-all").classList.contains("on"), every = eipList(withFilled);
-  const cols = { wh: { label: "倉別", get: e => [e.warehouse_name || "—"] }, ff: HF_FF };
-  if (withFilled) cols.po = { label: "EIP 採購單號", get: e => [e.eip_po ? "已回填" : "未回填"] };
+  const cols = { date: HF_DATE, wh: { label: "倉別", get: e => [e.warehouse_name || "—"] }, line: HF_LINE, ff: HF_FF,
+    file: { label: "檔名（點選重新下載）", get: e => [e.filename], byValue: true }, rows: hfNum("品項", e => e.rows), qty: hfNum("數量", e => e.qty),
+    orders: { label: "蝦皮訂單", get: e => e.orders.length ? e.orders : ["—"], byValue: true },
+    by: { label: "產出", get: e => [e.created_by || "—"], sort: e => e.created_at || "", date: true },
+    po: { label: "EIP 採購單號", get: e => [e.eip_po || "未回填"], first: ["未回填"] } };
   const list = hfUse(every, cols, renderEips, "個檔");
   $("#e-hf").innerHTML = hfNote(list.length);
   $("#e-mars").classList.toggle("hidden", !EIPS.some(e => e.mars && e.eip_po));
-  $("#e-tbl").innerHTML = `<thead><tr><th>到貨日</th>${hfTh("wh")}<th>線別</th>${hfTh("ff", "opt")}<th>檔名（點選重新下載）</th><th class="num opt">品項</th><th class="num">數量</th><th>蝦皮訂單</th><th class="opt">產出</th>${cols.po ? hfTh("po") : "<th>EIP 採購單號</th>"}</tr></thead><tbody>
+  $("#e-tbl").innerHTML = `<thead><tr>${hfTh("date")}${hfTh("wh")}${hfTh("line")}${hfTh("ff", "opt")}${hfTh("file")}${hfTh("rows", "num opt")}${hfTh("qty", "num")}${hfTh("orders")}${hfTh("by", "opt")}${hfTh("po")}</tr></thead><tbody>
     ${list.map(e => `<tr class="${e.eip_po ? "lock" : ""}"><td class="nw">${esc(e.expected_date)}</td><td class="nw">${esc(e.warehouse_name)}</td><td class="nw">${esc(e.line)}</td><td class="nw opt">${esc(e.fulfil)}</td>
       <td><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.mars ? `<div class="mt-1">${e.eip_po
         ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</a>`
@@ -682,7 +733,9 @@ const SHIP_FREE = new Set(["已產出拋單檔", "可全數出貨", "部分缺�
 const shipChk = g => g.dispatch_status === "已產出" ? ["已產出拋單檔"] : g.blocking ? whyKeys(g.items) : [g.short ? (g.deleted ? "缺貨（有刪單）" : "部分缺貨") : "可全數出貨"];
 function renderShip() {
   const every = SHIP.orders.filter(g => inStage(g.order_no));
-  const list = hfUse(every, { wh: HF_WH, chk: { label: "檢查結果", get: shipChk, first: ["可全數出貨", "部分缺貨", "缺貨（有刪單）"], group: v => SHIP_FREE.has(v) ? "" : NEED },
+  const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, wh: HF_WH, items: hfNum("品項", g => g.items.length), qty: hfNum("訂購量", g => g.qty),
+    ship: hfNum("出貨量", g => g.ship), short: hfNum("缺貨量", g => g.short),
+    chk: { label: "檢查結果", get: shipChk, first: ["可全數出貨", "部分缺貨", "缺貨（有刪單）"], group: v => SHIP_FREE.has(v) ? "" : NEED },
     disp: { label: "拋單檔", get: g => [g.dispatch_status] } }, renderShip);
   hfKeep(ZSEL, list);
   const picks = list.filter(zPick), all = picks.length && picks.every(g => ZSEL.has(g.order_no));
@@ -691,7 +744,7 @@ function renderShip() {
     + `<span><b>${fmt(every.reduce((a, g) => a + g.ship, 0))}</b> 可出貨</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.short, 0))}</b> 缺貨</span>`
     + (blkList.length ? hfQuick("chk", [...new Set(blkList.flatMap(g => whyKeys(g.items)))], `<b style="color:var(--bad)">${blkList.length}</b> 張需先處理`) : "") + hfNote(list.length);
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="z-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選可產出的訂單"></th>
-    <th>訂單編號</th><th>線別</th><th>到貨日</th>${hfTh("wh")}<th class="num">品項</th><th class="num">訂購量</th><th class="num">出貨量</th><th class="num">缺貨量</th>${hfTh("chk")}${hfTh("disp")}</tr></thead><tbody>`;
+    ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("wh")}${hfTh("items", "num")}${hfTh("qty", "num")}${hfTh("ship", "num")}${hfTh("short", "num")}${hfTh("chk")}${hfTh("disp")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no, done = g.dispatch_status === "已產出";
     const st = done ? `<span class="badge b-dim">—</span>` : g.blocking ? blockCell(g)
@@ -806,13 +859,15 @@ async function loadShort() {
 }
 function renderShort() {
   const every = SHORT.orders.filter(g => inStage(g.order_no));
-  const list = hfUse(every, { ff: HF_FF, wh: HF_WH, st: { label: "通知狀態", get: g => [g.status] } }, renderShort);
+  const list = hfUse(every, { no: HF_NO, line: HF_LINE, ff: HF_FF, date: HF_DATE, wh: HF_WH, items: hfNum("品項", g => g.items.length),
+    orig: hfNum("原始訂購量", g => g.orig), final: hfNum("最終可出貨量", g => g.final), cut: hfNum("累計下修", g => g.cut),
+    st: { label: "通知狀態", get: g => [g.status] } }, renderShort);
   hfKeep(KSEL, list);
   const picks = list.filter(g => g.pending), all = picks.length && picks.every(g => KSEL.has(g.order_no));
   $("#k-sum").innerHTML = `<span><b>${every.length}</b> 張訂單</span><span><b>${every.filter(g => g.short_items).length}</b> 張有缺貨</span>`
     + `<span><b style="color:var(--warn)">${every.reduce((a, g) => a + g.pending, 0)}</b> 品待通知</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.cut, 0))}</b> 累計下修</span>${hfNote(list.length)}`;
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="k-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選待通知的訂單"></th>
-    <th>訂單編號</th><th>線別</th>${hfTh("ff", "opt")}<th>到貨日</th>${hfTh("wh")}<th class="num opt">品項</th><th class="num opt">原始訂購量</th><th class="num">最終可出貨量</th><th class="num">累計下修</th>${hfTh("st")}</tr></thead><tbody>`;
+    ${hfTh("no")}${hfTh("line")}${hfTh("ff", "opt")}${hfTh("date")}${hfTh("wh")}${hfTh("items", "num opt")}${hfTh("orig", "num opt")}${hfTh("final", "num")}${hfTh("cut", "num")}${hfTh("st")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no;
     h += `<tr class="og ${g.pending ? "pend" : ""}" data-k="${esc(k)}">

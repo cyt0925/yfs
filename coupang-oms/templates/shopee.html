@@ -70,18 +70,22 @@
   .chip.off { opacity:.4; cursor:not-allowed; }
   .blk-i { color:var(--bad); font-size:17px; cursor:pointer; }
   /* 表頭篩選（Jerry 2026-10-19，跟 Excel 一樣）：有篩選的欄表頭變紅色 */
-  .hf-b { margin-left:5px; width:18px; height:18px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:5px; border:1px solid var(--line); background:#fff; color:var(--muted); font-size:9px; cursor:pointer; vertical-align:middle; }
+  .hf-b { margin-left:4px; width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:5px; border:1px solid var(--line); background:#fff; color:var(--muted); font-size:9px; cursor:pointer; vertical-align:middle; }
   .hf-b:hover { border-color:var(--s7); color:var(--s9); }
   table.t th.hf-on { background:var(--s2); color:var(--s9); }
   table.t th.hf-on .hf-b { background:var(--s9); border-color:var(--s9); color:#fff; }
-  #hf-pop { position:fixed; z-index:60; width:290px; max-height:60vh; overflow:auto; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
+  #hf-pop { position:fixed; z-index:60; width:300px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
   #hf-pop .hf-t { font-weight:700; font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
   .hf-o { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
   .hf-o .hf-c { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
   .hf-o.hf-in { padding-left:24px; }
   .hf-a { display:flex; gap:8px; justify-content:flex-end; border-top:1px solid var(--line2); margin-top:8px; padding-top:8px; }
   .hf-q { cursor:pointer; border-bottom:1px dashed var(--s3); } .hf-q.on { background:var(--s1); border-radius:8px; padding:0 8px; border-bottom:0; }
-  .hf-note { font-size:13px; color:var(--muted); } .hf-note a { color:var(--s9); text-decoration:underline; }
+  .hf-note { font-size:13px; color:var(--muted); white-space:normal !important; } .hf-note a { color:var(--s9); text-decoration:underline; }
+  .hf-sorted { margin-left:3px; color:var(--s9); }
+  #hf-pop .hf-s { display:flex; gap:6px; margin-bottom:8px; } #hf-pop .hf-s .chip { padding:2px 10px; font-size:12.5px; }
+  #hf-pop .hf-find { width:100%; margin-bottom:6px; }
+  #hf-pop .hf-list { max-height:min(320px, 42vh); overflow:auto; }
   dialog { border:none; border-radius:14px; padding:0; width:min(1100px,96vw); max-height:88vh; box-shadow:0 30px 80px rgba(0,0,0,.35); }
   dialog::backdrop { background:rgba(31,20,16,.45); }
   .dh { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--s8); color:#fff; font-weight:700; position:sticky; top:0; z-index:5; }
@@ -124,6 +128,8 @@
   .sd-kv { display:flex; flex-wrap:wrap; gap:2px 14px; font-size:12px; color:var(--ink2); margin-top:3px; } .sd-kv b { color:var(--ink); }
   .sd-acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
   @media (min-width:1181px) { body.side-open table.t .opt { display:none; } }   /* 右側面板開著：清單只留主要欄位，細節看面板 */
+  /* 每一欄都有篩選鈕之後（2026-10-20），面板開著時欄距收窄一點，1366 寬也放得下 */
+  @media (min-width:1181px) { body.side-open table.t th, body.side-open table.t td { padding-left:7px; padding-right:7px; } body.side-open .hf-b { margin-left:3px; } }
   table.t tr.og.sel td { background:var(--s1); } table.t tr.og.sel td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
   a.lnk { color:var(--s9); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
 </style>

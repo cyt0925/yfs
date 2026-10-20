@@ -799,7 +799,7 @@ def main():
               "價格本找不到 2 項" in pg.inner_text("#b-tbl tr.og >> nth=0") and pg.is_visible("#b-tbl tr.og .blk-i")
               and "有 1 張需先處理" in pg.inner_text("#b-go-hint"), pg.inner_text("#b-tbl tr.og >> nth=0") + " / " + pg.inner_text("#b-go-hint"))
         # 表頭篩選（Jerry 2026-10-19「可以做個篩選嗎」，看示意圖選跟 Excel 一樣的）
-        check("待產採購單的表頭：倉別、履約方式、檢查結果可以篩", pg.eval_on_selector_all("#b-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "wh,ff,chk")
+        check("待產採購單的表頭：勾選框以外每一欄都可以篩（Jerry 2026-10-20「全部都要」）", pg.eval_on_selector_all("#b-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "no,line,date,wh,ff,items,qty,chk")
         pg.click("#b-tbl thead .hf-b[data-hf='chk']"); pg.wait_for_selector("#hf-pop", timeout=5000)
         hpop = pg.inner_text("#hf-pop")
         check("檢查結果點開：需先處理底下列原因和張數（價格本找不到 1 張）", "需先處理" in hpop and "價格本找不到" in hpop and "1 張" in hpop, hpop)
@@ -915,9 +915,16 @@ def main():
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og[data-k='POTWCTWA26102099M']", timeout=10000)
         row = pg.inner_text("#k-tbl tr.og[data-k='POTWCTWA26102099M']")
         check("待通知蝦皮：這張瑪氏單、待通知、累計下修 12", "瑪氏" in row and "待通知" in row and "12" in row, row)
-        check("待通知蝦皮的表頭：履約方式、倉別、通知狀態可以篩", pg.eval_on_selector_all("#k-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "ff,wh,st")
+        check("待通知蝦皮的表頭：勾選框以外每一欄都可以篩", pg.eval_on_selector_all("#k-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "no,line,ff,date,wh,items,orig,final,cut,st")
         stage("all"); pg.wait_for_selector("#tbl tr.og", timeout=10000)
         n_all = pg.eval_on_selector_all("#tbl tr.og", "els => els.length")
+        check("全部訂單：看得到的每一欄都有 ▾", pg.eval_on_selector_all("#tbl thead th", "els => els.filter(e => e.offsetParent).every(e => e.querySelector('.hf-b'))"))
+        pg.click("#tbl thead .hf-b[data-hf='qty']"); pg.wait_for_selector("#hf-pop .hf-sort", timeout=5000)
+        pg.click("#hf-pop .hf-sort[data-d='-1']"); pg.wait_for_timeout(300)
+        hq = [int(x.replace(",", "")) for x in pg.eval_on_selector_all("#tbl tr.og td:nth-child(7) b", "els => els.map(e => e.innerText)")]
+        check("數字欄可以排序：蝦皮數量由大到小、表頭有排序記號、數字列寫怎麼排的", len(hq) == n_all and hq == sorted(hq, reverse=True)
+              and pg.query_selector("#tbl thead .hf-sorted") is not None and "依蝦皮數量由大到小排" in pg.inner_text("#sum"), f"{hq} / {pg.inner_text('#sum')}")
+        pg.click("#sum .hf-clr"); pg.wait_for_timeout(300)
         pg.click("#tbl thead .hf-b[data-hf='next']"); pg.wait_for_selector("#hf-pop", timeout=5000)
         hopts = pg.eval_on_selector_all("#hf-pop input.hf-v", "els => els.map(e => e.value)")
         check("全部訂單：下一步的表頭點開，列出各種下一步和張數", "通知蝦皮" in hopts and len(hopts) >= 2 and "張" in pg.inner_text("#hf-pop"), str(hopts))
@@ -926,8 +933,9 @@ def main():
                 pg.uncheck(f"#hf-pop input.hf-v[value='{v}']")
         pg.click("#hf-pop .hf-ok"); pg.wait_for_timeout(300)
         hkeys = pg.eval_on_selector_all("#tbl tr.og", "els => els.map(e => e.dataset.k)")
-        check("只勾「通知蝦皮」→ 只剩要通知的單、表頭變紅、寫篩選後幾張", 0 < len(hkeys) < n_all and "POTWCTWA26102099M" in hkeys
-              and pg.query_selector("#tbl thead th.hf-on") is not None and f"篩選後 {len(hkeys)} 張" in pg.inner_text("#sum"), f"{hkeys} / {n_all} / {pg.inner_text('#sum')}")
+        check("只勾「通知蝦皮」→ 只剩要通知的單、表頭變紅、數字列寫篩了哪一欄、篩選後幾張", 0 < len(hkeys) < n_all and "POTWCTWA26102099M" in hkeys
+              and pg.query_selector("#tbl thead th.hf-on") is not None and f"篩選後 {len(hkeys)} 張" in pg.inner_text("#sum") and "下一步（通知蝦皮）" in pg.inner_text("#sum"),
+              f"{hkeys} / {n_all} / {pg.inner_text('#sum')}")
         pg.click("#sum .hf-clr"); pg.wait_for_timeout(300)
         check("清除表頭篩選 → 全部回來", pg.eval_on_selector_all("#tbl tr.og", "els => els.length") == n_all and pg.query_selector("#tbl thead th.hf-on") is None)
         pg.click("#tbl thead .hf-b[data-hf='next']"); pg.wait_for_selector("#hf-pop", timeout=5000)
