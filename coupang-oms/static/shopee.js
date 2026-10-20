@@ -355,11 +355,12 @@ async function loadStage() {
   const pane = { diff: "orders", all: "orders", buy: "buy", eip: "eip", ship: "ship", notify: "notify" }[STAGE];
   ["orders", "buy", "eip", "ship", "notify"].forEach(k => $(`#st-${k}`).classList.toggle("hidden", k !== pane));
   if (pane === "orders") render();
-  else if (pane === "buy") { $("#b-err").innerHTML = ""; loadPlan(); }
+  else if (pane === "buy") { $("#b-err").innerHTML = ""; await loadPlan(); }
   else if (pane === "eip") renderEips();
-  else if (pane === "ship") { $("#z-err").innerHTML = ""; loadShip(); }
-  else loadShort();
+  else if (pane === "ship") { $("#z-err").innerHTML = ""; await loadShip(); }
+  else await loadShort();
 }
+const firstInStage = () => (VIEW.orders.find(g => inStage(g.order_no)) || {}).order_no || "";
 async function refresh() {
   await Promise.all([loadOrders(), loadEipCount()]);
   if (!STAGE) {        // 一進來：網址指定的那一步（首頁今日事項連 /shopee#diff）→ 上次看的那一步 → 第一個有待辦的
@@ -369,8 +370,14 @@ async function refresh() {
     STAGE = SDEF[hash] ? hash : (SDEF[saved] && (saved === "all" || cnt[saved])) ? saved
       : (["diff", "buy", "eip", "ship", "notify"].find(k => cnt[k]) || "all");
   }
-  renderStages(); loadStage();
-  if (SIDE_NO) openSide(SIDE_NO);       // 做完事，右側面板也換成最新的
+  SHIP = { orders: [] };               // 拋單檔計畫重算前先清掉，右側面板才不會拿到舊的
+  renderStages(); await loadStage();
+  // 右側面板跟著左邊動（Jerry 2026-10-20「我左邊在操作的時候右邊要跟著動啦」）：開著的那張還在清單裡就重畫（搜尋到的品項排最前面）；
+  // 被篩掉了就換成清單第一張；清單空了就關掉；搜尋只剩一張就直接打開
+  const q = $("#f-q").value.trim();
+  if (SIDE_NO && !ORD.has(SIDE_NO)) { const first = firstInStage(); if (first) openSide(first); else closeSide(); }
+  else if (SIDE_NO) openSide(SIDE_NO);       // 做完事，右側面板也換成最新的
+  else if (q && VIEW.orders.filter(g => inStage(g.order_no)).length === 1) openSide(firstInStage());
 }
 
 /* ── 差異待確認／全部訂單：一張單一列，點開看品項與操作 ─────── */
@@ -723,7 +730,7 @@ let SHIP = { orders: [] }; const ZOPEN = new Set(), ZSEL = new Set();
 const zq = () => fq();
 const zPick = g => g.dispatch_status !== "已產出" && !g.blocking;
 async function loadShip() {
-  try { SHIP = await api(`/api/shopee/ship/plan?${new URLSearchParams(zq())}`); } catch (err) { $("#z-tbl").innerHTML = `<tr><td class="muted" style="padding:20px">${esc(err.message)}</td></tr>`; return; }
+  try { SHIP = await api(`/api/shopee/ship/plan?${new URLSearchParams(zq())}`); SHIP.q = JSON.stringify(zq()); } catch (err) { $("#z-tbl").innerHTML = `<tr><td class="muted" style="padding:20px">${esc(err.message)}</td></tr>`; return; }
   const ok = new Set(SHIP.orders.filter(g => zPick(g) && inStage(g.order_no)).map(g => g.order_no));
   [...ZSEL].forEach(k => { if (!ok.has(k)) ZSEL.delete(k); });
   renderShip();
@@ -1011,10 +1018,13 @@ async function openSide(no) {
   const again = SIDE_NO === no && SIDE;
   SIDE_NO = no; $("#side").classList.remove("hidden"); document.body.classList.add("side-open"); markSel();
   if (!again) { $("#sd-title").innerHTML = `<b class="fn" style="font-size:15px;color:var(--ink)">${esc(no)}</b>`; $("#sd-body").innerHTML = `<div class="kbd" style="padding:12px 0">讀取中…</div>`; }
-  let d; try { d = await api(`/api/shopee/order?${new URLSearchParams({ ...fq(), no })}`); }
+  // 清單剛算好同一組篩選的拋單檔計畫就直接用，不叫伺服器再算一次（算一次要把範圍內每張單都扣過庫存，搜尋才會慢）
+  const have = SHIP.q === JSON.stringify(fq()) ? SHIP.orders.find(g => g.order_no === no) : null;
+  let d; try { d = await api(`/api/shopee/order?${new URLSearchParams({ ...fq(), no, ...(have ? { ship: "0" } : {}) })}`); }
   catch (err) { if (SIDE_NO === no) $("#sd-body").innerHTML = `<div class="alert al-bad">${esc(err.message)}</div>`; return; }
   if (SIDE_NO !== no) return;                      // 讀的時候又點了別張
-  const top = $("#sd-body").scrollTop; SIDE = d; renderSide(); if (again) $("#sd-body").scrollTop = top;
+  if (have) d.ship = have;
+  const top = $("#sd-body").scrollTop; SIDE = d; renderSide(); if (again && !$("#f-q").value.trim()) $("#sd-body").scrollTop = top;
 }
 const byId = grp => new Map(((grp || {}).items || []).map(x => [x.order_id, x]));
 function renderSide() {
@@ -1032,9 +1042,15 @@ function renderSide() {
   // 品項：每一品把各步的資料放在一起，該改的按鈕就在旁邊
   // 需處理的品項排最前面（瑪氏一張單常常四十幾品，擋下來的那幾品不能讓人一品一品捲著找）
   const isBad = i => { const p = buy.get(i.id), z = ship.get(i.id); return !!((g.todo.includes("buy") && p && p.blocking) || (z && z.blocking && !z.dispatch)); };
-  const items = [...g.items.filter(isBad), ...g.items.filter(i => !isBad(i))], nBad = g.items.filter(isBad).length;
-  h += `<div class="sd-sec"><div class="h"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）${nBad
-    ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理，排在最前面</span>` : ""}</div><div class="b">
+  // 左邊搜尋框有字：符合的品項排最前面並標起來（Jerry 2026-10-20：搜一個料號，右邊 28 品還要自己捲著找）
+  const q = $("#f-q").value.trim().toLowerCase();
+  const isHit = i => !!q && [i.supplier_sku_id, i.sku_name, i.shopee_sku_id, i.inbound_ids, i.barcode, i.base_code].some(v => String(v || "").toLowerCase().includes(q));
+  const rank = i => (isHit(i) ? 0 : 2) + (isBad(i) ? 0 : 1);
+  const items = g.items.map((i, k) => [i, k]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0]);
+  const nBad = g.items.filter(isBad).length, nHit = g.items.filter(isHit).length;
+  h += `<div class="sd-sec"><div class="h"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）${nHit
+    ? `<span style="font-weight:400;font-size:13px;color:var(--s9)">　符合「${esc($("#f-q").value.trim())}」的 ${nHit} 品排在最前面</span>` : ""}${nBad
+    ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理${nHit ? "" : "，排在最前面"}</span>` : ""}</div><div class="b">
     ${g.line === "瑪氏" && d.short ? `<div class="kbd" style="padding:6px 0">瑪氏的缺貨依勇信配送明細表核對，PDF 請拖曳至上方「上傳檔案」。</div>` : ""}`;
   for (const i of items) {
     const p = buy.get(i.id), z = ship.get(i.id), k = sh.get(i.id), unit = i.unit_name || i.unit_code;
@@ -1060,7 +1076,7 @@ function renderSide() {
         <div class="kbd">${k.rounds.map(r => `${roundText(r)}（${esc(r.source)}${r.reasons.length ? "，" + esc(r.reasons.join("、")) : ""}）`).join("<br>")}</div>`;
       if (k.edit_round) acts += `<button class="btn ${k.pending ? "btn-p" : "btn-o"} btn-sm sd-short" data-id="${i.id}"><i class="bi bi-dash-circle"></i> ${k.rounds.length && !k.pending ? `填第 ${k.edit_round} 次缺貨` : k.pending ? "修改缺貨" : "填缺貨"}</button>`;
     }
-    h += `<div class="sd-it ${i.removed ? "muted" : ""}"><div class="r"><span class="fn" style="font-weight:700;color:var(--ink)">${esc(i.supplier_sku_id)}</span>
+    h += `<div class="sd-it ${i.removed ? "muted" : ""}${isHit(i) ? " hit" : ""}"><div class="r"><span class="fn" style="font-weight:700;color:var(--ink)">${esc(i.supplier_sku_id)}</span>
         <span style="flex:1;min-width:0">${esc((i.sku_name || "").slice(0, 40))}</span><span class="nw"><b style="font-size:15px">${fmt(i.qty)}</b> ${esc(unit)}</span></div>
       <div class="sd-kv">${kv.filter(Boolean).map(x => `<span>${x}</span>`).join("")}${i.removed ? `<span class="badge b-diff">已移除</span>` : i.diff_pending ? `<span class="badge b-diff">差異待確認</span>` : ""}</div>
       ${more}${acts ? `<div class="sd-acts">${acts}</div>` : ""}</div>`;

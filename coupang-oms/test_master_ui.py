@@ -945,6 +945,15 @@ def main():
         pg.click("#hf-pop .hf-ok"); pg.wait_for_timeout(300)
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og[data-k='POTWCTWA26102099M']", timeout=10000); stage("all"); pg.wait_for_selector("#tbl tr.og", timeout=10000)
         check("換一步再回來，表頭篩選清掉（只管目前這一步）", pg.eval_on_selector_all("#tbl tr.og", "els => els.length") == n_all and pg.query_selector("#tbl thead th.hf-on") is None)
+        # 右側面板跟著左邊動（Jerry 2026-10-20）：搜一個料號 → 面板裡那一品排最前面並標起來；開著的單被篩掉 → 面板換成清單第一張
+        pg.click("#tbl tr.og[data-k='POTWCTWA26102099M']"); pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('POTWCTWA26102099M')", timeout=10000)
+        pg.fill("#f-q", "4987176232878_CNN"); pg.press("#f-q", "Enter"); pg.wait_for_timeout(1500)
+        side_no = pg.inner_text("#sd-title").split("\n")[0].strip()
+        hit_first = pg.eval_on_selector_all("#side .sd-it", "els => els.length > 0 && els[0].classList.contains('hit') && els[0].innerText.includes('4987176232878_CNN')")
+        check("搜料號 4987176232878_CNN → 瑪氏那張被篩掉，面板換成清單第一張；面板裡符合的那品排最前面、標起來、標題寫「符合…排在最前面」",
+              side_no != "POTWCTWA26102099M" and hit_first and "排在最前面" in pg.inner_text("#side .sd-sec .h >> nth=0"), f"{side_no} / {pg.inner_text('#side .sd-sec .h >> nth=0')}")
+        pg.fill("#f-q", ""); pg.press("#f-q", "Enter"); pg.wait_for_timeout(1200)
+        check("清掉搜尋 → 面板還開著、不再標", pg.query_selector("#side:not(.hidden)") is not None and pg.query_selector("#side .sd-it.hit") is None)
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og[data-k='POTWCTWA26102099M']", timeout=10000)
         pg.click("#k-tbl tr.og[data-k='POTWCTWA26102099M']")
         pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('POTWCTWA26102099M') && document.querySelectorAll('#side .sd-it').length > 0", timeout=10000)

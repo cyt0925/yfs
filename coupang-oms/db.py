@@ -29,6 +29,9 @@ import datetime as _dt
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
+import threading
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -610,10 +613,13 @@ class _PgCursor:
 
 
 class _PgConnection:
-    """包住 psycopg2 的連線，讓外面呼叫起來跟 sqlite3.Connection 一樣。"""
+    """包住 psycopg2 的連線，讓外面呼叫起來跟 sqlite3.Connection 一樣。
+    pool 有給就是從連線池借的，close() 是還回去不是真的關（見 _pg_connect）。"""
 
-    def __init__(self, raw):
+    def __init__(self, raw, pool=None):
         self._raw = raw
+        self._pool = pool
+        self._closed = False
 
     def _new_cursor(self):
         return _PgCursor(
@@ -643,13 +649,72 @@ class _PgConnection:
         self._raw.rollback()
 
     def close(self):
-        self._raw.close()
+        if self._closed:
+            return
+        self._closed = True
+        if self._pool is None:
+            self._raw.close()
+            return
+        try:
+            self._raw.rollback()                   # 沒 commit 的丟掉，交易結束才不會一直佔著 Supabase 那邊的連線
+        except psycopg2.Error:
+            self._pool.putconn(self._raw, close=True)
+            return
+        _PG_LAST_USED[id(self._raw)] = time.time()
+        self._pool.putconn(self._raw)
+
+
+# 連線池（2026-10-20）：正式站以前每個請求都跟 Supabase 重新建一條連線（TLS 握手、驗證），一次搜尋打四支 API 就建四次，
+# Jerry 說「搜尋功能載入速度太慢」。現在每個 gunicorn worker 留幾條連線重複用，用完 rollback 還回去。
+# 借出來的如果閒置超過 _PG_PING_AFTER 秒先 SELECT 1 確認還活著（Supabase 會把閒太久的踢掉），死了就換一條。
+# 池子滿了（同時請求比 PG_POOL_MAX 多）就照舊另開一條、用完真的關掉，不會卡住也不會報錯。
+PG_POOL_MAX = int(os.environ.get("PG_POOL_MAX") or 4)        # 同時最多開幾條
+PG_POOL_MIN = min(int(os.environ.get("PG_POOL_MIN") or 2), PG_POOL_MAX)   # 閒著時留幾條（psycopg2 的池子只留 minconn 條，多的還回去就關）
+_PG_PING_AFTER = 20
+_PG_POOL = None
+_PG_POOL_LOCK = threading.Lock()
+_PG_LAST_USED = {}
+
+
+def _pg_pool():
+    global _PG_POOL
+    if _PG_POOL is None:
+        with _PG_POOL_LOCK:
+            if _PG_POOL is None:
+                _PG_POOL = psycopg2.pool.ThreadedConnectionPool(PG_POOL_MIN, PG_POOL_MAX, DATABASE_URL)
+    return _PG_POOL
+
+
+def _pg_connect():
+    """回 (raw, pool)；pool 是 None 代表這條不是池子裡的，用完要真的關。"""
+    try:
+        pool = _pg_pool()
+        raw = pool.getconn()
+    except psycopg2.pool.PoolError:
+        return psycopg2.connect(DATABASE_URL), None
+    for _ in range(2):
+        idle = time.time() - _PG_LAST_USED.get(id(raw), 0)
+        if not raw.closed and idle < _PG_PING_AFTER:
+            return raw, pool
+        try:
+            if raw.closed:
+                raise psycopg2.InterfaceError("connection already closed")
+            cur = raw.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
+            raw.rollback()
+            return raw, pool
+        except psycopg2.Error:
+            _PG_LAST_USED.pop(id(raw), None)
+            pool.putconn(raw, close=True)          # 死掉的丟掉，再借一條（池子會重新建）
+            raw = pool.getconn()
+    return raw, pool
 
 
 def get_conn():
     if IS_POSTGRES:
-        raw = psycopg2.connect(DATABASE_URL)
-        return _PgConnection(raw)
+        raw, pool = _pg_connect()
+        return _PgConnection(raw, pool)
 
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row

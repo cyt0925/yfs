@@ -756,6 +756,9 @@ def ship_tests(c, preview, orders, up):
     pl = plan()
     b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
     logs = [l for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"] if l["field"] == "shopee_ship_qty"]
+    r_side = c.get("/api/shopee/order", query_string={**q, "no": H, "ship": "0"})
+    check("右側面板帶 ship=0（畫面已經有同一組篩選的拋單檔計畫）→ 不再算一次、ship 回空（搜尋慢，2026-10-20）", r_side.status_code == 200 and r_side.get_json()["ship"] is None
+          and c.get("/api/shopee/order", query_string={**q, "no": H}).get_json()["ship"]["order_no"] == H)
     check("人工改成 96＋48 → 出 144、不缺；記人員、原因；不再提醒入庫單要拆", r.status_code == 200 and b_it["final"] == 144 and not b_it["short"]
           and b_it["adj"]["reason"] == "業務確認兩個效期分開入庫" and b_it["adj"]["lots"] == [["2029-07-24", 96], ["2029-06-01", 48]] and not b_it["warnings"] and logs,
           str((b_it["adj"], b_it["warnings"])))
