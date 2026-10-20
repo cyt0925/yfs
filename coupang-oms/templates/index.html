@@ -1168,7 +1168,7 @@ async function openPo(poNumber) {
 }
 
 // ── 修改紀錄（小真 2026-10-20：一輪處理完打一個 OK 算一筆，做了幾個動作都算一次）──
-// 「做了什麼」系統照修改歷程先勾、階段照 PO 狀態先帶，OP 只要選主因、按 OK；備註最後自動接「=>10/20-OK」。
+// 「做了什麼」系統照修改歷程先勾、階段照 PO 狀態先帶，OP 只要選主因、按 OK。修改紀錄才是佐證，備註只寫過程、不再接 OK（Jerry 2026-10-20）。
 const ROUND_OK_BTN = "這一輪處理完了（OK）";
 function roundReasonHtml(opt, stage, kinds, current) {
   const groups = [];
@@ -1217,7 +1217,7 @@ function roundsHtml(d) {
         <button type="button" id="rd-ok" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap disabled:opacity-50" disabled>
           <i class="bi bi-check2-circle"></i> ${ROUND_OK_BTN}</button>
       </div>
-      <div class="md:col-span-3 text-[11px] text-ink-400">按下去就存：修改紀錄多一筆、備註最後自動接「=>月/日-OK」、修改歷程記一筆。備註裡自己打 OK 存檔會被擋下來。</div>
+      <div class="md:col-span-3 text-[11px] text-ink-400">按下去就存：修改紀錄多一筆、修改歷程記一筆。修改次數以這裡為準，備註只寫過程、不用再打 OK（打了存檔會被擋下來）。</div>
     </div>`;
 }
 function bindRounds() {
@@ -1245,14 +1245,13 @@ async function recordRound() {
                  reason: $("#rd-reason").value, note: $("#rd-note").value.trim() };
   const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!d) return;
-  CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill; CURRENT.header.remarks = d.remarks; CURRENT.header.version = d.po_version;
-  $("#p-remarks").value = d.remarks;
+  CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill;
   $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
   toast(`已記這一輪（OK），這張單修改 ${d.rounds.length} 次。`);
 }
 async function deleteRound(id) {
   if (!requireOperator() || !CURRENT) return;
-  if (!confirm("確定刪除這筆修改紀錄？備註裡的 OK 不會跟著拿掉，請自行修改。")) return;
+  if (!confirm("確定刪除這筆修改紀錄？（會記歷程）")) return;
   const po = CURRENT.header.po_number;
   const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: operator() }) });
   if (!d) return;

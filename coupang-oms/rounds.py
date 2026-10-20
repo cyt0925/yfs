@@ -5,8 +5,10 @@
 改成按鈕記（Jerry：靠打字算次數不穩、而且只有次數）：
 - 打 OK 的時候選「這輪在哪個階段結束」「這輪做了什麼（可複選）」「主因（選一個）」，說明選填。
 - 「做了什麼」系統先勾：看上一個 OK 之後這張單的修改歷程有沒有下修、改交期／倉別、拆單。階段照 PO 狀態先帶。
-- 按下去：po_rounds 多一筆、備註最後自動接「=>10/20-OK」、修改歷程記一筆。記錯可以刪（軟刪、記歷程）。
-- 防呆（Jerry：「他們一定得填」）：備註裡自己打了 OK 存檔會擋下來；PO 狀態改成已完成／已取消時，
+- 按下去：po_rounds 多一筆、修改歷程記一筆。記錯可以刪（軟刪、記歷程）。
+- 佐證只有一份（Jerry 2026-10-20「備註跟修改紀錄理當只能由一個當佐證」）：修改紀錄才算，備註回到純文字只寫過程，
+  系統不再把「=>10/20-OK」接到備註、大家也不用再打 OK。第一版有接，拆掉了。
+- 防呆（Jerry：「他們一定得填」）：備註裡自己打了 OK 存檔會擋下來（不是拿備註當證據，是提醒去按鈕記）；PO 狀態改成已完成／已取消時，
   上一個 OK 之後有改動還沒記 OK 也擋下來；首頁今日事項列「改過但還沒記 OK 的 PO」。
 - 從 SINCE 那天開始算，以前備註裡打的 OK 不回頭算（小真：從今天開始）。
 原因清單照小真的檔：數量下修依階段三組，改交期／倉別、拆單三個階段共用。
@@ -34,17 +36,13 @@ CHANGE_FIELDS = ("qty_coupang", "qty_ship", "delivery_date", "warehouse")
 OPTIONS = {"stages": [{"key": k, "label": STAGE_LABEL[k]} for k, _a, _b in STAGES],
            "kinds": [{"key": k, "label": v} for k, v in KINDS],
            "reasons": {"qty": REASONS_QTY, "date": REASONS_DATE, "split": REASONS_SPLIT}}
-MSG_TYPED_OK = "備註裡打了 OK。請改用下方「這一輪處理完了（OK）」記這一輪的主因，系統會自動把 OK 接到備註最後。"
+MSG_TYPED_OK = "備註裡打了 OK。修改次數以下方「修改紀錄」為準，請改按「這一輪處理完了（OK）」記這一輪，備註不用再打 OK。"
 MSG_STATUS = "這張單在上一個 OK 之後還有改動，請先按「這一輪處理完了（OK）」記這一輪，再改 PO 狀態。"
 _OK = re.compile(r"(?<![A-Za-z])OK(?![A-Za-z])", re.I)
 
 
 def count_ok(text):
     return len(_OK.findall(text or ""))
-
-
-def ok_text(stamp):
-    return f"=>{int(stamp[5:7])}/{int(stamp[8:10])}-OK"
 
 
 def reason_options(stage, kinds):
@@ -149,28 +147,23 @@ def _log(conn, po, field, label, old, new, operator, note=""):
 
 
 def add_round(conn, po, stage, kinds, reason, note, operator):
-    """記一輪：驗證 → 寫 po_rounds → 備註接 OK → 歷程。回 (錯誤訊息, 新的 rounds, 新的備註)。"""
+    """記一輪：驗證 → 寫 po_rounds → 歷程。備註不動（修改紀錄才是佐證）。回 (錯誤訊息, 新的 rounds)。"""
     if stage not in STAGE_LABEL:
-        return "請選擇這一輪在哪個階段結束。", None, None
+        return "請選擇這一輪在哪個階段結束。", None
     kinds = [k for k, _v in KINDS if k in (kinds or [])]
     if not kinds:
-        return "請勾選這一輪做了什麼（至少一項）。", None, None
+        return "請勾選這一輪做了什麼（至少一項）。", None
     allowed = [r for _g, lst in reason_options(stage, kinds) for r in lst]
     if reason not in allowed:
-        return "請選擇主因（只能選勾到的類別裡的原因）。", None, None
-    header = conn.execute("SELECT remarks FROM po_headers WHERE po_number = ?", (po,)).fetchone()
-    if header is None:
-        return "找不到這張 PO。", None, None
+        return "請選擇主因（只能選勾到的類別裡的原因）。", None
+    if conn.execute("SELECT 1 FROM po_headers WHERE po_number = ?", (po,)).fetchone() is None:
+        return "找不到這張 PO。", None
     stamp = db.now()
     conn.execute("INSERT INTO po_rounds (po_number, ok_at, stage, kinds, reason, note, operator, deleted_at, deleted_by) VALUES (?,?,?,?,?,?,?,'','')",
                  (po, stamp, stage, ",".join(kinds), reason, note or "", operator))
-    old = header["remarks"] or ""
-    new = old + ok_text(stamp)
-    conn.execute("UPDATE po_headers SET remarks = ?, updated_at = ?, version = version + 1 WHERE po_number = ?", (new, stamp, po))
     summary = f"{STAGE_SHORT[stage]} OK（{'、'.join(KIND_LABEL[k] for k in kinds)}；主因 {reason}）"
     _log(conn, po, "po_round", "修改紀錄", "", summary, operator, note or "")
-    _log(conn, po, "remarks", "備註", old, new, operator, "記一輪修改，系統自動接 OK")
-    return "", rounds_for(conn, po), new
+    return "", rounds_for(conn, po)
 
 
 def delete_round(conn, po, rid, operator):

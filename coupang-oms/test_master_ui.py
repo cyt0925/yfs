@@ -1019,7 +1019,7 @@ def main():
         pg.select_option("#rd-reason", "庫存不足"); pg.wait_for_timeout(200)
         check("勾數量下修 → 主因只列第一階段的下修原因；選了主因 OK 鈕才能按", "庫存不足" in opts_g and "約倉問題" not in opts_g and not pg.is_disabled("#rd-ok"), str(opts_g))
         pg.click("#rd-ok"); pg.wait_for_function("document.querySelector('#po-rounds').innerText.includes('修改 1 次')", timeout=8000)
-        check("按 OK → 修改 1 次、備註最後接 -OK", pg.input_value("#p-remarks").endswith("-OK"), pg.input_value("#p-remarks"))
+        check("按 OK → 修改 1 次、備註不動（修改紀錄才是佐證）", "OK" not in pg.input_value("#p-remarks"), pg.input_value("#p-remarks"))
         pg.fill("#p-remarks", pg.input_value("#p-remarks") + " 再處理=>10/21-OK"); pg.click("#btn-po-save"); pg.wait_for_timeout(900)
         check("備註自己再打一個 OK 存檔 → 擋下來、視窗還開著", "備註裡打了 OK" in pg.inner_text("#toast") and pg.evaluate("document.getElementById('dlg-po').open"), pg.inner_text("#toast"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)

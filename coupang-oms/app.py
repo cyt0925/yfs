@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-20.5"
+BUILD_VERSION = "2026-10-20.6"
 
 app = Flask(__name__)
 
@@ -2056,15 +2056,13 @@ def api_add_round(po_number):
     conn = get_conn()
     try:
         # 主因要跟清單一字不差（norm_text 會把全形括號改成半形），所以不過 norm_text
-        err, out, remarks = rounds.add_round(conn, po_number, str(p.get("stage") or "").strip(), p.get("kinds") or [],
-                                             str(p.get("reason") or "").strip(), str(p.get("note") or "").strip(), current_operator())
+        err, out = rounds.add_round(conn, po_number, str(p.get("stage") or "").strip(), p.get("kinds") or [],
+                                    str(p.get("reason") or "").strip(), str(p.get("note") or "").strip(), current_operator())
         if err:
             conn.rollback()
             return jsonify({"error": err}), 400
         conn.commit()
-        header = conn.execute("SELECT version FROM po_headers WHERE po_number = ?", (po_number,)).fetchone()
-        return jsonify({"ok": True, "rounds": out, "remarks": remarks, "po_version": header["version"],
-                        "round_prefill": rounds.prefill(conn, po_number, "", out)})
+        return jsonify({"ok": True, "rounds": out, "round_prefill": rounds.prefill(conn, po_number, "", out)})
     finally:
         conn.close()
 
