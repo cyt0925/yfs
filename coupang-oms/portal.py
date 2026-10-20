@@ -25,6 +25,7 @@ import datetime as _dt
 from flask import Blueprint, current_app, jsonify, redirect, render_template, session, url_for
 
 import db
+import rounds
 
 portal_bp = Blueprint("portal", __name__)
 
@@ -109,6 +110,12 @@ def tasks(conn, today, pending=0):
     if pending:
         out.append({"key": "reasons", "level": "warn", "level_text": "待補", "icon": "bi-chat-square-text",
                     "title": f"待補改單原因 {pending} 次", "detail": "這個月的改單，勾好幾筆可以一起補", "url": "/portal/stats#pending", "count": int(pending)})
+
+    pend = rounds.pending_pos(conn)                 # 改過但還沒記 OK（小真的「幾個 OK 幾次修改」，2026-10-20）
+    if pend:
+        out.append({"key": "rounds", "level": "warn", "level_text": "待記 OK", "icon": "bi-check2-square",
+                    "title": f"改過但還沒記 OK 的 PO {len(pend)} 張", "detail": "PO " + "、".join(pend[:2]) + ("…" if len(pend) > 2 else ""),
+                    "url": COUPANG_URL + "?round_pending=1", "count": len(pend)})
 
     since = f"{_iso(today - _dt.timedelta(days=REVIEW_DAYS - 1))} 00:00:00"
     rows = conn.execute("""SELECT DISTINCT o.po_number AS po FROM orders o

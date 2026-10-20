@@ -1006,6 +1006,24 @@ def main():
         pg.click("#set-back"); pg.wait_for_selector("#view-work:not(.hidden)", timeout=5000); pg.wait_for_timeout(1000)
         stage("all")
         check("清完：全部訂單 0 張、清單寫「尚未匯入蝦皮訂單」", count("all") == 0 and "尚未匯入蝦皮訂單" in pg.inner_text("#tbl"), pg.inner_text("#tbl")[:120])
+        print("\n【6g】酷澎 PO 視窗：修改紀錄（一輪一個 OK，小真 2026-10-20）、備註自己打 OK 會被擋")
+        if not tc.get("/api/pos?page_size=5").get_json()["rows"]:          # 前面的段落可能把訂單清掉了：補匯範例
+            pv_g = tc.post("/api/import/preview", data={"file": (open(os.path.join(BASE, "samples", "整合表範例.xlsx"), "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
+            tc.post("/api/import/commit", json={"operator": "小真", "batch_id": pv_g["batch_id"]})
+        po_g = tc.get("/api/pos?page_size=5").get_json()["rows"][0]["po_number"]
+        pg.goto(f"{base}/coupang"); pg.wait_for_selector("#lm-btn", timeout=15000)
+        pg.evaluate(f"openPo('{po_g}')"); pg.wait_for_selector("#po-rounds #rd-ok", timeout=10000)
+        check("PO 視窗有修改紀錄：OK 鈕一開始按不下去（主因必選）", pg.is_disabled("#rd-ok") and "修改 0 次" in pg.inner_text("#po-rounds"))
+        pg.check("#po-rounds .rd-kind[value='qty']"); pg.wait_for_timeout(200)
+        opts_g = pg.eval_on_selector_all("#rd-reason option", "els => els.map(e => e.value).filter(Boolean)")
+        pg.select_option("#rd-reason", "庫存不足"); pg.wait_for_timeout(200)
+        check("勾數量下修 → 主因只列第一階段的下修原因；選了主因 OK 鈕才能按", "庫存不足" in opts_g and "約倉問題" not in opts_g and not pg.is_disabled("#rd-ok"), str(opts_g))
+        pg.click("#rd-ok"); pg.wait_for_function("document.querySelector('#po-rounds').innerText.includes('修改 1 次')", timeout=8000)
+        check("按 OK → 修改 1 次、備註最後接 -OK", pg.input_value("#p-remarks").endswith("-OK"), pg.input_value("#p-remarks"))
+        pg.fill("#p-remarks", pg.input_value("#p-remarks") + " 再處理=>10/21-OK"); pg.click("#btn-po-save"); pg.wait_for_timeout(900)
+        check("備註自己再打一個 OK 存檔 → 擋下來、視窗還開著", "備註裡打了 OK" in pg.inner_text("#toast") and pg.evaluate("document.getElementById('dlg-po').open"), pg.inner_text("#toast"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/master", "#dd-line-btn"),
                             ("/mars", "#sp-table thead"), ("/zhuyun", "#dz"), ("/purchase", "#ac-btn")]:
@@ -1035,7 +1053,7 @@ def main():
         pg.goto(f"{base}/purchase"); pg.wait_for_selector("#ac-btn"); pg.click("#ac-btn"); pg.click("#ac-logout"); pg.wait_for_load_state()
         check("採購表頁按登出 → 回到登入頁", "/login" in pg.url, pg.url)
         bad = [x for x in bad if ("/api/mars/splits/" not in x[1] or x[0] != 400) and not (x[1].endswith("/api/mars/emma") and x[0] == 409)
-               and not (x[0] == 400 and ("/api/shopee/purchase/adjust" in x[1] or "/api/shopee/eips/" in x[1]))]   # 故意填錯的 400、EMMA 先問的 409 不算
+               and not (x[0] == 400 and ("/api/shopee/purchase/adjust" in x[1] or "/api/shopee/eips/" in x[1] or "/api/pos/" in x[1]))]   # 故意填錯的 400、EMMA 先問的 409 不算
         b.close()
 
     print("\n【7】整體")

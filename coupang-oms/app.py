@@ -20,6 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
+import rounds                    # PO 修改紀錄（一輪一個 OK）
 from db import get_conn, init_db, now
 from importer import (
     COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, desired_ship, diff_rows,
@@ -41,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-20.4"
+BUILD_VERSION = "2026-10-20.5"
 
 app = Flask(__name__)
 
@@ -1963,6 +1964,10 @@ def api_pos():
 
     conn = get_conn()
     try:
+        if request.args.get("round_pending") == "1":                 # 只看改過但還沒記 OK 的（首頁今日事項連過來）
+            pend = rounds.pending_pos(conn)
+            clause = (clause + " AND " if clause else " WHERE ") + "po_number IN (" + (",".join("?" * len(pend)) or "''") + ")"
+            params = params + pend
         base = po_summary_sql(clause)
         total = conn.execute(
             f"SELECT COUNT(*) AS c FROM ({base})", params).fetchone()["c"]
@@ -2021,8 +2026,12 @@ def api_po_detail(po_number):
                ORDER BY changed_at DESC, id DESC LIMIT 300""", (po_number,)).fetchall()
 
         skus = [dict(s) for s in skus]
+        po_rounds = rounds.rounds_for(conn, po_number)
         return jsonify({
             "header": dict(header),
+            "rounds": po_rounds,
+            "round_prefill": rounds.prefill(conn, po_number, header["po_status"], po_rounds),
+            "round_options": rounds.OPTIONS,
             "brands": _csv_clean(",".join(s["brand"] or "" for s in skus)),
             "lines": _csv_clean(",".join(s["line"] or "" for s in skus)),
             "delivery_date": po_shared_value(skus, "delivery_date"),
@@ -2035,6 +2044,41 @@ def api_po_detail(po_number):
             "skus": skus,
             "logs": [dict(l) for l in logs],
         })
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/<po_number>/rounds", methods=["POST"])
+def api_add_round(po_number):
+    """記一輪修改（OK）：見 rounds.py。"""
+    po_number = norm_key(po_number)
+    p = request.get_json(silent=True) or {}
+    conn = get_conn()
+    try:
+        # 主因要跟清單一字不差（norm_text 會把全形括號改成半形），所以不過 norm_text
+        err, out, remarks = rounds.add_round(conn, po_number, str(p.get("stage") or "").strip(), p.get("kinds") or [],
+                                             str(p.get("reason") or "").strip(), str(p.get("note") or "").strip(), current_operator())
+        if err:
+            conn.rollback()
+            return jsonify({"error": err}), 400
+        conn.commit()
+        header = conn.execute("SELECT version FROM po_headers WHERE po_number = ?", (po_number,)).fetchone()
+        return jsonify({"ok": True, "rounds": out, "remarks": remarks, "po_version": header["version"],
+                        "round_prefill": rounds.prefill(conn, po_number, "", out)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/<po_number>/rounds/<int:rid>", methods=["DELETE"])
+def api_delete_round(po_number, rid):
+    po_number = norm_key(po_number)
+    conn = get_conn()
+    try:
+        err, out = rounds.delete_round(conn, po_number, rid, current_operator())
+        if err:
+            return jsonify({"error": err}), 404
+        conn.commit()
+        return jsonify({"ok": True, "rounds": out, "round_prefill": rounds.prefill(conn, po_number, "", out)})
     finally:
         conn.close()
 
@@ -2111,6 +2155,13 @@ def api_update_po(po_number):
                 "error": "locked",
                 "message": "這張單已拉單並鎖定。若確實需要修改，請先解除拉單鎖定。",
             }), 423
+
+        # 防呆（Jerry 2026-10-20「他們一定得填」）：備註自己打 OK、或有改動還沒記 OK 就把單結掉，都擋下來
+        for field, _label, old_val, new_val in head_changes:
+            if field == "remarks" and rounds.count_ok(new_val) > rounds.count_ok(old_val):
+                return jsonify({"error": "round_required", "message": rounds.MSG_TYPED_OK}), 400
+            if field == "po_status" and new_val in rounds.END_STATUSES and rounds.pending_for(conn, po_number):
+                return jsonify({"error": "round_required", "message": rounds.MSG_STATUS}), 400
 
         if head_changes:
             sets = ", ".join(f"{f} = ?" for f, _, _, _ in head_changes)
@@ -2272,6 +2323,11 @@ def api_batch_status():
             f"""SELECT po_number, {field} AS old FROM po_headers
                 WHERE po_number IN ({placeholders}) AND {field} != ?""",
             pos + [value]).fetchall()
+        if field == "po_status" and value in rounds.END_STATUSES:          # 防呆：有改動還沒記 OK 的不能批次結掉
+            stuck = [r["po_number"] for r in rows if rounds.pending_for(conn, r["po_number"])]
+            if stuck:
+                return jsonify({"error": "round_required", "pos": stuck,
+                                "message": f"有 {len(stuck)} 張 PO 在上一個 OK 之後還有改動，請先點開記這一輪（OK）：" + "、".join(stuck[:5]) + ("…" if len(stuck) > 5 else "")}), 400
         for row in rows:
             log_po_change(conn, row["po_number"], field, label,
                           row["old"], value, operator)

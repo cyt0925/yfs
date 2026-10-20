@@ -880,6 +880,22 @@ CREATE TABLE IF NOT EXISTS mst_change_reasons (
     updated_at  TEXT DEFAULT ''
 );
 
+-- PO 修改紀錄（小真 2026-10-20）：一輪處理完打一個 OK 算一筆，做了幾個動作都算一次。見 rounds.py。
+-- 記錯可以刪：deleted_at 有值就不算（留著查）。
+CREATE TABLE IF NOT EXISTS po_rounds (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_number   TEXT NOT NULL,
+    ok_at       TEXT NOT NULL,
+    stage       TEXT NOT NULL,
+    kinds       TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    note        TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    deleted_at  TEXT DEFAULT '',
+    deleted_by  TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_po_rounds_po ON po_rounds(po_number);
+
 -- 瑪氏商品總表每次上傳一筆（畫面「上次上傳」）
 CREATE TABLE IF NOT EXISTS mst_mars_uploads (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
