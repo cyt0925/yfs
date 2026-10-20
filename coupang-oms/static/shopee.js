@@ -371,7 +371,9 @@ async function refresh() {
       : (["diff", "buy", "eip", "ship", "notify"].find(k => cnt[k]) || "all");
   }
   SHIP = { orders: [] };               // 拋單檔計畫重算前先清掉，右側面板才不會拿到舊的
-  renderStages(); await loadStage();
+  renderStages();
+  const pane = loadStage();
+  if (STAGE === "ship") await pane;      // 待產拋單檔：等清單算好，面板直接拿來用；其他步驟清單和面板同時更新，不互等
   // 右側面板跟著左邊動（Jerry 2026-10-20「我左邊在操作的時候右邊要跟著動啦」）：開著的那張還在清單裡就重畫（搜尋到的品項排最前面）；
   // 被篩掉了就換成清單第一張；清單空了就關掉；搜尋只剩一張就直接打開
   const q = $("#f-q").value.trim();

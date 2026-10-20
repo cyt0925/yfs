@@ -979,6 +979,10 @@ def main():
         pg.select_option("#dm-cat", "Petcare"); pg.fill("#dm-box", "12"); pg.click("#dm-ln"); pg.click("#dm-save")
         pg.wait_for_selector("#dlg-mp[open]", state="detached", timeout=5000)
         pg.wait_for_function("document.querySelector('#b-tbl tr.og[data-k=\"POTWCTWA26102198N\"]') && document.querySelector('#b-tbl tr.og[data-k=\"POTWCTWA26102198N\"]').innerText.includes('可產出')", timeout=10000)
+        try:                                                   # 清單和右側面板是兩個請求，面板可能晚一點才換好
+            pg.wait_for_function("document.querySelector('#side').innerText.includes('EIP 檔：盒_PET_不貼中標')", timeout=10000)
+        except Exception:
+            pass
         check("存好 → 那張單變「可產出」、右側寫 EIP 檔：盒_PET_不貼中標", "EIP 檔：盒_PET_不貼中標" in pg.inner_text("#side"), pg.inner_text("#side")[:300])
         pg.keyboard.press("Escape")
         print("\n【6e-7】歷程紀錄可以刪、資料與設定可以清除資料（只有管理員；Jerry 2026-10-14）")
