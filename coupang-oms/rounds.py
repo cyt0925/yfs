@@ -3,7 +3,8 @@
 小真原本的做法：PO 視窗的備註把每個動作用「=>」接成一串，處理完在最後打「10/20-OK」，
 備註裡有幾個 OK 就是這張 PO 修改過幾次。一輪裡面改交期、改倉、拆單、下修好幾個動作、跨好幾天，都算一次。
 改成按鈕記（Jerry：靠打字算次數不穩、而且只有次數）：
-- 打 OK 的時候選「這輪在哪個階段結束」「這輪做了什麼（可複選）」「主因（選一個）」，說明選填。
+- 打 OK 的時候選「這輪在哪個階段結束」「這輪做了什麼（可複選）」「主因（可複選，Jerry 2026-10-21；存成逗號隔開）」，說明選填。
+  統計時一輪算進每個勾到的主因，主因加總會大於修改次數（跟「做了什麼」一樣）。
 - 「做了什麼」系統先勾：看上一個 OK 之後這張單的修改歷程有沒有下修、改交期／倉別、拆單。階段照 PO 狀態先帶。
 - 按下去：po_rounds 多一筆、修改歷程記一筆。記錯可以刪（軟刪、記歷程）。
 - 佐證只有一份（Jerry 2026-10-20「備註跟修改紀錄理當只能由一個當佐證」）：修改紀錄才算，備註回到純文字只寫過程，
@@ -66,6 +67,8 @@ def _num(v):
 
 def _row(r):
     d = dict(r)
+    d["reasons"] = [x for x in (d.get("reason") or "").split(",") if x]
+    d["reason"] = "、".join(d["reasons"])
     d["kinds"] = [k for k in (d.get("kinds") or "").split(",") if k]
     d["kind_labels"] = [KIND_LABEL.get(k, k) for k in d["kinds"]]
     d["stage_label"] = STAGE_LABEL.get(d["stage"], d["stage"])
@@ -146,16 +149,20 @@ def _log(conn, po, field, label, old, new, operator, note=""):
            VALUES (0,?,'',?,?,?,?,?,'manual',?,?)""", (po, field, label, old or "", new or "", operator, note, db.now()))
 
 
-def add_round(conn, po, stage, kinds, reason, note, operator):
-    """記一輪：驗證 → 寫 po_rounds → 歷程。備註不動（修改紀錄才是佐證）。回 (錯誤訊息, 新的 rounds)。"""
+def add_round(conn, po, stage, kinds, reasons, note, operator):
+    """記一輪：驗證 → 寫 po_rounds → 歷程。備註不動（修改紀錄才是佐證）。reasons 可以好幾個。回 (錯誤訊息, 新的 rounds)。"""
     if stage not in STAGE_LABEL:
         return "請選擇這一輪在哪個階段結束。", None
     kinds = [k for k, _v in KINDS if k in (kinds or [])]
     if not kinds:
         return "請勾選這一輪做了什麼（至少一項）。", None
-    allowed = [r for _g, lst in reason_options(stage, kinds) for r in lst]
-    if reason not in allowed:
-        return "請選擇主因（只能選勾到的類別裡的原因）。", None
+    allowed = []
+    for _g, lst in reason_options(stage, kinds):
+        allowed += [r for r in lst if r not in allowed]
+    picked = {str(r).strip() for r in (reasons or []) if str(r).strip()}
+    if not picked or not picked <= set(allowed):
+        return "請勾選主因（只能選勾到的類別裡的原因，至少一個）。", None
+    reason = ",".join(r for r in allowed if r in picked)
     if conn.execute("SELECT 1 FROM po_headers WHERE po_number = ?", (po,)).fetchone() is None:
         return "找不到這張 PO。", None
     stamp = db.now()

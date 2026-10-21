@@ -1621,6 +1621,11 @@ def main():
     check("刪掉這筆 → 修改 0 次、歷程記刪除、又回到待記清單", r.status_code == 200 and det["rounds"] == []
           and any(l["field"] == "po_round" and l["note"] == "刪除修改紀錄" for l in det["logs"]) and po39 in pend39())
     check("刪不存在的 → 404", client.delete(f"/api/pos/{po39}/rounds/999999", json={"operator": "小真"}).status_code == 404)
+    check("主因複選：其中一個不在清單 → 400", post({"stage": "1", "kinds": ["date", "qty"], "reasons": ["約倉問題", "亂寫"]}).status_code == 400)
+    r = post({"stage": "1", "kinds": ["date", "qty"], "reasons": ["約倉問題", "庫存不足", "約倉問題"]})
+    d = r.get_json()
+    check("主因可複選（Jerry 2026-10-21）：存兩個、照清單順序、重複的去掉、畫面用「、」接", r.status_code == 200 and d["rounds"][-1]["reasons"] == ["庫存不足", "約倉問題"]
+          and d["rounds"][-1]["reason"] == "庫存不足、約倉問題", str(d["rounds"][-1:]))
     page39 = client.get("/coupang").get_data(as_text=True)
     check("酷澎頁有「只看還沒記 OK 的」篩選、PO 視窗有修改紀錄", 'id="f-round"' in page39 and "roundsHtml" in page39 and "這一輪處理完了（OK）" in page39)
 
