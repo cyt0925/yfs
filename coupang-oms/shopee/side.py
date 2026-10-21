@@ -61,6 +61,7 @@ def api_side():
         conn.close()
     for e in eips:
         e["mars"] = e["line"] == "瑪氏"
+        e["direct"] = e["fulfil"] == "供應商直送" and e["line"] != "瑪氏"     # 寶僑、紙潔直送：回填後可下載直送採購單
     for d in diffs:
         d["confirmed"] = bool(d["confirmed_at"])
     return jsonify({"order": g, "buy": buy, "ship": ship, "short": short, "eips": eips, "diffs": diffs, "logs": logs})

@@ -598,6 +598,9 @@ def stage2(c, preview, orders):
     check("打包下載只放已回填的寶僑、紙潔 2 份（瑪氏的不混進來）、zip 名稱帶到貨日區間；到貨日範圍可以篩", zn == ["PO202610201蝦皮特選直送採購單_1023_高鐵南_小單位.xlsx",
           "PO202610202蝦皮特選直送採購單_1022_觀音.xlsx"] and "1022-1023" in unq(r.headers.get("Content-Disposition", ""))
           and c.get("/api/shopee/direct_po.zip?from=2026-10-23").headers.get("X-Shopee-Files") == "1", str(zn))
+    sd = c.get("/api/shopee/order", query_string={"no": "POTWCTWG26100800D", "from": "2026-01-01"}).get_json()
+    check("右側卡片的 EIP 區標出可下載直送採購單（小單位回填了、箱單位還沒）", sorted((e["unit_group"], bool(e["direct"]), bool(e["eip_po"])) for e in sd["eips"])
+          == [("小單位", True, True), ("箱單位", True, False)], str(sd["eips"]))
     r = c.put("/api/shopee/warehouses/TWG", json={"notes": "高鐵南改過的進倉說明"})
     whs = {w["code"]: w for w in c.get("/api/shopee/warehouses").get_json()["warehouses"]}
     ws = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/shopee/eips/{pg_s['id']}/direct_po").data)).active
