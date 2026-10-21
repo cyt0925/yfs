@@ -878,12 +878,17 @@ def main():
         pg.click("#e-all"); pg.wait_for_timeout(300)
         check("按「顯示已回填」→ 看得到剛回填的那份、記下回填人", "PO202610003" in [pg.input_value(x) for x in ["#e-tbl input.e-po >> nth=1"]][0] and "Jerry" in pg.inner_text("#e-tbl tr >> nth=2"))
         check("沒有瑪氏 EIP 時不顯示「下載瑪氏採購單」", pg.is_hidden("#e-mars"))
+        with pg.expect_download(timeout=15000) as dl:
+            pg.click("#e-tbl a[href$='/direct_po']")
+        check("寶僑直送回填後：那列多「直送採購單」、上方出現「下載直送採購單（已回填）」；檔名帶單號、到貨日、倉、單位（Alice 2026-10-21）",
+              pg.is_visible("#e-direct") and dl.value.suggested_filename.startswith("PO202610003蝦皮特選直送採購單_1019_觀音_"), dl.value.suggested_filename)
         pg.click("#btn-set"); pg.wait_for_selector("#view-set:not(.hidden)", timeout=5000)
         check("資料與設定：價格本列出寶僑、瑪氏（商品總表在瑪氏出貨上傳）", "寶僑" in pg.inner_text("#conv-st") and "瑪氏出貨" in pg.inner_text("#conv-st"), pg.inner_text("#conv-st"))
         pg.click("#wh-box summary"); pg.wait_for_selector("#wh-tbl tbody tr", timeout=10000)
-        check("蝦皮倉資料：7 個倉、觀音帶出需求書的入倉倉別和 ship-to", pg.eval_on_selector_all("#wh-tbl tbody tr", "els => els.length") == 7
+        check("蝦皮倉資料：9 個倉、觀音帶出需求書的入倉倉別和 ship-to、進倉說明（直送採購單用）", pg.eval_on_selector_all("#wh-tbl tbody tr", "els => els.length") == 9
               and pg.input_value("#wh-tbl tr[data-code='TWA'] input[data-k='name']") == "永豐商店蝦皮特選-觀音倉(TWA)"
-              and pg.input_value("#wh-tbl tr[data-code='TWA'] input[data-k='ship_to']") == "17617040")
+              and pg.input_value("#wh-tbl tr[data-code='TWA'] input[data-k='ship_to']") == "17617040"
+              and "寶倉街" in pg.input_value("#wh-tbl tr[data-code='TWA'] textarea[data-k='notes']"), pg.inner_text("#wh-tbl")[:200])
         pg.fill("#wh-tbl tr[data-code='TWG'] input[data-k='ship_to']", "17600001"); pg.click("#wh-tbl tr[data-code='TWG'] button.wh-save"); pg.wait_for_timeout(500)
         check("改高鐵南 ship-to 按儲存 → 提示已更新", "已更新" in pg.inner_text("#toasts"), pg.inner_text("#toasts"))
         pg.click("#set-back"); pg.wait_for_selector("#view-work:not(.hidden)", timeout=5000); pg.wait_for_timeout(800)

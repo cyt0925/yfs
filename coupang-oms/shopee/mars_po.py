@@ -19,7 +19,7 @@ from .common import *  # noqa: F401,F403
 
 MARS_LINE = "瑪氏"
 WH_KEY = "shopee_wh"
-WH_FIELDS = ("name", "address", "phone", "ship_to", "contact")
+WH_FIELDS = ("name", "address", "phone", "ship_to", "contact", "notes")    # notes：直送採購單 C22 的進倉說明（預設在 direct_po.WH_NOTES）
 # 觀音、安南三照需求書的倉別表；其他倉的地址、電話照蝦皮供應商進倉規範 V20260901 第 6 頁，ship-to 不知道先空著
 WH_DEFAULTS = {
     "TWA": {"name": "永豐商店蝦皮特選-觀音倉(TWA)", "address": "桃園市觀音區寶倉街108號 (C棟1樓 3, 4, 5號碼頭)", "phone": "03-2600500#5924",
@@ -32,6 +32,8 @@ WH_DEFAULTS = {
             "ship_to": "", "contact": ""},
     "TWW": {"name": "永豐商店蝦皮特選-威獅倉(TWW)", "address": "桃園市楊梅區梅獅路二段666號", "phone": "0975-213-830", "ship_to": "", "contact": "威獅進貨組"},
     "TWK": {"name": "永豐商店蝦皮特選-威獅倉(TWK)", "address": "桃園市楊梅區梅獅路二段666號 (5F)", "phone": "0975-213-830", "ship_to": "", "contact": "威獅進貨組"},
+    "TWR": {"name": "永豐商店蝦皮特選-仁英倉(TWR)", "address": "桃園市楊梅區梅獅路395巷168號", "phone": "0917-179-560", "ship_to": "", "contact": "張先生"},
+    "TWC": {"name": "永豐商店蝦皮特選-安南二倉(TWC)", "address": "台南市安定區新吉里安新二路568號", "phone": "0983-655-699", "ship_to": "", "contact": "曾小姐"},
 }
 F5_FIXED = "蝦皮特選嘜頭(入庫通知單)+採購單"
 SHELF_REQ = "1/2效期以上"
@@ -49,8 +51,9 @@ def wh_settings(conn):
         except ValueError:
             saved = {}
     out = {}
+    from .direct_po import WH_NOTES
     for code, d in WH_DEFAULTS.items():
-        v = dict(d)
+        v = dict(d, notes=WH_NOTES.get(code, ""))
         v.update({k: str(x) for k, x in (saved.get(code) or {}).items() if k in WH_FIELDS})
         v["edited"] = bool(saved.get(code))
         out[code] = v
@@ -95,7 +98,7 @@ def api_shopee_warehouse_save(code):
             conn.execute("UPDATE mst_meta SET value = ? WHERE key = ?", (value, WH_KEY))
         else:
             conn.execute("INSERT INTO mst_meta (key, value) VALUES (?, ?)", (WH_KEY, value))
-        labels = {"name": "入倉倉別", "address": "地址", "phone": "電話", "ship_to": "Ship-to", "contact": "送貨聯絡人"}
+        labels = {"name": "入倉倉別", "address": "地址", "phone": "電話", "ship_to": "Ship-to", "contact": "送貨聯絡人", "notes": "進倉說明"}
         for k, old, new in changed:
             _log(conn, MARS_LINE, "", "", "", "shopee_wh", f"蝦皮倉資料 {code} {labels[k]}", old, new, operator, "manual", wh_name(code))
         conn.commit()

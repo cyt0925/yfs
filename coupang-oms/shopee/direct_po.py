@@ -17,7 +17,6 @@ import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from .common import *  # noqa: F401,F403
-from .mars_po import WH_KEY, wh_settings
 
 DIRECT = "供應商直送"
 MARS_LINE = "瑪氏"
@@ -40,16 +39,14 @@ HEAD = ["", "採購單ID", "供應商料號", "SKU名稱", "數量", "單位", "
 MIN_ROWS = 15
 
 
+def wh_settings(conn):
+    from .mars_po import wh_settings as _ws      # 放在函式裡，避免跟 mars_po 互相 import
+    return _ws(conn)
+
+
 def wh_notes(conn):
-    """{倉代碼: 進倉說明}：存過的蓋預設（跟蝦皮倉資料存在同一個 mst_meta key）。"""
-    row = conn.execute("SELECT value FROM mst_meta WHERE key = ?", (WH_KEY,)).fetchone()
-    saved = {}
-    if row:
-        try:
-            saved = json.loads(row["value"] or "{}")
-        except ValueError:
-            saved = {}
-    return {code: str((saved.get(code) or {}).get("notes") or text) for code, text in WH_NOTES.items()}
+    """{倉代碼: 進倉說明}：資料與設定「蝦皮倉資料」改過的蓋預設。"""
+    return {code: w.get("notes") or WH_NOTES.get(code, "") for code, w in wh_settings(conn).items()}
 
 
 def direct_rows(conn, e):

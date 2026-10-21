@@ -8,6 +8,7 @@
               除不盡轉換率的人工修改；已產出的 EIP 檔、回填 EIP 單號
 瑪氏直送（2026-10-12）：
   purchase.py 瑪氏的 EIP 採購單（單位數量照蝦皮）；mars_po.py 回填單號後產瑪氏制式採購單、蝦皮倉資料
+  direct_po.py 寶僑、紙潔供應商直送：回填單號後產給採購轉原廠的直送採購單（Alice 2026-10-21 的範本）
 竹運出貨（2026-10-12）：
   ship.py     EC 即時庫存、竹運庫存效期表、竹運商品主檔上傳；照 Alice 的「核對竹運出貨效期及庫存 V5」判斷可出貨量、
               選效期批次、人工改出貨量；產訂單系統拋單檔＋下修刪單清單
@@ -25,6 +26,6 @@ from flask import Blueprint
 
 shopee_bp = Blueprint("shopee", __name__)
 
-from . import admin, drop, mars_po, orders, purchase, ship, short, side, yx  # noqa: E402,F401 — 讓路由生效
+from . import admin, direct_po, drop, mars_po, orders, purchase, ship, short, side, yx  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["shopee_bp"]

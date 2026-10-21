@@ -506,11 +506,12 @@ def _merge_rows(plans):
         r = rows.get(k)
         if r is None:
             r = rows[k] = {"code": p["code"], "name": p["name"], "unit": p["out_unit"], "qty": 0, "in_unit": p["unit"], "in_qty": 0,
-                           "conv": p["conv"], "remark": p["remark"]}
+                           "conv": p["conv"], "remark": p["remark"], "parts": []}       # parts：每張單各下多少（直送採購單一品一列、寫採購單ID）
             if p.get("mars"):                        # 瑪氏採購單要的商品總表欄位一起存，之後照這份產
                 r.update(p["mars"], cases=0)
         r["qty"] += p["out_qty"]
         r["in_qty"] += p["use_qty"]
+        r["parts"].append({"order_id": p["order_id"], "use_qty": p["use_qty"]})
         if "cases" in r:
             r["cases"] += p.get("cases") or 0
     return list(rows.values())
@@ -684,7 +685,7 @@ def api_eips():
         rows = json.loads(e["rows_json"] or "[]")
         out.append({k: e[k] for k in ("id", "line", "fulfil", "warehouse", "expected_date", "unit_group", "filename", "eip_po", "created_by", "created_at", "updated_by", "updated_at")}
                    | {"warehouse_name": "、".join(wh_name(w) for w in (e["warehouse"] or "").split("、") if w), "rows": len(rows), "qty": sum(r["qty"] for r in rows),
-                      "mars": e["line"] == MARS,
+                      "mars": e["line"] == MARS, "direct": e["fulfil"] == "供應商直送" and e["line"] != MARS,
                       "orders": sorted(set(links.get(e["id"], [])))})
     return jsonify({"eips": out})
 

@@ -558,6 +558,52 @@ def stage2(c, preview, orders):
     check("改高鐵南的 ship-to：存好、只記有改的那一欄", r.get_json()["changed"] == 1 and whs["TWG"]["ship_to"] == "17600001" and whs["TWG"]["edited"]
           and len(logs) == 1 and logs[0]["new_value"] == "17600001", str(logs))
     check("沒有的倉 → 404", c.put("/api/shopee/warehouses/XXX", json={"ship_to": "1"}).status_code == 404)
+
+    print("\n【12b】寶僑、紙潔供應商直送：回填 EIP 採購單號後產給採購轉原廠的直送採購單（Alice 2026-10-21 的範本）")
+    unq = __import__("urllib.parse").parse.unquote
+    eips = {e["filename"]: e for e in c.get("/api/shopee/eips").get_json()["eips"]}
+    pg_s = eips.get("產品採購表上傳-寶僑直送_1023到高鐵南-小單位.xls", {}); pg_b = eips.get("產品採購表上傳-寶僑直送_1023到高鐵南-箱單位.xls", {})
+    zj = eips.get("產品採購表上傳-紙潔直送_1022到觀音.xls", {})
+    check("清單標出哪些能產直送採購單：寶僑、紙潔的供應商直送；瑪氏不算", pg_s.get("direct") and pg_b.get("direct") and zj.get("direct") and not box_.get("direct"),
+          str([(k, v.get("direct")) for k, v in eips.items()]))
+    r = c.get(f"/api/shopee/eips/{pg_s['id']}/direct_po")
+    check("還沒回填 EIP 採購單號 → 400；瑪氏那張 → 404；都沒回填 → 打包下載 400", r.status_code == 400 and "回填" in r.get_json()["error"]
+          and c.get(f"/api/shopee/eips/{box_['id']}/direct_po").status_code == 404 and c.get("/api/shopee/direct_po.zip").status_code == 400)
+    c.put(f"/api/shopee/eips/{pg_s['id']}", json={"eip_po": "PO202610201"}); c.put(f"/api/shopee/eips/{zj['id']}", json={"eip_po": "PO202610202"})
+    r = c.get(f"/api/shopee/eips/{pg_s['id']}/direct_po")
+    fn = unq(r.headers.get("Content-Disposition", ""))
+    check("直送採購單檔名：EIP 採購單號＋到貨日＋倉＋單位", r.status_code == 200 and "PO202610201蝦皮特選直送採購單_1023_高鐵南_小單位.xlsx" in fn, fn)
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).active if r.status_code == 200 else None
+    if ws:
+        check("表頭：A1 蝦皮特選、C1 採購單號、D1 EIP 採購單號、G1 下單 H1 今天、G2 到庫 H2 到貨日",
+              ws["A1"].value == "蝦皮特選" and ws["C1"].value == "採購單號" and ws["D1"].value == "PO202610201" and ws["G1"].value == "下單"
+              and ws["H1"].value.date() == _dt.date.today() and ws["G2"].value == "到庫" and ws["H2"].value == _dt.datetime(2026, 10, 23),
+              str([ws[k].value for k in ("A1", "C1", "D1", "G1", "H1", "G2", "H2")]))
+        check("第 3 列表頭；第 4 列一品：採購單ID 沒入庫單號就填 PR 單號、供應商料號、SKU名稱、數量照蝦皮 216（不換箱）、箱入數照價格本 4、轉換箱數是公式",
+              [ws.cell(3, k).value for k in range(2, 9)] == ["採購單ID", "供應商料號", "SKU名稱", "數量", "單位", "箱入數", "轉換箱數"]
+              and [ws.cell(4, k).value for k in (1, 2, 3, 4, 5, 7, 8)] == [1, "PRTWCOTWG202610080002", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 216, 4, "=E4/G4"]
+              and ws["F4"].value, str([ws.cell(4, k).value for k in range(1, 10)]))
+        check("數量黃底、表頭和轉換箱數灰底；留 15 列之後是 Total 列、加總用公式",
+              ws["E4"].fill.fgColor.rgb.endswith("FFFF00") and ws["B3"].fill.fgColor.rgb.endswith("D9D9D9") and ws["H5"].fill.fgColor.rgb.endswith("D9D9D9")
+              and ws["D19"].value == "Total" and ws["E19"].value == "=SUM(E4:E18)" and ws["H19"].value == "=SUM(H4:H18)", str([ws["D19"].value, ws["E19"].value]))
+        check("下面：請安排 10/23 到貨、蝦皮特選店-高鐵南、高鐵南的進倉說明、固定的注意事項",
+              ws["B21"].value == "請安排10/23 到貨" and ws["A22"].value == "蝦皮特選店-高鐵南" and "高鐵南路四段 888 號" in (ws["C22"].value or "")
+              and (ws["C23"].value or "").startswith("●同批進貨商品效期須一致"), str([ws["B21"].value, ws["A22"].value, (ws["C22"].value or "")[:40]]))
+    ws = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/shopee/eips/{zj['id']}/direct_po").data)).active
+    got = sorted((ws.cell(r_, 2).value, ws.cell(r_, 3).value, ws.cell(r_, 5).value, ws.cell(r_, 7).value) for r_ in (4, 5, 6))
+    check("紙潔那份：三品三列、採購單ID 都是 PR、數量照蝦皮 360／1392／42、箱入數 12；第 7 列起空白", got == [("PRTWCOTWA202610080001", "1021315_RNN", 42, 1),
+          ("PRTWCOTWA202610080001", "1022248_CNN", 1392, 12), ("PRTWCOTWA202610080001", "1022257_PNN", 360, 12)] and ws["B7"].value in ("", None) and ws["D19"].value == "Total", str(got))
+    r = c.get("/api/shopee/direct_po.zip")
+    zn = sorted(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) if r.status_code == 200 else []
+    check("打包下載只放已回填的寶僑、紙潔 2 份（瑪氏的不混進來）、zip 名稱帶到貨日區間；到貨日範圍可以篩", zn == ["PO202610201蝦皮特選直送採購單_1023_高鐵南_小單位.xlsx",
+          "PO202610202蝦皮特選直送採購單_1022_觀音.xlsx"] and "1022-1023" in unq(r.headers.get("Content-Disposition", ""))
+          and c.get("/api/shopee/direct_po.zip?from=2026-10-23").headers.get("X-Shopee-Files") == "1", str(zn))
+    r = c.put("/api/shopee/warehouses/TWG", json={"notes": "高鐵南改過的進倉說明"})
+    whs = {w["code"]: w for w in c.get("/api/shopee/warehouses").get_json()["warehouses"]}
+    ws = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/shopee/eips/{pg_s['id']}/direct_po").data)).active
+    check("蝦皮倉資料 9 個倉（加仁英、安南二）、多「進倉說明」：改高鐵南的 → 之後下載的直送採購單就換", len(whs) == 9 and "TWR" in whs and "TWC" in whs
+          and r.get_json()["changed"] == 1 and whs["TWG"]["notes"] == "高鐵南改過的進倉說明" and "寶倉街" in whs["TWA"]["notes"]
+          and ws["C22"].value == "高鐵南改過的進倉說明", str(whs["TWG"]))
     ship_tests(c, preview, orders, up)
     short_tests(c, orders)
     yx_tests(c, orders)

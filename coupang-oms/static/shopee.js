@@ -720,11 +720,14 @@ function renderEips() {
   const list = hfUse(every, cols, renderEips, "個檔");
   $("#e-hf").innerHTML = hfNote(list.length);
   $("#e-mars").classList.toggle("hidden", !EIPS.some(e => e.mars && e.eip_po));
+  $("#e-direct").classList.toggle("hidden", !EIPS.some(e => e.direct && e.eip_po));
   $("#e-tbl").innerHTML = `<thead><tr>${hfTh("date")}${hfTh("wh")}${hfTh("line")}${hfTh("ff")}${hfTh("file")}${hfTh("rows", "num opt")}${hfTh("qty", "num")}${hfTh("orders")}${hfTh("by", "opt")}${hfTh("po")}</tr></thead><tbody>
     ${list.map(e => `<tr class="${e.eip_po ? "lock" : ""}"><td class="nw">${esc(e.expected_date)}</td><td class="nw">${esc(e.warehouse_name)}</td><td class="nw">${esc(e.line)}</td><td class="nw opt">${esc(e.fulfil)}</td>
       <td><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.mars ? `<div class="mt-1">${e.eip_po
         ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</a>`
-        : `<button class="btn btn-o btn-sm" disabled title="請先回填 EIP 採購單號"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</button>`}</div>` : ""}</td><td class="num opt">${e.rows}</td><td class="num">${fmt(e.qty)}</td>
+        : `<button class="btn btn-o btn-sm" disabled title="請先回填 EIP 採購單號"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</button>`}</div>` : ""}${e.direct ? `<div class="mt-1">${e.eip_po
+        ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/direct_po"><i class="bi bi-file-earmark-excel"></i> 直送採購單</a>`
+        : `<button class="btn btn-o btn-sm" disabled title="請先回填 EIP 採購單號"><i class="bi bi-file-earmark-excel"></i> 直送採購單</button>`}</div>` : ""}</td><td class="num opt">${e.rows}</td><td class="num">${fmt(e.qty)}</td>
       <td class="fn" title="${esc(e.orders.join("\n"))}">${esc(e.orders.slice(0, 2).join("、"))}${e.orders.length > 2 ? `…等 ${e.orders.length} 張` : ""}</td>
       <td class="kbd nw opt">${esc(e.created_by)}<div>${esc((e.created_at || "").slice(5, 16).replace("T", " "))}</div></td>
       <td class="nw"><input class="inp fn e-po" data-id="${e.id}" value="${esc(e.eip_po)}" placeholder="例：PO202610001" style="width:140px">
@@ -733,27 +736,29 @@ function renderEips() {
   $$("#e-tbl button.e-save").forEach(b => b.addEventListener("click", () => saveEip(b.dataset.id)));
   $$("#e-tbl input.e-po").forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") saveEip(i.dataset.id); }));
 }
-$("#e-mars").addEventListener("click", async () => {
-  const p = new URLSearchParams({ from: $("#f-from").value, to: $("#f-to").value });
-  const res = await fetch(`/api/shopee/mars_po.zip?${p}`);
+async function dlZip(url, fallback, what) {
+  const res = await fetch(`${url}?${new URLSearchParams(fq())}`);
   if (!res.ok) { let d = {}; try { d = await res.json(); } catch (e) {} return toast(d.error || `伺服器錯誤（${res.status}）`, "err"); }
   const blob = await res.blob(); const m = (res.headers.get("Content-Disposition") || "").match(/filename\*=UTF-8''([^;]+)/);
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : "蝦皮特選瑪氏採購單.zip"; document.body.appendChild(a); a.click(); a.remove();
-  toast(`已下載 ${res.headers.get("X-Shopee-Files")} 份瑪氏採購單`);
-});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : fallback; document.body.appendChild(a); a.click(); a.remove();
+  toast(`已下載 ${res.headers.get("X-Shopee-Files")} 份${what}`);
+}
+$("#e-mars").addEventListener("click", () => dlZip("/api/shopee/mars_po.zip", "蝦皮特選瑪氏採購單.zip", "瑪氏採購單"));
+$("#e-direct").addEventListener("click", () => dlZip("/api/shopee/direct_po.zip", "蝦皮特選直送採購單.zip", "直送採購單"));   // 給採購轉原廠（Alice 2026-10-21）
 
 /* ── 蝦皮倉資料（瑪氏採購單表頭 C6～F8） ─────────────────────── */
-const WH_COLS = [["name", "入倉倉別", 230], ["address", "地址", 360], ["phone", "電話", 165], ["ship_to", "Ship-to", 100], ["contact", "送貨聯絡人", 120]];
+const WH_COLS = [["name", "入倉倉別", 230], ["address", "地址", 360], ["phone", "電話", 165], ["ship_to", "Ship-to", 100], ["contact", "送貨聯絡人", 120], ["notes", "進倉說明（直送採購單用）", 420]];
 async function loadWh() {
   let d; try { d = await api("/api/shopee/warehouses"); } catch (err) { $("#wh-tbl").innerHTML = `<tr><td class="muted">${esc(err.message)}</td></tr>`; return; }
   $("#wh-tbl").innerHTML = `<thead><tr><th>倉別</th>${WH_COLS.map(c => `<th>${c[1]}</th>`).join("")}<th></th></tr></thead><tbody>
     ${d.warehouses.map(w => `<tr data-code="${esc(w.code)}"><td class="nw"><b>${esc(w.short)}</b> <span class="kbd">${esc(w.code)}</span></td>
-      ${WH_COLS.map(c => `<td><input class="inp wh-f" data-k="${c[0]}" value="${esc(w[c[0]])}" style="width:${c[2]}px"></td>`).join("")}
+      ${WH_COLS.map(c => c[0] === "notes" ? `<td><textarea class="inp wh-f" data-k="notes" rows="4" style="width:${c[2]}px;font-size:12px">${esc(w.notes)}</textarea></td>`
+        : `<td><input class="inp wh-f" data-k="${c[0]}" value="${esc(w[c[0]])}" style="width:${c[2]}px"></td>`).join("")}
       <td><button class="btn btn-o btn-sm wh-save">儲存</button></td></tr>`).join("")}</tbody>`;
   $$("#wh-tbl button.wh-save").forEach(b => b.addEventListener("click", () => saveWh(b.closest("tr"))));
 }
 async function saveWh(tr) {
-  const body = {}; tr.querySelectorAll("input.wh-f").forEach(i => { body[i.dataset.k] = i.value.trim(); });
+  const body = {}; tr.querySelectorAll(".wh-f").forEach(i => { body[i.dataset.k] = i.value.trim(); });
   try { const r = await api(`/api/shopee/warehouses/${tr.dataset.code}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     toast(r.changed ? `已更新 ${tr.querySelector("b").textContent} 的倉資料` : "內容沒有變更");
   } catch (err) { toast(err.message, "err"); }
@@ -1158,7 +1163,8 @@ function renderSide() {
     ${d.eips.map(e => `<div class="sd-it"><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>
       <div class="flex items-center gap-2 mt-1 flex-wrap"><input class="inp fn sd-po" data-id="${e.id}" value="${esc(e.eip_po)}" placeholder="EIP 採購單號，例：PO202610001" style="width:220px">
         <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm sd-po-save" data-id="${e.id}">儲存單號</button>
-        ${e.mars ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 下載瑪氏採購單</a>` : `<span class="kbd">回填後可下載瑪氏採購單</span>`) : ""}</div>
+        ${e.mars ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 下載瑪氏採購單</a>` : `<span class="kbd">回填後可下載瑪氏採購單</span>`) : ""}
+        ${e.direct ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/direct_po"><i class="bi bi-file-earmark-excel"></i> 下載直送採購單</a>` : `<span class="kbd">回填後可下載直送採購單（給採購轉原廠）</span>`) : ""}</div>
       ${e.eip_po ? `<div class="kbd">${esc(e.updated_by)} ${esc((e.updated_at || "").slice(5, 16).replace("T", " "))} 回填</div>` : ""}</div>`).join("")
       || `<div class="kbd">尚未產出。</div>`}
     ${g.todo.includes("buy") ? (d.buy.blocking ? `<div class="kbd neg mt-1">先修正上面標紅的品項，才能產出 EIP 採購單。</div>`
