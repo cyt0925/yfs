@@ -247,9 +247,9 @@ def main():
     g2 = next(r for r in client.get(f"/api/master/pos/{cross_po}").get_json()["rows"] if r["sku_id"] == gone)
     check("重新出現：標記解除", g2["missing_in_file"] == 0)
 
-    print("\n【7b】④ 改單統計：幾張 PO、幾張被改過、改幾次、為什麼")
+    print("\n【7b】④ 改單統計：幾張 PO、幾張被改過、修改次數（OK，2026-10-21 起以修改紀錄為準）、系統抓到的變動（灰字）")
     st = client.get("/api/master/stats?month=2026-09").get_json()
-    # 改單統計兩個系統合起來算（2026-10-19）：PO 照兩邊最早的到貨日歸月份。CI 的 PostgreSQL 會先跑 test_flow，酷澎訂單管理那邊也會有 9 月的單
+    # PO 照兩邊最早的到貨日歸月份。CI 的 PostgreSQL 會先跑 test_flow，酷澎訂單管理那邊也會有 9 月的單、也可能記過 OK，所以期望值直接從表算
     conn_ = db.get_conn()
     first, every = {}, set()
     for tb in ("mst_orders", "orders"):
@@ -257,37 +257,41 @@ def main():
             every.add(r["po_number"])
             if r["delivery_date"]:
                 first[r["po_number"]] = min(first.get(r["po_number"], "9999"), r["delivery_date"])
-    conn_.close()
     all_pos = {po for po, d in first.items() if d.startswith("2026-09")} | (every - set(first))   # 完全沒到貨日的列在「未排日期」，每個期間都會列
-    check("9 月 PO 張數 = 兩個系統裡最早到貨日在 9 月的不同 PO 數（加上沒排日期的）", st["total"]["pos"] == len(all_pos), f"{st['total']['pos']} vs {len(all_pos)}")
-    check("有品項數與 SKU 數，SKU 數 ≤ 品項數", st["total"]["items"] >= st["total"]["skus"] > 0)
-    check("被改過的 PO ≥ 1、佔比是整數百分比", st["total"]["changed_pos"] >= 1 and 0 < st["total"]["changed_pct"] <= 100)
-    check("改單次數 ≥ 被改過的 PO 數", st["total"]["events"] >= st["total"]["changed_pos"])
-    check("分得出酷澎改的（再匯入少一筆）與我們改的", st["total"]["coupang"] >= 1 and st["total"]["manual"] >= 1, str({k: st["total"][k] for k in ("coupang", "manual")}))
-    rs = st["total"]["reasons"]
-    check("原因分佈：改的時候選的四個照舊對應到新大項（缺貨→原廠／產銷缺貨、沒車→運能（沒車））、清單最後是「待補」",
-          all(rs.get(k, 0) >= 1 for k in ("原廠／產銷缺貨", "運能（沒車）", "酷澎要求", "其他")) and st["reasons"][-1] == "待補", str(rs))
-    check("每一次改單都有原因（酷澎修改也算，沒選的列待補）：原因加總 = 改單次數", sum(rs.values()) == st["total"]["events"], f"{sum(rs.values())} vs {st['total']['events']}")
-    check("整張 PO 改期（很多品項）只算一次改單", st["total"]["events"] < len(orders(client, month="2026-09")["rows"]))
-    check("改最多次的 PO 排在前面、有原因字串", st["top_pos"] and st["top_pos"][0]["events"] >= st["top_pos"][-1]["events"] and any(t["reasons"] for t in st["top_pos"]), str(st["top_pos"][:1]))
+    rd_by_po = {r["po_number"]: r["n"] for r in conn_.execute("SELECT po_number, COUNT(*) AS n FROM po_rounds WHERE deleted_at = '' GROUP BY po_number").fetchall()
+                if r["po_number"] in all_pos}
+    conn_.close()
+    t = st["total"]
+    check("9 月 PO 張數 = 兩個系統裡最早到貨日在 9 月的不同 PO 數（加上沒排日期的）", t["pos"] == len(all_pos), f"{t['pos']} vs {len(all_pos)}")
+    check("有品項數與 SKU 數，SKU 數 ≤ 品項數", t["items"] >= t["skus"] > 0)
+    check("修改次數（OK）= 這些 PO 的修改紀錄筆數、曾改單的 PO = 有紀錄的 PO 數（本機從頭跑都是 0）",
+          t["rounds"] == sum(rd_by_po.values()) and t["changed_pos"] == len(rd_by_po) and sum(t["stages"].values()) == t["rounds"]
+          and len(st["top_pos"]) == min(15, len(rd_by_po)), str({k: t[k] for k in ("rounds", "changed_pos", "stages")}))
+    check("主因表只列用到的：筆數 ≤ 修改紀錄裡勾的主因數；每列有類別", all(r["cat"] and r["cat_label"] and r["reason"] and r["n"] for r in st["reasons"]) and (st["reasons"] == [] or t["rounds"]), str(st["reasons"][:2]))
+    check("系統抓到的變動次數（灰字那欄）每個月都有：9 月 ≥ 1、而且 < 品項數（整張 PO 改期只算一次）", t["events"] >= 1 and t["events"] < len(orders(client, month="2026-09")["rows"]), str(t["events"]))
+    check("回傳修改紀錄起算日、階段／類別名稱、還沒記 OK 的清單", st["since"] == "2026-10-20" and st["stage_labels"]["1"].startswith("第一階段") and st["kind_labels"]["qty"] == "數量下修" and isinstance(st["pending"], list))
+    check("各階段做了什麼：三列、每列有修改次數和三個類別、合計對得上", [x["key"] for x in st["stages"]] == ["1", "2", "3"] and all(set(x["kinds"]) == {"qty", "date", "split"} for x in st["stages"])
+          and sum(x["rounds"] for x in st["stages"]) == t["rounds"], str(st["stages"]))
     st_pg = client.get("/api/master/stats?month=2026-09&line=寶僑").get_json()
-    check("線別篩選：寶僑的 PO 數 < 全部", 0 < st_pg["total"]["pos"] < st["total"]["pos"])
+    check("線別篩選：寶僑的 PO 數 < 全部", 0 < st_pg["total"]["pos"] < t["pos"])
     st_span = client.get("/api/master/stats?month=2026-07&month_to=2026-09").get_json()
-    check("跨月：每個月一列、合計另算（未排日期另列）", len(st_span["months"]) >= 1 and st_span["total"]["pos"] >= st["total"]["pos"]
+    check("跨月：每個月一列、合計另算（未排日期另列）", len(st_span["months"]) >= 1 and st_span["total"]["pos"] >= t["pos"]
           and all(m["month"] <= "2026-09" for m in st_span["months"] if m["month"] != "未排日期"), str([m["month"] for m in st_span["months"]]))
-    check("月份格式不對回 400", client.get("/api/master/stats?month=2026/09").status_code == 400)
+    check("月份格式不對回 400（統計、修改紀錄明細、變動明細都是）", all(client.get(f"/api/master/stats{x}?month=2026/09").status_code == 400 for x in ("", "/rounds", "/events")))
+    rd = client.get("/api/master/stats/rounds?month=2026-09").get_json()["rounds"]
+    check("修改紀錄明細：一輪一列、筆數 = 修改次數、最新的在上面", len(rd) == t["rounds"] and rd == sorted(rd, key=lambda r: (r["ok_at"], r["id"]), reverse=True))
     ev = client.get("/api/master/stats/events?month=2026-09").get_json()["events"]
-    check("明細：一次改單一列，筆數 = 改單次數", len(ev) == st["total"]["events"], f"{len(ev)} vs {st['total']['events']}")
+    check("系統抓到的變動明細：一次一列，筆數 = 那欄的數字", len(ev) == t["events"], f"{len(ev)} vs {t['events']}")
     check("明細最新的在最上面", ev == sorted(ev, key=lambda e: (e["when"], e["po_number"]), reverse=True))
     man = [e for e in ev if e["source"] == "manual"]
-    check("我們改的每一筆都有原因、有誰改、有改了什麼", man and all(e["reason"] and e["operator"] and e["summary"] and e["kind_labels"] for e in man), str(man[:1]))
+    check("我們改的每一筆都有誰改、有改了什麼", man and all(e["operator"] and e["summary"] and e["kind_labels"] for e in man), str(man[:1]))
     q0 = [e for e in man if "qty" in e["kinds"] and "→0" in e["summary"]]
     check("出貨改成 0 算下修", q0 and all(e["qty_dir"] == "down" for e in q0), str(q0[:1]))
     other = [e for e in man if e["reason"] == "其他"]
     check("「其他」的說明帶在明細裡", other and any("倉庫說要併車" in e["note"] for e in other), str(other[:1]))
     cp = [e for e in ev if e["source"] == "import"]
-    check("酷澎改的是「品項被拿掉」和它重新出現（同一分鐘匯的併成一次；跨分鐘分兩次，重新出現那次算改數量上修）、原因都待補",
-          any("gone" in e["kinds"] for e in cp) and all(e["reason"] == "待補" and e["pending"] for e in cp)
+    check("酷澎改的是「品項被拿掉」和它重新出現（同一分鐘匯的併成一次；跨分鐘分兩次，重新出現那次算改數量上修）",
+          any("gone" in e["kinds"] for e in cp)
           and all("品項重新出現" in e["summary"] and e["kinds"] == ["qty"] and e["qty_dir"] == "up" for e in cp if "gone" not in e["kinds"]), str(cp[:2]))
     # 跨分鐘那種 CI 碰過一次（2026-10-19，11:57 拿掉、11:58 重新出現），直接餵紀錄測，不靠時鐘運氣
     from master import stats as st_mod
@@ -299,19 +303,11 @@ def main():
         ev_, _ = st_mod._import_events(([] if back_only else [("m", gone_l)]) + [("m", back_l)], {("P1", "S1"): 100})
         return sorted(st_mod._finish_events(ev_).values(), key=lambda e: e["when"])
     gb_split, gb_same, gb_alone = _gb("2030-03-01 10:00:59", "2030-03-01 10:01:00"), _gb("2030-03-01 10:00:10", "2030-03-01 10:00:50"), _gb("", "2030-03-01 10:01:00", True)
-    check("品項拿掉、重新出現跨分鐘：兩次改單，拿掉 −1,000、重新出現算改數量上修 +1,000",
+    check("品項拿掉、重新出現跨分鐘：兩次變動，拿掉 −1,000、重新出現算改數量上修 +1,000",
           [(sorted(e["kinds"]), e["qty_dir"], e["delta"]) for e in gb_split] == [(["gone"], "", -1000.0), (["qty"], "up", 1000.0)], str(gb_split))
     check("同一分鐘：併成一次，金額差抵掉", [(sorted(e["kinds"]), e["delta"]) for e in gb_same] == [(["gone", "qty"], 0.0)], str(gb_same))
-    check("沒看到拿掉就說重新出現：不算改單", gb_alone == [], str(gb_alone))
-    k = st["total"]["kinds"]
-    check("改了什麼：改數量（我們）= 明細裡我們改數量的筆數", k["qty_m"] == sum(1 for e in man if "qty" in e["kinds"]), str(k))
-    check("改了什麼：改交期（我們）= 明細裡我們改交期的筆數", k["date_m"] == sum(1 for e in man if "date" in e["kinds"]), str(k))
-    check("改了什麼：品項被拿掉（酷澎）≥ 1、下修 ≥ 1", k["gone_c"] >= 1 and k["qty_down"] >= 1, str(k))
-    check("下修＋上修＋有上有下 = 改數量總次數", k["qty_down"] + k["qty_up"] + k["qty_mixed"] == k["qty_c"] + k["qty_m"], str(k))
-    check("下修、上修、有上有下也分酷澎修改／我方修改（Jerry 2026-10-19 選左右對照）：兩邊各自加起來等於各自的改數量、兩邊相加等於合併的",
-          all(k[f"qty_{d}_c"] + k[f"qty_{d}_m"] == k[f"qty_{d}"] for d in ("down", "up", "mixed"))
-          and k["qty_down_c"] + k["qty_up_c"] + k["qty_mixed_c"] == k["qty_c"] and k["qty_down_m"] + k["qty_up_m"] + k["qty_mixed_m"] == k["qty_m"], str(k))
-    # 「這是測試」：不用選原因、記成「測試」、統計預設不算
+    check("沒看到拿掉就說重新出現：不算變動", gb_alone == [], str(gb_alone))
+    # 「這是測試」：不用選原因、記成「測試」、系統抓到的變動預設不算
     tpo = [x for x in od_pg["facets"]["pos"] if x["po_number"] not in (cross_po,) + tuple(two)][0]["po_number"]
     tdet = client.get(f"/api/master/pos/{tpo}").get_json(); tr0 = tdet["rows"][0]
     import time as _t; _t.sleep(1.05)
@@ -320,31 +316,33 @@ def main():
     tl = [l for l in client.get(f"/api/master/pos/{tpo}").get_json()["logs"] if l["field"] == "qty_ship"]
     check("歷程原因記成「測試」", tl and tl[0]["reason"] == "測試", str(tl[:1]))
     st2 = client.get("/api/master/stats?month=2026-09").get_json()
-    check("統計預設不算測試：改單次數沒變、另外回報 1 次測試", st2["total"]["events"] == st["total"]["events"] and st2["test_events"] == 1, f"{st2['total']['events']} vs {st['total']['events']}, test={st2['test_events']}")
-    check("原因清單裡預設沒有「測試」", "測試" not in st2["reasons"])
+    check("系統抓到的變動預設不算測試：次數沒變、另外回報 1 次測試", st2["total"]["events"] == t["events"] and st2["test_events"] == 1, f"{st2['total']['events']} vs {t['events']}, test={st2['test_events']}")
     st3 = client.get("/api/master/stats?month=2026-09&include_test=1").get_json()
-    check("勾含測試：多 1 次、原因表多「測試」一列", st3["total"]["events"] == st["total"]["events"] + 1 and st3["total"]["reasons"].get("測試") == 1 and st3["test_events"] == 0, str(st3["total"]["reasons"]))
+    check("帶 include_test=1 才算：多 1 次", st3["total"]["events"] == t["events"] + 1 and st3["test_events"] == 0, str(st3["total"]["events"]))
     ev2 = client.get("/api/master/stats/events?month=2026-09").get_json()["events"]
-    check("明細預設也不含測試", len(ev2) == len(ev) and not any(e["reason"] == "測試" for e in ev2))
+    check("變動明細預設也不含測試", len(ev2) == len(ev) and not any(e["reason"] == "測試" for e in ev2))
     wbt = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2026-09").data))
-    check("Excel 說明頁寫了不含測試、有幾次", any("不含" in str(c.value) and "1 次" in str(c.value) for row in wbt["怎麼算的"].iter_rows() for c in row))
+    check("Excel 說明頁寫了測試的不算、有幾次", any("這是測試" in str(c.value) and "1 次" in str(c.value) for row in wbt["怎麼算的"].iter_rows() for c in row))
     res = client.get("/api/master/stats/export?month=2026-09&minutes=15")
     from urllib.parse import unquote
     check("匯出統計 Excel：200、是 xlsx、檔名帶月份", res.status_code == 200 and "spreadsheetml" in res.mimetype and "改單統計_2026-09" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition", ""))
     wbs = openpyxl.load_workbook(io.BytesIO(res.data))
-    check("六個分頁：每月統計／改單原因／改了什麼／改最多次的 PO／明細／怎麼算的", wbs.sheetnames == ["每月統計", "改單原因", "改了什麼", "改最多次的 PO", "明細", "怎麼算的"], str(wbs.sheetnames))
-    wsd = wbs["明細"]
-    check("明細分頁一次改單一列（含表頭）", wsd.max_row == len(ev) + 1 and [c.value for c in wsd[1]][:3] == ["時間", "月份", "PO 單號"], f"{wsd.max_row} vs {len(ev) + 1}")
-    wsk = wbs["改了什麼"]
-    krows = {(r[0], r[1].strip()): r[2:] for r in wsk.iter_rows(min_row=2, values_only=True)}
-    check("改了什麼分頁跟畫面一樣：類型一列、欄是酷澎修改／我方修改／合計；最後一段是合計、下修對得上、我方沒有品項遭移除",
-          [c.value for c in wsk[1]] == ["月份", "類型", "酷澎修改", "我方修改", "合計"] and wsk.cell(row=wsk.max_row, column=1).value == "合計"
-          and krows[("合計", "下修")] == (k["qty_down_c"], k["qty_down_m"], k["qty_down"]) and krows[("合計", "品項遭移除")] == (k["gone_c"], None, k["gone_c"]), str(list(krows.items())[-7:]))
+    check("八個分頁：每月統計／主因／各階段做了什麼／修改次數最多的 PO／修改紀錄明細／還沒記 OK 的 PO／系統抓到的變動／怎麼算的",
+          wbs.sheetnames == ["每月統計", "主因", "各階段做了什麼", "修改次數最多的 PO", "修改紀錄明細", "還沒記 OK 的 PO", "系統抓到的變動", "怎麼算的"], str(wbs.sheetnames))
+    wsd = wbs["系統抓到的變動"]
+    check("系統抓到的變動分頁一次一列（含表頭）、沒有原因欄", wsd.max_row == len(ev) + 1 and [c.value for c in wsd[1]][:3] == ["時間", "月份", "PO 單號"] and "原因" not in [c.value for c in wsd[1]], f"{wsd.max_row} vs {len(ev) + 1}")
+    wsr = wbs["修改紀錄明細"]
+    check("修改紀錄明細分頁一輪一列（含表頭）", wsr.max_row == len(rd) + 1 and [c.value for c in wsr[1]][:5] == ["OK 時間", "月份", "PO 單號", "線別", "階段"], f"{wsr.max_row} vs {len(rd) + 1}")
+    wsk = wbs["各階段做了什麼"]
+    check("各階段分頁：三個階段加合計、欄是修改次數／有下修／有改交期倉別／有拆單", [c.value for c in wsk[1]] == ["階段", "修改次數（OK）", "有下修", "有改交期／倉別", "有拆單"] and wsk.max_row == 5 and wsk.cell(row=5, column=1).value == "合計")
     ws1 = wbs["每月統計"]; hdr1 = [c.value for c in ws1[1]]
+    check("每月統計有修改次數（OK）、三個階段、三個類別、系統抓到的變動次數、還沒記 OK 的 PO",
+          {"修改次數（OK）", "第一階段", "第二階段", "第三階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數", "還沒記 OK 的 PO"} <= set(hdr1), str(hdr1))
     check("填了分鐘數就多一欄估計工時，最後一列是合計", "估計工時（每次 15 分鐘）" in hdr1 and ws1.cell(row=ws1.max_row, column=1).value == "合計")
-    check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == st["total"]["pos"])
+    check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == t["pos"])
     res0 = client.get("/api/master/stats/export?month=2026-09")
     check("沒填分鐘數就沒有估計工時欄", "估計工時" not in "".join(str(c.value) for c in openpyxl.load_workbook(io.BytesIO(res0.data))["每月統計"][1]))
+    check("舊的補原因 API 拿掉了", client.post("/api/master/stats/reasons", json={"keys": [], "reason": "其他"}).status_code in (404, 405))
 
     print("\n【8】7 月單線別檔也能一起進（資料照月份分）")
     res = upload(client, "/api/master/import/preview", JUL_XLSX); pvj = res.get_json()
@@ -846,7 +844,7 @@ def main():
     res = upload(client, "/api/master/products/import", os.path.join(FAKE, "假_CoupangMaster.xlsx"))
     check("Coupang Master 再傳一次：GIV 更新成 Master 的，不用問（來源檔本來就比總表新）", res.status_code == 200 and res.get_json()["kind"] == "master_price")
 
-    print("\n【7c】改單統計兩個系統合起來算（Jerry 2026-10-19）：同一個改動只算一次、原始下單→目前出貨（金額）、補原因")
+    print("\n【7c】改單統計兩個系統合起來算（Jerry 2026-10-19）：同一個改動只算一次、原始下單→目前出貨（金額）；修改紀錄的 OK 進統計（2026-10-21）")
     import datetime as _dt
     hdr = [c.value for c in next(openpyxl.load_workbook(os.path.join(SAMPLES, "fake", "假_訂單彙總表_9月_第一次.xlsx")).worksheets[0].iter_rows(max_row=1))]
 
@@ -877,16 +875,16 @@ def main():
     st12 = client.get("/api/master/stats?month=2030-01").get_json()
     ev12 = [e for e in client.get("/api/master/stats/events?month=2030-01").get_json()["events"] if e["po_number"] == XPO]
     cp12 = [e for e in ev12 if e["source"] == "import"]
-    check("同一個改動只算一次：v2 兩邊都匯過只算 1 次（記在先匯的酷澎訂單管理）、只匯進商品主檔的 v3 也算到 → 酷澎修改共 2 次",
+    check("同一個改動只算一次：v2 兩邊都匯過只算 1 次（記在先匯的酷澎訂單管理）、只匯進商品主檔的 v3 也算到 → 系統抓到酷澎修改共 2 次",
           len(cp12) == 2 and sorted(e["system"] for e in cp12) == ["商品主檔", "酷澎訂單管理"], str([(e["system"], e["summary"]) for e in cp12]))
     e2 = next((e for e in cp12 if e["system"] == "酷澎訂單管理"), {})
-    check("v2 那次：下單數量 100→80、倉別 TAO1→TAO3 合成一次改單、下修、金額差 −10,000（只算下單數量，不跟出貨數量重複算）",
+    check("v2 那次：下單數量 100→80、倉別 TAO1→TAO3 合成一次變動、下修、金額差 −10,000（只算下單數量，不跟出貨數量重複算）",
           set(e2.get("kinds", [])) == {"qty", "wh"} and e2.get("qty_dir") == "down" and e2.get("delta") == -10000 and "TAO1→TAO3" in e2.get("summary", "")
           and "下單數量" in e2.get("summary", ""), str(e2))
     t12 = st12["total"]
     check("原始下單→目前出貨（金額）：原始 100×500＋50×300＝65,000；目前看最近更新的商品主檔 60×500＋50×300＝45,000；少出 30.8%",
           t12["orig_amount"] == 65000 and t12["cur_amount"] == 45000 and t12["short_amount"] == -20000 and t12["short_pct"] == 30.8, str({k: t12[k] for k in ("orig_amount", "cur_amount", "short_pct")}))
-    check("兩次酷澎修改都待補原因；改了什麼：改數量、改倉別各算", t12["pending"] == 2 and t12["kinds"]["qty_c"] == 2 and t12["kinds"]["wh_c"] == 1, str(t12["kinds"]))
+    check("系統抓到的變動 2 次（灰字）；修改次數（OK）還是 0、曾改單 0 張", t12["events"] == 2 and t12["rounds"] == 0 and t12["changed_pos"] == 0, str({k: t12[k] for k in ("events", "rounds", "changed_pos")}))
     import time as _t2; _t2.sleep(1.05)
     conn_ = db.get_conn()
     cb = dict(conn_.execute("SELECT id, version FROM orders WHERE po_number = ? AND sku_id = ?", (XPO, XB)).fetchone()); conn_.close()
@@ -900,33 +898,60 @@ def main():
     ev12 = [e for e in client.get("/api/master/stats/events?month=2030-01").get_json()["events"] if e["po_number"] == XPO]
     mc = [e for e in ev12 if e["source"] == "manual" and e["system"] == "酷澎訂單管理"]
     mm = [e for e in ev12 if e["source"] == "manual" and e["system"] == "商品主檔"]
-    check("我方修改兩邊都算：酷澎訂單管理那次待補、商品主檔那次照原本選的缺貨→原廠／產銷缺貨（改的時候已選）",
-          len(mc) == 1 and mc[0]["pending"] and len(mm) == 1 and mm[0]["reason"] == "原廠／產銷缺貨" and mm[0]["reason_from"] == "改的時候已選"
-          and t12["pending"] == 3 and t12["manual"] == 2, str([(e["system"], e["reason"]) for e in mc + mm]) + f" pending={t12['pending']}")
+    check("我方修改兩邊都算進系統抓到的變動：酷澎訂單管理、商品主檔各 1 次（共 4 次）；商品主檔那次帶著當時選的原因（缺貨→原廠／產銷缺貨），只在明細裡",
+          len(mc) == 1 and len(mm) == 1 and mm[0]["reason"] == "原廠／產銷缺貨" and t12["events"] == 4, str([(e["system"], e["reason"]) for e in mc + mm]) + f" events={t12['events']}")
     check("目前出貨跟著最近改的那邊：A 商品主檔 55、B 酷澎訂單管理 40 → 55×500＋40×300＝39,500", t12["cur_amount"] == 39500, str(t12["cur_amount"]))
-    keys = [e["key"] for e in ev12 if e["pending"]]
-    check("補原因：不在清單裡的原因 → 400；沒勾 → 400", client.post("/api/master/stats/reasons", json={"keys": keys, "reason": "亂寫"}).status_code == 400
-          and client.post("/api/master/stats/reasons", json={"keys": [], "reason": "酷澎倉限制"}).status_code == 400)
-    r_ = client.post("/api/master/stats/reasons", json={"keys": keys, "reason": "酷澎倉限制"})
+    # 修改紀錄（一輪一個 OK）→ 改單統計（Jerry 2026-10-21「OK 照這樣做」）
+    pend = [p for p in st12["pending"] if p["po_number"] == XPO]
+    check("改過但還沒記 OK：這張在清單裡（上一個 OK 空白、寫出改了什麼、到貨日、線別）、每月統計那欄 ≥ 1",
+          pend and pend[0]["last_ok"] == "" and pend[0]["changes"] and pend[0]["delivery_date"] == "2030-01-15" and pend[0]["lines"] == "寶僑" and t12["pending"] >= 1, str(pend[:1]))
+    r1 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "1", "kinds": ["qty", "date"], "reasons": ["庫存不足", "約倉問題"], "note": "整張不出"})
+    r2 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "2", "kinds": ["split"], "reasons": ["產能不及"]})
+    check("記兩輪 OK（第一階段下修＋改交期倉別、第二階段拆單）", r1.status_code == 200 and r2.status_code == 200, str(r1.get_json()) + str(r2.get_json()))
     st12 = client.get("/api/master/stats?month=2030-01").get_json(); t12 = st12["total"]
-    ev12 = [e for e in client.get("/api/master/stats/events?month=2030-01").get_json()["events"] if e["po_number"] == XPO]
-    check("勾 3 次一起補「酷澎倉限制」→ 待補 0、原因表酷澎倉限制 3、明細寫誰補的", r_.status_code == 200 and r_.get_json()["count"] == 3 and t12["pending"] == 0
-          and t12["reasons"]["酷澎倉限制"] == 3 and all("補" in e["reason_from"] for e in ev12 if e["reason"] == "酷澎倉限制"), str(t12["reasons"]))
-    check("原因的金額差：酷澎倉限制 = 三次改單的金額差加總", t12["reason_amount"]["酷澎倉限制"] == round(sum(e["delta"] for e in ev12 if e["reason"] == "酷澎倉限制"), 2), str(t12["reason_amount"]))
-    r_ = client.post("/api/master/stats/reasons", json={"keys": keys[:1], "reason": "我方作業"})
-    check("補過的可以改", client.get("/api/master/stats?month=2030-01").get_json()["total"]["reasons"]["我方作業"] == 1)
+    check("修改次數（OK）= 2、曾改單 1 張（佔 100%）、平均每張 2 次；階段 1:1、2:1、3:0；有下修 1、有改交期倉別 1、有拆單 1",
+          t12["rounds"] == 2 and t12["changed_pos"] == 1 and t12["changed_pct"] == 100 and t12["per_changed_po"] == 2
+          and t12["stages"] == {"1": 1, "2": 1, "3": 0} and t12["kinds"] == {"qty": 1, "date": 1, "split": 1}, str({k: t12[k] for k in ("rounds", "changed_pos", "changed_pct", "per_changed_po", "stages", "kinds")}))
+    check("系統抓到的變動次數照舊是 4（灰字那欄，不算修改次數）", t12["events"] == 4, str(t12["events"]))
+    rs = {(r["cat"], r["reason"]): r["n"] for r in st12["reasons"]}
+    check("主因照類別列、只列用到的：數量下修／庫存不足 1、改交期／倉別／約倉問題 1、拆單／產能不及 1，順序先數量下修再改交期再拆單",
+          rs == {("qty", "庫存不足"): 1, ("date", "約倉問題"): 1, ("split", "產能不及"): 1} and [r["cat"] for r in st12["reasons"]] == ["qty", "date", "split"]
+          and [r["cat_label"] for r in st12["reasons"]] == ["數量下修", "改交期／倉別", "拆單"], str(st12["reasons"]))
+    sg = {x["key"]: x for x in st12["stages"]}
+    check("各階段做了什麼：第一階段 1 次（下修 1、改交期 1）、第二階段 1 次（拆單 1）、第三階段 0",
+          sg["1"]["rounds"] == 1 and sg["1"]["kinds"] == {"qty": 1, "date": 1, "split": 0} and sg["2"]["rounds"] == 1 and sg["2"]["kinds"]["split"] == 1 and sg["3"]["rounds"] == 0, str(st12["stages"]))
+    tp = st12["top_pos"]
+    check("修改次數最多的 PO：這張 2 次、各輪照時間列（第一階段 下修＋改交期倉別、第二階段 拆單）、主因合起來寫",
+          tp and tp[0]["po_number"] == XPO and tp[0]["rounds"] == 2 and [(x["stage"], x["kinds"]) for x in tp[0]["list"]] == [("1", ["qty", "date"]), ("2", ["split"])]
+          and tp[0]["reasons"] == "庫存不足、約倉問題、產能不及" and tp[0]["month"] == "2030-01", str(tp[:1]))
+    check("記了 OK 之後不在「還沒記 OK」清單裡", not any(p["po_number"] == XPO for p in st12["pending"]), str(st12["pending"]))
+    rd = client.get("/api/master/stats/rounds?month=2030-01").get_json()["rounds"]
+    rdx = [r for r in rd if r["po_number"] == XPO]
+    check("修改紀錄明細：一輪一列、最新的在上面、有月份／線別／階段／做了什麼／主因／說明／記的人",
+          [r["stage"] for r in rdx] == ["2", "1"] and all(r["month"] == "2030-01" and r["lines"] == "寶僑" and r["stage_label"] and r["kind_labels"] and r["reasons"] and r["operator"] for r in rdx)
+          and rdx[1]["note"] == "整張不出" and rdx[1]["reason"] == "庫存不足、約倉問題", str(rdx[:1]))
     wb12 = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))
-    h12 = [c.value for c in wb12["明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
-    check("Excel：明細多「記在哪個系統」「金額差」「原因怎麼來的」；改單原因有各原因金額差；每月統計多待補原因、原始下單金額、目前出貨金額、少出",
-          {"記在哪個系統", "金額差", "原因怎麼來的"} <= set(h12) and any("金額差" in str(c.value) for c in wb12["改單原因"][1]) and {"待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
+    h12 = [c.value for c in wb12["修改紀錄明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
+    check("Excel：修改紀錄明細有 OK 時間／階段／做了什麼／主因／說明；每月統計有修改次數（OK）、系統抓到的變動次數、還沒記 OK 的 PO、原始下單金額、目前出貨金額、少出",
+          {"OK 時間", "階段", "做了什麼", "主因", "說明"} <= set(h12) and {"修改次數（OK）", "系統抓到的變動次數", "還沒記 OK 的 PO", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
+    rows_r = list(wb12["主因"].iter_rows(min_row=2, values_only=True))
+    check("Excel 主因分頁：類別／主因／次數，有「數量下修／庫存不足 1」、最後一列合計 3",
+          [c.value for c in wb12["主因"][1]] == ["類別", "主因", "次數"] and ("數量下修", "庫存不足", 1) in rows_r and rows_r[-1] == ("合計", None, 3), str(rows_r))
+    rows_t = list(wb12["修改次數最多的 PO"].iter_rows(min_row=2, values_only=True))
+    check("Excel 修改次數最多的 PO：各輪寫成「日期 階段 做了什麼」", rows_t and rows_t[0][0] == XPO and rows_t[0][4] == 2 and "第一階段 數量下修、改交期／倉別" in rows_t[0][5], str(rows_t[:1]))
+    rid2 = rdx[0]["id"]
+    r_ = client.delete(f"/api/pos/{XPO}/rounds/{rid2}")
+    t12b = client.get("/api/master/stats?month=2030-01").get_json()["total"]
+    check("刪掉第二輪（軟刪）→ 修改次數剩 1、拆單 0、第二階段 0", r_.status_code == 200 and t12b["rounds"] == 1 and t12b["kinds"]["split"] == 0 and t12b["stages"]["2"] == 0, str({k: t12b[k] for k in ("rounds", "kinds", "stages")}))
     sa = client.get("/api/master/stats?all=1").get_json()
     conn_ = db.get_conn()
     every_ = {r["po_number"] for tb in ("mst_orders", "orders") for r in conn_.execute(f"SELECT DISTINCT po_number FROM {tb}").fetchall()}
     conn_.close()
-    check("全部期間（Jerry 2026-10-19）：PO 張數＝兩個系統所有 PO、每個月一列照順序、合計＝各月加總、明細和 Excel 也吃 all=1",
+    check("全部期間（Jerry 2026-10-19）：PO 張數＝兩個系統所有 PO、每個月一列照順序、合計＝各月加總（修改次數、變動次數都是）、明細和 Excel 也吃 all=1",
           sa["total"]["pos"] == len(every_) and [m["month"] for m in sa["months"] if m["month"] != "未排日期"] == sorted(m["month"] for m in sa["months"] if m["month"] != "未排日期")
-          and sum(m["events"] for m in sa["months"]) == sa["total"]["events"] and len(sa["months"]) >= 3
+          and sum(m["events"] for m in sa["months"]) == sa["total"]["events"] and sum(m["rounds"] for m in sa["months"]) == sa["total"]["rounds"] and len(sa["months"]) >= 3
           and len(client.get("/api/master/stats/events?all=1").get_json()["events"]) == sa["total"]["events"]
+          and len(client.get("/api/master/stats/rounds?all=1").get_json()["rounds"]) == sa["total"]["rounds"]
           and "改單統計_全部期間" in unquote(client.get("/api/master/stats/export?all=1").headers.get("Content-Disposition", "")),
           f"{sa['total']['pos']} vs {len(every_)}；{[m['month'] for m in sa['months']]}")
     check("每月統計多「其中進系統前就少了」「其中進系統後才改」「拆單接回原單的金額」", {"其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"} <= set(m12), str(m12))
@@ -945,16 +970,18 @@ def main():
     w1 = ofile2([(YPO, YC, 40, 30, "2030-02-10", "TAO1", 100, ""), (YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, "")], "拆單_w1.xlsx")
     codes = [imp_c(w1), imp_m(w1)]
     t2 = client.get("/api/master/stats?month=2030-02").get_json()["total"]
-    check("進系統前就少了：第一次匯入出貨就比下單少（YC 下單 40、出貨 30）→ 原始 8,000、目前 7,000，全部算進系統前 −1,000、進系統後 0",
-          codes == [200, 200] and t2["orig_amount"] == 8000 and t2["cur_amount"] == 7000 and t2["pre_amount"] == -1000 and t2["post_amount"] == 0 and t2["pending"] == 0,
-          str({k: t2[k] for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "pending")}))
+    check("進系統前就少了：第一次匯入出貨就比下單少（YC 下單 40、出貨 30）→ 原始 8,000、目前 7,000，全部算進系統前 −1,000、進系統後 0、系統沒抓到變動",
+          codes == [200, 200] and t2["orig_amount"] == 8000 and t2["cur_amount"] == 7000 and t2["pre_amount"] == -1000 and t2["post_amount"] == 0 and t2["events"] == 0,
+          str({k: t2[k] for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "events")}))
     _t2.sleep(1.05)
     w2 = ofile2([(YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, ""), (YPO2, YC, 30, 30, "2030-02-12", "TAO1", 100, YPO)], "拆單_w2.xlsx")
     codes = [imp_c(w2), imp_m(w2)]
-    t2 = client.get("/api/master/stats?month=2030-02").get_json()["total"]
+    st2_ = client.get("/api/master/stats?month=2030-02").get_json(); t2 = st2_["total"]
     check("酷澎拆單：YC 從原單拿掉、出現在拆出來的新單（原訂單＝原單）→ 接回原單算：原始還是 8,000（新單那項不算新的下單）、目前 7,000、不算少出、拆單接回 3,000",
           codes == [200, 200] and t2["orig_amount"] == 8000 and t2["cur_amount"] == 7000 and t2["post_amount"] == 0 and t2["moved_amount"] == 3000 and t2["pre_amount"] == -1000,
           str({k: t2[k] for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount")}))
+    pend_y = [p for p in st2_["pending"] if p["po_number"] == YPO]
+    check("拆出新單 → 原單算「改過但還沒記 OK」，改動寫「拆出新單 …」", pend_y and any("拆出新單" in x and YPO2 in x for x in pend_y[0]["changes"]), str(pend_y[:1]))
     _t2.sleep(1.05)
     w3 = ofile2([(YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, ""), (YPO2, YC, 30, 25, "2030-02-12", "TAO1", 100, YPO)], "拆單_w3.xlsx")
     imp_c(w3)

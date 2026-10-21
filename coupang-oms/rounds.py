@@ -125,6 +125,35 @@ def prefill(conn, po, status, rows=None):
             "since": since if since > f"{SINCE} 00:00:00" else ""}
 
 
+def pending_info(conn, po):
+    """改單統計「還沒記 OK 的 PO」那張表用：上一個 OK 哪天、之後改了什麼（幾句話）。"""
+    since = _since(conn, po)
+    marks = ",".join("?" * len(CHANGE_FIELDS))
+    rows = conn.execute(
+        f"SELECT field, field_label, old_value, new_value, source, operator, changed_at FROM edit_logs WHERE po_number = ? AND changed_at > ? "
+        f"AND source IN ('import', 'manual') AND field IN ({marks}) ORDER BY changed_at, id", [po, since] + list(CHANGE_FIELDS)).fetchall()
+    groups = {}
+    for r in rows:
+        who = "酷澎" if r["source"] == "import" else (r["operator"] or "我方")
+        day = f"{int(r['changed_at'][5:7])}/{int(r['changed_at'][8:10])}"
+        key = (r["field"], who, day)
+        g = groups.setdefault(key, {"label": r["field_label"], "who": who, "day": day, "n": 0, "down": 0, "first": (r["old_value"], r["new_value"])})
+        g["n"] += 1
+        a, b = _num(r["old_value"]), _num(r["new_value"])
+        if a is not None and b is not None and b < a:
+            g["down"] += 1
+    out = []
+    for (field, _who, _day), g in groups.items():
+        if field in ("delivery_date", "warehouse"):
+            out.append(f"{g['label']} {g['first'][0] or '—'} → {g['first'][1] or '—'}{'（' + str(g['n']) + ' 項）' if g['n'] > 1 else ''}（{g['who']} {g['day']}）")
+        elif g["down"]:
+            out.append(f"{g['label']}下修 {g['down']} 項（{g['who']} {g['day']}）")
+    for r in conn.execute("SELECT DISTINCT po_number, first_seen_at FROM orders WHERE parent_po = ? AND first_seen_at > ? ORDER BY first_seen_at", (po, since)).fetchall():
+        t = r["first_seen_at"] or ""
+        out.append(f"拆出新單 {r['po_number']}（酷澎 {int(t[5:7])}/{int(t[8:10])}）" if len(t) >= 10 else f"拆出新單 {r['po_number']}")
+    return {"last_ok": last_ok(conn, po)[:10], "changes": out[:6], "more": max(0, len(out) - 6)}
+
+
 def pending_pos(conn):
     """改過但還沒記 OK 的 PO（從 SINCE 起算）。"""
     last = {r["po"]: r["t"] for r in conn.execute(

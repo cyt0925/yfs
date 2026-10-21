@@ -725,65 +725,91 @@ async function loadStats() {
   if (!to || to < from) { to = from; $("#st-to").value = to; }
   const line = $("#st-line").value; const minutes = Math.max(0, Number($("#st-min").value) || 0);
   localStorage.setItem("mst_stat_min", String(minutes));
-  const qs = `month=${from}&month_to=${to}&line=${encodeURIComponent(line)}&include_test=${$("#st-test").checked ? 1 : 0}`;
+  const qs = `month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`;
   $("#btn-export-stats").href = `/api/master/stats/export?${qs}&minutes=${minutes}`;
   let d; try { d = await api(`/api/master/stats?${qs}`); } catch (e) { toast(e.message, "err"); return; }
   renderStats(d, minutes);
 }
 let STATS = null;
-/* 數字可以點：data-f 帶篩選條件（月份／來源／原因／類型／PO），點了去撈明細再過濾 */
-const stN = (n, f) => n ? `<span class="st-n" data-f="${esc(JSON.stringify(f))}">${fmt(n)}</span>` : `<span class="muted">0</span>`;
-const stMonthTh = m => m.month === "合計" ? "合計" : (m.month.length === 7 ? `${Number(m.month.slice(5))} 月` : m.month);
+/* 數字可以點：data-f 帶篩選條件（月份／階段／做了什麼／主因／PO），點了去撈修改紀錄再過濾；灰字（ev）是系統抓到的變動 */
+const stN = (n, f, cls) => n ? `<span class="st-n${cls ? " " + cls : ""}" data-f="${esc(JSON.stringify(f))}">${fmt(n)}</span>` : `<span class="muted">0</span>`;
+const ST_SB = { "1": "bd-blue", "2": "bd-warn", "3": "bd-pink" };
+const stStage = (k, label) => `<span class="badge ${ST_SB[k] || "bd-gray"}">${esc(label)}</span>`;
+const stMd = s => s && s.length >= 10 ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : (s || "");
 function renderStats(d, minutes) {
-  STATS = d;
-  const t = d.total; const hours = minutes ? (t.events * minutes / 60) : null;
-  const card = (title, num, unit, sub) => `<div class="kpi" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
+  STATS = d; $("#st-since").textContent = d.since;
+  const t = d.total; const hours = minutes ? (t.rounds * minutes / 60) : null; const SL = d.stage_labels;
+  const card = (title, num, unit, sub, cls) => `<div class="kpi${cls || ""}" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
   $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
-    + card("曾改單的 PO", fmt(t.changed_pos), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
-    + card("改單次數", stN(t.events, {}), "次", `酷澎修改 ${stN(t.coupang, { source: "import" })} · 我方修改 ${stN(t.manual, { source: "manual" })}${d.test_events ? `<span class="kbd" title="改單時勾選「這是測試」的預設不計入；勾選上方「含測試」才會計入">另有 ${fmt(d.test_events)} 次測試未計入</span>` : ""}`)
-    + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.events)} 次`) : card("估計工時", "—", "", "請在上方「每次改單約＿分鐘」填寫分鐘數"));
+    + card("曾改單的 PO", stN(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
+    + card("修改次數（OK）", stN(t.rounds, {}), "次", ["1", "2", "3"].map(k => `${SL[k].split(" ")[0]} ${stN(t.stages[k], { stage: k })}`).join(" · "))
+    + card(`${t.pending ? "⚠ " : ""}改過但還沒記 OK`, fmt(t.pending), "張 PO", t.pending ? `清單在 <a href="/portal/stats" style="text-decoration:underline">YFS 訂單系統的改單統計</a>` : "這段期間改過的 PO 都記了 OK", t.pending ? " warn" : "")
+    + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.rounds)} 次`) : card("估計工時", "—", "", "請在上方「每次修改約＿分鐘」填寫分鐘數"));
   const rows = d.months.concat(d.months.length > 1 ? [t] : []);
   const mf = m => m.month === "合計" ? {} : { month: m.month };
-  $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">品項</th><th class="num">SKU</th><th class="num">曾改單</th><th class="num">佔比</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
-    + (rows.map(m => `<tr ${m.month === "合計" ? 'style="font-weight:700;background:#f8fafc"' : ""}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${fmt(m.items)}</td><td class="num">${fmt(m.skus)}</td><td class="num">${fmt(m.changed_pos)}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td><td class="num">${stN(m.events, mf(m))}</td><td class="num">${stN(m.coupang, { ...mf(m), source: "import" })}</td><td class="num">${stN(m.manual, { ...mf(m), source: "manual" })}</td>${minutes ? `<td class="num">${fmt(Math.round(m.events * minutes / 6) / 10)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="10" class="muted p-4 text-center">這段期間沒有訂單</td></tr>`) + `</tbody>`;
-  $("#st-reasons").innerHTML = `<thead><tr><th>原因</th>${rows.map(m => `<th class="num">${esc(stMonthTh(m))}</th>`).join("")}</tr></thead><tbody>`
-    + d.reasons.map(r => `<tr><td>${esc(r)}</td>${rows.map(m => `<td class="num">${stN(m.reasons[r], { ...mf(m), reason: r })}</td>`).join("")}</tr>`).join("")
-    + `<tr style="font-weight:700;background:#f8fafc"><td>改單合計</td>${rows.map(m => `<td class="num">${stN(m.events, mf(m))}</td>`).join("")}</tr></tbody>`;
-  // 改單類型：酷澎修改、我方修改左右對照，數字是選的期間加起來（跟 YFS 訂單系統的改單統計一樣，Jerry 2026-10-19）
-  const tk = t.kinds;
-  const kindRows = [["改數量", "qty", ""], ["下修", "qty", "down"], ["上修", "qty", "up"], ["有上有下", "qty", "mixed"], ["改到貨日", "date", ""], ["改倉別", "wh", ""], ["品項遭移除", "gone", ""]];
-  $("#st-kinds").innerHTML = `<thead><tr><th>類型</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th class="num">合計</th></tr></thead><tbody>`
-    + kindRows.filter(([, , dir]) => dir !== "mixed" || tk.qty_mixed_c || tk.qty_mixed_m).map(([label, kind, dir]) => {
-      const key = side => dir ? `qty_${dir}_${side}` : `${kind}_${side}`, f = dir ? { kind, dir } : { kind };
-      const c = tk[key("c")] || 0, m = kind === "gone" ? null : tk[key("m")] || 0;
-      return `<tr ${dir ? 'class="muted"' : ""}><td>${dir ? "　" : ""}${esc(label)}</td><td class="num">${stN(c, { ...f, source: "import" })}</td>`
-        + `<td class="num">${m === null ? "—" : stN(m, { ...f, source: "manual" })}</td><td class="num">${stN(c + (m || 0), f)}</td></tr>`;
-    }).join("") + `</tbody>`;
-  $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">改單次數</th><th class="num">酷澎修改</th><th class="num">我方修改</th><th>原因</th></tr></thead><tbody>`
-    + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${stN(p.events, { po: p.po_number })}</td><td class="num">${stN(p.coupang, { po: p.po_number, source: "import" })}</td><td class="num">${stN(p.manual, { po: p.po_number, source: "manual" })}</td><td>${esc(p.reasons)}</td></tr>`).join("") || `<tr><td colspan="8" class="muted p-4 text-center">這段期間沒有曾改單的 PO</td></tr>`) + `</tbody>`;
+  const early = m => m.month !== "合計" && m.month !== "未排日期" && m.month < d.since.slice(0, 7);
+  const tot = 'style="font-weight:700;background:#f8fafc"';
+  $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">曾改單</th><th class="num">佔比</th><th class="num">修改次數（OK）</th><th class="num">第一階段</th><th class="num">第二階段</th><th class="num">第三階段</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th><th class="num muted" style="font-weight:500" title="系統從匯入紀錄和人工修改抓到的每一次變動；好幾次變動可能其實是同一輪，所以不算修改次數">系統抓到的變動次數</th><th class="num">還沒記 OK</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    + (rows.map(m => `<tr ${m.month === "合計" ? tot : ""}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${stN(m.changed_pos, mf(m))}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td>`
+      + `<td class="num">${stN(m.rounds, mf(m))}${early(m) && !m.rounds ? ` <span class="kbd">${stMd(d.since)} 前沒有修改紀錄</span>` : ""}</td>`
+      + ["1", "2", "3"].map(k => `<td class="num">${stN(m.stages[k], { ...mf(m), stage: k })}</td>`).join("")
+      + ["qty", "date", "split"].map(k => `<td class="num">${stN(m.kinds[k], { ...mf(m), kind: k })}</td>`).join("")
+      + `<td class="num">${stN(m.events, { ...mf(m), ev: 1 }, "st-g")}</td><td class="num">${fmt(m.pending)}</td>${minutes ? `<td class="num">${fmt(Math.round(m.rounds * minutes / 6) / 10)}</td>` : ""}</tr>`).join("")
+      || `<tr><td colspan="14" class="muted p-4 text-center">這段期間沒有訂單</td></tr>`) + `</tbody>`;
+  let cat = "", body = "";
+  for (const r of d.reasons) {
+    if (r.cat !== cat) { cat = r.cat; body += `<tr><td colspan="2" class="kbd" style="background:#f8fafc;padding-top:6px">${esc(r.cat_label)}</td></tr>`; }
+    body += `<tr><td>${esc(r.reason)}</td><td class="num">${stN(r.n, { reason: r.reason })}</td></tr>`;
+  }
+  $("#st-reasons").innerHTML = `<thead><tr><th>主因</th><th class="num">次數</th></tr></thead><tbody>`
+    + (body || `<tr><td colspan="2" class="muted p-4 text-center">這段期間還沒有修改紀錄</td></tr>`) + `</tbody>`;
+  $("#st-stages").innerHTML = `<thead><tr><th>階段</th><th class="num">修改次數（OK）</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th></tr></thead><tbody>`
+    + d.stages.map(s => `<tr><td>${stStage(s.key, s.short)} ${esc(s.label.split(" ")[1] || "")}</td><td class="num">${stN(s.rounds, { stage: s.key })}</td>`
+      + ["qty", "date", "split"].map(k => `<td class="num">${stN(s.kinds[k], { stage: s.key, kind: k })}</td>`).join("") + `</tr>`).join("")
+    + `<tr ${tot}><td>合計</td><td class="num">${stN(t.rounds, {})}</td>${["qty", "date", "split"].map(k => `<td class="num">${stN(t.kinds[k], { kind: k })}</td>`).join("")}</tr></tbody>`;
+  $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">修改次數（OK）</th><th>各輪</th><th>主因</th></tr></thead><tbody>`
+    + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${stN(p.rounds, { po: p.po_number })}</td>`
+      + `<td>${p.list.map(r => `<span style="white-space:nowrap;margin-right:6px">${stStage(r.stage, r.stage_short.replace("階段", ""))}${r.kind_labels.map(k => `<span class="badge bd-gray">${esc(k.replace("數量下修", "下修"))}</span>`).join("")}</span>`).join(" ")}</td><td>${esc(p.reasons)}</td></tr>`).join("")
+      || `<tr><td colspan="7" class="muted p-4 text-center">這段期間沒有曾改單的 PO</td></tr>`) + `</tbody>`;
   $("#st-top").querySelectorAll(".st-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
-  $("#tab-stats").querySelectorAll(".st-n").forEach(el => el.addEventListener("click", () => showStatEvents(JSON.parse(el.dataset.f))));
+  $("#tab-stats").querySelectorAll(".st-n").forEach(el => el.addEventListener("click", () => { const f = JSON.parse(el.dataset.f); f.ev ? showStatEvents(f) : showStatRounds(f); }));
 }
-/* 點數字 → 撈這段期間全部改單事件，照條件過濾後列出來 */
-let STEV = null;
-async function showStatEvents(f) {
-  const from = $("#st-from").value, to = $("#st-to").value || from, line = $("#st-line").value, inc = $("#st-test").checked ? 1 : 0;
-  const key = `${from}|${to}|${line}|${inc}`;
-  if (!STEV || STEV.key !== key) {
-    try { const d = await api(`/api/master/stats/events?month=${from}&month_to=${to}&line=${encodeURIComponent(line)}&include_test=${inc}`); STEV = { key, events: d.events }; }
+/* 點修改次數 → 撈這段期間全部修改紀錄，照條件過濾後列出來 */
+let STRD = null, STEV = null;
+function stKey() { const from = $("#st-from").value, to = $("#st-to").value || from; return { from, to, line: $("#st-line").value, key: `${from}|${to}|${$("#st-line").value}` }; }
+async function showStatRounds(f) {
+  const { from, to, line, key } = stKey();
+  if (!STRD || STRD.key !== key) {
+    try { const d = await api(`/api/master/stats/rounds?month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`); STRD = { key, rounds: d.rounds }; }
     catch (e) { toast(e.message, "err"); return; }
   }
-  const list = STEV.events.filter(e => (!f.month || e.month === f.month) && (!f.source || e.source === f.source) && (!f.reason || e.reason === f.reason)
-    && (!f.kind || e.kinds.includes(f.kind)) && (!f.dir || e.qty_dir === f.dir) && (!f.po || e.po_number === f.po));
-  const desc = [f.month ? f.month : `${from}${to !== from ? "～" + to : ""}`, line || "全部線別", f.po ? `PO ${f.po}` : "", f.source === "import" ? "酷澎修改" : f.source === "manual" ? "我方修改" : "",
-    f.kind ? ({ qty: "改數量", date: "改到貨日", wh: "改倉別", gone: "品項移除" })[f.kind] : "", f.dir ? ({ down: "下修", up: "上修", mixed: "上修與下修" })[f.dir] : "", f.reason ? `原因：${f.reason}` : ""].filter(Boolean);
-  $("#stev-title").textContent = `改單明細 · ${list.length} 次`; $("#stev-sub").textContent = desc.join(" · ");
-  $("#stev-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>修改內容</th><th>原因</th></tr></thead><tbody>`
-    + (list.map(e => `<tr><td class="kbd" style="white-space:nowrap">${esc(e.when.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(e.po_number)}">${esc(e.po_number)}</a></td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge ${e.source === "import" ? "bd-blue" : "bd-gray"}">${e.source_label}</span></td><td style="max-width:480px">${esc(e.summary)}</td><td>${reasonBadge(e)}${e.note ? `<div class="kbd">${esc(e.note)}</div>` : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="muted p-4 text-center">沒有符合的改單</td></tr>`) + `</tbody>`;
+  const list = STRD.rounds.filter(r => (!f.month || r.month === f.month) && (!f.stage || r.stage === f.stage) && (!f.kind || r.kinds.includes(f.kind))
+    && (!f.reason || r.reasons.includes(f.reason)) && (!f.po || r.po_number === f.po));
+  const desc = [f.month ? f.month : `${from}${to !== from ? "～" + to : ""}`, line || "全部線別", f.po ? `PO ${f.po}` : "", f.stage ? STATS.stage_labels[f.stage] : "", f.kind ? STATS.kind_labels[f.kind] : "", f.reason ? `主因：${f.reason}` : ""].filter(Boolean);
+  $("#stev-title").textContent = `修改紀錄 · ${list.length} 次`; $("#stev-sub").textContent = desc.join(" · ");
+  $("#stev-table").innerHTML = `<thead><tr><th>OK 日期</th><th>PO 單號</th><th>線別</th><th>階段</th><th>做了什麼</th><th>主因</th><th>說明</th><th>記的人</th></tr></thead><tbody>`
+    + (list.map(r => `<tr><td class="kbd" style="white-space:nowrap">${esc(r.ok_at.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(r.po_number)}">${esc(r.po_number)}</a></td><td>${esc(r.lines)}</td><td>${stStage(r.stage, r.stage_short)} ${esc(r.stage_label.split(" ")[1] || "")}</td><td>${r.kind_labels.map(k => `<span class="badge bd-gray">${esc(k)}</span>`).join(" ")}</td><td>${esc(r.reason)}</td><td style="max-width:360px">${esc(r.note)}</td><td>${esc(r.operator)}</td></tr>`).join("")
+      || `<tr><td colspan="8" class="muted p-4 text-center">沒有符合的修改紀錄</td></tr>`) + `</tbody>`;
   $("#stev-table").querySelectorAll(".stev-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
   $("#dlg-stev").showModal();
 }
-["#st-from", "#st-to", "#st-line", "#st-min", "#st-test"].forEach(sel => $(sel).addEventListener("change", () => { STEV = null; loadStats(); }));
+/* 點灰字 → 系統抓到的變動（兩個系統合起來算的每一次變動），不算修改次數 */
+async function showStatEvents(f) {
+  const { from, to, line, key } = stKey();
+  if (!STEV || STEV.key !== key) {
+    try { const d = await api(`/api/master/stats/events?month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`); STEV = { key, events: d.events }; }
+    catch (e) { toast(e.message, "err"); return; }
+  }
+  const list = STEV.events.filter(e => (!f.month || e.month === f.month) && (!f.po || e.po_number === f.po));
+  const desc = [f.month ? f.month : `${from}${to !== from ? "～" + to : ""}`, line || "全部線別", f.po ? `PO ${f.po}` : "", "不算修改次數，只是對照用"].filter(Boolean);
+  $("#stev-title").textContent = `系統抓到的變動 · ${list.length} 次`; $("#stev-sub").textContent = desc.join(" · ");
+  $("#stev-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>修改內容</th></tr></thead><tbody>`
+    + (list.map(e => `<tr><td class="kbd" style="white-space:nowrap">${esc(e.when.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(e.po_number)}">${esc(e.po_number)}</a></td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge ${e.source === "import" ? "bd-blue" : "bd-gray"}">${e.source_label}</span><div class="kbd">${esc(e.system)}</div></td><td style="max-width:480px">${esc(e.summary)}${e.note ? `<div class="kbd">${esc(e.note)}</div>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="6" class="muted p-4 text-center">沒有符合的變動</td></tr>`) + `</tbody>`;
+  $("#stev-table").querySelectorAll(".stev-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
+  $("#dlg-stev").showModal();
+}
+["#st-from", "#st-to", "#st-line", "#st-min"].forEach(sel => $(sel).addEventListener("change", () => { STRD = STEV = null; loadStats(); }));
 $("#st-min").value = localStorage.getItem("mst_stat_min") || "0";
 bindDownload("#btn-export-stats");
 

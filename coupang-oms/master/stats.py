@@ -37,15 +37,23 @@
   進系統後才改＝之後的變動（有改單紀錄、有原因）。第一次的出貨數量＝兩邊出貨數量最早那筆紀錄改之前的值，沒紀錄就是現在的值。
 - 酷澎拆單（原訂單欄有值、只有酷澎訂單管理有存）：原單被拿掉的品項如果在拆出來的新單裡，新單那項接回原單算，
   不算少出也不算新的下單（不然原單少出、新單又多一筆下單，少出會算太多）。兩張單都要在統計期間內才接。
+
+2026-10-21 改版（Jerry 看過示意圖「OK 照這樣做」）：修改次數改成以 PO 修改紀錄（rounds.py 的 po_rounds）為準，一輪處理完按一次 OK 算一次。
+- 曾改單的 PO＝至少有一筆修改紀錄；修改次數（OK）分這輪在哪個階段結束（第一／二／三階段）、做了什麼（有下修／有改交期倉別／有拆單，一輪可複選所以加總會大於次數）、
+  主因（一輪可勾好幾個，照小真的清單分類別列，沒用到的不列）。還沒記 OK 的 PO（上一個 OK 之後有改動）取代原本的「待補原因」。
+- 上面那套「系統抓到的變動」（兩個系統合起來算的改單事件）不再當次數，每月統計留一欄灰字「系統抓到的變動次數」（每個月都有，2026-10-20 以前的月份也看得到），
+  點了看明細；PO 張數、原始下單→目前出貨金額照舊每個月都算。舊的六個草稿大項原因（mst_change_reasons）不再列、不再補，表留著。
+- 修改紀錄從 2026-10-20（rounds.SINCE）起才有，之前的月份修改次數會是 0，畫面上會寫。
 """
 from .common import *  # noqa: F401,F403 — 共用工具、Flask、db、openpyxl 都從這裡來
 
+import rounds
+
 UNDATED = "未排日期"
-NO_REASON = "未填"
-# 原因大項（Jerry 2026-10-19 草稿，等 Alice、Ivan 定案；定案後商品主檔改單視窗的四個也換成這份）
-REASONS = ["酷澎倉限制", "原廠／產銷缺貨", "運能（沒車）", "酷澎要求", "我方作業", "其他"]
-PENDING = "待補"
-OLD_REASON = {"缺貨": "原廠／產銷缺貨", "沒車": "運能（沒車）", "酷澎要求": "酷澎要求", "其他": "其他"}
+OLD_REASON = {"缺貨": "原廠／產銷缺貨", "沒車": "運能（沒車）"}     # 商品主檔改單時選的舊原因，只在「系統抓到的變動」明細裡帶著
+CAT_LABEL = {"qty": "數量下修", "date": "改交期／倉別", "split": "拆單", "other": "其他"}
+STAGE_KEYS = [k for k, _a, _b in rounds.STAGES]
+KIND_KEYS = [k for k, _v in rounds.KINDS]
 SYS_LABEL = {"c": "酷澎訂單管理", "m": "商品主檔"}
 _RESTORE_PREFIXES = ("恢復為整合表", "恢復為訂單彙總表")   # 舊紀錄寫「整合表」，2026-10-07 起寫「訂單彙總表」
 
@@ -255,7 +263,7 @@ def _event_row(e, p):
             "source": e["source"], "source_label": "酷澎修改" if e["source"] == "import" else "我方修改",
             "system": e.get("label") or SYS_LABEL[e["sys"]], "operator": e["operator"], "kinds": sorted(e["kinds"]), "kind_labels": e["kind_labels"],
             "qty_dir": e["qty_dir"], "summary": e["summary"], "delta": e["delta"],
-            "reason": e["final_reason"], "reason_from": e["reason_from"], "pending": e["final_reason"] == PENDING, "note": e["note"]}
+            "reason": e["final_reason"], "note": e["note"]}
 
 
 def _include_test():
@@ -294,13 +302,11 @@ def _first_ship(conn, keep):
     return out
 
 
-def _collect(conn, month_from, month_to, line_group, include_test=False):
-    """範圍內的 PO（keep）與它們的改單事件（events）。統計頁和明細 API 共用。
-    回傳的第三個值是被排除的「測試」次數（include_test=True 時為 0）。"""
+def _keep_pos(conn, month_from, month_to, line_group):
+    """範圍內的 PO：{po: {month, lines, skus, items, dates, delivery_date}}，另回每個品項的列和單價。"""
     cfg = _line_groups()
-    items = _item_rows(conn)
     pos, by_item, prices = {}, collections.defaultdict(list), {}
-    for r in items:
+    for r in _item_rows(conn):
         p = pos.setdefault(r["po_number"], {"dates": set(), "lines": set(), "skus": set()})
         p["dates"].add(r["delivery_date"] or ""); p["lines"].add(_group_of(r["line"], cfg)); p["skus"].add(r["sku_id"])
         by_item[(r["po_number"], r["sku_id"])].append(r)
@@ -314,8 +320,15 @@ def _collect(conn, month_from, month_to, line_group, include_test=False):
             continue
         if line_group and line_group not in p["lines"]:
             continue
-        p["month"] = m; p["items"] = len(p["skus"])
+        p["month"] = m; p["items"] = len(p["skus"]); p["delivery_date"] = min((d for d in p["dates"] if d), default="")
         keep[po] = p
+    return keep, by_item, prices
+
+
+def _collect(conn, month_from, month_to, line_group, include_test=False):
+    """範圍內的 PO（keep）與系統抓到的變動（events，兩個系統合起來算的改單事件）。
+    回傳的第三個值是被排除的「測試」次數（include_test=True 時為 0）。"""
+    keep, by_item, prices = _keep_pos(conn, month_from, month_to, line_group)
     if not keep:
         return keep, {}, 0
     restore = tuple(f"{x}%" for x in _RESTORE_PREFIXES)
@@ -335,17 +348,8 @@ def _collect(conn, month_from, month_to, line_group, include_test=False):
     imp, first_qty = _import_events([("m", l) for l in mlogs if l["source"] == "import"] + [("c", l) for l in clogs if l["source"] == "import"], prices)
     man = _manual_events([l for l in mlogs if l["source"] == "manual"], [l for l in clogs if l["source"] == "manual"], prices)
     events = _finish_events({**imp, **man})
-    stored = {r["event_key"]: r for r in _rows(conn.execute("SELECT event_key, reason, operator, updated_at FROM mst_change_reasons"))}
     for e in events.values():
-        s_ = stored.get(e["key"])
-        if s_:
-            e["final_reason"], e["reason_from"] = s_["reason"], f"{s_['operator']} {(s_['updated_at'] or '')[:10]} 補"
-        elif e["reason"] == TEST_REASON:
-            e["final_reason"], e["reason_from"] = TEST_REASON, "改的時候已選"
-        elif e["reason"]:
-            e["final_reason"], e["reason_from"] = OLD_REASON.get(e["reason"], e["reason"]), "改的時候已選"
-        else:
-            e["final_reason"], e["reason_from"] = PENDING, ""
+        e["final_reason"] = OLD_REASON.get(e["reason"], e["reason"])      # 商品主檔改單時選的，只在明細帶著；統計不再列原因
     # 原始下單、第一次看到的出貨、目前出貨（數量）：每個品項看兩邊
     first_ship = _first_ship(conn, keep)
     amt = {}
@@ -383,27 +387,71 @@ def _collect(conn, month_from, month_to, line_group, include_test=False):
     return keep, events, len(tests)
 
 
+def _reason_cat(stage, kinds, reason):
+    """一個主因歸哪個類別（主因表照類別分組）：先看這輪勾到的類別裡有沒有，沒有再照清單順序找。
+    像「產能不及」同時在第二階段下修和拆單的清單裡，勾了下修就算下修。"""
+    if "qty" in kinds and reason in rounds.REASONS_QTY.get(stage, []):
+        return "qty"
+    if "date" in kinds and reason in rounds.REASONS_DATE:
+        return "date"
+    if "split" in kinds and reason in rounds.REASONS_SPLIT:
+        return "split"
+    for cat, lst in (("qty", sum(rounds.REASONS_QTY.values(), [])), ("date", rounds.REASONS_DATE), ("split", rounds.REASONS_SPLIT)):
+        if reason in lst:
+            return cat
+    return "other"
+
+
+def _round_rows(conn, keep):
+    """範圍內 PO 的修改紀錄（沒刪的），一輪一列，最新的在上面。"""
+    rows = [rounds._row(r) for r in _rows(conn.execute(
+        "SELECT id, po_number, ok_at, stage, kinds, reason, note, operator FROM po_rounds WHERE deleted_at = '' ORDER BY ok_at DESC, id DESC"))
+        if r["po_number"] in keep]
+    for r in rows:
+        p = keep[r["po_number"]]
+        r["month"] = p["month"]; r["lines"] = "／".join(sorted(p["lines"]))
+        r["stage_short"] = rounds.STAGE_SHORT.get(r["stage"], r["stage"])
+        r["cats"] = {x: _reason_cat(r["stage"], r["kinds"], x) for x in r["reasons"]}
+    return rows
+
+
+def _pending_rows(conn, keep):
+    """改過但還沒記 OK 的 PO（在範圍內的），到貨日近的在前面。"""
+    out = []
+    for po in rounds.pending_pos(conn):
+        p = keep.get(po)
+        if p is None:
+            continue
+        info = rounds.pending_info(conn, po)
+        out.append({"po_number": po, "month": p["month"], "lines": "／".join(sorted(p["lines"])), "delivery_date": p["delivery_date"],
+                    "last_ok": info["last_ok"], "changes": info["changes"], "more": info["more"]})
+    out.sort(key=lambda r: (r["delivery_date"] or "9", r["po_number"]))
+    return out
+
+
 def _build_stats(conn, month_from, month_to, line_group, include_test=False):
     keep, events, n_test = _collect(conn, month_from, month_to, line_group, include_test)
-    reasons = REASONS + ([TEST_REASON] if include_test else []) + [PENDING]
+    base = {"month_from": month_from, "month_to": month_to, "test_events": n_test, "since": rounds.SINCE,
+            "stage_labels": {k: rounds.STAGE_LABEL[k] for k in STAGE_KEYS}, "kind_labels": dict(rounds.KINDS), "cat_labels": CAT_LABEL}
     if not keep:
-        return {"months": [], "total": _finish_month(_empty_month("合計"), reasons), "reasons": reasons, "reason_choices": REASONS,
-                "top_pos": [], "month_from": month_from, "month_to": month_to, "test_events": 0}
+        return {**base, "months": [], "total": _finish_month(_empty_month("合計")), "reasons": [], "stages": _stage_rows(_empty_month("合計")),
+                "top_pos": [], "pending": []}
 
-    per_po = {po: {"events": 0, "coupang": 0, "manual": 0, "reasons": collections.Counter(), "reason_amount": collections.Counter(),
-                   "kinds": collections.Counter()} for po in keep}
+    per_po = {po: {"rounds": 0, "events": 0, "stages": collections.Counter(), "kinds": collections.Counter(), "reasons": collections.Counter(),
+                   "list": []} for po in keep}
     for e in events.values():
-        s = per_po[e["po"]]
-        s["events"] += 1
-        side = "c" if e["source"] == "import" else "m"
-        s["coupang" if side == "c" else "manual"] += 1
-        s["reasons"][e["final_reason"]] += 1
-        s["reason_amount"][e["final_reason"]] += e["delta"]
-        for k in e["kinds"]:
-            s["kinds"][f"{k}_{side}"] += 1
-        if "qty" in e["kinds"] and e["qty_dir"]:
-            s["kinds"][f"qty_{e['qty_dir']}"] += 1
-            s["kinds"][f"qty_{e['qty_dir']}_{side}"] += 1      # 下修／上修也分酷澎修改、我方修改（Jerry 2026-10-19 選「左右對照」）
+        per_po[e["po"]]["events"] += 1
+    for r in reversed(_round_rows(conn, keep)):          # 舊的在前，top_pos 的「各輪」照時間排
+        s = per_po[r["po_number"]]
+        s["rounds"] += 1; s["stages"][r["stage"]] += 1
+        for k in r["kinds"]:
+            s["kinds"][k] += 1
+        for x in r["reasons"]:
+            s["reasons"][(r["cats"][x], x)] += 1
+        s["list"].append({"stage": r["stage"], "stage_short": r["stage_short"], "kinds": r["kinds"], "kind_labels": r["kind_labels"],
+                          "reasons": r["reasons"], "ok_at": r["ok_at"][:10]})
+    pending = _pending_rows(conn, keep)
+    pend_by_month = collections.Counter(r["month"] for r in pending)
 
     months = {}
     order = (_month_span(month_from, month_to) if month_from else sorted({p["month"] for p in keep.values()} - {UNDATED})) + [UNDATED]
@@ -412,31 +460,55 @@ def _build_stats(conn, month_from, month_to, line_group, include_test=False):
         m["pos"] += 1; m["items"] += p["items"]; m["_skus"].update(p["skus"])
         for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount"):
             m[k] += p[k]
-        if s["events"]:
+        if s["rounds"]:
             m["changed_pos"] += 1
-        m["events"] += s["events"]; m["coupang"] += s["coupang"]; m["manual"] += s["manual"]
-        for k, v in s["reasons"].items():
-            m["reasons"][k] = m["reasons"].get(k, 0) + v
-        for k, v in s["reason_amount"].items():
-            m["reason_amount"][k] = m["reason_amount"].get(k, 0) + v
+        m["rounds"] += s["rounds"]; m["events"] += s["events"]
+        for k, v in s["stages"].items():
+            m["stages"][k] = m["stages"].get(k, 0) + v
         for k, v in s["kinds"].items():
             m["kinds"][k] = m["kinds"].get(k, 0) + v
+        for k, v in s["reasons"].items():
+            m["reasons"][k] = m["reasons"].get(k, 0) + v
     total = _empty_month("合計")
     for po, p in keep.items():
         add(months.setdefault(p["month"], _empty_month(p["month"])), per_po[po], p)
         add(total, per_po[po], p)
-    out_months = [_finish_month(months[m], reasons) for m in order if m in months]
-    total = _finish_month(total, reasons)
+    # 各階段 × 做了什麼（只算合計，畫面上那張表不分月）
+    stage_kinds = {k: collections.Counter() for k in STAGE_KEYS}
+    for s in per_po.values():
+        for r in s["list"]:
+            for k in r["kinds"]:
+                stage_kinds[r["stage"]][k] += 1
+    total["_stage_kinds"] = stage_kinds
+    for m in months.values():
+        m["pending"] = pend_by_month.get(m["month"], 0)
+    total["pending"] = len(pending)
+    out_months = [_finish_month(months[m]) for m in order if m in months]
+    total = _finish_month(total)
 
-    top = sorted(((po, keep[po], per_po[po]) for po in keep if per_po[po]["events"]),
-                 key=lambda x: (-x[2]["events"], x[0]))[:15]
-    top_pos = [{
-        "po_number": po, "month": p["month"], "lines": "／".join(sorted(p["lines"])), "items": p["items"],
-        "events": s["events"], "coupang": s["coupang"], "manual": s["manual"],
-        "reasons": "、".join(f"{k}{v}" if v > 1 else k for k, v in s["reasons"].most_common()),
-    } for po, p, s in top]
-    return {"months": out_months, "total": total, "reasons": reasons, "reason_choices": REASONS,
-            "top_pos": top_pos, "month_from": month_from, "month_to": month_to, "test_events": n_test}
+    reasons = sorted(({"cat": cat, "cat_label": CAT_LABEL[cat], "reason": x, "n": n} for (cat, x), n in total["_reasons"].items()),
+                     key=lambda r: (["qty", "date", "split", "other"].index(r["cat"]), -r["n"], r["reason"]))
+    total.pop("_reasons")
+    for m in out_months:
+        m.pop("_reasons", None)
+
+    top = sorted(((po, keep[po], per_po[po]) for po in keep if per_po[po]["rounds"]), key=lambda x: (-x[2]["rounds"], x[0]))[:15]
+    top_pos = []
+    for po, p, s in top:
+        seen = []
+        for r in s["list"]:
+            seen += [x for x in r["reasons"] if x not in seen]
+        top_pos.append({"po_number": po, "month": p["month"], "lines": "／".join(sorted(p["lines"])), "items": p["items"],
+                        "rounds": s["rounds"], "list": s["list"], "reasons": "、".join(seen)})
+    return {**base, "months": out_months, "total": total, "reasons": reasons, "stages": _stage_rows(total), "top_pos": top_pos, "pending": pending}
+
+
+def _stage_rows(total):
+    sk = total.get("_stage_kinds") or {}
+    rows = [{"key": k, "label": rounds.STAGE_LABEL[k], "short": rounds.STAGE_SHORT[k], "rounds": total["stages"].get(k, 0),
+             "kinds": {x: sk.get(k, {}).get(x, 0) for x in KIND_KEYS}} for k in STAGE_KEYS]
+    total.pop("_stage_kinds", None)
+    return rows
 
 
 def _event_rows(keep, events):
@@ -445,29 +517,19 @@ def _event_rows(keep, events):
     return rows
 
 
-KIND_KEYS = ["qty_c", "qty_m", "qty_down", "qty_up", "qty_mixed", "date_c", "date_m", "wh_c", "wh_m", "gone_c",
-             "qty_down_c", "qty_down_m", "qty_up_c", "qty_up_m", "qty_mixed_c", "qty_mixed_m"]
-# 改單類型表：一列一個類型，欄是酷澎修改／我方修改／合計（Jerry 2026-10-19 看示意圖選 A）。(名稱, 酷澎修改的 key, 我方修改的 key；None＝我方不會有)
-KIND_ROWS = [("改數量", "qty_c", "qty_m"), ("　下修", "qty_down_c", "qty_down_m"), ("　上修", "qty_up_c", "qty_up_m"),
-             ("　有上有下", "qty_mixed_c", "qty_mixed_m"), ("改到貨日", "date_c", "date_m"), ("改倉別", "wh_c", "wh_m"),
-             ("品項遭移除", "gone_c", None)]
-
-
 def _empty_month(label):
-    return {"month": label, "pos": 0, "items": 0, "_skus": set(), "changed_pos": 0,
-            "events": 0, "coupang": 0, "manual": 0, "reasons": {}, "reason_amount": {}, "kinds": {},
+    return {"month": label, "pos": 0, "items": 0, "_skus": set(), "changed_pos": 0, "rounds": 0, "events": 0, "pending": 0,
+            "stages": {}, "kinds": {}, "reasons": {},
             "orig_amount": 0.0, "cur_amount": 0.0, "pre_amount": 0.0, "post_amount": 0.0, "moved_amount": 0.0}
 
 
-def _finish_month(m, reasons=None):
+def _finish_month(m):
     m["skus"] = len(m.pop("_skus"))
     m["changed_pct"] = round(m["changed_pos"] * 100 / m["pos"]) if m["pos"] else 0
-    m["per_changed_po"] = round(m["events"] / m["changed_pos"], 1) if m["changed_pos"] else 0
-    keys = reasons or REASONS + [PENDING]
-    m["reasons"] = {k: m["reasons"].get(k, 0) for k in keys}
-    m["reason_amount"] = {k: round(m["reason_amount"].get(k, 0), 2) for k in keys}
-    m["pending"] = m["reasons"].get(PENDING, 0)
+    m["per_changed_po"] = round(m["rounds"] / m["changed_pos"], 1) if m["changed_pos"] else 0
+    m["stages"] = {k: m["stages"].get(k, 0) for k in STAGE_KEYS}
     m["kinds"] = {k: m["kinds"].get(k, 0) for k in KIND_KEYS}
+    m["_reasons"] = m.pop("reasons")
     for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount"):
         m[k] = round(m[k], 2)
     m["short_amount"] = round(m["cur_amount"] - m["orig_amount"], 2)
@@ -486,13 +548,29 @@ def api_stats():
         data = _build_stats(conn, month_from, month_to, line, _include_test())
     finally:
         conn.close()
-    data["line"] = line; data["include_test"] = _include_test()
+    data["line"] = line
     return jsonify(data)
+
+
+@master_bp.route("/api/master/stats/rounds")
+def api_stats_rounds():
+    """修改紀錄明細：一輪一列，畫面上點修改次數時撈的。篩選在前端做。"""
+    month_from, month_to, months = _stats_range()
+    if not months:
+        return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
+    line = norm_text(request.args.get("line"))
+    conn = get_conn()
+    try:
+        keep, _by, _pr = _keep_pos(conn, month_from, month_to, line)
+        rows = _round_rows(conn, keep)
+    finally:
+        conn.close()
+    return jsonify({"rounds": rows, "month_from": month_from, "month_to": month_to})
 
 
 @master_bp.route("/api/master/stats/events")
 def api_stats_events():
-    """一次改單一列，畫面上點數字時撈的。篩選在前端做（一段期間的事件頂多幾百幾千筆）。"""
+    """系統抓到的變動：一次一列，畫面上點灰字那欄時撈的。篩選在前端做（一段期間頂多幾百幾千筆）。"""
     month_from, month_to, months = _stats_range()
     if not months:
         return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
@@ -503,30 +581,6 @@ def api_stats_events():
     finally:
         conn.close()
     return jsonify({"events": _event_rows(keep, events), "month_from": month_from, "month_to": month_to, "test_events": n_test})
-
-
-@master_bp.route("/api/master/stats/reasons", methods=["POST"])
-def api_stats_reasons():
-    """補原因：勾好幾次改單一起設同一個原因（Jerry 2026-10-19）。已經有原因的也可以改。"""
-    payload = request.get_json(silent=True) or {}
-    keys = [str(k) for k in (payload.get("keys") or []) if str(k).startswith(("import|", "manual|"))][:2000]
-    reason = norm_text(payload.get("reason"))
-    if not keys:
-        return jsonify({"error": "沒有勾選任何改單。"}), 400
-    if reason not in REASONS:
-        return jsonify({"error": f"原因要從清單裡選：{'、'.join(REASONS)}。"}), 400
-    operator, stamp = _operator(), now()
-    conn = get_conn()
-    try:
-        for k in keys:
-            conn.execute("""INSERT INTO mst_change_reasons (event_key, reason, operator, updated_at) VALUES (?, ?, ?, ?)
-                            ON CONFLICT (event_key) DO UPDATE SET reason = EXCLUDED.reason, operator = EXCLUDED.operator,
-                            updated_at = EXCLUDED.updated_at""", (k, reason, operator, stamp))
-        _log(conn, "", "", "", "", "change_reason", "改單原因", "", f"{len(keys)} 次改單 → {reason}", operator, "manual", "")
-        conn.commit()
-    finally:
-        conn.close()
-    return jsonify({"ok": True, "count": len(keys), "reason": reason})
 
 
 @master_bp.route("/api/master/stats/export")
@@ -540,86 +594,108 @@ def api_stats_export():
     try:
         d = _build_stats(conn, month_from, month_to, line, _include_test())
         keep, events, n_test = _collect(conn, month_from, month_to, line, _include_test())
+        rrows = _round_rows(conn, keep)
     finally:
         conn.close()
     from openpyxl.styles import Alignment, Font, PatternFill
     bold = Font(bold=True); head = PatternFill("solid", fgColor="DBEAFE"); tot = PatternFill("solid", fgColor="F1F5F9")
+    grey = Font(color="6B7280")
     wb = openpyxl.Workbook()
+    kl = dict(rounds.KINDS)
 
     ws = wb.active; ws.title = "每月統計"
-    hdr = ["月份", "PO 張數", "品項數", "不同 SKU 數", "曾改單的 PO", "曾改單比例", "改單次數",
-           "其中酷澎修改", "其中我方修改", "曾改單的 PO 平均改單次數", "待補原因", "原始下單金額", "目前出貨金額", "少出金額", "少出比例",
-           "其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"]
+    hdr = ["月份", "PO 張數", "品項數", "不同 SKU 數", "曾改單的 PO", "曾改單比例", "修改次數（OK）", "第一階段", "第二階段", "第三階段",
+           "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數", "還沒記 OK 的 PO",
+           "原始下單金額", "目前出貨金額", "少出金額", "少出比例", "其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"]
     if minutes:
         hdr.append(f"估計工時（每次 {minutes} 分鐘）")
     ws.append(hdr)
     for m in d["months"] + [d["total"]]:
-        row = [m["month"], m["pos"], m["items"], m["skus"], m["changed_pos"], f"{m['changed_pct']}%",
-               m["events"], m["coupang"], m["manual"], m["per_changed_po"], m["pending"],
-               m["orig_amount"], m["cur_amount"], m["short_amount"], f"{m['short_pct']}%",
+        row = [m["month"], m["pos"], m["items"], m["skus"], m["changed_pos"], f"{m['changed_pct']}%", m["rounds"],
+               m["stages"]["1"], m["stages"]["2"], m["stages"]["3"], m["kinds"]["qty"], m["kinds"]["date"], m["kinds"]["split"],
+               m["events"], m["pending"], m["orig_amount"], m["cur_amount"], m["short_amount"], f"{m['short_pct']}%",
                m["pre_amount"], m["post_amount"], m["moved_amount"]]
         if minutes:
-            row.append(round(m["events"] * minutes / 60, 1))
+            row.append(round(m["rounds"] * minutes / 60, 1))
         ws.append(row)
     _style(ws, hdr, bold, head, tot, total_row=True)
+    for r in ws.iter_rows(min_row=2, min_col=14, max_col=14):
+        r[0].font = grey
 
-    ws2 = wb.create_sheet("改單原因")
-    hdr2 = ["月份", "改單次數"] + d["reasons"] + [f"{r} 金額差" for r in d["reasons"]]
+    ws2 = wb.create_sheet("主因")
+    hdr2 = ["類別", "主因", "次數"]
     ws2.append(hdr2)
-    for m in d["months"] + [d["total"]]:
-        ws2.append([m["month"], m["events"]] + [m["reasons"].get(r, 0) for r in d["reasons"]] + [m["reason_amount"].get(r, 0) for r in d["reasons"]])
+    for r in d["reasons"]:
+        ws2.append([r["cat_label"], r["reason"], r["n"]])
+    ws2.append(["合計", "", sum(r["n"] for r in d["reasons"])])
     _style(ws2, hdr2, bold, head, tot, total_row=True)
+    ws2.column_dimensions["B"].width = 28
 
-    wsk = wb.create_sheet("改了什麼")
-    hdrk = ["月份", "類型", "酷澎修改", "我方修改", "合計"]          # 跟畫面一樣左右對照；一個月一段，最後一段是合計
-    wsk.append(hdrk)
-    for m in d["months"] + [d["total"]]:
-        k = m["kinds"]
-        for label, kc, km in KIND_ROWS:
-            wsk.append([m["month"], label, k[kc], k[km] if km else None, k[kc] + (k[km] if km else 0)])
-    _style(wsk, hdrk, bold, head, tot, total_row=False)
-    for row in wsk.iter_rows(min_row=wsk.max_row - len(KIND_ROWS) + 1):
-        for c in row:
-            c.font = bold; c.fill = tot
-
-    ws3 = wb.create_sheet("改最多次的 PO")
-    hdr3 = ["PO 單號", "月份", "線別", "品項數", "改單次數", "酷澎修改", "我方修改", "原因"]
+    ws3 = wb.create_sheet("各階段做了什麼")
+    hdr3 = ["階段", "修改次數（OK）", "有下修", "有改交期／倉別", "有拆單"]
     ws3.append(hdr3)
-    for t in d["top_pos"]:
-        ws3.append([t["po_number"], t["month"], t["lines"], t["items"], t["events"], t["coupang"], t["manual"], t["reasons"]])
-    _style(ws3, hdr3, bold, head, tot, total_row=False)
+    for st in d["stages"]:
+        ws3.append([st["label"], st["rounds"], st["kinds"]["qty"], st["kinds"]["date"], st["kinds"]["split"]])
+    t = d["total"]
+    ws3.append(["合計", t["rounds"], t["kinds"]["qty"], t["kinds"]["date"], t["kinds"]["split"]])
+    _style(ws3, hdr3, bold, head, tot, total_row=True)
 
-    wsd = wb.create_sheet("明細")
-    hdrd = ["時間", "月份", "PO 單號", "線別", "操作人員", "來源", "記在哪個系統", "改單類型", "修改內容", "金額差", "原因", "原因怎麼來的", "說明"]
-    wsd.append(hdrd)
+    ws4 = wb.create_sheet("修改次數最多的 PO")
+    hdr4 = ["PO 單號", "月份", "線別", "品項數", "修改次數（OK）", "各輪", "主因"]
+    ws4.append(hdr4)
+    for p in d["top_pos"]:
+        ws4.append([p["po_number"], p["month"], p["lines"], p["items"], p["rounds"],
+                    "；".join(f"{r['ok_at']} {r['stage_short']} {'、'.join(r['kind_labels'])}" for r in p["list"]), p["reasons"]])
+    _style(ws4, hdr4, bold, head, tot, total_row=False)
+    ws4.column_dimensions["F"].width = 60; ws4.column_dimensions["G"].width = 40
+
+    ws5 = wb.create_sheet("修改紀錄明細")
+    hdr5 = ["OK 時間", "月份", "PO 單號", "線別", "階段", "做了什麼", "主因", "說明", "記的人"]
+    ws5.append(hdr5)
+    for r in rrows:
+        ws5.append([r["ok_at"], r["month"], r["po_number"], r["lines"], r["stage_label"], "、".join(r["kind_labels"]), r["reason"], r["note"], r["operator"]])
+    _style(ws5, hdr5, bold, head, tot, total_row=False)
+    ws5.column_dimensions["A"].width = 20; ws5.column_dimensions["G"].width = 36; ws5.column_dimensions["H"].width = 40
+
+    ws6 = wb.create_sheet("還沒記 OK 的 PO")
+    hdr6 = ["PO 單號", "月份", "線別", "到貨日", "上一個 OK", "之後的改動"]
+    ws6.append(hdr6)
+    for r in d["pending"]:
+        ws6.append([r["po_number"], r["month"], r["lines"], r["delivery_date"], r["last_ok"] or "—",
+                    "；".join(r["changes"]) + (f"…另 {r['more']} 項" if r["more"] else "")])
+    _style(ws6, hdr6, bold, head, tot, total_row=False)
+    ws6.column_dimensions["F"].width = 80
+
+    ws7 = wb.create_sheet("系統抓到的變動")
+    hdr7 = ["時間", "月份", "PO 單號", "線別", "操作人員", "來源", "記在哪個系統", "改了什麼", "修改內容", "金額差", "說明"]
+    ws7.append(hdr7)
     for r in _event_rows(keep, events):
-        wsd.append([r["when"], r["month"], r["po_number"], r["lines"], r["operator"], r["source_label"], r["system"],
-                    r["kind_labels"], r["summary"], r["delta"], r["reason"], r["reason_from"], r["note"]])
-    _style(wsd, hdrd, bold, head, tot, total_row=False)
-    wsd.column_dimensions["I"].width = 60; wsd.column_dimensions["A"].width = 20
+        ws7.append([r["when"], r["month"], r["po_number"], r["lines"], r["operator"], r["source_label"], r["system"],
+                    r["kind_labels"], r["summary"], r["delta"], r["note"]])
+    _style(ws7, hdr7, bold, head, tot, total_row=False)
+    ws7.column_dimensions["I"].width = 60; ws7.column_dimensions["A"].width = 20
 
-    ws4 = wb.create_sheet("怎麼算的")
+    ws8 = wb.create_sheet("怎麼算的")
     for line_text in [
-        ("範圍：全部期間" if month_from is None else f"範圍：{month_from} ～ {month_to}") + (f"，線別 {line}" if line else "，全部線別")
-        + ("，含勾了「這是測試」的改單" if _include_test() else f"，不含勾了「這是測試」的改單（這段期間有 {n_test} 次）"),
-        "PO 歸屬月份：依目前的到貨日（多個日期取最早那天）。未排日期的另列「未排日期」。",
-        "曾改單：這張 PO 在修改歷程裡至少有一次改單事件。",
-        "改單事件：同一張 PO、同一來源、同一時間的變動算一次（整張 PO 改期會一個品項記一筆，一次動作不能算很多次）。",
-        "兩個系統合起來算：訂單彙總表會匯進酷澎訂單管理系統和商品主檔自動化，兩邊都會記酷澎改了什麼；同一個改動只算一次，用先匯入的那邊的時間。",
-        "酷澎修改：訂單彙總表上的下單數量、出貨數量、到貨日、倉別與上次不同，或品項從檔案中消失。",
-        "我方修改：在酷澎訂單管理系統、商品主檔自動化人工修改出貨數量、到貨日、倉別，以及瑪氏出貨確認勇信缺貨後改的出貨數量；恢復成訂單彙總表數字／日期不算。",
-        "改單類型：分改數量、改到貨日、改倉別、品項遭移除，酷澎修改、我方修改分開算；一次改單可能同時屬於多類，各類加起來會大於改單次數。改數量再分下修／上修。",
-        f"原因：每一次改單都要有，酷澎修改也要。大項：{'、'.join(REASONS)}（草稿）。改的時候已選的照舊對應（缺貨→原廠／產銷缺貨、沒車→運能（沒車））；沒有的列「待補」，在改單統計頁補。",
-        "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。金額差是那次改單讓出貨金額變多少。",
-        "少出拆兩段：進系統前就少了＝第一次匯入時出貨數量就比下單數量少（在 Kate 系統先改的，沒有改單紀錄）；進系統後才改＝之後的變動（有改單紀錄、有原因）。",
+        ("範圍：全部期間" if month_from is None else f"範圍：{month_from} ～ {month_to}") + (f"，線別 {line}" if line else "，全部線別"),
+        "PO 歸屬月份：依目前的到貨日（多個日期取最早那天）。未排到貨日的另列「未排日期」。",
+        f"修改次數（OK）：以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準，一輪處理完按一次 OK 算一次。修改紀錄自 {rounds.SINCE} 起才有，之前的月份修改次數為 0。",
+        "曾改單的 PO：至少有一筆修改紀錄的 PO。平均每張改幾次＝修改次數 ÷ 曾改單的 PO。",
+        "第一／二／三階段：記 OK 時選的「這一輪在哪個階段結束」（收單確認／已排單確認／出貨確認）。",
+        "有下修／有改交期／倉別／有拆單：記 OK 時勾的「這一輪做了什麼」，一輪可以勾好幾項，所以三項加起來會大於修改次數。",
+        "主因：記 OK 時勾的主因（照小真的清單，依類別分組），一輪可以勾好幾個，所以主因加總會大於修改次數；沒用到的主因不列。",
+        "還沒記 OK 的 PO：上一個 OK 之後酷澎或我們有改過（下單或出貨數量變少、到貨日或倉別變了、拆出新單），還沒按「這一輪處理完了（OK）」。",
+        "系統抓到的變動次數（灰字）：系統從兩個系統的匯入紀錄和人工修改抓出來的每一次變動，同一張 PO、同一來源、同一時間算一次；好幾次變動可能其實是同一輪處理，"
+        "所以不當修改次數，留著對照用，每個月都有。改單時勾了「這是測試」的不算" + ("" if _include_test() else f"（這段期間有 {n_test} 次）") + "。",
+        "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。",
+        "少出拆兩段：進系統前就少了＝第一次匯入時出貨數量就比下單數量少（在 Kate 系統先改的，沒有修改紀錄）；進系統後才改＝之後的變動。",
         "酷澎拆單：原單拿掉的品項在拆出來的新單裡（原訂單欄），新單那項接回原單算，不算少出、也不算新的下單。",
-        "明細分頁：一次改單一列，要自己做樞紐分析就用這一頁。",
-        "估計工時：改單次數 × 每次幾分鐘 ÷ 60。每次幾分鐘是人填的，不是系統算的。",
+        "估計工時：修改次數（OK）× 每次幾分鐘 ÷ 60。每次幾分鐘是人填的，不是系統算的。",
         "資料從系統開始用（2026 年 9 月中）才有，之前 Excel 時代的紀錄不在裡面。",
     ]:
-        ws4.append([line_text])
-    ws4.column_dimensions["A"].width = 110
-    for r in ws4.iter_rows():
+        ws8.append([line_text])
+    ws8.column_dimensions["A"].width = 110
+    for r in ws8.iter_rows():
         r[0].alignment = Alignment(wrap_text=True, vertical="top")
 
     label = "全部期間" if month_from is None else month_from if month_from == month_to else f"{month_from}～{month_to}"
@@ -638,4 +714,4 @@ def _style(ws, hdr, bold, head, tot, total_row):
     ws.freeze_panes = "A2"
 
 
-__all__ = ["api_stats", "api_stats_events", "api_stats_reasons", "api_stats_export", "_build_stats", "_collect", "_event_rows", "REASONS", "PENDING"]
+__all__ = ["api_stats", "api_stats_rounds", "api_stats_events", "api_stats_export", "_build_stats", "_collect", "_event_rows"]

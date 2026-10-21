@@ -42,7 +42,7 @@
   .badge { display:inline-block; padding:1px 7px; border-radius:6px; font-size:11px; font-weight:600; white-space:nowrap; }
   .bd-ok { background:var(--okbg); color:var(--ok); } .bd-warn { background:var(--warnbg); color:var(--warn); }
   .bd-bad { background:var(--badbg); color:var(--bad); } .bd-blue { background:var(--b100); color:var(--b800); }
-  .bd-gray { background:#f1f5f9; color:var(--muted); }
+  .bd-gray { background:#f1f5f9; color:var(--muted); } .bd-pink { background:#fce7f3; color:#9d174d; }
   table.m { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
   /* 表頭淺灰不用深藍：整頁只剩 PO 單號一個重色，看起來才清爽（參考 ShipSync／ShopZen 那類後台） */
   table.m th { background:#f4f6fa; color:var(--ink2); font-weight:600; font-size:12px; padding:8px 10px; text-align:left; white-space:nowrap; position:sticky; top:0; z-index:2; border-bottom:1px solid var(--line); }
@@ -187,6 +187,7 @@
   .src.none { background:#f8fafc; border-style:dashed; }
   .st-n { color:var(--b700); font-weight:700; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
   .st-n:hover { color:var(--b900); background:var(--b50); }
+  .st-n.st-g { color:var(--muted); font-weight:500; text-decoration-color:#cbd5e1; }
   .dd { position:relative; }
   .fbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fff; border:1px solid var(--line2); border-radius:12px; padding:8px 12px; }
   .fbar .flabel { font-size:12px; color:var(--muted); font-weight:600; margin-right:2px; }
@@ -372,33 +373,33 @@
     </details>
   </section>
 
-  <!-- ④ 改單統計：主管要看「一段期間幾張 PO、幾張被改過、改幾次、為什麼」 -->
+  <!-- ④ 改單統計：2026-10-21 起以 PO 修改紀錄的 OK 數為準，跟 YFS 訂單系統的改單統計同一支 API（完整畫面在那邊） -->
   <section id="tab-stats" class="hidden">
     <div class="flex items-center gap-2 flex-wrap mb-4">
       <label class="text-sm muted">從</label><input type="month" id="st-from" class="sel" style="padding:4px 8px">
       <label class="text-sm muted">到</label><input type="month" id="st-to" class="sel" style="padding:4px 8px">
       <label class="text-sm muted ml-2">線別</label><select id="st-line" class="sel"><option value="">全部線別</option></select>
-      <label class="text-sm muted ml-3" title="分鐘數為人工估計，系統只用來計算估計工時；填 0 不計算工時">每次改單約</label>
+      <label class="text-sm muted ml-3" title="分鐘數為人工估計，系統只用來計算估計工時；填 0 不計算工時">每次修改約</label>
       <input type="number" id="st-min" class="sel" min="0" step="5" style="width:70px;padding:4px 8px" value="0"><span class="text-sm muted">分鐘</span>
-      <label class="flex items-center gap-1 text-sm muted ml-3" title="預設不計入標示為測試的改單"><input type="checkbox" id="st-test"> 含測試</label>
       <div class="flex-1"></div>
       <a id="btn-export-stats" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
     </div>
+    <div class="kbd mb-3">以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完按一次 OK，算一次修改。修改紀錄自 <span id="st-since">2026-10-20</span> 起才有，之前的月份修改次數為 0。還沒記 OK 的 PO 清單在 <a href="/portal/stats" style="color:var(--b700);text-decoration:underline">YFS 訂單系統的改單統計</a>。</div>
     <div class="grid gap-3 mb-4" id="st-kpi" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
-    <div class="card p-4 mb-4"><b class="text-sm">每個月</b><span class="kbd ml-2">點選藍色數字可查看對應的改單明細</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+    <div class="card p-4 mb-4"><b class="text-sm">每個月</b><span class="kbd ml-2">點藍色數字看修改紀錄；灰字是系統抓到的變動次數，不算修改次數，點了看明細</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
     <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
-      <div class="card p-4"><b class="text-sm">改單原因</b><span class="kbd ml-2">酷澎修改、我方修改都算；沒有原因的列「待補」，到 YFS 訂單系統的改單統計補</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
-      <div class="card p-4"><b class="text-sm">改單類型</b><span class="kbd ml-2">一次改單可能同時修改數量與到貨日，各類型加總會大於改單次數</span><div class="tbl-wrap mt-2"><table class="m" id="st-kinds"></table></div></div>
+      <div class="card p-4"><b class="text-sm">主因</b><span class="kbd ml-2">記 OK 時勾的主因，照類別列；一輪可以勾好幾個，加總會大於修改次數</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
+      <div class="card p-4"><b class="text-sm">各階段做了什麼</b><span class="kbd ml-2">這一輪在哪個階段結束 × 做了什麼；一輪可以勾好幾項</span><div class="tbl-wrap mt-2"><table class="m" id="st-stages"></table></div></div>
     </div>
-    <div class="card p-4 mb-4"><b class="text-sm">改單次數最多的 PO</b><div class="tbl-wrap mt-2"><table class="m" id="st-top"></table></div></div>
+    <div class="card p-4 mb-4"><b class="text-sm">修改次數最多的 PO</b><span class="kbd ml-2">點 PO 單號開這邊的 PO 視窗</span><div class="tbl-wrap mt-2"><table class="m" id="st-top"></table></div></div>
     <details class="card p-4 text-sm"><summary class="cursor-pointer font-semibold">計算說明</summary>
       <div class="mt-2 space-y-1 muted">
         <div>PO 依目前的到貨日歸屬月份，未排日期的另列「未排日期」。</div>
-        <div>「曾改單」是指這張 PO 在修改歷程裡至少有一次改單。同一張 PO、同一來源、同一時間的變動算一次，因為整張 PO 改期時每個品項各記一筆，一次動作不能重複計算。</div>
-        <div>「酷澎修改」是訂單彙總表上的出貨數量或到貨日與上次不同，或品項從檔案中消失。「我方修改」是人工修改出貨數量或到貨日；恢復成訂單彙總表的數字不算。</div>
-        <div>「改單類型」分改數量、改到貨日、品項移除三類，各自計算。改數量再分下修、上修。</div>
-        <div>只有我方修改才有原因。2026-09-22 之前的修改沒有原因，列「未填」。改單時勾選「這是測試」的預設不計入，勾選上方「含測試」才會計入。</div>
-        <div>估計工時 = 改單次數 × 填寫的分鐘數，分鐘數為人工估計，不是系統計算。資料自 2026-09 中旬系統上線起計算。</div>
+        <div>「修改次數（OK）」以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完按一次 OK 算一次，一輪裡好幾個動作都算同一次。修改紀錄自 2026-10-20 起才有，之前的月份為 0。</div>
+        <div>「曾改單的 PO」是至少有一筆修改紀錄的 PO。「第一／二／三階段」是記 OK 時選的「這一輪在哪個階段結束」。</div>
+        <div>「有下修」「有改交期／倉別」「有拆單」和主因都是記 OK 時勾的，一輪可以勾好幾項，加總會大於修改次數。</div>
+        <div>「系統抓到的變動次數」（灰字）是系統從兩個系統的匯入紀錄和人工修改抓到的每一次變動，好幾次變動可能其實是同一輪，所以不算修改次數，只留著對照。勾了「這是測試」的不算。</div>
+        <div>估計工時 = 修改次數 × 填寫的分鐘數，分鐘數為人工估計，不是系統計算。資料自 2026-09 中旬系統上線起計算。</div>
       </div>
     </details>
   </section>
@@ -476,7 +477,7 @@
 
 <!-- 改單統計：點數字看明細 -->
 <dialog id="dlg-stev" style="max-width:1100px">
-  <div class="dlg-h"><b><i class="bi bi-list-ul"></i> <span id="stev-title">改單明細</span></b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
+  <div class="dlg-h"><b><i class="bi bi-list-ul"></i> <span id="stev-title">修改紀錄</span></b><button data-close class="text-white/80 hover:text-white"><i class="bi bi-x-lg"></i></button></div>
   <div class="dlg-b"><div id="stev-sub" class="text-sm muted mb-2"></div><div class="tbl-wrap" style="max-height:62vh"><table class="m" id="stev-table"></table></div></div>
 </dialog>
 

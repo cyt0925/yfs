@@ -2665,6 +2665,9 @@ $("#f-keyword").addEventListener("keydown", e => { if (e.key === "Enter") $("#bt
   await loadConfig(); await loadOrders();
   // YFS 訂單系統左側選單的「驗收單簽名」捷徑連到 /#sign：進來就直接打開簽名視窗
   if (location.hash === "#sign") { history.replaceState(null, "", location.pathname); $("#btn-sign").click(); }
+  // 改單統計的「去記 OK」、PO 單號連過來：/coupang?po=單號 直接打開那張 PO 的視窗
+  const po0 = new URLSearchParams(location.search).get("po");
+  if (po0) { history.replaceState(null, "", location.pathname); openPo(po0); }
 })();
 </script>
 </body>

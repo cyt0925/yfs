@@ -259,25 +259,23 @@ def main():
         pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         pg.click("#btn-clear"); pg.wait_for_timeout(500)
 
-        print("\n【4c】④ 改單統計分頁")
+        print("\n【4c】④ 改單統計分頁（2026-10-21 起以修改紀錄的 OK 數為準）")
         pg.click('.m-tab[data-tab="stats"]'); pg.wait_for_timeout(900)
-        check("四張卡：PO 張數／曾改單的 PO／改單次數／估計工時", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4 and "曾改單的 PO" in pg.inner_text("#st-kpi"))
-        check("有「含測試」勾選框、預設不勾", pg.query_selector("#st-test") is not None and not pg.is_checked("#st-test"))
-        check("剛剛改的那筆算進「我方修改」，原因表有缺貨", "我方修改" in pg.inner_text("#st-kpi"))
-        check("每月表有 9 月那列", "2026-09" in pg.inner_text("#st-months"))
-        check("原因表列出大項（酷澎倉限制／原廠／產銷缺貨／運能（沒車）／酷澎要求／我方作業／其他）和待補", all(r in pg.inner_text("#st-reasons") for r in ["酷澎倉限制", "原廠／產銷缺貨", "運能（沒車）", "酷澎要求", "我方作業", "其他", "待補"]))
-        check("「改了什麼」表有改數量／改到貨日／改倉別／品項遭移除，欄是酷澎修改／我方修改／合計", all(r in pg.inner_text("#st-kinds") for r in ["改數量", "改到貨日", "改倉別", "品項遭移除", "酷澎修改", "我方修改", "合計"]))
-        check("數字是藍色可點的", pg.eval_on_selector_all("#tab-stats .st-n", "els => els.length") >= 3)
-        pg.click('#st-reasons .st-n >> nth=0'); pg.wait_for_timeout(900)
-        check("點原因表的數字 → 明細視窗打開、標題寫幾次", pg.evaluate("document.getElementById('dlg-stev').open") and "次" in pg.inner_text("#stev-title"))
-        check("明細列出時間／PO／誰／改了什麼／原因", pg.eval_on_selector_all("#stev-table tbody tr", "els => els.length") >= 1 and "缺貨" in pg.inner_text("#stev-table"))
+        check("五張卡：PO 張數／曾改單的 PO／修改次數（OK）／改過但還沒記 OK／估計工時", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5
+              and all(w in pg.inner_text("#st-kpi") for w in ("曾改單的 PO", "修改次數（OK）", "還沒記 OK", "估計工時")), pg.inner_text("#st-kpi"))
+        check("拿掉的：含測試勾選框、酷澎修改／我方修改、改單類型表", pg.query_selector("#st-test") is None and "我方修改" not in pg.inner_text("#st-kpi") and pg.query_selector("#st-kinds") is None)
+        check("每月表有 9 月那列、有三個階段、三個類別、灰字的系統抓到的變動次數那欄", "2026-09" in pg.inner_text("#st-months")
+              and all(w in pg.inner_text("#st-months thead") for w in ("修改次數（OK）", "第一階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數")), pg.inner_text("#st-months thead"))
+        check("主因表、各階段做了什麼（三個階段加合計）都有", pg.query_selector("#st-reasons thead") and all(w in pg.inner_text("#st-stages") for w in ("第一階段", "第二階段", "第三階段", "合計")))
+        check("剛剛改的那筆算進系統抓到的變動：灰字可以點", pg.eval_on_selector_all("#st-months .st-n.st-g", "els => els.length") >= 1)
+        pg.click('#st-months .st-n.st-g >> nth=0'); pg.wait_for_timeout(900)
+        check("點灰字 → 明細視窗打開、標題寫「系統抓到的變動」幾次", pg.evaluate("document.getElementById('dlg-stev').open") and "系統抓到的變動" in pg.inner_text("#stev-title") and "次" in pg.inner_text("#stev-title"))
+        check("明細列出時間／PO／誰／改了什麼、不列原因", pg.eval_on_selector_all("#stev-table tbody tr", "els => els.length") >= 1 and "我方修改" in pg.inner_text("#stev-table") and "原因" not in pg.inner_text("#stev-table thead"))
         pg.click("#stev-table .stev-po >> nth=0"); pg.wait_for_timeout(700)
         check("明細裡點 PO 會打開 PO 視窗", pg.evaluate("document.getElementById('dlg-po').open")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         check("沒填分鐘數時估計工時顯示破折號", "—" in pg.inner_text("#st-kpi"))
         pg.fill("#st-min", "15"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(700)
         check("填 15 分鐘後算出估計工時、表格多一欄", "小時" in pg.inner_text("#st-kpi") and "估計工時" in pg.inner_text("#st-months"))
-        pg.click("#st-top .st-po >> nth=0"); pg.wait_for_timeout(700)
-        check("點改最多次的 PO 會打開 PO 視窗", pg.evaluate("document.getElementById('dlg-po').open")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         pg.fill("#st-min", "0"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(500)
 
         print("\n【4d】① 來源檔上傳：三個檔一起拖進主檔匯入口")
@@ -644,44 +642,44 @@ def main():
         pg.click("#btn-yfs"); pg.wait_for_selector("#chs .ch", timeout=15000)
         check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁（網站首頁 /）", pg.url.rstrip("/") == base)
         pg.click("#nav a:has-text('改單統計')"); pg.wait_for_selector("#st-kpi .kpi", timeout=15000); pg.wait_for_timeout(500)
-        check("左側「改單統計」：在 YFS 訂單系統裡看，四張數字卡（含待補原因；原始下單→目前出貨那張拿掉了，Jerry 2026-10-19）、待補清單、每月表、原因、改了什麼、改最多次的 PO 都有",
-              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4 and pg.query_selector("#kpi-pend")
-              and "原始下單" not in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
-              and all(pg.query_selector(sel) for sel in ("#st-months thead", "#st-reasons thead", "#st-kinds thead", "#st-top thead")) and "/api/master/stats/export" in pg.get_attribute("#st-export", "href"))
+        check("左側「改單統計」：在 YFS 訂單系統裡看，五張數字卡（PO 張數、曾改單的 PO、修改次數（OK）、原始下單→目前出貨、改過但還沒記 OK）、還沒記 OK 清單、每月表、主因、各階段做了什麼、修改次數最多的 PO 都有（Jerry 2026-10-21 看過示意圖）",
+              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5 and pg.query_selector("#kpi-pend")
+              and "原始下單" in pg.inner_text("#st-kpi") and "修改次數（OK）" in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
+              and all(pg.query_selector(sel) for sel in ("#st-months thead", "#st-reasons thead", "#st-stages thead", "#st-top thead")) and "/api/master/stats/export" in pg.get_attribute("#st-export", "href"), pg.inner_text("#st-kpi"))
+        check("拿掉的：含測試、待補原因、酷澎修改／我方修改、改單類型；寫了修改紀錄從 2026-10-20 起",
+              pg.query_selector("#st-test") is None and "待補" not in pg.inner_text("main") and "我方修改" not in pg.inner_text("#st-months thead") and pg.query_selector("#st-kinds") is None
+              and "2026-10-20" in pg.inner_text(".head .sub"))
         pg.fill("#st-from", "2026-09"); pg.dispatch_event("#st-from", "change"); pg.wait_for_timeout(800)
-        if pg.query_selector("#st-months .st-n"):
-            pg.click("#st-months .st-n >> nth=0"); pg.wait_for_selector("#st-dlg[open]", timeout=8000)
-            check("點有底線的數字 → 跳出那幾次改單的明細", "改單明細" in pg.inner_text("#st-dlg-title")); pg.click("#st-dlg-x")
-        else:
-            check("9 月有改單紀錄可以點", False, pg.inner_text("#st-months"))
-        # 待補原因（Jerry 2026-10-19）：勾兩筆一起補、單筆下拉選了就存
-        pg.wait_for_selector("#pd-table tbody tr", timeout=8000)
-        kh = pg.inner_text("#st-kinds thead")
-        check("改單類型左右對照：欄是酷澎修改／我方修改／合計，不再寫「改數量（酷澎）」（Jerry 2026-10-19）",
-              all(x in kh for x in ("酷澎修改", "我方修改", "合計")) and "（酷澎）" not in pg.inner_text("#st-kinds") and "下修" in pg.inner_text("#st-kinds"), pg.inner_text("#st-kinds"))
-        check("金額：每月統計有原始下單、改單原因表有金額差，待補清單沒有（Jerry 2026-10-19）",
-              "金額差" in pg.inner_text("#st-reasons") and "金額差" not in pg.inner_text("#pd-table") and "原始下單" in pg.inner_text("#st-months"))
-        n0 = int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0)
-        rows0 = pg.eval_on_selector_all("#pd-table .pd-c", "els => els.length")
-        check("待補清單：只看待補、每列一個勾選框和原因下拉，筆數跟數字卡一致（最多先列 50）", n0 > 0 and rows0 == min(n0, 50)
-              and pg.eval_on_selector_all("#pd-table select.rsn.todo", "els => els.length") == rows0, f"卡片 {n0}、清單 {rows0}")
-        pg.click("#pd-table .pd-c >> nth=0"); pg.click("#pd-table .pd-c >> nth=1")
-        check("勾兩筆 → 寫已勾選 2 次、套用可以按", pg.inner_text("#pd-n") == "2" and not pg.is_disabled("#pd-apply"))
-        pg.select_option("#pd-reason", "酷澎倉限制"); pg.click("#pd-apply")
-        pg.wait_for_function(f"document.querySelector('#kpi-pend .v') && !document.querySelector('#kpi-pend .v').innerText.startsWith('{n0}')", timeout=8000)
-        n1 = int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0)
-        check("套用後待補少 2 次、原因表酷澎倉限制有數字", n1 == n0 - 2 and "酷澎倉限制" in pg.inner_text("#st-reasons"), f"{n0} → {n1}")
-        pg.select_option("#pd-table select.rsn >> nth=0", "其他")
-        pg.wait_for_function(f"!document.querySelector('#kpi-pend .v').innerText.startsWith('{n1}')", timeout=8000)
-        check("單筆下拉選「其他」就存起來，待補再少 1", int(pg.inner_text("#kpi-pend .v").replace("次", "").replace(",", "").strip() or 0) == n1 - 1)
-        pos_month = int(pg.inner_text("#st-kpi .kpi >> nth=0").split("\n")[1].replace("張", "").replace(",", "").strip())
+        check("9 月的修改次數是 0、註明 10/20 前沒有修改紀錄；系統抓到的變動次數（灰字）還在、PO 張數和金額照舊有",
+              "前沒有修改紀錄" in pg.inner_text("#st-months") and pg.query_selector("#st-months .st-n.st-g") and "原始下單" in pg.inner_text("#st-months thead"), pg.inner_text("#st-months"))
+        pg.click("#st-months .st-n.st-g >> nth=0"); pg.wait_for_selector("#st-dlg[open]", timeout=8000)
+        check("點灰字 → 跳出系統抓到的變動明細、沒有原因欄", "系統抓到的變動" in pg.inner_text("#st-dlg-title") and "原因" not in pg.inner_text("#st-dlg-table thead")); pg.click("#st-dlg-x")
+        # 記一輪 OK → 統計跟著變（酷澎 PO 視窗那段的操作在【6g】測，這裡用 API 記）
+        if not tc.get("/api/pos?page_size=5").get_json()["rows"]:
+            pv_s = tc.post("/api/import/preview", data={"file": (open(os.path.join(BASE, "samples", "整合表範例.xlsx"), "rb"), "整合表範例.xlsx")}, content_type="multipart/form-data").get_json()
+            tc.post("/api/import/commit", json={"operator": "小真", "batch_id": pv_s["batch_id"]})
+        rows_s = tc.get("/api/pos?page_size=5").get_json()["rows"]; po_s, po_s2 = rows_s[2]["po_number"], rows_s[3]["po_number"]   # 第一張留給【6g】從 0 次開始記
+        d_s = tc.get(f"/api/pos/{po_s2}").get_json(); o_s = d_s["skus"][0]
+        tc.put(f"/api/orders/{o_s['id']}", json={"version": o_s["version"], "qty_ship": max(0, (o_s["qty_ship"] or 1) - 1), "operator": "小真"})   # 改過、沒記 OK
+        r_s = tc.post(f"/api/pos/{po_s}/rounds", json={"operator": "小真", "stage": "1", "kinds": ["qty", "date"], "reasons": ["庫存不足", "約倉問題"], "note": "UI 測試"})
+        assert r_s.status_code == 200, r_s.get_json()
         pg.check("#st-all"); pg.wait_for_timeout(1200)
-        pos_all = int(pg.inner_text("#st-kpi .kpi >> nth=0").split("\n")[1].replace("張", "").replace(",", "").strip())
-        check("勾「全部期間」→ 月份欄位不能選、PO 張數 ≥ 單月、匯出網址帶 all=1", pg.is_disabled("#st-from") and pos_all >= pos_month
-              and "all=1" in pg.get_attribute("#st-export", "href"), f"{pos_month} → {pos_all}")
-        pg.uncheck("#st-all"); pg.wait_for_timeout(1000)
-        pg.uncheck("#pd-only"); pg.wait_for_timeout(500)
-        check("取消「只看待補」→ 補過的也列出來、寫是誰補的", "補" in pg.inner_text("#pd-table") and "酷澎倉限制" in pg.inner_text("#pd-table"))
+        check("勾「全部期間」→ 月份欄位不能選、匯出網址帶 all=1；記了一輪 OK 之後修改次數 ≥ 1、曾改單 ≥ 1 張",
+              pg.is_disabled("#st-from") and "all=1" in pg.get_attribute("#st-export", "href") and int(pg.inner_text("#st-kpi .kpi >> nth=2").split("\n")[1].replace("次", "").replace(",", "").strip()) >= 1
+              and int(pg.inner_text("#st-kpi .kpi >> nth=1").split("\n")[1].replace("張", "").replace(",", "").strip()) >= 1, pg.inner_text("#st-kpi"))
+        check("主因表照類別列、只列用到的：數量下修／庫存不足、改交期／倉別／約倉問題", all(w in pg.inner_text("#st-reasons") for w in ("數量下修", "庫存不足", "改交期／倉別", "約倉問題")) and "停產" not in pg.inner_text("#st-reasons"), pg.inner_text("#st-reasons"))
+        check("各階段做了什麼：第一階段有數字", "第一階段" in pg.inner_text("#st-stages") and pg.query_selector("#st-stages .st-n"))
+        check("修改次數最多的 PO：那張在、PO 單號連到酷澎頁開 PO 視窗、各輪寫階段和做了什麼", po_s in pg.inner_text("#st-top") and f"/coupang?po={po_s}" in pg.get_attribute("#st-top a.link", "href") and "下修" in pg.inner_text("#st-top"))
+        pg.click("#st-top .st-n >> nth=0"); pg.wait_for_selector("#st-dlg[open]", timeout=8000)
+        check("點修改次數 → 跳出修改紀錄明細（OK 日期／階段／做了什麼／主因／說明）", "修改紀錄" in pg.inner_text("#st-dlg-title") and "UI 測試" in pg.inner_text("#st-dlg-table") and "庫存不足" in pg.inner_text("#st-dlg-table")); pg.click("#st-dlg-x")
+        check("改過但還沒記 OK：卡片是警示、清單有那張 PO、寫出改了什麼、有「去記 OK」", "warn" in pg.get_attribute("#kpi-pend", "class") and po_s2 in pg.inner_text("#pd-table") and "下修" in pg.inner_text("#pd-table") and pg.query_selector("#pd-table a.go"), pg.inner_text("#pd-table"))
+        href_go = pg.get_attribute("#pd-table a.go", "href")
+        pg.uncheck("#st-all"); pg.wait_for_timeout(600)
+        pg.goto(f"{base}{href_go}"); pg.wait_for_selector("#dlg-po[open]", timeout=15000); pg.wait_for_selector("#po-rounds #rd-ok", timeout=10000)
+        check("「去記 OK」連到 /coupang?po=單號 → 直接打開那張 PO 的視窗、看得到修改紀錄", pg.inner_text("#po-title").strip() == po_s2 and "修改紀錄" in pg.inner_text("#po-rounds") and "po=" not in pg.url)
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        pg.goto(f"{base}/"); pg.wait_for_selector("#cost .hero", timeout=15000)
+        check("首頁「本月改單與估計工時」卡改成修改次數（OK）、三個階段、主因", "修改次數（OK）" in pg.inner_text("#cost") and "第一階段" in pg.inner_text("#cost") and "我方修改" not in pg.inner_text("#cost"), pg.inner_text("#cost"))
         pg.goto(f"{base}/master#stats"); pg.wait_for_selector("#tab-stats:not(.hidden)", timeout=15000)
         check("商品主檔的 /master#stats 還是能直接打開改單統計分頁（原本的分頁先留著）", pg.is_visible("#tab-stats"))
         pg.set_viewport_size({"width": 390, "height": 844}); pg.goto(f"{base}/"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
