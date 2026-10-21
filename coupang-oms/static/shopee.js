@@ -817,25 +817,20 @@ function renderShip() {
   $("#z-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出訂單系統拋單檔（一天一倉一個檔）＋下修刪單清單（zip）。`
     : picks.length ? `請勾選要產出的訂單。${blkHint(zb)}` : blkHint(zb) || "這一步目前沒有可產出的訂單。";
 }
-/* 改過出貨量還沒填原因的一次填、少於 12 件的一鍵改 0（Alice 2026-10-21「修改數量，使用批次確認原因」；Jerry：不擋產出） */
+/* 改過出貨量還沒填原因的一次填（Alice 2026-10-21「修改數量，使用批次確認原因」；Jerry：不擋產出）。
+   2026-10-21 曾多加「少於 12 件一鍵改成 0（刪單）」，沒人要求，Jerry 說拿掉：少於 12 件的提醒留在那一品的效期視窗，要刪單自己點。 */
 function zItems(every) {
   const out = [];
   every.forEach(g => g.items.forEach(x => { if (!x.dispatch) out.push({ g, x }); }));
   return out;
 }
 function renderZFix(every) {
-  const its = zItems(every), noReason = its.filter(({ x }) => x.adj && !x.adj.reason), under = its.filter(({ x }) => x.final > 0 && x.final < 12);
-  const fix = $("#z-fix"); fix.classList.toggle("hidden", !noReason.length && !under.length);
-  if (!noReason.length && !under.length) return;
-  fix.innerHTML = `<div class="abar">${noReason.length ? `<span><b style="color:var(--warn)">${noReason.length}</b> 項改過出貨量還沒填原因</span><button id="z-reasons" class="btn btn-o btn-sm"><i class="bi bi-chat-square-text"></i> 一次填原因</button>` : ""}
-    ${under.length ? `<span><b style="color:var(--warn)">${under.length}</b> 項少於 12 件，蝦皮進倉會拒收</span><button id="z-zero" class="btn btn-o btn-sm"><i class="bi bi-x-circle"></i> 全部改成 0（刪單）</button>` : ""}
+  const noReason = zItems(every).filter(({ x }) => x.adj && !x.adj.reason);
+  const fix = $("#z-fix"); fix.classList.toggle("hidden", !noReason.length);
+  if (!noReason.length) return;
+  fix.innerHTML = `<div class="abar"><span><b style="color:var(--warn)">${noReason.length}</b> 項改過出貨量還沒填原因</span><button id="z-reasons" class="btn btn-o btn-sm"><i class="bi bi-chat-square-text"></i> 一次填原因</button>
     <span class="kbd">產出拋單檔不會擋；原因沒填的，下修刪單清單的「調整原因」留空。</span></div>`;
-  const zr = $("#z-reasons"); if (zr) zr.addEventListener("click", () => openReasons(every));
-  const zz = $("#z-zero"); if (zz) zz.addEventListener("click", async () => {
-    if (!confirm(`把 ${under.length} 項少於 12 件的出貨量都改成 0（刪單）？原因會記「低於 12 件拒收，刪單」。`)) return;
-    try { const r = await post("/api/shopee/ship/zero", { order_ids: under.map(({ x }) => x.order_id), reason: "低於 12 件拒收，刪單", ...zq() }); toast(`${r.count} 項已改成 0（刪單）`); refresh(); }
-    catch (err) { toast(err.message, "err"); }
-  });
+  $("#z-reasons").addEventListener("click", () => openReasons(every));
 }
 let DR = [];
 function openReasons(every) {
