@@ -352,10 +352,18 @@ function renderStages() {
   });
 }
 function setStage(k) {
-  if (STAGE !== k) { BSEL.clear(); ZSEL.clear(); KSEL.clear(); OPEN.clear(); BOPEN.clear(); ZOPEN.clear(); KOPEN.clear(); hfClear(); }
+  if (STAGE !== k) { ASEL.clear(); BSEL.clear(); ZSEL.clear(); KSEL.clear(); OPEN.clear(); BOPEN.clear(); ZOPEN.clear(); KOPEN.clear(); hfClear(); }
   STAGE = k;
   try { localStorage.setItem("shopee_stage", k); } catch (e) { /* 無痕視窗存不了就算了 */ }
   renderStages(); loadStage();
+  followSide();
+}
+/* 右側卡片跟著清單走（Jerry 2026-10-21「從待產拋單檔按到待通知蝦皮，右邊卡片還停在待產拋單檔的訂單」）：
+   卡片那張單不在這一步的清單裡，就換成這一步的第一張；清單空了就關掉 */
+function followSide() {
+  if (!SIDE_NO) return;
+  if (ORD.has(SIDE_NO) && inStage(SIDE_NO)) return;
+  const first = firstInStage(); if (first) openSide(first); else closeSide();
 }
 async function loadStage() {
   const d = SDEF[STAGE];
@@ -385,7 +393,7 @@ async function refresh() {
   // 右側面板跟著左邊動（Jerry 2026-10-20「我左邊在操作的時候右邊要跟著動啦」）：開著的那張還在清單裡就重畫（搜尋到的品項排最前面）；
   // 被篩掉了就換成清單第一張；清單空了就關掉；搜尋只剩一張就直接打開
   const q = $("#f-q").value.trim();
-  if (SIDE_NO && !ORD.has(SIDE_NO)) { const first = firstInStage(); if (first) openSide(first); else closeSide(); }
+  if (SIDE_NO && !(ORD.has(SIDE_NO) && inStage(SIDE_NO))) followSide();   // 被篩掉、或做完事離開這一步了 → 換成這一步的第一張
   else if (SIDE_NO) openSide(SIDE_NO);       // 做完事，右側面板也換成最新的
   else if (q && VIEW.orders.filter(g => inStage(g.order_no)).length === 1) openSide(firstInStage());
 }
