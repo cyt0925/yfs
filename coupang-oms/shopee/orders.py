@@ -498,32 +498,39 @@ def api_diffs_confirm():
 
 @shopee_bp.route("/api/shopee/fulfil", methods=["POST"])
 def api_fulfil():
-    """整張單改履約方式（需求第四章：保留原履約方式、修改後、修改人員、時間、原因）。"""
+    """整張單改履約方式（需求第四章：保留原履約方式、修改後、修改人員、時間、原因）。
+    2026-10-21（Alice：「上傳訂單後確認出貨方式不需填理由」「用批次點選的方式確認」）：原因改選填；order_nos 可以一次好幾張。"""
     p = request.get_json(silent=True) or {}
-    no = str(p.get("order_no") or "").strip()
+    nos = [str(x).strip() for x in (p.get("order_nos") or []) if str(x).strip()]
+    if not nos and str(p.get("order_no") or "").strip():
+        nos = [str(p.get("order_no")).strip()]
     fulfil = str(p.get("fulfil") or "").strip()
     reason = str(p.get("reason") or "").strip()
+    if not nos:
+        return jsonify({"error": "請選擇訂單。"}), 400
     if fulfil not in FULFILS:
         return jsonify({"error": f"履約方式只能選：{'、'.join(FULFILS)}。"}), 400
-    if not reason:
-        return jsonify({"error": "請填寫修改原因。"}), 400
-    operator = _operator()
+    operator = _operator(); stamp = now(); changed, missing = 0, []
     conn = get_conn()
     try:
-        ids = _group_ids(conn, no)
-        if not ids:
+        for no in nos:
+            ids = _group_ids(conn, no)
+            if not ids:
+                missing.append(no); continue
+            marks = ",".join("?" * len(ids))
+            olds = sorted({r["fulfil"] or "未選" for r in _rows(conn.execute(f"SELECT fulfil FROM shp_orders WHERE id IN ({marks})", ids))})
+            if olds == [fulfil]:
+                continue
+            conn.execute(f"UPDATE shp_orders SET fulfil = ?, updated_at = ? WHERE id IN ({marks})", [fulfil, stamp] + ids)
+            line = _row(conn.execute("SELECT line FROM shp_orders WHERE id = ?", (ids[0],)))["line"]
+            _log(conn, line, no, "", "", "shopee_fulfil", "履約方式", "、".join(olds), fulfil, operator, "manual", reason=reason)
+            changed += 1
+        if missing and len(missing) == len(nos):
             return jsonify({"error": "找不到這張訂單，請重新整理頁面。"}), 404
-        marks = ",".join("?" * len(ids))
-        olds = sorted({r["fulfil"] or "未選" for r in _rows(conn.execute(f"SELECT fulfil FROM shp_orders WHERE id IN ({marks})", ids))})
-        if olds == [fulfil]:
-            return jsonify({"ok": True, "changed": False})
-        conn.execute(f"UPDATE shp_orders SET fulfil = ?, updated_at = ? WHERE id IN ({marks})", [fulfil, now()] + ids)
-        line = _row(conn.execute("SELECT line FROM shp_orders WHERE id = ?", (ids[0],)))["line"]
-        _log(conn, line, no, "", "", "shopee_fulfil", "履約方式", "、".join(olds), fulfil, operator, "manual", reason=reason)
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"ok": True, "changed": True})
+    return jsonify({"ok": True, "changed": changed > 0, "count": changed, "missing": missing})
 
 
 @shopee_bp.route("/api/shopee/versions/<int:order_id>")

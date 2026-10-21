@@ -279,9 +279,13 @@ def main():
     g3 = next(x for x in orders()["orders"] if x["pr_id"] == "PRTWCOTWX202610010777")
     check("那張 PR 補上 PO 號碼、入庫單號，線別紙潔", g3["order_no"] == "POTWCTWX26100599A" and g3["items"][0]["inbound_ids"] == "INTWX1" and g3["line"] == "紙潔")
 
-    print("\n【7】改履約方式：要原因、留紀錄")
-    bad = c.post("/api/shopee/fulfil", json={"order_no": "POTWCTWA26100514N", "fulfil": "竹運出貨", "reason": ""})
-    check("沒寫原因 → 400", bad.status_code == 400 and "原因" in bad.get_json()["error"])
+    print("\n【7】改履約方式：原因選填、可以好幾張一起改（Alice 2026-10-21）、留紀錄")
+    r0 = c.post("/api/shopee/fulfil", json={"order_no": "POTWCTWA26100514N", "fulfil": "竹運出貨", "reason": ""})
+    check("沒寫原因也能改（原因選填）", r0.status_code == 200 and r0.get_json()["changed"] and r0.get_json()["count"] == 1, str(r0.get_json()))
+    check("沒選訂單 → 400", c.post("/api/shopee/fulfil", json={"order_nos": [], "fulfil": "竹運出貨"}).status_code == 400)
+    rb = c.post("/api/shopee/fulfil", json={"order_nos": ["POTWCTWA26100514N", "NOPE"], "fulfil": "供應商直送", "reason": "改回去"})
+    check("好幾張一起改：找得到的改、找不到的列在 missing；全部找不到才 404", rb.status_code == 200 and rb.get_json()["count"] == 1 and rb.get_json()["missing"] == ["NOPE"]
+          and c.post("/api/shopee/fulfil", json={"order_nos": ["NOPE", "NOPE2"], "fulfil": "供應商直送"}).status_code == 404, str(rb.get_json()))
     check("亂填履約方式 → 400", c.post("/api/shopee/fulfil", json={"order_no": "POTWCTWA26100514N", "fulfil": "宅配", "reason": "x"}).status_code == 400)
     r = c.post("/api/shopee/fulfil", json={"order_no": "POTWCTWA26100514N", "fulfil": "竹運出貨", "reason": "竹運有現貨"})
     g2 = next(x for x in orders()["orders"] if x["order_no"] == "POTWCTWA26100514N")
@@ -761,7 +765,7 @@ def ship_tests(c, preview, orders, up):
     up("/api/shopee/stock/import", master(("4987176000000C",)), "產品基本資料.xlsx")
     adj = lambda body: c.post("/api/shopee/ship/adjust", json={**q, **body})  # noqa: E731
     r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": ""})
-    check("改出貨量沒寫原因 → 400", r.status_code == 400 and "原因" in r.get_json()["error"])
+    check("改出貨量沒寫原因也能存（原因選填，之後在待產拋單檔一次填；Alice 2026-10-21）", r.status_code == 200 and r.get_json()["qty"] == 144, str(r.get_json()))
     r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-06-01", "qty": 92}], "reason": "x"})
     check("選的數量超過那批剩的 → 400", r.status_code == 400 and "只剩 91" in r.get_json()["error"], r.get_json()["error"])
     r = adj({"order_id": d["order_id"], "lots": [{"exp": "2027-06-01", "qty": 10}], "reason": "x"})
@@ -778,6 +782,26 @@ def ship_tests(c, preview, orders, up):
           and b_it["adj"]["reason"] == "業務確認兩個效期分開入庫" and b_it["adj"]["lots"] == [["2029-07-24", 96], ["2029-06-01", 48]] and not b_it["warnings"] and logs,
           str((b_it["adj"], b_it["warnings"])))
     check("改成 0 → 刪單，缺 12", r2.status_code == 200 and c_it["final"] == 0 and c_it["short"] == 12)
+    # 一次填原因、少於 12 件一鍵改 0（Alice 2026-10-21「修改數量，使用批次確認原因」；Jerry：不擋產出）
+    r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": ""})
+    pl = plan(); b_it = it(pl, H, "6903148224090_VNN")
+    check("原因清掉再存 → 調整原因空白、出貨量照人工選的", r.status_code == 200 and b_it["adj"]["reason"] == "" and b_it["final"] == 144, str(b_it["adj"]))
+    check("一次填原因：沒勾 → 400、沒原因 → 400", c.post("/api/shopee/ship/reasons", json={"order_ids": [], "reason": "x"}).status_code == 400
+          and c.post("/api/shopee/ship/reasons", json={"order_ids": [b_it["order_id"]], "reason": ""}).status_code == 400)
+    r = c.post("/api/shopee/ship/reasons", json={"order_ids": [b_it["order_id"], c_it["order_id"]], "reason": "竹運庫存不足"})
+    pl = plan(); b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
+    logs_r = [l for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"] if l["field"] == "shopee_ship_reason"]
+    check("兩項一起填「竹運庫存不足」→ 兩項的調整原因都換了、歷程記舊→新", r.status_code == 200 and r.get_json()["count"] == 2
+          and b_it["adj"]["reason"] == "竹運庫存不足" and c_it["adj"]["reason"] == "竹運庫存不足" and len(logs_r) >= 2 and logs_r[0]["new_value"] == "竹運庫存不足", str(r.get_json()) + str(logs_r[:1]))
+    r = c.post("/api/shopee/ship/zero", json={"order_ids": [b_it["order_id"]], "reason": "低於 12 件拒收，刪單", **q})
+    pl = plan(); b_it = it(pl, H, "6903148224090_VNN")
+    check("一鍵改成 0（刪單）→ 出 0、缺全部、原因記下；沒勾 → 400", r.status_code == 200 and r.get_json()["count"] == 1 and b_it["final"] == 0 and b_it["short"] == b_it["qty"]
+          and b_it["adj"]["reason"] == "低於 12 件拒收，刪單" and c.post("/api/shopee/ship/zero", json={"order_ids": [], **q}).status_code == 400, str(b_it["adj"]))
+    r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": "業務確認兩個效期分開入庫"})
+    pl = plan(); b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
+    c.post("/api/shopee/ship/reasons", json={"order_ids": [c_it["order_id"]], "reason": "低於 12 件會被拒收，刪單"})
+    pl = plan(); b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
+    check("改回 96＋48、刪單那項原因改回去（後面的測試照舊）", r.status_code == 200 and b_it["final"] == 144 and c_it["adj"]["reason"] == "低於 12 件會被拒收，刪單")
     r = c.put("/api/shopee/ship/settings", json={"rule": "custom", "ratio": "abc"})
     check("效期比例亂填 → 400", r.status_code == 400)
     c.put("/api/shopee/ship/settings", json={"rule": "custom", "ratio": "66"})

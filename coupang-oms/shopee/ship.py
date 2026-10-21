@@ -594,22 +594,95 @@ def api_ship_adjust():
         cap = min(item["qty"], item["ec"] or 0)
         if total > cap:
             return jsonify({"error": f"出貨量 {total} 超過可出貨量 {min(cap, item['qualified'])}（訂購量 {item['qty']}、EC 可用 {item['ec']}）。"}), 400
-        if not reason:
-            return jsonify({"error": "請填寫調整原因。"}), 400
-        stamp = now()
-        lj = json.dumps(lots, ensure_ascii=False)
-        if old:
-            conn.execute("UPDATE shp_ship SET qty_before = ?, qty_final = ?, lots_json = ?, reason = ?, operator = ?, updated_at = ? WHERE order_id = ?",
-                         (it["qty"], total, lj, reason, operator, stamp, oid))
-        else:
-            conn.execute("INSERT INTO shp_ship (order_id, qty_before, qty_final, lots_json, reason, operator, updated_at) VALUES (?,?,?,?,?,?,?)",
-                         (oid, it["qty"], total, lj, reason, operator, stamp))
-        _log(conn, it["line"], no, it["shopee_sku_id"], "", "shopee_ship_qty", "竹運出貨量", item["final"], total, operator, "manual",
-             f"{it['supplier_sku_id']}；" + "、".join(f"{x['exp']}×{x['qty']}" for x in lots) + f"；{reason}", reason)
+        # 原因改成選填（Alice 2026-10-21「修改數量，使用批次確認原因」：改完數量先存，原因之後在待產拋單檔一次填）
+        _write_ship(conn, it, no, item, lots, reason, operator, bool(old))
         conn.commit()
         return jsonify({"ok": True, "qty": total})
     finally:
         conn.close()
+
+
+def _write_ship(conn, it, no, item, lots, reason, operator, exists):
+    """存人工確認的出貨量（效期、數量、原因）＋記歷程。lots＝[{exp, qty}]。"""
+    total = sum(x["qty"] for x in lots)
+    stamp = now(); oid = it["id"]
+    lj = json.dumps(lots, ensure_ascii=False)
+    if exists:
+        conn.execute("UPDATE shp_ship SET qty_before = ?, qty_final = ?, lots_json = ?, reason = ?, operator = ?, updated_at = ? WHERE order_id = ?",
+                     (it["qty"], total, lj, reason, operator, stamp, oid))
+    else:
+        conn.execute("INSERT INTO shp_ship (order_id, qty_before, qty_final, lots_json, reason, operator, updated_at) VALUES (?,?,?,?,?,?,?)",
+                     (oid, it["qty"], total, lj, reason, operator, stamp))
+    _log(conn, it["line"], no, it["shopee_sku_id"], "", "shopee_ship_qty", "竹運出貨量", item["final"], total, operator, "manual",
+         f"{it['supplier_sku_id']}；" + ("、".join(f"{x['exp']}×{x['qty']}" for x in lots) or "改成 0（刪單）") + (f"；{reason}" if reason else ""), reason)
+    return total
+
+
+def _ids_of(p):
+    out = []
+    for x in (p.get("order_ids") or []):
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
+@shopee_bp.route("/api/shopee/ship/reasons", methods=["POST"])
+def api_ship_reasons():
+    """一次填原因：好幾項改過出貨量的，同一個調整原因一起套（Alice 2026-10-21）。"""
+    p = request.get_json(silent=True) or {}
+    ids = _ids_of(p)
+    reason = str(p.get("reason") or "").strip()
+    if not ids:
+        return jsonify({"error": "請勾選品項。"}), 400
+    if not reason:
+        return jsonify({"error": "請選一個原因，或自己打。"}), 400
+    operator = _operator(); stamp = now(); n = 0
+    conn = get_conn()
+    try:
+        marks = ",".join("?" * len(ids))
+        rows = _rows(conn.execute(f"SELECT s.order_id, s.reason AS old_reason, o.line, o.po_id, o.pr_id, o.shopee_sku_id, o.supplier_sku_id "
+                                  f"FROM shp_ship s JOIN shp_orders o ON o.id = s.order_id WHERE s.order_id IN ({marks})", ids))
+        for r in rows:
+            if (r["old_reason"] or "") == reason:
+                continue
+            conn.execute("UPDATE shp_ship SET reason = ?, operator = ?, updated_at = ? WHERE order_id = ?", (reason, operator, stamp, r["order_id"]))
+            _log(conn, r["line"], r["po_id"] or r["pr_id"], r["shopee_sku_id"], "", "shopee_ship_reason", "竹運出貨調整原因", r["old_reason"] or "", reason,
+                 operator, "manual", r["supplier_sku_id"], reason)
+            n += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "count": n})
+
+
+@shopee_bp.route("/api/shopee/ship/zero", methods=["POST"])
+def api_ship_zero():
+    """一鍵改成 0（刪單）：勾到的品項全部出 0，原因一起填（少於 12 件蝦皮會拒收，Alice 2026-10-21）。已產拋單檔的跳過。"""
+    p = request.get_json(silent=True) or {}
+    ids = _ids_of(p)
+    reason = str(p.get("reason") or "").strip()
+    if not ids:
+        return jsonify({"error": "請勾選品項。"}), 400
+    operator = _operator(); n = 0
+    conn = get_conn()
+    try:
+        marks = ",".join("?" * len(ids))
+        its = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE id IN ({marks})", ids))
+        nos = sorted({order_no(i) for i in its})
+        orders, _ctx = build_ship(conn, p.get("from", ""), p.get("to", ""), p.get("line", ""), nos) if nos else ([], None)
+        items = {x["order_id"]: x for g in orders for x in g["items"]}
+        for it in its:
+            item = items.get(it["id"])
+            if item is None or item["dispatch"]:
+                continue
+            exists = _row(conn.execute("SELECT 1 AS x FROM shp_ship WHERE order_id = ?", (it["id"],))) is not None
+            _write_ship(conn, it, order_no(it), item, [], reason, operator, exists); n += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "count": n})
 
 
 # ── 產檔 ─────────────────────────────────────────────────────────────────────

@@ -402,11 +402,14 @@ function render() {
     ship: hfNum("可出貨量", g => g.qty_ship), short: hfNum("缺貨量", g => g.qty_short),
     next: { label: "下一步", get: g => STAGE === "diff" ? ["確認差異"] : g.todo.length ? g.todo.map(k => SDEF[k].act) : ["已處理"] } };
   const list = hfUse(all, cols, render);
+  hfKeep(ASEL, list);
+  const aAll = list.length && list.every(g => ASEL.has(g.order_no));
   $("#sum").innerHTML = `<span><b>${all.length}</b> 張訂單</span><span><b>${fmt(all.reduce((a, g) => a + g.item_count, 0))}</b> 個品項</span><span><b>${fmt(all.reduce((a, g) => a + g.qty, 0))}</b> 件（蝦皮數量）</span>${hfNote(list.length)}`;
-  let h = `<thead><tr>${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("ff", "opt")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("ship", "num opt")}${hfTh("short", "num opt")}${hfTh("next")}</tr></thead><tbody>`;
+  let h = `<thead><tr><th><input type="checkbox" class="ck" id="a-all" ${aAll ? "checked" : ""} ${list.length ? "" : "disabled"} title="全選"></th>${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("ff", "opt")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("ship", "num opt")}${hfTh("short", "num opt")}${hfTh("next")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no;
     h += `<tr class="og ${g.diff_pending ? "pend" : ""}" data-k="${esc(k)}">
+      <td><input type="checkbox" class="ck a-ck" data-k="${esc(k)}" ${ASEL.has(k) ? "checked" : ""}></td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : !g.po_id ? `<div class="kbd">尚未成 PO</div>` : ""}</td>
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td>
       <td class="nw opt">${esc(g.fulfil)}</td><td class="opt">${codesTd(g)}</td>
@@ -415,12 +418,41 @@ function render() {
       <td class="num opt ${g.qty_ship == null ? "muted" : ""}">${fmt(g.qty_ship)}</td><td class="num opt ${g.qty_short ? "neg" : g.qty_short == null ? "muted" : ""}">${fmt(g.qty_short)}</td>
       <td>${STAGE === "diff" ? `<button class="btn btn-p btn-sm dd" data-k="${esc(k)}"><i class="bi bi-arrow-left-right"></i> 確認差異</button>` : nextBadges(g)}</td></tr>`;
   }
-  if (!list.length) h += all.length ? hfEmpty(12) : emptyRow(12);
+  if (!list.length) h += all.length ? hfEmpty(13) : emptyRow(13);
   $("#tbl").innerHTML = h + "</tbody>";
   $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .go-st")) return; openSide(tr.dataset.k); }));
   $$("#tbl button.dd").forEach(b => b.addEventListener("click", () => openDiff(b.dataset.k)));
   $$("#tbl .go-st").forEach(b => b.addEventListener("click", () => setStage(b.dataset.s)));
+  $$("#tbl input.a-ck").forEach(c => c.addEventListener("change", () => { c.checked ? ASEL.add(c.dataset.k) : ASEL.delete(c.dataset.k); render(); }));
+  const aa = $("#a-all"); if (aa) aa.addEventListener("change", () => { list.forEach(g => aa.checked ? ASEL.add(g.order_no) : ASEL.delete(g.order_no)); render(); });
+  renderABar();
   markSel();
+}
+/* ── 勾好幾張一起改履約方式、一起確認差異（Alice 2026-10-21「用批次點選的方式確認，不要一張一張點」「確認出貨方式不需填理由」，Jerry 看過示意圖） ── */
+const ASEL = new Set(); let A_FF = "", A_REASON = "";
+const REASON_CHIPS = ["竹運庫存不足", "效期不足", "低於 12 件拒收，刪單", "客戶要求"];
+function renderABar() {
+  const bar = $("#a-bar"), n = ASEL.size;
+  bar.classList.toggle("hidden", !n);
+  if (!n) { A_FF = ""; return; }
+  bar.innerHTML = `<div class="abar"><span>已勾選 <b>${n}</b> 張訂單</span><span class="kbd">履約方式改成：</span>${FULFILS.map(f => `<span class="chip a-ff ${A_FF === f ? "on" : ""}" data-f="${esc(f)}">${esc(f)}</span>`).join("")}
+    <input id="a-reason" class="inp" placeholder="原因（選填）" value="${esc(A_REASON)}" style="width:220px"><button id="a-apply" class="btn btn-p btn-sm" ${A_FF ? "" : "disabled"}>套用到 ${n} 張</button>
+    ${STAGE === "diff" ? `<span class="kbd">｜</span><button id="a-confirm" class="btn btn-o btn-sm"><i class="bi bi-check2-all"></i> 勾選的一起確認差異</button>` : ""}
+    <a href="#" id="a-clear" class="lnk">取消勾選</a></div>`;
+  $$("#a-bar .a-ff").forEach(c => c.addEventListener("click", () => { A_FF = c.dataset.f; renderABar(); }));
+  $("#a-reason").addEventListener("input", () => { A_REASON = $("#a-reason").value; });
+  $("#a-apply").addEventListener("click", async () => {
+    const nos = [...ASEL]; if (!A_FF || !nos.length) return;
+    try { const r = await post("/api/shopee/fulfil", { order_nos: nos, fulfil: A_FF, reason: A_REASON.trim() });
+      toast(r.count ? `${r.count} 張已改為${A_FF}` : "履約方式都相同，未修改"); ASEL.clear(); A_FF = ""; A_REASON = ""; refresh();
+    } catch (err) { toast(err.message, "err"); }
+  });
+  const ac = $("#a-confirm"); if (ac) ac.addEventListener("click", async () => {
+    const nos = [...ASEL]; if (!nos.length) return;
+    try { const r = await post("/api/shopee/diffs/confirm", { order_nos: nos }); toast(`已確認 ${r.confirmed} 張的差異`); ASEL.clear(); refresh(); }
+    catch (err) { toast(err.message, "err"); }
+  });
+  $("#a-clear").addEventListener("click", e => { e.preventDefault(); ASEL.clear(); render(); });
 }
 /* ── 差異視窗（需求 3.1.1 差異畫面的欄位） ─────────────────── */
 let DIFF_NO = "";
@@ -452,7 +484,6 @@ function openFulfil(no) {
 }
 $("#df-save").addEventListener("click", async () => {
   if (!FF_SEL) return toast("請選擇履約方式", "err");
-  if (!$("#df-reason").value.trim()) return toast("請填寫修改原因", "err");
   try { const r = await post("/api/shopee/fulfil", { order_no: FF_NO, fulfil: FF_SEL, reason: $("#df-reason").value.trim() });
     toast(r.changed ? `${FF_NO} 已改為${FF_SEL}` : "履約方式相同，未修改"); $("#dlg-fulfil").close(); refresh();
   } catch (err) { toast(err.message, "err"); }
@@ -780,11 +811,56 @@ function renderShip() {
   const za = $("#z-all"); if (za) za.addEventListener("change", () => { picks.forEach(g => za.checked ? ZSEL.add(g.order_no) : ZSEL.delete(g.order_no)); renderShip(); });
   markSel();
   $$("#z-tbl button.z-undo").forEach(b => b.addEventListener("click", () => undoShip(b.dataset.k)));
+  renderZFix(every);
   const n = ZSEL.size; $("#z-go").disabled = !n;
   const zb = blkList.length;
   $("#z-go-hint").textContent = n ? `已勾選 ${n} 張訂單，會產出訂單系統拋單檔（一天一倉一個檔）＋下修刪單清單（zip）。`
     : picks.length ? `請勾選要產出的訂單。${blkHint(zb)}` : blkHint(zb) || "這一步目前沒有可產出的訂單。";
 }
+/* 改過出貨量還沒填原因的一次填、少於 12 件的一鍵改 0（Alice 2026-10-21「修改數量，使用批次確認原因」；Jerry：不擋產出） */
+function zItems(every) {
+  const out = [];
+  every.forEach(g => g.items.forEach(x => { if (!x.dispatch) out.push({ g, x }); }));
+  return out;
+}
+function renderZFix(every) {
+  const its = zItems(every), noReason = its.filter(({ x }) => x.adj && !x.adj.reason), under = its.filter(({ x }) => x.final > 0 && x.final < 12);
+  const fix = $("#z-fix"); fix.classList.toggle("hidden", !noReason.length && !under.length);
+  if (!noReason.length && !under.length) return;
+  fix.innerHTML = `<div class="abar">${noReason.length ? `<span><b style="color:var(--warn)">${noReason.length}</b> 項改過出貨量還沒填原因</span><button id="z-reasons" class="btn btn-o btn-sm"><i class="bi bi-chat-square-text"></i> 一次填原因</button>` : ""}
+    ${under.length ? `<span><b style="color:var(--warn)">${under.length}</b> 項少於 12 件，蝦皮進倉會拒收</span><button id="z-zero" class="btn btn-o btn-sm"><i class="bi bi-x-circle"></i> 全部改成 0（刪單）</button>` : ""}
+    <span class="kbd">產出拋單檔不會擋；原因沒填的，下修刪單清單的「調整原因」留空。</span></div>`;
+  const zr = $("#z-reasons"); if (zr) zr.addEventListener("click", () => openReasons(every));
+  const zz = $("#z-zero"); if (zz) zz.addEventListener("click", async () => {
+    if (!confirm(`把 ${under.length} 項少於 12 件的出貨量都改成 0（刪單）？原因會記「低於 12 件拒收，刪單」。`)) return;
+    try { const r = await post("/api/shopee/ship/zero", { order_ids: under.map(({ x }) => x.order_id), reason: "低於 12 件拒收，刪單", ...zq() }); toast(`${r.count} 項已改成 0（刪單）`); refresh(); }
+    catch (err) { toast(err.message, "err"); }
+  });
+}
+let DR = [];
+function openReasons(every) {
+  DR = zItems(every).filter(({ x }) => x.adj);
+  $("#dr-title").textContent = `一次填原因（${DR.length} 項）`;
+  $("#dr-tbl").innerHTML = `<thead><tr><th><input type="checkbox" class="ck" id="dr-all"></th><th>訂單</th><th>永豐料號</th><th>品名</th><th class="num">原始</th><th class="num">本次</th><th>缺貨原因（系統）</th><th>調整原因</th></tr></thead><tbody>`
+    + (DR.map(({ g, x }) => `<tr><td><input type="checkbox" class="ck dr-ck" data-id="${x.order_id}" ${x.adj.reason ? "" : "checked"}></td><td class="fn">${esc(g.order_no)}</td><td class="fn">${esc(x.supplier_sku_id)}</td><td>${esc((x.name || "").slice(0, 30))}</td>
+      <td class="num">${fmt(x.qty)}</td><td class="num"><b>${fmt(x.final)}</b></td><td>${x.reasons.map(r => `<span class="badge b-dim">${esc(r)}</span>`).join(" ")}</td><td>${x.adj.reason ? esc(x.adj.reason) : `<span class="kbd">—</span>`}</td></tr>`).join("")
+      || `<tr><td colspan="8" class="muted" style="padding:14px">目前沒有改過出貨量的品項。</td></tr>`) + `</tbody>`;
+  $("#dr-chips").innerHTML = REASON_CHIPS.map(r => `<span class="chip dr-chip">${esc(r)}</span>`).join("");
+  $("#dr-text").value = "";
+  const sync = () => { const n = $$("#dr-tbl .dr-ck:checked").length, t = $("#dr-text").value.trim(); $("#dr-apply").disabled = !n || !t; $("#dr-apply").innerHTML = `<i class="bi bi-check2-all"></i> 套用到勾選的 ${n} 項`;
+    $("#dr-hint").textContent = !n ? "請勾選品項。" : !t ? "請選一個原因，或自己打。" : ""; };
+  $$("#dr-tbl .dr-ck").forEach(c => c.addEventListener("change", sync));
+  $("#dr-all").addEventListener("change", () => { $$("#dr-tbl .dr-ck").forEach(c => { c.checked = $("#dr-all").checked; }); sync(); });
+  $$("#dr-chips .dr-chip").forEach(c => c.addEventListener("click", () => { $$("#dr-chips .dr-chip").forEach(x => x.classList.remove("on")); c.classList.add("on"); $("#dr-text").value = c.textContent; sync(); }));
+  $("#dr-text").addEventListener("input", () => { $$("#dr-chips .dr-chip").forEach(x => x.classList.toggle("on", x.textContent === $("#dr-text").value.trim())); sync(); });
+  sync(); $("#dlg-reasons").showModal();
+}
+$("#dr-apply").addEventListener("click", async () => {
+  const ids = $$("#dr-tbl .dr-ck:checked").map(c => Number(c.dataset.id)), reason = $("#dr-text").value.trim();
+  if (!ids.length || !reason) return;
+  try { const r = await post("/api/shopee/ship/reasons", { order_ids: ids, reason }); toast(`${r.count} 項已填原因「${reason}」`); $("#dlg-reasons").close(); refresh(); }
+  catch (err) { toast(err.message, "err"); }
+});
 let SHIPX = null;
 // 檔案是多少、到貨日較早的幾張單先用了多少（Jerry 2026-10-20：EC 可用 231，訂單系統卻是 315，不講清楚會以為是單位換算）
 const usedNote = (file, used, n) => used ? `<span class="kbd">（檔案 ${fmt(file)}，到貨日較早的 ${n} 張單先用 ${fmt(used)}）</span>` : "";

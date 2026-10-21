@@ -133,6 +133,7 @@
   @media (min-width:1181px) { body.side-open table.t th, body.side-open table.t td { padding-left:7px; padding-right:7px; } body.side-open .hf-b { margin-left:3px; } }
   table.t tr.og.sel td { background:var(--s1); } table.t tr.og.sel td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
   a.lnk { color:var(--s9); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  .abar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fdf3f2; border:1px solid #f3d9d6; border-radius:10px; padding:8px 12px; font-size:13px; }
   .codes { font-size:12px; line-height:1.4; white-space:nowrap; } .codes .more { color:var(--b700, #1d4ed8); font-weight:700; cursor:help; }
 </style>
 </head>
@@ -182,6 +183,7 @@
     <div id="st-orders" class="space-y-3">
       <div class="sum" id="sum"></div>
       <div class="tbl-wrap"><table class="t" id="tbl"></table></div>
+      <div id="a-bar" class="hidden"></div>
     </div>
 
     <div id="st-buy" class="space-y-3 hidden">
@@ -206,6 +208,7 @@
 
     <div id="st-ship" class="space-y-3 hidden">
       <div class="sum" id="z-sum"></div>
+      <div id="z-fix" class="hidden"></div>
       <div class="tbl-wrap"><table class="t" id="z-tbl"></table></div>
       <div id="z-err"></div>
       <div class="flex items-center gap-3 flex-wrap">
@@ -292,7 +295,7 @@
 <dialog id="dlg-fulfil" style="width:min(520px,96vw)"><div class="dh"><i class="bi bi-signpost-split"></i><span id="df-title">修改履約方式</span><button class="x" data-close="dlg-fulfil" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3"><div class="kbd" id="df-now"></div>
     <div class="flex gap-2 flex-wrap" id="df-opts"></div>
-    <label class="block kbd">修改原因（必填）<input id="df-reason" class="inp" style="width:100%" placeholder="例如：竹運庫存不足，改由供應商直送"></label>
+    <label class="block kbd">修改原因（選填）<input id="df-reason" class="inp" style="width:100%" placeholder="例如：竹運庫存不足，改由供應商直送"></label>
     <button id="df-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div></dialog>
 <dialog id="dlg-adj" style="width:min(580px,96vw)"><div class="dh"><i class="bi bi-calculator"></i><span id="da-title">修改下採數量</span><button class="x" data-close="dlg-adj" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">
@@ -326,10 +329,17 @@
     <div class="tbl-wrap" style="max-height:340px"><table class="t" id="ds-lots"></table></div>
     <div class="flex items-center gap-3 flex-wrap"><span>本次出貨量 <b id="ds-total" style="font-size:18px">0</b></span><span class="kbd" id="ds-cap"></span>
       <span class="chip" id="ds-zero">改成 0（刪單）</span></div>
-    <label class="block kbd">調整原因（必填）<input id="ds-reason" class="inp" style="width:100%" placeholder="例如：低於 12 件會被拒收，刪單"></label>
+    <label class="block kbd">調整原因（選填，也可以之後在待產拋單檔一次填）<input id="ds-reason" class="inp" style="width:100%" placeholder="例如：低於 12 件會被拒收，刪單"></label>
     <div class="kbd" id="ds-who"></div>
     <div class="flex items-center gap-2 flex-wrap"><button id="ds-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button>
       <button id="ds-clear" class="btn btn-o hidden"><i class="bi bi-arrow-counterclockwise"></i> 回到系統建議</button></div>
+  </div></dialog>
+<dialog id="dlg-reasons" style="width:min(900px,96vw)"><div class="dh"><i class="bi bi-chat-square-text"></i><span id="dr-title">一次填原因</span><button class="x" data-close="dlg-reasons" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div class="kbd">改過出貨量的品項都在這裡，勾好幾項、選一個原因一起套用。沒填原因也能產出拋單檔，下修刪單清單的「調整原因」會留空。</div>
+    <div class="tbl-wrap" style="max-height:46vh"><table class="t" id="dr-tbl"></table></div>
+    <div class="flex items-center gap-2 flex-wrap">原因：<span id="dr-chips" class="flex gap-2 flex-wrap"></span><input id="dr-text" class="inp" placeholder="或自己打" style="width:220px"></div>
+    <div class="flex items-center gap-2 flex-wrap"><button id="dr-apply" class="btn btn-p" disabled><i class="bi bi-check2-all"></i> 套用</button><span class="kbd" id="dr-hint"></span></div>
   </div></dialog>
 <dialog id="dlg-short" style="width:min(760px,96vw)"><div class="dh"><i class="bi bi-dash-circle"></i><span id="dk-title">填寫缺貨</span><button class="x" data-close="dlg-short" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">
