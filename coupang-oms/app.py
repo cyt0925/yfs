@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-21.1"
+BUILD_VERSION = "2026-10-21.2"
 
 app = Flask(__name__)
 
@@ -2062,6 +2062,25 @@ def api_add_round(po_number):
         if err:
             conn.rollback()
             return jsonify({"error": err}), 400
+        conn.commit()
+        return jsonify({"ok": True, "rounds": out, "round_prefill": rounds.prefill(conn, po_number, "", out)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/<po_number>/rounds/<int:rid>", methods=["PUT"])
+def api_update_round(po_number, rid):
+    """改一筆修改紀錄（存了發現有錯，Jerry 2026-10-21）。"""
+    po_number = norm_key(po_number)
+    p = request.get_json(silent=True) or {}
+    conn = get_conn()
+    try:
+        reasons = p.get("reasons") if isinstance(p.get("reasons"), list) else [p.get("reason") or ""]
+        err, out, code = rounds.update_round(conn, po_number, rid, str(p.get("stage") or "").strip(), p.get("kinds") or [],
+                                             reasons, str(p.get("note") or "").strip(), current_operator())
+        if err:
+            conn.rollback()
+            return jsonify({"error": err}), code
         conn.commit()
         return jsonify({"ok": True, "rounds": out, "round_prefill": rounds.prefill(conn, po_number, "", out)})
     finally:

@@ -1621,6 +1621,18 @@ def main():
     check("刪掉這筆 → 修改 0 次、歷程記刪除、又回到待記清單", r.status_code == 200 and det["rounds"] == []
           and any(l["field"] == "po_round" and l["note"] == "刪除修改紀錄" for l in det["logs"]) and po39 in pend39())
     check("刪不存在的 → 404", client.delete(f"/api/pos/{po39}/rounds/999999", json={"operator": "小真"}).status_code == 404)
+    put = lambda rid, body: client.put(f"/api/pos/{po39}/rounds/{rid}", json={"operator": "小真", **body})  # noqa: E731
+    r = post({"stage": "1", "kinds": ["date"], "reasons": ["約倉問題"], "note": "寫錯了"})
+    rid_e = r.get_json()["rounds"][-1]["id"]
+    check("改一筆（Jerry 2026-10-21）：主因不在清單 → 400；不存在的 → 404", put(rid_e, {"stage": "1", "kinds": ["date"], "reasons": ["庫存不足"]}).status_code == 400
+          and put(999999, {"stage": "1", "kinds": ["date"], "reasons": ["約倉問題"]}).status_code == 404)
+    r = put(rid_e, {"stage": "2", "kinds": ["date", "qty"], "reasons": ["約倉問題", "產能不及"], "note": "改好了"})
+    d = r.get_json(); e_ = d["rounds"][-1]
+    det = client.get(f"/api/pos/{po39}").get_json()
+    check("改一筆：階段、做了什麼、主因、說明都換了，OK 日期不變；歷程記舊→新", r.status_code == 200 and e_["id"] == rid_e and e_["stage"] == "2" and e_["kinds"] == ["qty", "date"]
+          and e_["reasons"] == ["產能不及", "約倉問題"] and e_["note"] == "改好了" and e_["ok_at"] == next(x["ok_at"] for x in client.get(f"/api/pos/{po39}").get_json()["rounds"] if x["id"] == rid_e)
+          and any(l["field"] == "po_round" and "第一階段 OK" in l["old_value"] and "第二階段 OK" in l["new_value"] and l["note"].startswith("修改這筆") for l in det["logs"]), str(e_))
+    client.delete(f"/api/pos/{po39}/rounds/{rid_e}", json={"operator": "小真"})
     check("主因複選：其中一個不在清單 → 400", post({"stage": "1", "kinds": ["date", "qty"], "reasons": ["約倉問題", "亂寫"]}).status_code == 400)
     r = post({"stage": "1", "kinds": ["date", "qty"], "reasons": ["約倉問題", "庫存不足", "約倉問題"]})
     d = r.get_json()

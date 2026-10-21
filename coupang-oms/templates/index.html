@@ -987,7 +987,7 @@ function updateSelectedInfo() {
 // ── 編輯 ────────────────────────────────────────────────
 // ── PO 明細彈窗 ─────────────────────────────────────────
 async function openPo(poNumber) {
-  CURRENT = null;
+  CURRENT = null; RD_EDIT = null;
   $("#po-title").textContent = poNumber;
   $("#po-body").innerHTML = '<p class="p-6 text-ink-300">載入中…</p>';
   $("#dlg-po").showModal();
@@ -1170,6 +1170,7 @@ async function openPo(poNumber) {
 // ── 修改紀錄（小真 2026-10-20：一輪處理完打一個 OK 算一筆，做了幾個動作都算一次）──
 // 「做了什麼」系統照修改歷程先勾、階段照 PO 狀態先帶，OP 只要選主因、按 OK。修改紀錄才是佐證，備註只寫過程、不再接 OK（Jerry 2026-10-20）。
 const ROUND_OK_BTN = "這一輪處理完了（OK）";
+let RD_EDIT = null;        // 正在編輯哪一筆修改紀錄（Jerry 2026-10-21：存了發現有錯要調整）；null＝記新的一輪
 function roundReasonHtml(opt, stage, kinds, picked) {   // 主因可複選（Jerry 2026-10-21）：照勾到的類別分組列
   const groups = [], seen = new Set();
   if (kinds.includes("qty")) groups.push([`數量下修 · ${(opt.stages.find(s => s.key === stage) || {}).label || ""}`, opt.reasons.qty[stage] || []]);
@@ -1181,18 +1182,20 @@ function roundReasonHtml(opt, stage, kinds, picked) {   // 主因可複選（Jer
 }
 function roundsHtml(d) {
   const opt = d.round_options, pre = d.round_prefill || {}, rows = d.rounds || [];
-  const stage = pre.stage || "1", kinds = pre.kinds || [];
+  const editing = RD_EDIT != null ? rows.find(r => r.id === RD_EDIT) : null;
+  if (RD_EDIT != null && !editing) RD_EDIT = null;
+  const stage = editing ? editing.stage : (pre.stage || "1"), kinds = editing ? editing.kinds : (pre.kinds || []), reasons = editing ? editing.reasons : [];
   const list = rows.length ? rows.map(r => `
-    <tr class="border-b border-ink-100">
+    <tr class="border-b border-ink-100 ${editing && r.id === editing.id ? "bg-amber-50" : ""}">
       <td class="px-2 py-1.5 text-xs text-emerald-700 font-semibold whitespace-nowrap">${esc(r.ok_at.slice(5, 10))} OK</td>
       <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(r.stage_label)}</td>
       <td class="px-2 py-1.5 text-xs">${r.kind_labels.map(k => `<span class="inline-block px-1.5 rounded bg-ink-100 text-ink-700 text-[11px] mr-1">${esc(k)}</span>`).join("")}</td>
       <td class="px-2 py-1.5 text-xs">${esc(r.reason)}</td>
       <td class="px-2 py-1.5 text-xs text-ink-600">${esc(r.note)}</td>
       <td class="px-2 py-1.5 text-xs text-ink-500 whitespace-nowrap">${esc(r.operator)}</td>
-      <td class="px-2 py-1.5 text-right"><button type="button" class="rd-del text-ink-300 hover:text-red-600 text-xs" data-id="${r.id}" title="刪除這筆修改紀錄（會記歷程）"><i class="bi bi-x-lg"></i></button></td>
+      <td class="px-2 py-1.5 text-right whitespace-nowrap"><button type="button" class="rd-edit text-ink-400 hover:text-brand-600 text-xs mr-1" data-id="${r.id}" title="修改這筆（階段、做了什麼、主因、說明都能改）"><i class="bi bi-pencil"></i></button><button type="button" class="rd-del text-ink-300 hover:text-red-600 text-xs" data-id="${r.id}" title="刪除這筆修改紀錄（會記歷程）"><i class="bi bi-x-lg"></i></button></td>
     </tr>`).join("") : `<tr><td colspan="7" class="px-3 py-2 text-xs text-ink-300">尚無修改紀錄。</td></tr>`;
-  const preNote = pre.changes ? `上一個 OK 之後有 ${pre.changes} 筆改動，系統先勾好了，不對可以改。` : "上一個 OK 之後沒有改動。";
+  const preNote = editing ? `正在修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆。` : pre.changes ? `上一個 OK 之後有 ${pre.changes} 筆改動，系統先勾好了，不對可以改。` : "上一個 OK 之後沒有改動。";
   return `
     <h3 class="font-semibold text-sm mb-2">修改紀錄
       <span class="inline-block ml-1 px-2 rounded-full text-xs font-semibold ${rows.length ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-ink-100 text-ink-500"}">修改 ${rows.length} 次（OK × ${rows.length}）</span>
@@ -1203,19 +1206,20 @@ function roundsHtml(d) {
         <th class="px-2 py-1.5 text-left">主因</th><th class="px-2 py-1.5 text-left">說明</th><th class="px-2 py-1.5 text-left">人員</th><th class="w-8"></th>
       </tr></thead><tbody>${list}</tbody></table>
     </div>
-    <div class="mt-2 bg-ink-50 border border-ink-200 rounded-lg p-3 grid grid-cols-1 md:grid-cols-[180px_1fr_1fr] gap-3 text-sm">
+    <div class="mt-2 ${editing ? "bg-amber-50 border-amber-300" : "bg-ink-50 border-ink-200"} border rounded-lg p-3 grid grid-cols-1 md:grid-cols-[180px_1fr_1fr] gap-3 text-sm">
+      ${editing ? `<div class="md:col-span-3 text-xs text-amber-800 font-semibold"><i class="bi bi-pencil"></i> 修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆（OK 日期、人員不會變）　<a href="#" id="rd-cancel" class="underline font-normal">取消，回到記新的一輪</a></div>` : ""}
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">這輪在哪個階段結束</span>
         <select id="rd-stage" class="border rounded px-2 py-1.5">${opt.stages.map(s => `<option value="${s.key}" ${s.key === stage ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label>
       <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">這輪做了什麼（可複選）</span>
         <div class="flex flex-wrap gap-3 py-1.5">${opt.kinds.map(k => `<label class="flex items-center gap-1.5"><input type="checkbox" class="rd-kind w-4 h-4" value="${k.key}" ${kinds.includes(k.key) ? "checked" : ""}>${esc(k.label)}</label>`).join("")}</div>
         <span class="text-[11px] text-ink-400">${preNote}</span></div>
       <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">主因（可複選，至少一個）</span>
-        <div id="rd-reasons" class="flex flex-col gap-1.5 py-1">${roundReasonHtml(opt, stage, kinds, [])}</div></div>
+        <div id="rd-reasons" class="flex flex-col gap-1.5 py-1">${roundReasonHtml(opt, stage, kinds, reasons)}</div></div>
       <div class="md:col-span-3 flex gap-2 items-end">
         <label class="flex-1 flex flex-col gap-1"><span class="text-xs text-ink-400">說明（選填）</span>
-          <input id="rd-note" class="border rounded px-2 py-1.5" placeholder="例如：改 11/9 → 11/4、拆 1 支、整張不出 #10589655"></label>
+          <input id="rd-note" class="border rounded px-2 py-1.5" placeholder="例如：改 11/9 → 11/4、拆 1 支、整張不出 #10589655" value="${esc(editing ? editing.note : "")}"></label>
         <button type="button" id="rd-ok" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap disabled:opacity-50" disabled>
-          <i class="bi bi-check2-circle"></i> ${ROUND_OK_BTN}</button>
+          <i class="bi ${editing ? "bi-save" : "bi-check2-circle"}"></i> ${editing ? "儲存這筆修改" : ROUND_OK_BTN}</button>
       </div>
       <div class="md:col-span-3 text-[11px] text-ink-400">按下去就存：修改紀錄多一筆、修改歷程記一筆。修改次數以這裡為準，備註只寫過程、不用再打 OK（打了存檔會被擋下來）。</div>
     </div>`;
@@ -1233,6 +1237,8 @@ function bindRounds() {
   bindReasons();
   $("#rd-ok").addEventListener("click", recordRound);
   box.querySelectorAll(".rd-del").forEach(b => b.addEventListener("click", () => deleteRound(b.dataset.id)));
+  box.querySelectorAll(".rd-edit").forEach(b => b.addEventListener("click", () => { RD_EDIT = Number(b.dataset.id); box.innerHTML = roundsHtml(CURRENT); bindRounds(); $("#rd-note").focus(); }));
+  const cancel = $("#rd-cancel"); if (cancel) cancel.addEventListener("click", e => { e.preventDefault(); RD_EDIT = null; box.innerHTML = roundsHtml(CURRENT); bindRounds(); });
   sync();
 }
 async function roundApi(url, init) {
@@ -1245,11 +1251,12 @@ async function recordRound() {
   const po = CURRENT.header.po_number;
   const body = { operator: operator(), stage: $("#rd-stage").value, kinds: [...document.querySelectorAll("#po-rounds .rd-kind:checked")].map(c => c.value),
                  reasons: [...document.querySelectorAll("#po-rounds .rd-reason:checked")].map(c => c.value), note: $("#rd-note").value.trim() };
-  const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const editing = RD_EDIT != null;
+  const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds${editing ? "/" + RD_EDIT : ""}`, { method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!d) return;
-  CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill;
+  RD_EDIT = null; CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill;
   $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
-  toast(`已記這一輪（OK），這張單修改 ${d.rounds.length} 次。`);
+  toast(editing ? "這筆修改紀錄已更新。" : `已記這一輪（OK），這張單修改 ${d.rounds.length} 次。`);
 }
 async function deleteRound(id) {
   if (!requireOperator() || !CURRENT) return;
@@ -1257,7 +1264,7 @@ async function deleteRound(id) {
   const po = CURRENT.header.po_number;
   const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operator: operator() }) });
   if (!d) return;
-  CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill;
+  RD_EDIT = null; CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill;
   $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
   toast("已刪除這筆修改紀錄。");
 }

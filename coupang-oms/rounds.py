@@ -149,28 +149,55 @@ def _log(conn, po, field, label, old, new, operator, note=""):
            VALUES (0,?,'',?,?,?,?,?,'manual',?,?)""", (po, field, label, old or "", new or "", operator, note, db.now()))
 
 
-def add_round(conn, po, stage, kinds, reasons, note, operator):
-    """記一輪：驗證 → 寫 po_rounds → 歷程。備註不動（修改紀錄才是佐證）。reasons 可以好幾個。回 (錯誤訊息, 新的 rounds)。"""
+def _validate(stage, kinds, reasons):
+    """記一輪、改一輪共用的檢查。回 (錯誤訊息, kinds, reason 字串)。"""
     if stage not in STAGE_LABEL:
-        return "請選擇這一輪在哪個階段結束。", None
+        return "請選擇這一輪在哪個階段結束。", None, None
     kinds = [k for k, _v in KINDS if k in (kinds or [])]
     if not kinds:
-        return "請勾選這一輪做了什麼（至少一項）。", None
+        return "請勾選這一輪做了什麼（至少一項）。", None, None
     allowed = []
     for _g, lst in reason_options(stage, kinds):
         allowed += [r for r in lst if r not in allowed]
     picked = {str(r).strip() for r in (reasons or []) if str(r).strip()}
     if not picked or not picked <= set(allowed):
-        return "請勾選主因（只能選勾到的類別裡的原因，至少一個）。", None
-    reason = ",".join(r for r in allowed if r in picked)
+        return "請勾選主因（只能選勾到的類別裡的原因，至少一個）。", None, None
+    return "", kinds, ",".join(r for r in allowed if r in picked)
+
+
+def _summary(stage, kinds, reason):
+    return f"{STAGE_SHORT.get(stage, '')} OK（{'、'.join(KIND_LABEL.get(k, k) for k in kinds)}；主因 {reason.replace(',', '、')}）"
+
+
+def add_round(conn, po, stage, kinds, reasons, note, operator):
+    """記一輪：驗證 → 寫 po_rounds → 歷程。備註不動（修改紀錄才是佐證）。reasons 可以好幾個。回 (錯誤訊息, 新的 rounds)。"""
+    err, kinds, reason = _validate(stage, kinds, reasons)
+    if err:
+        return err, None
     if conn.execute("SELECT 1 FROM po_headers WHERE po_number = ?", (po,)).fetchone() is None:
         return "找不到這張 PO。", None
     stamp = db.now()
     conn.execute("INSERT INTO po_rounds (po_number, ok_at, stage, kinds, reason, note, operator, deleted_at, deleted_by) VALUES (?,?,?,?,?,?,?,'','')",
                  (po, stamp, stage, ",".join(kinds), reason, note or "", operator))
-    summary = f"{STAGE_SHORT[stage]} OK（{'、'.join(KIND_LABEL[k] for k in kinds)}；主因 {reason}）"
-    _log(conn, po, "po_round", "修改紀錄", "", summary, operator, note or "")
+    _log(conn, po, "po_round", "修改紀錄", "", _summary(stage, kinds, reason), operator, note or "")
     return "", rounds_for(conn, po)
+
+
+def update_round(conn, po, rid, stage, kinds, reasons, note, operator):
+    """改一筆（Jerry 2026-10-21：存了發現有錯要調整）：OK 日期、誰記的不動，其他都能改；歷程記舊→新。"""
+    r = conn.execute("SELECT * FROM po_rounds WHERE id = ? AND po_number = ? AND deleted_at = ''", (rid, po)).fetchone()
+    if r is None:
+        return "找不到這筆修改紀錄。", None, 404
+    err, kinds, reason = _validate(stage, kinds, reasons)
+    if err:
+        return err, None, 400
+    old = _summary(r["stage"], [k for k in (r["kinds"] or "").split(",") if k], r["reason"] or "")
+    new = _summary(stage, kinds, reason)
+    if old == new and (note or "") == (r["note"] or ""):
+        return "", rounds_for(conn, po), 200
+    conn.execute("UPDATE po_rounds SET stage = ?, kinds = ?, reason = ?, note = ? WHERE id = ?", (stage, ",".join(kinds), reason, note or "", rid))
+    _log(conn, po, "po_round", "修改紀錄", old, new, operator, f"修改這筆（{operator}）" + (f"；說明：{note}" if note else ""))
+    return "", rounds_for(conn, po), 200
 
 
 def delete_round(conn, po, rid, operator):
@@ -179,5 +206,5 @@ def delete_round(conn, po, rid, operator):
         return "找不到這筆修改紀錄。", None
     conn.execute("UPDATE po_rounds SET deleted_at = ?, deleted_by = ? WHERE id = ?", (db.now(), operator, rid))
     r = _row(r)
-    _log(conn, po, "po_round", "修改紀錄", f"{STAGE_SHORT.get(r['stage'], '')} OK（{'、'.join(r['kind_labels'])}；主因 {r['reason']}）", "", operator, "刪除修改紀錄")
+    _log(conn, po, "po_round", "修改紀錄", _summary(r["stage"], r["kinds"], ",".join(r["reasons"])), "", operator, "刪除修改紀錄")
     return "", rounds_for(conn, po)
