@@ -5,7 +5,8 @@
 格子照範本（Alice 的欄位填寫規則）：
   A1 進貨通路名「蝦皮特選」    C1「採購單號」 D1 EIP 採購單號    G1「下單」 H1 下載當天    G2「到庫」 H2 到貨日
   第 3 列表頭，第 4 列起一品一列：採購單ID（有入庫單號填入庫單號，沒有填 PR 單號）、供應商料號（蝦皮 Supplier SKU ID）、SKU名稱、
-  數量（蝦皮數量）、單位、箱入數（價格本）、轉換箱數（＝數量÷箱入數，公式）、備註；最後一列 Total。範本留 15 列，品項多就往下加。
+  數量（蝦皮數量）、單位、箱入數（價格本）、轉換箱數（＝數量÷箱入數）、備註；最後一列 Total。範本留 15 列，品項多就往下加。
+  轉換箱數和 Total 直接寫算好的數字，不寫公式：下載的檔 Excel 會用「受保護的檢視」打開，公式不會算，整欄空白（Jerry 2026-10-21 截圖）。
   B21「請安排 M/D 到貨」  A22「蝦皮特選店-倉名」  C22 那個倉的進倉說明（WH_NOTES，可在資料與設定改）  C23 固定的進倉注意事項。
 採購單ID 用產檔當下的入庫單號（蝦皮入庫單常常是 EIP 產出之後才上傳），其他照 EIP 存下來的內容。
 """
@@ -77,6 +78,14 @@ def direct_name(e):
     return f"{e['eip_po'] or ''}蝦皮特選直送採購單_{d[5:7]}{d[8:10]}_{wh_name(e['warehouse'])}" + (f"_{e['unit_group']}" if e["unit_group"] else "") + ".xlsx"
 
 
+def _boxes(row):
+    """轉換箱數＝數量÷箱入數，留一位小數。"""
+    try:
+        return round(float(row["qty"] or 0) / float(row["box"] or 1), 1)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0
+
+
 def direct_xlsx(e, rows, note, today=None):
     """照 Alice 的範本畫。rows 來自 direct_rows。"""
     today = today or _dt.date.today()
@@ -94,14 +103,14 @@ def direct_xlsx(e, rows, note, today=None):
     ws["G1"] = "下單"; ws["G1"].font = mid; ws["G1"].alignment = center
     ws["H1"] = today; ws["H1"].number_format = "mm-dd-yy"; ws["H1"].font = mid; ws["H1"].alignment = center
     ws["G2"] = "到庫"; ws["G2"].font = mid; ws["G2"].alignment = center
-    ws["H2"] = _dt.date.fromisoformat(e["expected_date"]) if e["expected_date"] else ""; ws["H2"].number_format = "mm-dd-yy"; ws["H2"].font = hei; ws["H2"].alignment = center
+    ws["H2"] = _dt.date.fromisoformat(e["expected_date"]) if e["expected_date"] else ""; ws["H2"].number_format = "mm-dd-yy"; ws["H2"].font = Font(name="微軟正黑體", size=16, bold=True); ws["H2"].alignment = center    # 20 號字塞不下會變 ####
     ws.row_dimensions[1].height = 20.5; ws.row_dimensions[2].height = 26; ws.row_dimensions[3].height = 32
     for i, h in enumerate(HEAD, start=1):
         c = ws.cell(row=3, column=i, value=h); c.font = Font(name="新細明體", size=12, bold=True); c.fill = grey; c.border = box; c.alignment = center
     n = max(len(rows), MIN_ROWS)
     for i in range(n):
         r = 4 + i; row = rows[i] if i < len(rows) else None
-        vals = [i + 1] + ([row["po_id"], row["sku"], row["name"], row["qty"], row["unit"], row["box"], f"=E{r}/G{r}", ""] if row else [""] * 8)
+        vals = [i + 1] + ([row["po_id"], row["sku"], row["name"], row["qty"], row["unit"], row["box"], _boxes(row), ""] if row else [""] * 8)
         for j, v in enumerate(vals, start=1):
             c = ws.cell(row=r, column=j, value=v); c.font = body; c.border = box
             c.alignment = center if j in (5, 8) else left
@@ -112,7 +121,7 @@ def direct_xlsx(e, rows, note, today=None):
         ws.row_dimensions[r].height = 16
     tr = 4 + n
     ws.cell(row=tr, column=4, value="Total").font = Font(name="微軟正黑體", size=12)
-    ws.cell(row=tr, column=5, value=f"=SUM(E4:E{tr - 1})"); ws.cell(row=tr, column=8, value=f"=SUM(H4:H{tr - 1})")
+    ws.cell(row=tr, column=5, value=sum(r["qty"] or 0 for r in rows)); ws.cell(row=tr, column=8, value=round(sum(_boxes(r) for r in rows), 1))
     for j in range(1, 10):
         c = ws.cell(row=tr, column=j); c.border = box; c.alignment = center
         if j in (5, 8):

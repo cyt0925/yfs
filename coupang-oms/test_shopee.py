@@ -579,13 +579,13 @@ def stage2(c, preview, orders):
               ws["A1"].value == "蝦皮特選" and ws["C1"].value == "採購單號" and ws["D1"].value == "PO202610201" and ws["G1"].value == "下單"
               and ws["H1"].value.date() == _dt.date.today() and ws["G2"].value == "到庫" and ws["H2"].value == _dt.datetime(2026, 10, 23),
               str([ws[k].value for k in ("A1", "C1", "D1", "G1", "H1", "G2", "H2")]))
-        check("第 3 列表頭；第 4 列一品：採購單ID 沒入庫單號就填 PR 單號、供應商料號、SKU名稱、數量照蝦皮 216（不換箱）、箱入數照價格本 4、轉換箱數是公式",
+        check("第 3 列表頭；第 4 列一品：採購單ID 沒入庫單號就填 PR 單號、供應商料號、SKU名稱、數量照蝦皮 216（不換箱）、箱入數照價格本 4、轉換箱數 54 直接寫數字（受保護的檢視不算公式）",
               [ws.cell(3, k).value for k in range(2, 9)] == ["採購單ID", "供應商料號", "SKU名稱", "數量", "單位", "箱入數", "轉換箱數"]
-              and [ws.cell(4, k).value for k in (1, 2, 3, 4, 5, 7, 8)] == [1, "PRTWCOTWG202610080002", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 216, 4, "=E4/G4"]
+              and [ws.cell(4, k).value for k in (1, 2, 3, 4, 5, 7, 8)] == [1, "PRTWCOTWG202610080002", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 216, 4, 54]
               and ws["F4"].value, str([ws.cell(4, k).value for k in range(1, 10)]))
-        check("數量黃底、表頭和轉換箱數灰底；留 15 列之後是 Total 列、加總用公式",
+        check("數量黃底、表頭和轉換箱數灰底；留 15 列之後是 Total 列、加總也是數字",
               ws["E4"].fill.fgColor.rgb.endswith("FFFF00") and ws["B3"].fill.fgColor.rgb.endswith("D9D9D9") and ws["H5"].fill.fgColor.rgb.endswith("D9D9D9")
-              and ws["D19"].value == "Total" and ws["E19"].value == "=SUM(E4:E18)" and ws["H19"].value == "=SUM(H4:H18)", str([ws["D19"].value, ws["E19"].value]))
+              and ws["D19"].value == "Total" and ws["E19"].value == 216 and ws["H19"].value == 54, str([ws["D19"].value, ws["E19"].value, ws["H19"].value]))
         check("下面：請安排 10/23 到貨、蝦皮特選店-高鐵南、高鐵南的進倉說明、固定的注意事項",
               ws["B21"].value == "請安排10/23 到貨" and ws["A22"].value == "蝦皮特選店-高鐵南" and "高鐵南路四段 888 號" in (ws["C22"].value or "")
               and (ws["C23"].value or "").startswith("●同批進貨商品效期須一致"), str([ws["B21"].value, ws["A22"].value, (ws["C22"].value or "")[:40]]))
