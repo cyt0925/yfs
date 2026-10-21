@@ -715,6 +715,34 @@ def api_eip_update(eid):
         conn.close()
 
 
+@shopee_bp.route("/api/shopee/eips/<int:eid>", methods=["DELETE"])
+def api_eip_cancel(eid):
+    """取消產出（Jerry 2026-10-21「產出 EIP 之後反悔，回到待產採購單」）：這份檔刪掉，裡面的訂單退回待產採購單。
+    已回填單號的擋下來，要先清掉單號，免得手滑把回填過的拿掉。蝦皮那邊已經上傳的 EIP 要自己撤。"""
+    from .orders import order_no as _no
+    operator = _operator()
+    conn = get_conn()
+    try:
+        e = _row(conn.execute("SELECT * FROM shp_eip WHERE id = ?", (eid,)))
+        if e is None:
+            return jsonify({"error": "找不到這張 EIP 採購單，可能已重新產出，請重新整理頁面。"}), 404
+        if e["eip_po"]:
+            return jsonify({"error": f"這份已回填 EIP 採購單號 {e['eip_po']}，請先清掉單號再取消產出。"}), 400
+        ids = [r["order_id"] for r in _rows(conn.execute("SELECT order_id FROM shp_eip_items WHERE eip_id = ?", (eid,)))]
+        nos = []
+        if ids:
+            marks = ",".join("?" * len(ids))
+            nos = sorted({_no(o) for o in _rows(conn.execute(f"SELECT * FROM shp_orders WHERE id IN ({marks})", ids))})
+        conn.execute("DELETE FROM shp_eip_items WHERE eip_id = ?", (eid,))
+        conn.execute("DELETE FROM shp_eip WHERE id = ?", (eid,))
+        for no in nos:
+            _log(conn, e["line"], no, "", "", "shopee_eip", "取消產出 EIP 採購單", e["filename"], "未產出", operator, "manual")
+        conn.commit()
+        return jsonify({"ok": True, "orders": nos})
+    finally:
+        conn.close()
+
+
 @shopee_bp.route("/api/shopee/eips/<int:eid>/file")
 def api_eip_file(eid):
     """照當時存下來的內容重新下載（檔名前面加上 EIP 單號，有填的話）。"""

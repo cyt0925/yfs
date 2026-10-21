@@ -731,10 +731,12 @@ function renderEips() {
       <td class="fn" title="${esc(e.orders.join("\n"))}">${esc(e.orders.slice(0, 2).join("、"))}${e.orders.length > 2 ? `…等 ${e.orders.length} 張` : ""}</td>
       <td class="kbd nw opt">${esc(e.created_by)}<div>${esc((e.created_at || "").slice(5, 16).replace("T", " "))}</div></td>
       <td class="nw"><input class="inp fn e-po" data-id="${e.id}" value="${esc(e.eip_po)}" placeholder="例：PO202610001" style="width:140px">
-        <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm e-save" data-id="${e.id}">儲存</button>${e.eip_po ? `<div class="kbd">${esc(e.updated_by)} ${esc((e.updated_at || "").slice(5, 16).replace("T", " "))}</div>` : ""}</td></tr>`).join("")
+        <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm e-save" data-id="${e.id}">儲存</button>${e.eip_po ? `<div class="kbd">${esc(e.updated_by)} ${esc((e.updated_at || "").slice(5, 16).replace("T", " "))}</div>` : ""}
+        <div class="mt-1"><button class="btn btn-o btn-sm e-cancel" data-id="${e.id}" ${e.eip_po ? `disabled title="已回填 EIP 採購單號，請先清掉單號再取消產出"` : `title="這份檔刪掉，裡面的訂單退回「待產採購單」"`}><i class="bi bi-arrow-counterclockwise"></i> 取消產出</button></div></td></tr>`).join("")
       || (every.length ? hfEmpty(10) : `<tr><td colspan="10" class="muted" style="padding:24px;text-align:center">目前沒有待回填的 EIP 採購單。</td></tr>`)}</tbody>`;
   $$("#e-tbl button.e-save").forEach(b => b.addEventListener("click", () => saveEip(b.dataset.id)));
   $$("#e-tbl input.e-po").forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") saveEip(i.dataset.id); }));
+  $$("#e-tbl button.e-cancel").forEach(b => b.addEventListener("click", () => cancelEip(b.dataset.id, EIPS.find(x => String(x.id) === b.dataset.id))));
 }
 async function dlZip(url, fallback, what) {
   const res = await fetch(`${url}?${new URLSearchParams(fq())}`);
@@ -765,6 +767,13 @@ async function saveWh(tr) {
 }
 $("#wh-box").addEventListener("toggle", () => { if ($("#wh-box").open) loadWh(); });
 
+/* 取消產出 EIP（Jerry 2026-10-21「產出 EIP 之後反悔，回到待產採購單」）：跟拋單檔的「取消產出」同一種做法 */
+async function cancelEip(id, e) {
+  const n = e && e.orders ? `檔裡的 ${e.orders.length} 張單` : "檔裡的訂單";
+  if (!confirm(`取消這份 EIP 的產出？\n${e ? e.filename : ""}\n${n}會回到「待產採購單」。已上傳到蝦皮 EIP 的，請自行到蝦皮撤回。`)) return;
+  try { const r = await api(`/api/shopee/eips/${id}`, { method: "DELETE" }); toast(`已取消產出，${r.orders.length} 張單回到「待產採購單」`); refresh(); }
+  catch (err) { toast(err.message, "err"); }
+}
 async function saveEip(id, value) {
   const v = String(value ?? $(`#e-tbl input.e-po[data-id="${id}"]`).value).trim();
   try { const r = await api(`/api/shopee/eips/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eip_po: v }) });
@@ -1164,7 +1173,8 @@ function renderSide() {
       <div class="flex items-center gap-2 mt-1 flex-wrap"><input class="inp fn sd-po" data-id="${e.id}" value="${esc(e.eip_po)}" placeholder="EIP 採購單號，例：PO202610001" style="width:220px">
         <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm sd-po-save" data-id="${e.id}">儲存單號</button>
         ${e.mars ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 下載瑪氏採購單</a>` : `<span class="kbd">回填後可下載瑪氏採購單</span>`) : ""}
-        ${e.direct ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/direct_po"><i class="bi bi-file-earmark-excel"></i> 下載直送採購單</a>` : `<span class="kbd">回填後可下載直送採購單（給採購轉原廠）</span>`) : ""}</div>
+        ${e.direct ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/direct_po"><i class="bi bi-file-earmark-excel"></i> 下載直送採購單</a>` : `<span class="kbd">回填後可下載直送採購單（給採購轉原廠）</span>`) : ""}
+        <button class="btn btn-o btn-sm sd-eip-cancel" data-id="${e.id}" ${e.eip_po ? `disabled title="已回填 EIP 採購單號，請先清掉單號再取消產出"` : `title="這份檔刪掉，裡面的訂單退回「待產採購單」"`}><i class="bi bi-arrow-counterclockwise"></i> 取消產出</button></div>
       ${e.eip_po ? `<div class="kbd">${esc(e.updated_by)} ${esc((e.updated_at || "").slice(5, 16).replace("T", " "))} 回填</div>` : ""}</div>`).join("")
       || `<div class="kbd">尚未產出。</div>`}
     ${g.todo.includes("buy") ? (d.buy.blocking ? `<div class="kbd neg mt-1">先修正上面標紅的品項，才能產出 EIP 採購單。</div>`
@@ -1230,6 +1240,7 @@ function renderSide() {
   $$("#side .sd-ship").forEach(b => b.addEventListener("click", () => openShip(Number(b.dataset.id))));
   $$("#side .sd-short").forEach(b => b.addEventListener("click", () => openShort(Number(b.dataset.id))));
   $$("#side .sd-po-save").forEach(b => b.addEventListener("click", () => saveEip(b.dataset.id, $(`#side .sd-po[data-id="${b.dataset.id}"]`).value)));
+  $$("#side .sd-eip-cancel").forEach(b => b.addEventListener("click", () => cancelEip(b.dataset.id, (d.eips || []).find(x => String(x.id) === b.dataset.id))));
   $$("#side .sd-po").forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") saveEip(i.dataset.id, i.value); }));
   $$("#side .sd-undo").forEach(b => b.addEventListener("click", () => undoShip(g.order_no)));
   $$("#side .sd-zgen").forEach(b => b.addEventListener("click", async () => {

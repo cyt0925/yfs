@@ -606,6 +606,18 @@ def stage2(c, preview, orders):
     sd = c.get("/api/shopee/order", query_string={"no": "POTWCTWG26100800D", "from": "2026-01-01"}).get_json()
     check("右側卡片的 EIP 區標出可下載直送採購單（小單位回填了、箱單位還沒）", sorted((e["unit_group"], bool(e["direct"]), bool(e["eip_po"])) for e in sd["eips"])
           == [("小單位", True, True), ("箱單位", True, False)], str(sd["eips"]))
+    print("\n【12c】取消產出 EIP：回到待產採購單（Jerry 2026-10-21「產出 EIP 之後反悔」）")
+    r = c.delete(f"/api/shopee/eips/{pg_s['id']}")
+    check("已回填單號的不能取消 → 400、說要先清掉單號", r.status_code == 400 and "先清掉單號" in r.get_json()["error"] and c.delete("/api/shopee/eips/999999").status_code == 404, str(r.get_json()))
+    r = c.delete(f"/api/shopee/eips/{pg_b['id']}")
+    ids_left = {e["id"] for e in c.get("/api/shopee/eips").get_json()["eips"]}
+    check("箱單位那份（沒回填）取消產出 → 檔刪掉、回 1 張單", r.status_code == 200 and r.get_json()["orders"] == ["POTWCTWG26100800D"] and pg_b["id"] not in ids_left and pg_s["id"] in ids_left, str(r.get_json()))
+    pd_ = plan("供應商直送")["POTWCTWG26100800D"]
+    st_ = {x["supplier_sku_id"]: (x["eip"] or {}).get("eip_po") if x["eip"] else None for x in pd_["items"]}
+    check("那張單回到待產採購單：箱單位品項沒有 EIP 了（可以重產）、小單位那份還在（已回填鎖住）、整張單狀態「已產出」",
+          st_ == {"4987176232878_RNN": None, "4987176232878_CNN": "PO202610201"} and pd_["po_status"] == "已產出", str(st_) + pd_["po_status"])
+    logs = [l for l in c.get("/api/master/logs?scope=shopee&limit=300").get_json()["logs"] if l["field"] == "shopee_eip" and l["new_value"] == "未產出"]
+    check("歷程記「取消產出 EIP 採購單」", len(logs) == 1 and logs[0]["po_number"] == "POTWCTWG26100800D" and "箱單位" in logs[0]["old_value"], str(logs))
     r = c.put("/api/shopee/warehouses/TWG", json={"notes": "高鐵南改過的進倉說明"})
     whs = {w["code"]: w for w in c.get("/api/shopee/warehouses").get_json()["warehouses"]}
     ws = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/shopee/eips/{pg_s['id']}/direct_po").data)).active

@@ -882,6 +882,11 @@ def main():
             pg.click("#e-tbl a[href$='/direct_po']")
         check("寶僑直送回填後：那列多「直送採購單」、上方出現「下載直送採購單（已回填）」；檔名帶單號、到貨日、倉、單位（Alice 2026-10-21）",
               pg.is_visible("#e-direct") and dl.value.suggested_filename.startswith("PO202610003蝦皮特選直送採購單_1019_觀音_"), dl.value.suggested_filename)
+        check("每份 EIP 那列有「取消產出」；已回填的那份灰掉", pg.eval_on_selector_all("#e-tbl button.e-cancel", "els => els.length") == 2
+              and pg.eval_on_selector_all("#e-tbl button.e-cancel:disabled", "els => els.length") == 1, pg.inner_text("#e-tbl")[:200])
+        pg.once("dialog", lambda d: d.accept()); pg.click("#e-tbl button.e-cancel:not(:disabled)"); pg.wait_for_timeout(1200)
+        check("沒回填的那份按「取消產出」→ 刪掉、提示回到待產採購單、待產採購單變 1", "回到「待產採購單」" in pg.inner_text("#toasts") and count("buy") == 1
+              and pg.eval_on_selector_all("#e-tbl button.e-cancel", "els => els.length") == 1, pg.inner_text("#toasts") + pg.inner_text("#stages"))
         pg.click("#btn-set"); pg.wait_for_selector("#view-set:not(.hidden)", timeout=5000)
         check("資料與設定：價格本列出寶僑、瑪氏（商品總表在瑪氏出貨上傳）", "寶僑" in pg.inner_text("#conv-st") and "瑪氏出貨" in pg.inner_text("#conv-st"), pg.inner_text("#conv-st"))
         pg.click("#wh-box summary"); pg.wait_for_selector("#wh-tbl tbody tr", timeout=10000)
