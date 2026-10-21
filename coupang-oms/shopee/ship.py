@@ -628,6 +628,34 @@ def _ids_of(p):
     return out
 
 
+@shopee_bp.route("/api/shopee/ship/zero", methods=["POST"])
+def api_ship_zero():
+    """改成 0（刪單）：勾到的品項全部出 0，原因一起填。右側卡片那張單「少於 12 件的 N 項改成 0」用（Jerry 2026-10-21：做在右側卡片）。已產拋單檔的跳過。"""
+    p = request.get_json(silent=True) or {}
+    ids = _ids_of(p)
+    reason = str(p.get("reason") or "").strip()
+    if not ids:
+        return jsonify({"error": "請勾選品項。"}), 400
+    operator = _operator(); n = 0
+    conn = get_conn()
+    try:
+        marks = ",".join("?" * len(ids))
+        its = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE id IN ({marks})", ids))
+        nos = sorted({order_no(i) for i in its})
+        orders, _ctx = build_ship(conn, p.get("from", ""), p.get("to", ""), p.get("line", ""), nos) if nos else ([], None)
+        items = {x["order_id"]: x for g in orders for x in g["items"]}
+        for it in its:
+            item = items.get(it["id"])
+            if item is None or item["dispatch"]:
+                continue
+            exists = _row(conn.execute("SELECT 1 AS x FROM shp_ship WHERE order_id = ?", (it["id"],))) is not None
+            _write_ship(conn, it, order_no(it), item, [], reason, operator, exists); n += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "count": n})
+
+
 @shopee_bp.route("/api/shopee/ship/reasons", methods=["POST"])
 def api_ship_reasons():
     """一次填原因：好幾項改過出貨量的，同一個調整原因一起套（Alice 2026-10-21）。"""

@@ -793,7 +793,10 @@ def ship_tests(c, preview, orders, up):
     logs_r = [l for l in c.get("/api/master/logs?scope=shopee&limit=500").get_json()["logs"] if l["field"] == "shopee_ship_reason"]
     check("兩項一起填「竹運庫存不足」→ 兩項的調整原因都換了、歷程記舊→新", r.status_code == 200 and r.get_json()["count"] == 2
           and b_it["adj"]["reason"] == "竹運庫存不足" and c_it["adj"]["reason"] == "竹運庫存不足" and len(logs_r) >= 2 and logs_r[0]["new_value"] == "竹運庫存不足", str(r.get_json()) + str(logs_r[:1]))
-    check("「全部改成 0（刪單）」拿掉了（Jerry 2026-10-21：沒人要求的新功能）", c.post("/api/shopee/ship/zero", json={"order_ids": [b_it["order_id"]], **q}).status_code in (404, 405))
+    r = c.post("/api/shopee/ship/zero", json={"order_ids": [b_it["order_id"]], "reason": "低於 12 件拒收，刪單", **q})
+    pl = plan(); b_it = it(pl, H, "6903148224090_VNN")
+    check("右側卡片「改成 0（刪單）」（Jerry 2026-10-21 做在卡片）→ 出 0、缺全部、原因記下；沒勾 → 400", r.status_code == 200 and r.get_json()["count"] == 1 and b_it["final"] == 0
+          and b_it["short"] == b_it["qty"] and b_it["adj"]["reason"] == "低於 12 件拒收，刪單" and c.post("/api/shopee/ship/zero", json={"order_ids": [], **q}).status_code == 400, str(b_it["adj"]))
     r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": "業務確認兩個效期分開入庫"})
     pl = plan(); b_it, c_it = it(pl, H, "6903148224090_VNN"), it(pl, H, "4987176372093_TNN")
     c.post("/api/shopee/ship/reasons", json={"order_ids": [c_it["order_id"]], "reason": "低於 12 件會被拒收，刪單"})

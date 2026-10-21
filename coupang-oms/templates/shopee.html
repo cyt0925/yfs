@@ -76,6 +76,9 @@
   table.t th.hf-on .hf-b { background:var(--s9); border-color:var(--s9); color:#fff; }
   #hf-pop { position:fixed; z-index:60; width:300px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
   #hf-pop .hf-t { font-weight:700; font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
+  #ff-pop { position:fixed; z-index:60; width:320px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
+  #ff-pop .hf-t { font-weight:700; font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
+  td.ff-cell { cursor:pointer; } td.ff-cell:hover span { text-decoration:underline; } td.ff-cell .ff-i { font-size:10px; color:var(--muted); }
   .hf-o { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
   .hf-o .hf-c { margin-left:auto; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
   .hf-o.hf-in { padding-left:24px; }
@@ -189,6 +192,7 @@
     <div id="st-buy" class="space-y-3 hidden">
       <div class="sum" id="b-sum"></div>
       <div class="tbl-wrap"><table class="t" id="b-tbl"></table></div>
+      <div id="b-bar" class="hidden"></div>
       <div id="b-err"></div>
       <div class="flex items-center gap-3 flex-wrap">
         <button id="b-go" class="btn btn-p" disabled><i class="bi bi-file-earmark-zip"></i> 產出 EIP 採購單</button>
@@ -210,6 +214,7 @@
       <div class="sum" id="z-sum"></div>
       <div id="z-fix" class="hidden"></div>
       <div class="tbl-wrap"><table class="t" id="z-tbl"></table></div>
+      <div id="z-bar" class="hidden"></div>
       <div id="z-err"></div>
       <div class="flex items-center gap-3 flex-wrap">
         <button id="z-go" class="btn btn-p" disabled><i class="bi bi-file-earmark-zip"></i> 產出拋單檔</button>
@@ -220,6 +225,7 @@
     <div id="st-notify" class="space-y-3 hidden">
       <div class="sum" id="k-sum"></div>
       <div class="tbl-wrap"><table class="t" id="k-tbl"></table></div>
+      <div id="k-bar" class="hidden"></div>
       <div class="flex items-center gap-3 flex-wrap">
         <button id="k-go" class="btn btn-p" disabled><i class="bi bi-chat-dots"></i> 產生蝦皮通知（LINE）</button>
         <span class="kbd" id="k-go-hint">請勾選要通知的訂單。</span>
@@ -292,11 +298,6 @@
 <dialog id="dlg-diff"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="dd-title">差異</span><button class="x" data-close="dlg-diff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div id="dd-body"></div>
     <div class="flex items-center gap-2 mt-3"><button id="dd-confirm" class="btn btn-p"><i class="bi bi-check2-circle"></i> 確認差異</button><span class="kbd">確認後這張單回到「已匯入」，才能往下處理。</span></div></div></dialog>
-<dialog id="dlg-fulfil" style="width:min(520px,96vw)"><div class="dh"><i class="bi bi-signpost-split"></i><span id="df-title">修改履約方式</span><button class="x" data-close="dlg-fulfil" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
-  <div class="db space-y-3"><div class="kbd" id="df-now"></div>
-    <div class="flex gap-2 flex-wrap" id="df-opts"></div>
-    <label class="block kbd">修改原因（選填）<input id="df-reason" class="inp" style="width:100%" placeholder="例如：竹運庫存不足，改由供應商直送"></label>
-    <button id="df-save" class="btn btn-p"><i class="bi bi-check2"></i> 儲存</button></div></dialog>
 <dialog id="dlg-adj" style="width:min(580px,96vw)"><div class="dh"><i class="bi bi-calculator"></i><span id="da-title">修改下採數量</span><button class="x" data-close="dlg-adj" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">
     <div class="alert al-warn" id="da-why"></div>
