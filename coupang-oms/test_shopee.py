@@ -593,6 +593,10 @@ def stage2(c, preview, orders):
     got = sorted((ws.cell(r_, 2).value, ws.cell(r_, 3).value, ws.cell(r_, 5).value, ws.cell(r_, 7).value) for r_ in (4, 5, 6))
     check("紙潔那份：三品三列、採購單ID 都是 PR、數量照蝦皮 360／1392／42、箱入數 12；第 7 列起空白", got == [("PRTWCOTWA202610080001", "1021315_RNN", 42, 1),
           ("PRTWCOTWA202610080001", "1022248_CNN", 1392, 12), ("PRTWCOTWA202610080001", "1022257_PNN", 360, 12)] and ws["B7"].value in ("", None) and ws["D19"].value == "Total", str(got))
+    inb = inbound_xlsx([("INTWG0002610230001", "82_1", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 216)], "POTWCTWG26100800D", wh="TWG", date="2026-10-23")
+    pv = preview(inb, "InboundOrder_20261021.xlsx").get_json(); c.post("/api/shopee/import/commit", json={"upload_id": pv["upload_id"]})
+    ws = openpyxl.load_workbook(io.BytesIO(c.get(f"/api/shopee/eips/{pg_s['id']}/direct_po").data)).active
+    check("蝦皮入庫單上傳後再下載 → 採購單ID 從 PR 單號換成入庫單號（用下載當下的）", ws["B4"].value == "INTWG0002610230001", str(ws["B4"].value))
     r = c.get("/api/shopee/direct_po.zip")
     zn = sorted(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) if r.status_code == 200 else []
     check("打包下載只放已回填的寶僑、紙潔 2 份（瑪氏的不混進來）、zip 名稱帶到貨日區間；到貨日範圍可以篩", zn == ["PO202610201蝦皮特選直送採購單_1023_高鐵南_小單位.xlsx",
