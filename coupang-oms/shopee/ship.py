@@ -594,7 +594,10 @@ def api_ship_adjust():
         cap = min(item["qty"], item["ec"] or 0)
         if total > cap:
             return jsonify({"error": f"出貨量 {total} 超過可出貨量 {min(cap, item['qualified'])}（訂購量 {item['qty']}、EC 可用 {item['ec']}）。"}), 400
-        # 原因改成選填（Alice 2026-10-21「修改數量，使用批次確認原因」：改完數量先存，原因之後在待產拋單檔一次填）
+        # 原因統一在右側卡片「調整原因」那一區填（Jerry 2026-10-21）：效期視窗不再填原因。沒帶原因就沿用這品原本的，
+        # 這品沒有就用這張單其他改過的品項最常用的原因（卡片那區填過，之後再改數量的自動帶）
+        if not reason:
+            reason = (old or {}).get("reason") or _order_reason(conn, it, oid)
         _write_ship(conn, it, no, item, lots, reason, operator, bool(old))
         conn.commit()
         return jsonify({"ok": True, "qty": total})
@@ -616,6 +619,14 @@ def _write_ship(conn, it, no, item, lots, reason, operator, exists):
     _log(conn, it["line"], no, it["shopee_sku_id"], "", "shopee_ship_qty", "竹運出貨量", item["final"], total, operator, "manual",
          f"{it['supplier_sku_id']}；" + ("、".join(f"{x['exp']}×{x['qty']}" for x in lots) or "改成 0（刪單）") + (f"；{reason}" if reason else ""), reason)
     return total
+
+
+def _order_reason(conn, it, oid):
+    """這張單其他改過出貨量的品項最常用的調整原因（沒有就空白）。"""
+    rows = _rows(conn.execute("SELECT s.reason FROM shp_ship s JOIN shp_orders o ON o.id = s.order_id "
+                              "WHERE s.order_id != ? AND s.reason != '' AND o.po_id = ? AND o.pr_id = ?", (oid, it["po_id"], it["pr_id"])))
+    cnt = collections.Counter(r["reason"] for r in rows)
+    return cnt.most_common(1)[0][0] if cnt else ""
 
 
 def _ids_of(p):

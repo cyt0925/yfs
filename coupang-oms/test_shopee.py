@@ -785,7 +785,7 @@ def ship_tests(c, preview, orders, up):
     # 一次填原因、少於 12 件一鍵改 0（Alice 2026-10-21「修改數量，使用批次確認原因」；Jerry：不擋產出）
     r = adj({"order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}, {"exp": "2029-06-01", "qty": 48}], "reason": ""})
     pl = plan(); b_it = it(pl, H, "6903148224090_VNN")
-    check("原因清掉再存 → 調整原因空白、出貨量照人工選的", r.status_code == 200 and b_it["adj"]["reason"] == "" and b_it["final"] == 144, str(b_it["adj"]))
+    check("效期視窗不帶原因再存 → 沿用這品原本的原因（原因統一在右側卡片填，Jerry 2026-10-21）", r.status_code == 200 and b_it["adj"]["reason"] == "業務確認兩個效期分開入庫" and b_it["final"] == 144, str(b_it["adj"]))
     check("一次填原因：沒勾 → 400、沒原因 → 400", c.post("/api/shopee/ship/reasons", json={"order_ids": [], "reason": "x"}).status_code == 400
           and c.post("/api/shopee/ship/reasons", json={"order_ids": [b_it["order_id"]], "reason": ""}).status_code == 400)
     r = c.post("/api/shopee/ship/reasons", json={"order_ids": [b_it["order_id"], c_it["order_id"]], "reason": "竹運庫存不足"})
