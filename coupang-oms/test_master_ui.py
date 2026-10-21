@@ -767,7 +767,8 @@ def main():
         pg.click("#a-bar .bb-confirm"); pg.wait_for_timeout(1000)
         check("按「勾選的一起確認差異」→ 那格回到 0、清單沒有了", count("diff") == 0 and "這一步目前沒有要處理的訂單" in pg.inner_text("#tbl"), pg.inner_text("#stages"))
         stage("all"); pg.click("#tbl tr.og >> nth=0"); pg.wait_for_selector("#side:not(.hidden)", timeout=8000)
-        check("右側卡片沒有「修改履約方式」鈕了，改在清單那一格", pg.query_selector("#side .sd-ff") is None and "在清單那一格點一下可改" in pg.inner_text("#sd-title"))
+        pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('履約方式')", timeout=10000)   # CI 比較慢：等卡片資料讀完再看
+        check("右側卡片沒有「修改履約方式」鈕了，改在清單那一格", pg.query_selector("#side .sd-ff") is None and "在清單那一格點一下可改" in pg.inner_text("#sd-title"), pg.inner_text("#sd-title"))
         pg.click("#tbl tr.og .ff-cell >> nth=0"); pg.wait_for_selector("#ff-pop", timeout=5000)
         check("點清單的履約方式那一格 → 跳三個選項、不用原因", pg.eval_on_selector_all("#ff-pop .ff-opt", "els => els.length") == 3 and "不用填原因" in pg.inner_text("#ff-pop"))
         pg.click("#ff-pop .ff-opt[data-f='供應商直送']")
