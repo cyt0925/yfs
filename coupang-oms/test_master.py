@@ -905,6 +905,12 @@ def main():
     pend = [p for p in st12["pending"] if p["po_number"] == XPO]
     check("改過但還沒記 OK：這張在清單裡（上一個 OK 空白、寫出改了什麼、到貨日、線別）、每月統計那欄 ≥ 1",
           pend and pend[0]["last_ok"] == "" and pend[0]["changes"] and pend[0]["delivery_date"] == "2030-01-15" and pend[0]["lines"] == "寶僑" and t12["pending"] >= 1, str(pend[:1]))
+    r_ = client.put(f"/api/pos/{XPO}/rounds/draft", json={"operator": "小真", "stage": "1", "kinds": ["qty"], "reasons": ["庫存不足"]})
+    st12 = client.get("/api/master/stats?month=2030-01").get_json()
+    pend = [p for p in st12["pending"] if p["po_number"] == XPO]
+    check("先存著（草稿）：還沒記 OK 清單標出有草稿（誰、哪天）、修改次數還是 0", r_.status_code == 200 and pend and pend[0]["draft"] and st12["total"]["rounds"] == 0, str(pend[:1]))
+    wbp = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))["還沒記 OK 的 PO"]
+    check("Excel 還沒記 OK 的 PO 多一欄草稿", [c.value for c in wbp[1]][-1].startswith("草稿") and any(r[0] == XPO and r[-1] for r in wbp.iter_rows(min_row=2, values_only=True)), str([c.value for c in wbp[1]]))
     r1 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "1", "kinds": ["qty", "date"], "reasons": ["庫存不足", "約倉問題"], "note": "整張不出"})
     r2 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "2", "kinds": ["split"], "reasons": ["產能不及"]})
     check("記兩輪 OK（第一階段下修＋改交期倉別、第二階段拆單）", r1.status_code == 200 and r2.status_code == 200, str(r1.get_json()) + str(r2.get_json()))

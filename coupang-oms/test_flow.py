@@ -1585,6 +1585,29 @@ def main():
           and po39 in [x["po_number"] for x in client.get("/api/pos?round_pending=1&page_size=500").get_json()["rows"]])
     tasks = client.get("/api/portal/summary").get_json()["tasks"]
     check("首頁今日事項：「改過但還沒記 OK 的 PO N 張」、連到只看還沒記 OK 的", any(t["key"] == "rounds" and "還沒記 OK" in t["title"] and t["url"].endswith("round_pending=1") for t in tasks), str([t["title"] for t in tasks]))
+    # 先存著（還沒 OK）：小真 2026-10-21 問「還沒完成可以先暫存嗎」，Jerry 看過示意圖「OK 照這樣做」
+    r = client.put(f"/api/pos/{po39}/rounds/draft", json={"operator": "小真", "stage": "1", "kinds": ["date"], "reasons": ["約倉問題", "亂寫"], "note": "先記著"})
+    dj = r.get_json()
+    check("存草稿：200、主因只留清單裡有的、回草稿是誰存的", r.status_code == 200 and dj["draft"]["reasons"] == ["約倉問題"] and dj["round_prefill"]["draft"]["operator"], str(dj)[:300])
+    det = client.get(f"/api/pos/{po39}").get_json()
+    check("PO 視窗再開：表單照草稿帶（階段、主因、說明）、修改紀錄還是 0 筆、歷程沒多記、還在待記清單",
+          det["rounds"] == [] and det["round_prefill"]["reasons"] == ["約倉問題"] and det["round_prefill"]["note"] == "先記著" and det["round_prefill"]["stage"] == "1"
+          and det["round_prefill"]["draft"]["kinds"] == ["date"] and not any(l["field"] == "po_round" for l in det["logs"]) and po39 in pend39(), str(det["round_prefill"]))
+    r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det["header"]["version"], "po_status": "已完成"})
+    check("有草稿還是不能改成已完成（草稿不算 OK）", r.status_code == 400 and r.get_json()["error"] == "round_required", r.get_json())
+    import time as _t39; _t39.sleep(1.05)
+    sk39 = det["skus"][0]
+    r = client.put(f"/api/orders/{sk39['id']}", json={"operator": "小真", "version": sk39["version"], "qty_ship": max(0, (sk39["qty_ship"] or 1) - 1)})
+    pre = client.get(f"/api/pos/{po39}").get_json()["round_prefill"]
+    check("存草稿之後又有下修 → 「做了什麼」補勾數量下修、草稿自己勾的還在、寫是哪些補的", r.status_code == 200 and pre["kinds"] == ["qty", "date"]
+          and pre["draft"]["added_kinds"] == ["qty"] and pre["draft"]["added_labels"] == ["數量下修"] and pre["reasons"] == ["約倉問題"], str(pre))
+    r = client.delete(f"/api/pos/{po39}/rounds/draft")
+    check("丟掉草稿 → 表單回到系統先帶的（主因清空、說明清空、還是有勾到的改動）", r.status_code == 200 and r.get_json()["round_prefill"]["draft"] is None
+          and r.get_json()["round_prefill"]["reasons"] == [] and r.get_json()["round_prefill"]["note"] == "" and "date" in r.get_json()["round_prefill"]["kinds"], str(r.get_json())[:300])
+    check("沒這張 PO 的草稿 → 404", client.put("/api/pos/NOPE/rounds/draft", json={"stage": "1"}).status_code == 404)
+    r = client.put(f"/api/pos/{po39}/rounds/draft", json={"operator": "小真", "stage": "2", "kinds": ["date", "qty"], "reasons": ["約倉問題"]})
+    check("再存一份（一張 PO 一份，蓋掉）", r.status_code == 200 and r.get_json()["draft"]["stage"] == "2")
+    det = client.get(f"/api/pos/{po39}").get_json()
     r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det["header"]["version"], "remarks": "改11/9=>10/20-OK"})
     check("防呆：備註自己打 OK 存檔 → 擋下來（round_required）", r.status_code == 400 and r.get_json()["error"] == "round_required", r.get_json())
     r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det["header"]["version"], "remarks": "改11/9 book 確認"})
@@ -1607,7 +1630,8 @@ def main():
     check("PO 視窗：修改 1 次、歷程記「修改紀錄」一筆；備註不動、版本不變（修改紀錄才是佐證，Jerry 2026-10-20）", len(det["rounds"]) == 1
           and det["header"]["remarks"] == "改11/9 book 確認" and det["header"]["version"] == d_ver39
           and sum(1 for l in det["logs"] if l["field"] == "po_round") == 1 and not any(l["field"] == "remarks" and "OK" in l["note"] for l in det["logs"]), det["header"]["remarks"])
-    check("記了 OK 之後：不在待記清單、先勾的類別清空、改動 0 筆", po39 not in pend39() and det["round_prefill"]["kinds"] == [] and det["round_prefill"]["changes"] == 0, str(det["round_prefill"]))
+    check("記了 OK 之後：不在待記清單、先勾的類別清空、改動 0 筆、草稿變成正式的一筆（草稿沒了）", po39 not in pend39() and det["round_prefill"]["kinds"] == [] and det["round_prefill"]["changes"] == 0
+          and det["round_prefill"]["draft"] is None and det["round_prefill"]["reasons"] == [], str(det["round_prefill"]))
     r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det["header"]["version"], "po_status": "已完成"})
     check("記過 OK → 可以改成已完成", r.status_code == 200, r.get_json())
     det = client.get(f"/api/pos/{po39}").get_json()
@@ -1639,7 +1663,7 @@ def main():
     check("主因可複選（Jerry 2026-10-21）：存兩個、照清單順序、重複的去掉、畫面用「、」接", r.status_code == 200 and d["rounds"][-1]["reasons"] == ["庫存不足", "約倉問題"]
           and d["rounds"][-1]["reason"] == "庫存不足、約倉問題", str(d["rounds"][-1:]))
     page39 = client.get("/coupang").get_data(as_text=True)
-    check("酷澎頁有「只看還沒記 OK 的」篩選、PO 視窗有修改紀錄", 'id="f-round"' in page39 and "roundsHtml" in page39 and "這一輪處理完了（OK）" in page39)
+    check("酷澎頁有「只看還沒記 OK 的」篩選、PO 視窗有修改紀錄、有「先存著」", 'id="f-round"' in page39 and "roundsHtml" in page39 and "這一輪處理完了（OK）" in page39 and "先存著（還沒 OK）" in page39)
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

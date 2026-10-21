@@ -1184,8 +1184,18 @@ function roundsHtml(d) {
   const opt = d.round_options, pre = d.round_prefill || {}, rows = d.rounds || [];
   const editing = RD_EDIT != null ? rows.find(r => r.id === RD_EDIT) : null;
   if (RD_EDIT != null && !editing) RD_EDIT = null;
-  const stage = editing ? editing.stage : (pre.stage || "1"), kinds = editing ? editing.kinds : (pre.kinds || []), reasons = editing ? editing.reasons : [];
-  const list = rows.length ? rows.map(r => `
+  const stage = editing ? editing.stage : (pre.stage || "1"), kinds = editing ? editing.kinds : (pre.kinds || []), reasons = editing ? editing.reasons : (pre.reasons || []);
+  const draft = !editing && pre.draft ? pre.draft : null;        // 先存著（還沒 OK）的草稿：清單多一列、表單照它帶
+  const draftRow = draft ? `
+    <tr class="rd-draft-row border-b border-ink-100 bg-amber-50">
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap"><span class="inline-block px-2 rounded-full bg-amber-600 text-white text-[11px] font-semibold">草稿</span></td>
+      <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(draft.stage_label)}</td>
+      <td class="px-2 py-1.5 text-xs">${draft.kind_labels.map(k => `<span class="inline-block px-1.5 rounded bg-ink-100 text-ink-700 text-[11px] mr-1">${esc(k)}</span>`).join("")}</td>
+      <td class="px-2 py-1.5 text-xs">${esc(draft.reasons.join("、"))}</td>
+      <td class="px-2 py-1.5 text-xs text-ink-600">${esc(draft.note)}</td>
+      <td class="px-2 py-1.5 text-xs text-ink-500 whitespace-nowrap">${esc(draft.operator)}</td><td></td>
+    </tr>` : "";
+  const list = (rows.length || draft) ? rows.map(r => `
     <tr class="border-b border-ink-100 ${editing && r.id === editing.id ? "bg-amber-50" : ""}">
       <td class="px-2 py-1.5 text-xs text-emerald-700 font-semibold whitespace-nowrap">${esc(r.ok_at.slice(5, 10))} OK</td>
       <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(r.stage_label)}</td>
@@ -1194,7 +1204,7 @@ function roundsHtml(d) {
       <td class="px-2 py-1.5 text-xs text-ink-600">${esc(r.note)}</td>
       <td class="px-2 py-1.5 text-xs text-ink-500 whitespace-nowrap">${esc(r.operator)}</td>
       <td class="px-2 py-1.5 text-right whitespace-nowrap"><button type="button" class="rd-edit text-ink-400 hover:text-brand-600 text-xs mr-1" data-id="${r.id}" title="修改這筆（階段、做了什麼、主因、說明都能改）"><i class="bi bi-pencil"></i></button><button type="button" class="rd-del text-ink-300 hover:text-red-600 text-xs" data-id="${r.id}" title="刪除這筆修改紀錄（會記歷程）"><i class="bi bi-x-lg"></i></button></td>
-    </tr>`).join("") : `<tr><td colspan="7" class="px-3 py-2 text-xs text-ink-300">尚無修改紀錄。</td></tr>`;
+    </tr>`).join("") + draftRow : `<tr><td colspan="7" class="px-3 py-2 text-xs text-ink-300">尚無修改紀錄。</td></tr>`;
   const preNote = editing ? `正在修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆。` : pre.changes ? `上一個 OK 之後有 ${pre.changes} 筆改動，系統先勾好了，不對可以改。` : "上一個 OK 之後沒有改動。";
   return `
     <h3 class="font-semibold text-sm mb-2">修改紀錄
@@ -1206,7 +1216,8 @@ function roundsHtml(d) {
         <th class="px-2 py-1.5 text-left">主因</th><th class="px-2 py-1.5 text-left">說明</th><th class="px-2 py-1.5 text-left">人員</th><th class="w-8"></th>
       </tr></thead><tbody>${list}</tbody></table>
     </div>
-    <div class="mt-2 ${editing ? "bg-amber-50 border-amber-300" : "bg-ink-50 border-ink-200"} border rounded-lg p-3 grid grid-cols-1 md:grid-cols-[180px_1fr_1fr] gap-3 text-sm">
+    <div class="mt-2 ${editing || draft ? "bg-amber-50 border-amber-300" : "bg-ink-50 border-ink-200"} border rounded-lg p-3 grid grid-cols-1 md:grid-cols-[180px_1fr_1fr] gap-3 text-sm">
+      ${draft ? `<div class="md:col-span-3 text-xs text-amber-800"><i class="bi bi-pencil-square"></i> <b>這一輪還沒 OK：</b>下面是 ${esc(draft.operator)} ${esc(draft.saved_at.slice(5, 16))} 先存著的，接著填就好。${draft.added_labels.length ? `<b>${esc(draft.saved_at.slice(5, 10))} 之後又有改動，「${esc(draft.added_labels.join("、"))}」系統已經幫你勾著。</b>` : ""}　<a href="#" id="rd-discard" class="underline">丟掉草稿</a></div>` : ""}
       ${editing ? `<div class="md:col-span-3 text-xs text-amber-800 font-semibold"><i class="bi bi-pencil"></i> 修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆（OK 日期、人員不會變）　<a href="#" id="rd-cancel" class="underline font-normal">取消，回到記新的一輪</a></div>` : ""}
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">這輪在哪個階段結束</span>
         <select id="rd-stage" class="border rounded px-2 py-1.5">${opt.stages.map(s => `<option value="${s.key}" ${s.key === stage ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label>
@@ -1217,11 +1228,12 @@ function roundsHtml(d) {
         <div id="rd-reasons" class="flex flex-col gap-1.5 py-1">${roundReasonHtml(opt, stage, kinds, reasons)}</div></div>
       <div class="md:col-span-3 flex gap-2 items-end">
         <label class="flex-1 flex flex-col gap-1"><span class="text-xs text-ink-400">說明（選填）</span>
-          <input id="rd-note" class="border rounded px-2 py-1.5" placeholder="例如：改 11/9 → 11/4、拆 1 支、整張不出 #10589655" value="${esc(editing ? editing.note : "")}"></label>
+          <input id="rd-note" class="border rounded px-2 py-1.5" placeholder="例如：改 11/9 → 11/4、拆 1 支、整張不出 #10589655" value="${esc(editing ? editing.note : (pre.note || ""))}"></label>
+        ${editing ? "" : `<button type="button" id="rd-draft" class="bg-white border-2 border-amber-300 text-amber-800 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap" title="勾到一半先留著，不算次數、不算 OK；誰開這張 PO 都看得到">先存著（還沒 OK）</button>`}
         <button type="button" id="rd-ok" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap disabled:opacity-50" disabled>
           <i class="bi ${editing ? "bi-save" : "bi-check2-circle"}"></i> ${editing ? "儲存這筆修改" : ROUND_OK_BTN}</button>
       </div>
-      <div class="md:col-span-3 text-[11px] text-ink-400">按下去就存：修改紀錄多一筆、修改歷程記一筆。修改次數以這裡為準，備註只寫過程、不用再打 OK（打了存檔會被擋下來）。</div>
+      <div class="md:col-span-3 text-[11px] text-ink-400">按 OK 就存：修改紀錄多一筆、修改歷程記一筆。修改次數以這裡為準，備註只寫過程、不用再打 OK（打了存檔會被擋下來）。「先存著」只是把勾的留著，不算次數、不算 OK，按 OK 草稿才變成正式的一筆。</div>
     </div>`;
 }
 function bindRounds() {
@@ -1239,7 +1251,31 @@ function bindRounds() {
   box.querySelectorAll(".rd-del").forEach(b => b.addEventListener("click", () => deleteRound(b.dataset.id)));
   box.querySelectorAll(".rd-edit").forEach(b => b.addEventListener("click", () => { RD_EDIT = Number(b.dataset.id); box.innerHTML = roundsHtml(CURRENT); bindRounds(); $("#rd-note").focus(); }));
   const cancel = $("#rd-cancel"); if (cancel) cancel.addEventListener("click", e => { e.preventDefault(); RD_EDIT = null; box.innerHTML = roundsHtml(CURRENT); bindRounds(); });
+  const draftBtn = $("#rd-draft"); if (draftBtn) draftBtn.addEventListener("click", saveRoundDraft);
+  const discard = $("#rd-discard"); if (discard) discard.addEventListener("click", e => { e.preventDefault(); discardRoundDraft(); });
   sync();
+}
+/* 先存著（還沒 OK）：勾到一半先留在系統裡，不算次數（小真 2026-10-21） */
+async function saveRoundDraft() {
+  if (!requireOperator() || !CURRENT) return;
+  const po = CURRENT.header.po_number;
+  const body = { operator: operator(), stage: $("#rd-stage").value, kinds: [...document.querySelectorAll("#po-rounds .rd-kind:checked")].map(c => c.value),
+                 reasons: [...document.querySelectorAll("#po-rounds .rd-reason:checked")].map(c => c.value), note: $("#rd-note").value.trim() };
+  const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds/draft`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!d) return;
+  CURRENT.round_prefill = d.round_prefill;
+  $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
+  toast("先存著了，還沒算 OK。這一輪處理完記得按「這一輪處理完了（OK）」。");
+}
+async function discardRoundDraft() {
+  if (!CURRENT) return;
+  if (!confirm("丟掉這份草稿？（已經記的 OK 不受影響）")) return;
+  const po = CURRENT.header.po_number;
+  const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds/draft`, { method: "DELETE" });
+  if (!d) return;
+  CURRENT.round_prefill = d.round_prefill;
+  $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
+  toast("草稿已丟掉。");
 }
 async function roundApi(url, init) {
   const r = await fetch(url, init); const d = await r.json();

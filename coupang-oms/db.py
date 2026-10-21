@@ -896,6 +896,18 @@ CREATE TABLE IF NOT EXISTS po_rounds (
 );
 CREATE INDEX IF NOT EXISTS idx_po_rounds_po ON po_rounds(po_number);
 
+-- 修改紀錄草稿（小真 2026-10-21「還沒完成可以先暫存嗎」，Jerry 看過示意圖）：勾到一半先存著，一張 PO 一份、再存就蓋掉。
+-- 不算修改次數、不算 OK；按「這一輪處理完了（OK）」才變成 po_rounds 的一筆、草稿刪掉。
+CREATE TABLE IF NOT EXISTS po_round_drafts (
+    po_number   TEXT PRIMARY KEY,
+    stage       TEXT DEFAULT '',
+    kinds       TEXT DEFAULT '',
+    reason      TEXT DEFAULT '',
+    note        TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    saved_at    TEXT NOT NULL
+);
+
 -- 瑪氏商品總表每次上傳一筆（畫面「上次上傳」）
 CREATE TABLE IF NOT EXISTS mst_mars_uploads (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

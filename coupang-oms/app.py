@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-21.3"
+BUILD_VERSION = "2026-10-21.4"
 
 app = Flask(__name__)
 
@@ -2064,6 +2064,42 @@ def api_add_round(po_number):
             return jsonify({"error": err}), 400
         conn.commit()
         return jsonify({"ok": True, "rounds": out, "round_prefill": rounds.prefill(conn, po_number, "", out)})
+    finally:
+        conn.close()
+
+
+def _round_draft_reply(conn, po_number, draft=None):
+    hdr = conn.execute("SELECT po_status FROM po_headers WHERE po_number = ?", (po_number,)).fetchone()
+    return jsonify({"ok": True, "draft": draft, "round_prefill": rounds.prefill(conn, po_number, hdr["po_status"] if hdr else "")})
+
+
+@app.route("/api/pos/<po_number>/rounds/draft", methods=["PUT"])
+def api_save_round_draft(po_number):
+    """先存著（還沒 OK）：小真 2026-10-21 問「還沒完成可以先暫存嗎」。一張 PO 一份，不算次數、不記歷程，按 OK 才變正式的一筆。"""
+    po_number = norm_key(po_number)
+    p = request.get_json(silent=True) or {}
+    conn = get_conn()
+    try:
+        reasons = p.get("reasons") if isinstance(p.get("reasons"), list) else []
+        err, d = rounds.save_draft(conn, po_number, str(p.get("stage") or "").strip(), p.get("kinds") or [], reasons,
+                                   str(p.get("note") or "").strip(), current_operator())
+        if err:
+            conn.rollback()
+            return jsonify({"error": err}), 404
+        conn.commit()
+        return _round_draft_reply(conn, po_number, d)
+    finally:
+        conn.close()
+
+
+@app.route("/api/pos/<po_number>/rounds/draft", methods=["DELETE"])
+def api_delete_round_draft(po_number):
+    po_number = norm_key(po_number)
+    conn = get_conn()
+    try:
+        rounds.delete_draft(conn, po_number)
+        conn.commit()
+        return _round_draft_reply(conn, po_number)
     finally:
         conn.close()
 

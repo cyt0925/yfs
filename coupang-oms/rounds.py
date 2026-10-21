@@ -12,6 +12,9 @@
 - 防呆（Jerry：「他們一定得填」）：備註裡自己打了 OK 存檔會擋下來（不是拿備註當證據，是提醒去按鈕記）；PO 狀態改成已完成／已取消時，
   上一個 OK 之後有改動還沒記 OK 也擋下來；首頁今日事項列「改過但還沒記 OK 的 PO」。
 - 從 SINCE 那天開始算，以前備註裡打的 OK 不回頭算（小真：從今天開始）。
+- 先存著（草稿，小真 2026-10-21「還沒完成可以先暫存嗎」，Jerry 看過示意圖「OK 照這樣做」）：一輪常跨好幾天，勾到一半可以按「先存著（還沒 OK）」，
+  存在 po_round_drafts（一張 PO 一份，再存就蓋掉，誰開都看得到）。草稿不算次數、不算 OK、不記歷程，PO 狀態改已完成還是會擋；
+  再開 PO 視窗表單照草稿帶，存草稿之後系統新抓到的「做了什麼」會補勾上去（自己勾的不拿掉）；按 OK 變成正式一筆、草稿刪掉。
 原因清單照小真的檔：數量下修依階段三組，改交期／倉別、拆單三個階段共用。
 """
 import re
@@ -30,6 +33,9 @@ REASONS_QTY = {
 }
 REASONS_DATE = ["備貨時間不及", "約倉問題", "車趟考量", "倉容量問題", "改不了倉（酷澎規範限制）"]
 REASONS_SPLIT = ["單位不同", "車趟考量", "產能不及"]
+ALL_REASONS = []                          # 全部主因照清單順序、去重（草稿只留清單裡有的）
+for _lst in list(REASONS_QTY.values()) + [REASONS_DATE, REASONS_SPLIT]:
+    ALL_REASONS += [r for r in _lst if r not in ALL_REASONS]
 STAGE_BY_STATUS = {"已建立": "1", "已回覆": "1", "處理中": "2", "已完成": "3"}   # 修改中、已取消三個階段都有：帶上一筆的
 END_STATUSES = ("已完成", "已取消")
 SINCE = "2026-10-20"                     # 這天以前的改動不算（小真：從今天開始）
@@ -115,14 +121,53 @@ def pending_for(conn, po):
     return changes_since(conn, po, _since(conn, po))["n"] > 0
 
 
+def draft_for(conn, po):
+    r = conn.execute("SELECT po_number, stage, kinds, reason, note, operator, saved_at FROM po_round_drafts WHERE po_number = ?", (po,)).fetchone()
+    if r is None:
+        return None
+    d = dict(r)
+    d["reasons"] = [x for x in (d.get("reason") or "").split(",") if x]
+    d["kinds"] = [k for k in (d.get("kinds") or "").split(",") if k]
+    d["kind_labels"] = [KIND_LABEL.get(k, k) for k in d["kinds"]]
+    d["stage_label"] = STAGE_LABEL.get(d["stage"], "")
+    return d
+
+
+def save_draft(conn, po, stage, kinds, reasons, note, operator):
+    """先存著（還沒 OK）：檢查比 OK 鬆，階段不在清單就留空、類別和主因只留清單裡有的，可以什麼都沒勾。回 (錯誤訊息, 草稿)。"""
+    if conn.execute("SELECT 1 FROM po_headers WHERE po_number = ?", (po,)).fetchone() is None:
+        return "找不到這張 PO。", None
+    stage = stage if stage in STAGE_LABEL else ""
+    kinds = [k for k, _v in KINDS if k in (kinds or [])]
+    picked = {str(r).strip() for r in (reasons or []) if str(r).strip()}
+    reason = ",".join(r for r in ALL_REASONS if r in picked)
+    conn.execute("""INSERT INTO po_round_drafts (po_number, stage, kinds, reason, note, operator, saved_at) VALUES (?,?,?,?,?,?,?)
+                    ON CONFLICT (po_number) DO UPDATE SET stage = EXCLUDED.stage, kinds = EXCLUDED.kinds, reason = EXCLUDED.reason,
+                    note = EXCLUDED.note, operator = EXCLUDED.operator, saved_at = EXCLUDED.saved_at""",
+                 (po, stage, ",".join(kinds), reason, note or "", operator, db.now()))
+    return "", draft_for(conn, po)
+
+
+def delete_draft(conn, po):
+    conn.execute("DELETE FROM po_round_drafts WHERE po_number = ?", (po,))
+
+
 def prefill(conn, po, status, rows=None):
-    """PO 視窗打開時先帶好：階段照 PO 狀態（修改中、已取消帶上一筆的），做了什麼照修改歷程。"""
+    """PO 視窗打開時先帶好：階段照 PO 狀態（修改中、已取消帶上一筆的），做了什麼照修改歷程。
+    有草稿就照草稿帶（階段、主因、說明），做了什麼＝草稿勾的＋存草稿之後系統新抓到的。"""
     rows = rounds_for(conn, po) if rows is None else rows
     since = _since(conn, po)
     ch = changes_since(conn, po, since)
     stage = STAGE_BY_STATUS.get(status) or (rows[-1]["stage"] if rows else "1")
-    return {"stage": stage, "kinds": [k for k, _v in KINDS if k in ch["kinds"]], "changes": ch["n"],
-            "since": since if since > f"{SINCE} 00:00:00" else ""}
+    out = {"stage": stage, "kinds": [k for k, _v in KINDS if k in ch["kinds"]], "reasons": [], "note": "", "changes": ch["n"],
+           "since": since if since > f"{SINCE} 00:00:00" else "", "draft": None}
+    d = draft_for(conn, po)
+    if d:
+        later = changes_since(conn, po, max(since, d["saved_at"]))["kinds"]
+        added = [k for k, _v in KINDS if k in later and k not in d["kinds"]]
+        out.update({"stage": d["stage"] or stage, "kinds": [k for k, _v in KINDS if k in d["kinds"] or k in added], "reasons": d["reasons"], "note": d["note"],
+                    "draft": {**d, "added_kinds": added, "added_labels": [KIND_LABEL[k] for k in added]}})
+    return out
 
 
 def pending_info(conn, po):
@@ -209,6 +254,7 @@ def add_round(conn, po, stage, kinds, reasons, note, operator):
     conn.execute("INSERT INTO po_rounds (po_number, ok_at, stage, kinds, reason, note, operator, deleted_at, deleted_by) VALUES (?,?,?,?,?,?,?,'','')",
                  (po, stamp, stage, ",".join(kinds), reason, note or "", operator))
     _log(conn, po, "po_round", "修改紀錄", "", _summary(stage, kinds, reason), operator, note or "")
+    delete_draft(conn, po)                      # 草稿變成正式的一筆
     return "", rounds_for(conn, po)
 
 

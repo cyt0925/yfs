@@ -417,14 +417,17 @@ def _round_rows(conn, keep):
 
 def _pending_rows(conn, keep):
     """改過但還沒記 OK 的 PO（在範圍內的），到貨日近的在前面。"""
+    drafts = {r["po_number"]: r for r in _rows(conn.execute("SELECT po_number, operator, saved_at FROM po_round_drafts"))}
     out = []
     for po in rounds.pending_pos(conn):
         p = keep.get(po)
         if p is None:
             continue
         info = rounds.pending_info(conn, po)
+        d = drafts.get(po)
         out.append({"po_number": po, "month": p["month"], "lines": "／".join(sorted(p["lines"])), "delivery_date": p["delivery_date"],
-                    "last_ok": info["last_ok"], "changes": info["changes"], "more": info["more"]})
+                    "last_ok": info["last_ok"], "changes": info["changes"], "more": info["more"],
+                    "draft": f"{d['operator']} {(d['saved_at'] or '')[5:10]}".strip() if d else ""})      # 有草稿＝做到一半，不是忘了
     out.sort(key=lambda r: (r["delivery_date"] or "9", r["po_number"]))
     return out
 
@@ -658,11 +661,11 @@ def api_stats_export():
     ws5.column_dimensions["A"].width = 20; ws5.column_dimensions["G"].width = 36; ws5.column_dimensions["H"].width = 40
 
     ws6 = wb.create_sheet("還沒記 OK 的 PO")
-    hdr6 = ["PO 單號", "月份", "線別", "到貨日", "上一個 OK", "之後的改動"]
+    hdr6 = ["PO 單號", "月份", "線別", "到貨日", "上一個 OK", "之後的改動", "草稿（先存著、還沒 OK）"]
     ws6.append(hdr6)
     for r in d["pending"]:
         ws6.append([r["po_number"], r["month"], r["lines"], r["delivery_date"], r["last_ok"] or "—",
-                    "；".join(r["changes"]) + (f"…另 {r['more']} 項" if r["more"] else "")])
+                    "；".join(r["changes"]) + (f"…另 {r['more']} 項" if r["more"] else ""), r["draft"]])
     _style(ws6, hdr6, bold, head, tot, total_row=False)
     ws6.column_dimensions["F"].width = 80
 
@@ -684,7 +687,7 @@ def api_stats_export():
         "第一／二／三階段：記 OK 時選的「這一輪在哪個階段結束」（收單確認／已排單確認／出貨確認）。",
         "有下修／有改交期／倉別／有拆單：記 OK 時勾的「這一輪做了什麼」，一輪可以勾好幾項，所以三項加起來會大於修改次數。",
         "主因：記 OK 時勾的主因（照小真的清單，依類別分組），一輪可以勾好幾個，所以主因加總會大於修改次數；沒用到的主因不列。",
-        "還沒記 OK 的 PO：上一個 OK 之後酷澎或我們有改過（下單或出貨數量變少、到貨日或倉別變了、拆出新單），還沒按「這一輪處理完了（OK）」。",
+        "還沒記 OK 的 PO：上一個 OK 之後酷澎或我們有改過（下單或出貨數量變少、到貨日或倉別變了、拆出新單），還沒按「這一輪處理完了（OK）」。有「先存著」的草稿會標出來，草稿不算 OK。",
         "系統抓到的變動次數（灰字）：系統從兩個系統的匯入紀錄和人工修改抓出來的每一次變動，同一張 PO、同一來源、同一時間算一次；好幾次變動可能其實是同一輪處理，"
         "所以不當修改次數，留著對照用，每個月都有。改單時勾了「這是測試」的不算" + ("" if _include_test() else f"（這段期間有 {n_test} 次）") + "。",
         "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。",
