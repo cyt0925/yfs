@@ -296,6 +296,21 @@ def main():
     check("篩履約方式：竹運採購進貨只剩寶僑那張", [x["order_no"] for x in orders(fulfil="竹運採購進貨")["orders"]] == ["POTWCTWA26100514L"])
     check("搜尋入庫單號找得到那張", [x["order_no"] for x in orders(q="INTWX1")["orders"]] == ["POTWCTWX26100599A"])
     check("到貨日區間：10/13 只剩瑪氏那張", [x["order_no"] for x in orders(**{"from": "2026-10-13", "to": "2026-10-13"})["orders"]] == ["POTWCTWA26100514N"])
+    # 上傳日篩選、每張單的上傳日和永豐料號（OP 2026-10-21，Jerry 看過示意圖）
+    today_ = db.now()[:10]
+    all_ = orders()["orders"]
+    check("上傳日＝那張單第一次進系統那天：今天上傳的每張都是今天；永豐料號＝Supplier SKU ID 清單（沒移除的品項）",
+          all_ and all(x["upload_date"] == today_ and x["codes"] and all("_" in cd for cd in x["codes"]) for x in all_), str([(x["upload_date"], x["codes"][:2]) for x in all_[:2]]))
+    check("上傳日篩選：今天～今天全部都在；2030 以後一張都沒有；只填起日也行",
+          [x["order_no"] for x in orders(up_from=today_, up_to=today_)["orders"]] == [x["order_no"] for x in all_]
+          and orders(up_from="2030-01-01")["orders"] == [] and orders(up_to="2000-01-01")["orders"] == []
+          and len(orders(up_from="2000-01-01")["orders"]) == len(all_))
+    check("其他步驟的 API 也吃上傳日：採購計畫、缺貨計畫、EIP 檔清單用 2030 以後都空的",
+          c.get("/api/shopee/purchase/plan", query_string={"fulfil": "供應商直送", "from": "2026-01-01", "up_from": "2030-01-01"}).get_json()["orders"] == []
+          and c.get("/api/shopee/short/plan", query_string={"from": "2026-01-01", "up_from": "2030-01-01"}).get_json()["orders"] == []
+          and c.get("/api/shopee/eips", query_string={"from": "2026-01-01", "up_from": "2030-01-01"}).get_json()["eips"] == [])
+    pl_ = c.get("/api/shopee/purchase/plan", query_string={"fulfil": "供應商直送", "from": "2026-01-01", "up_to": today_}).get_json()["orders"]
+    check("採購計畫那邊每張單也有上傳日、永豐料號", all(g["upload_date"] == today_ and g["codes"] for g in pl_), str(pl_[:1])[:200])
     ch = next(x for x in c.get("/api/portal/summary").get_json()["channels"] if x["key"] == "shopee")
     check("首頁蝦皮卡片：今日新進 3 張、有最後匯入時間", ch["new_today"] == 3 and ch["last_import"], str(ch))
     recent = c.get("/api/portal/summary").get_json()["recent"]

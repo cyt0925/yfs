@@ -77,7 +77,7 @@ def short_item(it, rounds, done):
             "prev_final": (rs[edit - 2]["after"] if edit >= 2 else cur) if edit else None}
 
 
-def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None):
+def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None, up1="", up2=""):
     where, params = ["removed = 0", "line IN (?, ?, ?)", "(line != ? OR fulfil = ?)"], list(LIST_LINES) + ["瑪氏", "供應商直送"]
     fulfils = (fulfil,) if fulfil in MANUAL_FULFILS + (SHIP_FULFIL,) else MANUAL_FULFILS + (SHIP_FULFIL,)
     where.append(f"fulfil IN ({','.join('?' * len(fulfils))})"); params += list(fulfils)
@@ -85,6 +85,9 @@ def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None):
         where.append("expected_date >= ?"); params.append(d1)
     if d2:
         where.append("expected_date <= ?"); params.append(d2)
+    usql, up = upload_cond(up1, up2)
+    if usql:
+        where.append(usql); params += up
     if line in LIST_LINES:
         where.append("line = ?"); params.append(line)
     items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {' AND '.join(where)} ORDER BY expected_date, warehouse, id", params))
@@ -99,12 +102,14 @@ def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None):
     for it in items:
         no = order_no(it)
         g = groups.setdefault(no, {"order_no": no, "pr_id": it["pr_id"], "po_id": it["po_id"], "line": it["line"], "fulfil": it["fulfil"],
-                                   "warehouse": it["warehouse"], "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": []})
+                                   "warehouse": it["warehouse"], "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": [], "_rows": []})
+        g["_rows"].append(it)
         g["items"].append(short_item(it, rounds.get(it["id"], []), done.get(it["id"])))
     out = []
     for g in groups.values():
         its = g["items"]
         rs = [r for p in its for r in p["rounds"]]
+        g.update(group_meta(g.pop("_rows")))
         g.update(orig=sum(p["orig"] for p in its), final=sum(p["final"] for p in its), cut=sum(p["cut"] for p in its),
                  deleted=sum(1 for p in its if p["orig"] and not p["final"]), short_items=sum(1 for p in its if p["rounds"]),
                  pending=sum(1 for p in its if p["pending"]), notified_round=max((p["notified_round"] for p in its), default=0),
@@ -135,7 +140,7 @@ def api_short_plan():
     a = request.args
     conn = get_conn()
     try:
-        orders = build_short(conn, a.get("from", ""), a.get("to", ""), a.get("line", ""), a.get("fulfil", ""))
+        orders = build_short(conn, a.get("from", ""), a.get("to", ""), a.get("line", ""), a.get("fulfil", ""), up1=a.get("up_from", ""), up2=a.get("up_to", ""))
         notes = _rows(conn.execute("SELECT id, orders, items, created_by, created_at FROM shp_notify ORDER BY id DESC LIMIT 20"))
     finally:
         conn.close()

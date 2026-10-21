@@ -385,7 +385,7 @@ def _cap(alloc, cap):
     return out
 
 
-def build_ship(conn, d1="", d2="", line="", order_nos=None):
+def build_ship(conn, d1="", d2="", line="", order_nos=None, up1="", up2=""):
     """竹運出貨的單，照到貨日由早到晚逐列扣 EC 與竹運合格庫存。回 (groups, ctx)。"""
     st = ship_settings(conn)
     stock = load_stock(conn)
@@ -395,6 +395,9 @@ def build_ship(conn, d1="", d2="", line="", order_nos=None):
         where.append("expected_date >= ?"); params.append(d1)
     if d2:
         where.append("expected_date <= ?"); params.append(d2)
+    usql, up = upload_cond(up1, up2)
+    if usql:
+        where.append(usql); params += up
     if line:
         where.append("line = ?"); params.append(line)
     items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {' AND '.join(where)} ORDER BY expected_date, warehouse, id", params))
@@ -413,12 +416,14 @@ def build_ship(conn, d1="", d2="", line="", order_nos=None):
     groups = collections.OrderedDict()
     for it in items:
         g = groups.setdefault(it["_no"], {"order_no": it["_no"], "pr_id": it["pr_id"], "po_id": it["po_id"], "line": it["line"], "warehouse": it["warehouse"],
-                                          "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": []})
+                                          "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": [], "_rows": []})
+        g["_rows"].append(it)
         g["items"].append(_ship_item(it, st, stock, ec_left, lots_left, overrides.get(it["id"]), done.get(it["id"]), mars_life, have, used))
     out = []
     for g in groups.values():
         its = g["items"]
         made = [p for p in its if p["dispatch"]]
+        g.update(group_meta(g.pop("_rows")))
         g.update(qty=sum(p["qty"] for p in its), ship=sum(p["final"] for p in its), short=sum(p["short"] for p in its),
                  blocking=sum(1 for p in its if p["blocking"]), warnings=sum(1 for p in its if p["warnings"]),
                  deleted=sum(1 for p in its if p["qty"] and not p["final"]),
@@ -534,7 +539,8 @@ def _ship_item(it, st, stock, ec_left, lots_left, ov, done, mars_life, have, use
 def api_ship_plan():
     conn = get_conn()
     try:
-        orders, ctx = build_ship(conn, request.args.get("from", ""), request.args.get("to", ""), request.args.get("line", ""))
+        orders, ctx = build_ship(conn, request.args.get("from", ""), request.args.get("to", ""), request.args.get("line", ""),
+                                 up1=request.args.get("up_from", ""), up2=request.args.get("up_to", ""))
     finally:
         conn.close()
     return jsonify({"orders": orders, **ctx})

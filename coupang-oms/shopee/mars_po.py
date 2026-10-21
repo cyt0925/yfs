@@ -165,6 +165,9 @@ def api_shopee_mars_po_zip():
         where.append("expected_date >= ?"); params.append(request.args["from"])
     if request.args.get("to"):
         where.append("expected_date <= ?"); params.append(request.args["to"])
+    usql, up = upload_cond(request.args.get("up_from", ""), request.args.get("up_to", ""), "o.")
+    if usql:
+        where.append(f"id IN (SELECT i.eip_id FROM shp_eip_items i JOIN shp_orders o ON o.id = i.order_id WHERE {usql})"); params += up
     conn = get_conn()
     try:
         eips = _rows(conn.execute(f"SELECT * FROM shp_eip WHERE {' AND '.join(where)} ORDER BY expected_date, warehouse, id", params))

@@ -299,12 +299,15 @@ def fmt_n(n):
     return f"{n:,}" if isinstance(n, int) else str(n)
 
 
-def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None):
+def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None, up1="", up2=""):
     where, params = ["fulfil = ?", "removed = 0"], [fulfil]
     if d1:
         where.append("expected_date >= ?"); params.append(d1)
     if d2:
         where.append("expected_date <= ?"); params.append(d2)
+    usql, up = upload_cond(up1, up2)
+    if usql:
+        where.append(usql); params += up
     if line:
         where.append("line = ?"); params.append(line)
     items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {' AND '.join(where)} ORDER BY expected_date, warehouse, id", params))
@@ -319,7 +322,8 @@ def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None):
     for it in items:
         no = order_no(it)
         g = groups.setdefault(no, {"order_no": no, "pr_id": it["pr_id"], "po_id": it["po_id"], "line": it["line"], "warehouse": it["warehouse"],
-                                   "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": []})
+                                   "warehouse_name": wh_name(it["warehouse"]), "expected_date": it["expected_date"], "items": [], "_rows": []})
+        g["_rows"].append(it)
         conv = mars.get((it["base_code"], it["unit_name"])) if it["line"] == MARS else convs.get((it["base_code"] or "") + (it["unit_code"] or ""))
         others = sorted(u for (c, u) in mars if c == it["base_code"] and u != it["unit_name"]) if it["line"] == MARS and conv is None else ()
         g["items"].append(item_plan(it, conv, adjs.get(it["id"]), eips.get(it["id"]), others))
@@ -328,6 +332,7 @@ def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None):
         its = g["items"]
         filled = [p for p in its if p["eip"] and p["eip"]["eip_po"]]
         made = [p for p in its if p["eip"]]
+        g.update(group_meta(g.pop("_rows")))
         g.update(blocking=sum(1 for p in its if p["blocking"]), supported=g["line"] in SUPPORTED,
                  po_status="已回填" if its and len(filled) == len(its) else "已產出" if made else "未產出",
                  qty=sum(p["qty"] for p in its))
@@ -342,7 +347,8 @@ def api_purchase_plan():
         return jsonify({"error": "履約方式只能是竹運採購進貨或供應商直送。"}), 400
     conn = get_conn()
     try:
-        orders = build_plan(conn, fulfil, request.args.get("from", ""), request.args.get("to", ""), request.args.get("line", ""))
+        orders = build_plan(conn, fulfil, request.args.get("from", ""), request.args.get("to", ""), request.args.get("line", ""),
+                            up1=request.args.get("up_from", ""), up2=request.args.get("up_to", ""))
         st = conv_status(conn)
     finally:
         conn.close()
@@ -659,6 +665,9 @@ def api_eips():
         where.append("expected_date >= ?"); params.append(request.args["from"])
     if request.args.get("to"):
         where.append("expected_date <= ?"); params.append(request.args["to"])
+    usql, up = upload_cond(request.args.get("up_from", ""), request.args.get("up_to", ""), "o.")
+    if usql:                                     # 上傳日：看這個 EIP 檔裡的訂單
+        where.append(f"id IN (SELECT i.eip_id FROM shp_eip_items i JOIN shp_orders o ON o.id = i.order_id WHERE {usql})"); params += up
     conn = get_conn()
     try:
         eips = _rows(conn.execute(f"SELECT * FROM shp_eip WHERE {' AND '.join(where)} ORDER BY expected_date DESC, warehouse, line, fulfil, unit_group, id", params))

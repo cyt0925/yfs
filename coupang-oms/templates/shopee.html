@@ -133,6 +133,7 @@
   @media (min-width:1181px) { body.side-open table.t th, body.side-open table.t td { padding-left:7px; padding-right:7px; } body.side-open .hf-b { margin-left:3px; } }
   table.t tr.og.sel td { background:var(--s1); } table.t tr.og.sel td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
   a.lnk { color:var(--s9); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+  .codes { font-size:12px; line-height:1.4; white-space:nowrap; } .codes .more { color:var(--b700, #1d4ed8); font-weight:700; cursor:help; }
 </style>
 </head>
 <body>
@@ -173,8 +174,9 @@
     <div class="flex items-center gap-3 flex-wrap">
       <div style="flex:1;min-width:260px"><b style="font-size:16px" id="st-title"></b><div class="kbd" id="st-hint"></div></div>
       <label class="kbd">到貨日 <input type="date" id="f-from" class="inp"> ～ <input type="date" id="f-to" class="inp"></label>
+      <label class="kbd" title="那張單第一次進系統那天；蝦皮重傳不會改變">上傳日 <input type="date" id="f-up-from" class="inp"> ～ <input type="date" id="f-up-to" class="inp"></label>
       <select id="f-line" class="inp"><option value="">全部線別</option><option>寶僑</option><option>瑪氏</option><option>紙潔</option></select>
-      <input id="f-q" class="inp" placeholder="搜尋 PO、PR、入庫單號、料號、品名" style="width:240px">
+      <input id="f-q" class="inp" placeholder="搜尋 PO、PR、入庫單號、永豐料號、品名" style="width:250px">
     </div>
 
     <div id="st-orders" class="space-y-3">

@@ -62,9 +62,31 @@ def wh_name(code):
     return WAREHOUSES.get(code or "", code or "")
 
 
-__all__ = [
+__all__ = ["upload_cond", "group_meta", 
     "base64", "collections", "io", "json", "re", "current_app", "jsonify", "render_template", "request", "send_file",
     "get_conn", "_guard_ready", "_log", "_operator", "_row", "_rows", "now",
     "shopee_bp", "SYSTEM", "FULFILS", "LINES", "UNIT_CODES", "WAREHOUSES", "ST_IMPORTED", "ST_DIFF",
     "split_supplier_sku", "line_of", "wh_name",
 ]
+
+_ORDER_NO_SQL = "CASE WHEN po_id != '' THEN po_id ELSE pr_id END"
+
+
+def upload_cond(up1, up2, prefix=""):
+    """上傳日篩選（OP 2026-10-21 要「除了到貨日再多一個上傳日」）：上傳日＝那張單第一次進系統那天（同一張單所有品項裡最早的 created_at），
+    蝦皮重傳不會改變它。回 (SQL, 參數)，沒篩就回 ("", [])。prefix 是外層表的別名（例如 "o."）。"""
+    if not (up1 or up2):
+        return "", []
+    hv, hp = [], []
+    if up1:
+        hv.append("MIN(created_at) >= ?"); hp.append(up1)
+    if up2:
+        hv.append("MIN(created_at) <= ?"); hp.append(up2 + " 23:59:59")
+    outer = _ORDER_NO_SQL.replace("po_id", prefix + "po_id").replace("pr_id", prefix + "pr_id")
+    return f"({outer}) IN (SELECT {_ORDER_NO_SQL} FROM shp_orders GROUP BY {_ORDER_NO_SQL} HAVING {' AND '.join(hv)})", hp
+
+
+def group_meta(rows):
+    """每張單的清單共用欄：上傳日（第一次進系統那天）、永豐料號（＝蝦皮採購單的 Supplier SKU ID，OP 2026-10-21）。rows 是 shp_orders 的列。"""
+    return {"upload_date": min((r["created_at"] or "" for r in rows if r["created_at"]), default="")[:10],
+            "codes": [r["supplier_sku_id"] for r in rows if not r.get("removed") and r["supplier_sku_id"]]}

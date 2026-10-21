@@ -8,6 +8,7 @@
   內容完全一樣只記上傳紀錄、不跳警示。同一張 PR 重傳時少掉的品項算「品項移除」（數量改 0、留紀錄）。
 - 履約方式匯入時人選一次（同一個檔的新單都套用），之後可以整張改，要寫原因、留紀錄。
 """
+from .common import group_meta, upload_cond  # noqa: F401
 from .common import (
     FULFILS, LINES, ST_DIFF, ST_IMPORTED, SYSTEM, _log, _operator, _row, _rows, base64, current_app, get_conn, io, json,
     jsonify, now, render_template, request, send_file, shopee_bp, wh_name,
@@ -328,6 +329,9 @@ def _order_filter(args):
         where.append("expected_date >= ?"); params.append(d1)
     if d2:
         where.append("expected_date <= ?"); params.append(d2)
+    usql, up = upload_cond(str(args.get("up_from") or ""), str(args.get("up_to") or ""))
+    if usql:
+        where.append(usql); params += up
     for k in ("line", "fulfil", "warehouse"):
         if args.get(k):
             where.append(f"{k} = ?"); params.append(args.get(k))
@@ -387,6 +391,7 @@ def overview(conn, args):
         pend = any(short_st.get(i["id"], {}).get("pending") or (i["id"] in ship_st and i["id"] not in short_st
                    and (ship_st[i["id"]]["qty_order"] or 0) > (ship_st[i["id"]]["qty_ship"] or 0)) for i in alive)
         told = max((short_st[i["id"]]["round"] for i in alive if i["id"] in short_st), default=0)
+        g.update(group_meta(its))
         g.update(
             qty_ship=sum(final_of(i) for i in alive) if known else None,
             qty_short=sum(max(orig_of(i) - final_of(i), 0) for i in alive) if known else None,

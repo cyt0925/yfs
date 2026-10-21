@@ -775,6 +775,15 @@ def main():
         pg.click("#tbl .clr-f"); pg.wait_for_selector("#tbl tr.og", timeout=8000)
         check("按「清除篩選」→ 到貨日清空、那張單回來", pg.input_value("#f-from") == "" and "PRTWCOTWA202610019999" in pg.inner_text("#tbl"))
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
+        # 上傳日篩選、永豐料號欄（OP 2026-10-21，Jerry 看過示意圖）
+        check("篩選列多「上傳日」；清單多「上傳日」「永豐料號」欄，料號照蝦皮採購單的 Supplier SKU ID、上傳日是今天",
+              pg.query_selector("#f-up-from") and all(w in pg.inner_text("#tbl thead") for w in ("上傳日", "永豐料號"))
+              and "4987176232878_CNN" in pg.inner_text("#tbl tr.og >> nth=0") and datetime.date.today().isoformat() in pg.inner_text("#tbl tr.og >> nth=0"), pg.inner_text("#tbl tr.og >> nth=0")[:200])
+        pg.fill("#f-up-from", "2030-01-01"); pg.dispatch_event("#f-up-from", "change"); pg.wait_for_selector("#tbl .clr-f", timeout=8000)
+        check("上傳日篩掉全部 → 清單寫上傳日條件下沒有訂單、有清除篩選", "上傳日" in pg.inner_text("#tbl"), pg.inner_text("#tbl")[:200])
+        pg.click("#tbl .clr-f"); pg.wait_for_selector("#tbl tr.og", timeout=8000)
+        check("清除篩選 → 上傳日也清空", pg.input_value("#f-up-from") == "" and "PRTWCOTWA202610019999" in pg.inner_text("#tbl"))
+        pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.click("#btn-set"); pg.wait_for_selector("#view-set:not(.hidden)", timeout=5000); pg.click("#up-box summary"); pg.wait_for_timeout(500)
         check("資料與設定：上傳紀錄看得到兩次上傳、可下載原始檔", pg.eval_on_selector_all("#up-tbl a.lnk", "els => els.length") >= 2)
         check("資料與設定：庫存資料三種都還沒上傳、效期標準；沒有「出貨方式」可選（一律混合效期，2026-10-20）", pg.inner_text("#stock-st").count("尚未上傳") == 3
@@ -797,7 +806,7 @@ def main():
               "價格本找不到 2 項" in pg.inner_text("#b-tbl tr.og >> nth=0") and pg.is_visible("#b-tbl tr.og .blk-i")
               and "有 1 張需先處理" in pg.inner_text("#b-go-hint"), pg.inner_text("#b-tbl tr.og >> nth=0") + " / " + pg.inner_text("#b-go-hint"))
         # 表頭篩選（Jerry 2026-10-19「可以做個篩選嗎」，看示意圖選跟 Excel 一樣的）
-        check("待產採購單的表頭：勾選框以外每一欄都可以篩（Jerry 2026-10-20「全部都要」）", pg.eval_on_selector_all("#b-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "no,line,date,wh,ff,items,qty,chk")
+        check("待產採購單的表頭：勾選框以外每一欄都可以篩（Jerry 2026-10-20「全部都要」）", pg.eval_on_selector_all("#b-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "no,line,date,up,wh,ff,codes,items,qty,chk")
         pg.click("#b-tbl thead .hf-b[data-hf='chk']"); pg.wait_for_selector("#hf-pop", timeout=5000)
         hpop = pg.inner_text("#hf-pop")
         check("檢查結果點開：需先處理底下列原因和張數（價格本找不到 1 張）", "需先處理" in hpop and "價格本找不到" in hpop and "1 張" in hpop, hpop)
@@ -913,13 +922,13 @@ def main():
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og[data-k='POTWCTWA26102099M']", timeout=10000)
         row = pg.inner_text("#k-tbl tr.og[data-k='POTWCTWA26102099M']")
         check("待通知蝦皮：這張瑪氏單、待通知、累計下修 12", "瑪氏" in row and "待通知" in row and "12" in row, row)
-        check("待通知蝦皮的表頭：勾選框以外每一欄都可以篩", pg.eval_on_selector_all("#k-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "no,line,ff,date,wh,items,orig,final,cut,st")
+        check("待通知蝦皮的表頭：勾選框以外每一欄都可以篩", pg.eval_on_selector_all("#k-tbl thead .hf-b", "els => els.map(e => e.dataset.hf).join()") == "no,line,ff,date,up,wh,codes,items,orig,final,cut,st")
         stage("all"); pg.wait_for_selector("#tbl tr.og", timeout=10000)
         n_all = pg.eval_on_selector_all("#tbl tr.og", "els => els.length")
         check("全部訂單：看得到的每一欄都有 ▾", pg.eval_on_selector_all("#tbl thead th", "els => els.filter(e => e.offsetParent).every(e => e.querySelector('.hf-b'))"))
         pg.click("#tbl thead .hf-b[data-hf='qty']"); pg.wait_for_selector("#hf-pop .hf-sort", timeout=5000)
         pg.click("#hf-pop .hf-sort[data-d='-1']"); pg.wait_for_timeout(300)
-        hq = [int(x.replace(",", "")) for x in pg.eval_on_selector_all("#tbl tr.og td:nth-child(7) b", "els => els.map(e => e.innerText)")]
+        hq = [int(x.replace(",", "")) for x in pg.eval_on_selector_all("#tbl tr.og td:nth-child(9) b", "els => els.map(e => e.innerText)")]   # 多了上傳日、永豐料號兩欄（2026-10-21）
         check("數字欄可以排序：蝦皮數量由大到小、表頭有排序記號、數字列寫怎麼排的", len(hq) == n_all and hq == sorted(hq, reverse=True)
               and pg.query_selector("#tbl thead .hf-sorted") is not None and "依蝦皮數量由大到小排" in pg.inner_text("#sum"), f"{hq} / {pg.inner_text('#sum')}")
         pg.click("#sum .hf-clr"); pg.wait_for_timeout(300)

@@ -157,9 +157,9 @@ function renderPreview(box, d) {
 let VIEW = { orders: [], stages: [] }, ORD = new Map(), STAGE = "", EIP_TODO = 0; const OPEN = new Set();
 const iso = d => d.toISOString().slice(0, 10);
 $("#f-from").value = iso(new Date(Date.now() - 7 * 864e5));
-["#f-from", "#f-to", "#f-line"].forEach(s => $(s).addEventListener("change", () => { BSEL.clear(); ZSEL.clear(); KSEL.clear(); refresh(); }));
+["#f-from", "#f-to", "#f-up-from", "#f-up-to", "#f-line"].forEach(s => $(s).addEventListener("change", () => { BSEL.clear(); ZSEL.clear(); KSEL.clear(); refresh(); }));
 $("#f-q").addEventListener("keydown", e => { if (e.key === "Enter") refresh(); });
-const fq = () => ({ from: $("#f-from").value, to: $("#f-to").value, line: $("#f-line").value });
+const fq = () => ({ from: $("#f-from").value, to: $("#f-to").value, up_from: $("#f-up-from").value, up_to: $("#f-up-to").value, line: $("#f-line").value });
 const inStage = no => STAGE === "all" || ((ORD.get(no) || {}).todo || []).includes(STAGE);
 const STAGE_DEF = [
   { key: "diff", t: "差異待確認", d: "蝦皮重傳後內容有變", act: "確認差異", bad: true,
@@ -307,19 +307,27 @@ const HF_DATE = { label: "到貨日", get: g => [g.expected_date || "—"], sort
 const HF_WH = { label: "倉別", get: g => [wh(g.warehouse)] };
 const HF_FF = { label: "履約方式", get: g => [g.fulfil || "—"] };
 const hfNum = (label, f) => ({ label, num: true, get: g => [f(g) == null ? "—" : String(f(g))], sort: g => f(g) == null ? -Infinity : Number(f(g)) });
+/* 上傳日＝那張單第一次進系統那天；永豐料號＝蝦皮採購單的 Supplier SKU ID（OP 2026-10-21，Jerry 看過示意圖） */
+const HF_UP = { label: "上傳日", get: g => [g.upload_date || "—"], sort: g => g.upload_date || "", date: true };
+const codesOf = g => g.codes || [];
+const HF_CODES = { label: "永豐料號", get: g => codesOf(g).length ? codesOf(g) : ["—"], byValue: true };
+const codesTd = g => {        // 一張單先列 3 個，其餘「+N」滑過去看全部；完整的在右側面板
+  const c = codesOf(g); if (!c.length) return `<span class="muted">—</span>`;
+  return `<div class="fn codes">${c.slice(0, 3).map(esc).join("<br>")}${c.length > 3 ? ` <span class="more" title="${esc(c.join("、"))}">+${c.length - 3}</span>` : ""}</div>`;
+};
 
 /* 清單是空的：分清楚「還沒匯入」「被篩選條件篩掉」「這一步沒事」，並告訴人下一步做什麼 */
 function emptyRow(cols) {
   const a = VIEW.all_orders || {}, md = t => t ? `${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))}` : "";
   let m = "這一步目前沒有要處理的訂單。";
   if (!a.count) m = `<b>尚未匯入蝦皮訂單。</b><br>請將蝦皮採購單（檔名 PurchaseOrder 開頭的 Excel）拖曳至上方「上傳檔案」，選擇履約方式後按「確認匯入」。`;
-  else if (!VIEW.orders.length) m = `目前的到貨日、線別或搜尋條件下沒有訂單（系統共有 ${fmt(a.count)} 張，到貨日 ${md(a.first)}～${md(a.last)}）。
+  else if (!VIEW.orders.length) m = `目前的到貨日、上傳日、線別或搜尋條件下沒有訂單（系統共有 ${fmt(a.count)} 張，到貨日 ${md(a.first)}～${md(a.last)}）。
     <div class="mt-2"><button class="btn btn-o btn-sm clr-f"><i class="bi bi-funnel"></i> 清除篩選，顯示全部訂單</button></div>`;
   return `<tr><td colspan="${cols}" class="muted" style="padding:24px;text-align:center">${m}</td></tr>`;
 }
 document.addEventListener("click", e => {
   if (!e.target.closest(".clr-f")) return;
-  ["#f-from", "#f-to", "#f-line", "#f-q"].forEach(s => { $(s).value = ""; });
+  ["#f-from", "#f-to", "#f-up-from", "#f-up-to", "#f-line", "#f-q"].forEach(s => { $(s).value = ""; });
   BSEL.clear(); ZSEL.clear(); KSEL.clear(); refresh();
 });
 
@@ -390,24 +398,24 @@ function nextBadges(g) {
 }
 function render() {
   const all = VIEW.orders.filter(g => inStage(g.order_no));
-  const cols = { no: HF_NO, line: HF_LINE, date: HF_DATE, wh: HF_WH, ff: HF_FF, items: hfNum("品項", g => g.item_count), qty: hfNum("蝦皮數量", g => g.qty),
+  const cols = { no: HF_NO, line: HF_LINE, date: HF_DATE, up: HF_UP, wh: HF_WH, ff: HF_FF, codes: HF_CODES, items: hfNum("品項", g => g.item_count), qty: hfNum("蝦皮數量", g => g.qty),
     ship: hfNum("可出貨量", g => g.qty_ship), short: hfNum("缺貨量", g => g.qty_short),
     next: { label: "下一步", get: g => STAGE === "diff" ? ["確認差異"] : g.todo.length ? g.todo.map(k => SDEF[k].act) : ["已處理"] } };
   const list = hfUse(all, cols, render);
   $("#sum").innerHTML = `<span><b>${all.length}</b> 張訂單</span><span><b>${fmt(all.reduce((a, g) => a + g.item_count, 0))}</b> 個品項</span><span><b>${fmt(all.reduce((a, g) => a + g.qty, 0))}</b> 件（蝦皮數量）</span>${hfNote(list.length)}`;
-  let h = `<thead><tr>${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("wh")}${hfTh("ff", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("ship", "num opt")}${hfTh("short", "num opt")}${hfTh("next")}</tr></thead><tbody>`;
+  let h = `<thead><tr>${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("ff", "opt")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("ship", "num opt")}${hfTh("short", "num opt")}${hfTh("next")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no;
     h += `<tr class="og ${g.diff_pending ? "pend" : ""}" data-k="${esc(k)}">
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : !g.po_id ? `<div class="kbd">尚未成 PO</div>` : ""}</td>
-      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td>
-      <td class="nw opt">${esc(g.fulfil)}</td>
+      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td>
+      <td class="nw opt">${esc(g.fulfil)}</td><td class="opt">${codesTd(g)}</td>
       <td class="num opt">${g.item_count}${g.removed_count ? `<div class="kbd neg">移除 ${g.removed_count}</div>` : ""}</td>
       <td class="num"><b>${fmt(g.qty)}</b>${g.qty_original !== g.qty ? `<div class="kbd">原 ${fmt(g.qty_original)}</div>` : ""}</td>
       <td class="num opt ${g.qty_ship == null ? "muted" : ""}">${fmt(g.qty_ship)}</td><td class="num opt ${g.qty_short ? "neg" : g.qty_short == null ? "muted" : ""}">${fmt(g.qty_short)}</td>
       <td>${STAGE === "diff" ? `<button class="btn btn-p btn-sm dd" data-k="${esc(k)}"><i class="bi bi-arrow-left-right"></i> 確認差異</button>` : nextBadges(g)}</td></tr>`;
   }
-  if (!list.length) h += all.length ? hfEmpty(10) : emptyRow(10);
+  if (!list.length) h += all.length ? hfEmpty(12) : emptyRow(12);
   $("#tbl").innerHTML = h + "</tbody>";
   $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .go-st")) return; openSide(tr.dataset.k); }));
   $$("#tbl button.dd").forEach(b => b.addEventListener("click", () => openDiff(b.dataset.k)));
@@ -523,7 +531,7 @@ const PLAN_FREE = new Set(["可產出", "瑪氏目前只開放供應商直送", 
 const planChk = g => !g.supported ? [g.line === "瑪氏" ? "瑪氏目前只開放供應商直送" : "認不出線別"] : g.blocking ? whyKeys(g.items) : ["可產出"];
 function renderPlan() {
   const every = PLAN.orders.filter(g => inStage(g.order_no));
-  const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, wh: HF_WH, ff: HF_FF, items: hfNum("品項", g => g.items.length), qty: hfNum("蝦皮數量", g => g.qty),
+  const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, up: HF_UP, wh: HF_WH, ff: HF_FF, codes: HF_CODES, items: hfNum("品項", g => g.items.length), qty: hfNum("蝦皮數量", g => g.qty),
     chk: { label: "檢查結果", get: planChk, first: ["可產出"], group: v => PLAN_FREE.has(v) ? "" : NEED } }, renderPlan);
   hfKeep(BSEL, list);
   const picks = list.filter(canPick), blkList = every.filter(g => g.supported && g.blocking), blk = blkList.length;
@@ -531,7 +539,7 @@ function renderPlan() {
     + (blk ? hfQuick("chk", [...new Set(blkList.flatMap(g => whyKeys(g.items)))], `<b style="color:var(--bad)">${blk}</b> 張需先處理`) : "") + hfNote(list.length);
   const all = picks.length && picks.every(g => BSEL.has(g.order_no));
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="b-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選可產出的訂單"></th>
-    ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("wh")}${hfTh("ff")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("chk")}</tr></thead><tbody>`;
+    ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("ff")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("chk")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no, pick = canPick(g);
     const st = !g.supported ? `<span class="badge b-dim">${esc(g.line === "瑪氏" ? "瑪氏目前只開放供應商直送" : "認不出線別")}</span>`
@@ -539,10 +547,10 @@ function renderPlan() {
     h += `<tr class="og ${g.supported && g.blocking ? "blk" : ""} ${g.supported ? "" : "lock"}" data-k="${esc(k)}">
       <td>${!pick && g.supported && g.blocking ? BLK_ICON : `<input type="checkbox" class="ck b-ck" data-k="${esc(k)}" ${BSEL.has(k) ? "checked" : ""} ${pick ? "" : "disabled"}>`}</td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
-      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil)}</td>
-      <td class="num opt">${g.items.length}</td><td class="num">${fmt(g.qty)}</td><td>${st}</td></tr>`;
+      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil)}</td>
+      <td class="opt">${codesTd(g)}</td><td class="num opt">${g.items.length}</td><td class="num">${fmt(g.qty)}</td><td>${st}</td></tr>`;
   }
-  if (!list.length) h += every.length ? hfEmpty(9) : emptyRow(9);
+  if (!list.length) h += every.length ? hfEmpty(11) : emptyRow(11);
   $("#b-tbl").innerHTML = h + "</tbody>";
   $$("#b-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; openSide(tr.dataset.k); }));
   $$("#b-tbl input.b-ck").forEach(c => c.addEventListener("change", () => { c.checked ? BSEL.add(c.dataset.k) : BSEL.delete(c.dataset.k); renderPlan(); }));
@@ -741,7 +749,7 @@ const SHIP_FREE = new Set(["已產出拋單檔", "可全數出貨", "部分缺�
 const shipChk = g => g.dispatch_status === "已產出" ? ["已產出拋單檔"] : g.blocking ? whyKeys(g.items) : [g.short ? (g.deleted ? "缺貨（有刪單）" : "部分缺貨") : "可全數出貨"];
 function renderShip() {
   const every = SHIP.orders.filter(g => inStage(g.order_no));
-  const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, wh: HF_WH, items: hfNum("品項", g => g.items.length), qty: hfNum("訂購量", g => g.qty),
+  const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, up: HF_UP, wh: HF_WH, codes: HF_CODES, items: hfNum("品項", g => g.items.length), qty: hfNum("訂購量", g => g.qty),
     ship: hfNum("出貨量", g => g.ship), short: hfNum("缺貨量", g => g.short),
     chk: { label: "檢查結果", get: shipChk, first: ["可全數出貨", "部分缺貨", "缺貨（有刪單）"], group: v => SHIP_FREE.has(v) ? "" : NEED },
     disp: { label: "拋單檔", get: g => [g.dispatch_status] } }, renderShip);
@@ -752,7 +760,7 @@ function renderShip() {
     + `<span><b>${fmt(every.reduce((a, g) => a + g.ship, 0))}</b> 可出貨</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.short, 0))}</b> 缺貨</span>`
     + (blkList.length ? hfQuick("chk", [...new Set(blkList.flatMap(g => whyKeys(g.items)))], `<b style="color:var(--bad)">${blkList.length}</b> 張需先處理`) : "") + hfNote(list.length);
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="z-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選可產出的訂單"></th>
-    ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("wh")}${hfTh("items", "num")}${hfTh("qty", "num")}${hfTh("ship", "num")}${hfTh("short", "num")}${hfTh("chk")}${hfTh("disp")}</tr></thead><tbody>`;
+    ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("codes", "opt")}${hfTh("items", "num")}${hfTh("qty", "num")}${hfTh("ship", "num")}${hfTh("short", "num")}${hfTh("chk")}${hfTh("disp")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no, done = g.dispatch_status === "已產出";
     const st = done ? `<span class="badge b-dim">—</span>` : g.blocking ? blockCell(g)
@@ -760,12 +768,12 @@ function renderShip() {
     h += `<tr class="og ${g.blocking && !done ? "blk" : ""} ${done ? "lock" : ""}" data-k="${esc(k)}">
       <td>${!zPick(g) && !done && g.blocking ? BLK_ICON : `<input type="checkbox" class="ck z-ck" data-k="${esc(k)}" ${ZSEL.has(k) ? "checked" : ""} ${zPick(g) ? "" : "disabled"}>`}</td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
-      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="num">${g.items.length}</td>
+      <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td><td class="opt">${codesTd(g)}</td><td class="num">${g.items.length}</td>
       <td class="num">${fmt(g.qty)}</td><td class="num"><b>${fmt(g.ship)}</b></td><td class="num ${g.short ? "neg" : ""}">${fmt(g.short)}</td><td>${st}</td>
       <td class="nw">${done ? `<span class="badge b-s">已產出</span> <span class="kbd">${esc((g.dispatch_at || "").slice(5, 16).replace("T", " "))}</span> <button class="btn btn-o btn-sm z-undo" data-k="${esc(k)}">取消產出</button>`
         : `<span class="badge b-dim">${esc(g.dispatch_status)}</span>`}</td></tr>`;
   }
-  if (!list.length) h += every.length ? hfEmpty(11) : emptyRow(11);
+  if (!list.length) h += every.length ? hfEmpty(13) : emptyRow(13);
   $("#z-tbl").innerHTML = h + "</tbody>";
   $$("#z-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; openSide(tr.dataset.k); }));
   $$("#z-tbl input.z-ck").forEach(c => c.addEventListener("change", () => { c.checked ? ZSEL.add(c.dataset.k) : ZSEL.delete(c.dataset.k); renderShip(); }));
@@ -869,7 +877,7 @@ async function loadShort() {
 }
 function renderShort() {
   const every = SHORT.orders.filter(g => inStage(g.order_no));
-  const list = hfUse(every, { no: HF_NO, line: HF_LINE, ff: HF_FF, date: HF_DATE, wh: HF_WH, items: hfNum("品項", g => g.items.length),
+  const list = hfUse(every, { no: HF_NO, line: HF_LINE, ff: HF_FF, date: HF_DATE, up: HF_UP, wh: HF_WH, codes: HF_CODES, items: hfNum("品項", g => g.items.length),
     orig: hfNum("原始訂購量", g => g.orig), final: hfNum("最終可出貨量", g => g.final), cut: hfNum("累計下修", g => g.cut),
     st: { label: "通知狀態", get: g => [g.status] } }, renderShort);
   hfKeep(KSEL, list);
@@ -877,17 +885,17 @@ function renderShort() {
   $("#k-sum").innerHTML = `<span><b>${every.length}</b> 張訂單</span><span><b>${every.filter(g => g.short_items).length}</b> 張有缺貨</span>`
     + `<span><b style="color:var(--warn)">${every.reduce((a, g) => a + g.pending, 0)}</b> 品待通知</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.cut, 0))}</b> 累計下修</span>${hfNote(list.length)}`;
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="k-all" ${all ? "checked" : ""} ${picks.length ? "" : "disabled"} title="全選待通知的訂單"></th>
-    ${hfTh("no")}${hfTh("line")}${hfTh("ff", "opt")}${hfTh("date")}${hfTh("wh")}${hfTh("items", "num opt")}${hfTh("orig", "num opt")}${hfTh("final", "num")}${hfTh("cut", "num")}${hfTh("st")}</tr></thead><tbody>`;
+    ${hfTh("no")}${hfTh("line")}${hfTh("ff", "opt")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("orig", "num opt")}${hfTh("final", "num")}${hfTh("cut", "num")}${hfTh("st")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no;
     h += `<tr class="og ${g.pending ? "pend" : ""}" data-k="${esc(k)}">
       <td><input type="checkbox" class="ck k-ck" data-k="${esc(k)}" ${KSEL.has(k) ? "checked" : ""} ${g.pending ? "" : "disabled"}></td>
       <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
-      <td class="nw">${esc(g.line)}</td><td class="nw opt">${esc(g.fulfil)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw">${wh(g.warehouse)}</td><td class="num opt">${g.items.length}</td>
+      <td class="nw">${esc(g.line)}</td><td class="nw opt">${esc(g.fulfil)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td><td class="opt">${codesTd(g)}</td><td class="num opt">${g.items.length}</td>
       <td class="num opt">${fmt(g.orig)}</td><td class="num"><b>${fmt(g.final)}</b></td><td class="num ${g.cut ? "neg" : ""}">${fmt(g.cut)}${g.deleted ? `<div class="kbd">刪單 ${g.deleted} 品</div>` : ""}</td>
       <td><span class="badge ${g.status === "待通知" ? "b-warn" : g.status.startsWith("已通知") ? "b-ok" : "b-dim"}">${esc(g.status)}</span></td></tr>`;
   }
-  if (!list.length) h += every.length ? hfEmpty(11) : emptyRow(11);
+  if (!list.length) h += every.length ? hfEmpty(13) : emptyRow(13);
   $("#k-tbl").innerHTML = h + "</tbody>";
   $$("#k-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input")) return; openSide(tr.dataset.k); }));
   $$("#k-tbl input.k-ck").forEach(c => c.addEventListener("change", () => { c.checked ? KSEL.add(c.dataset.k) : KSEL.delete(c.dataset.k); renderShort(); }));
@@ -1078,7 +1086,7 @@ function renderSide() {
         <div class="kbd">${k.rounds.map(r => `${roundText(r)}（${esc(r.source)}${r.reasons.length ? "，" + esc(r.reasons.join("、")) : ""}）`).join("<br>")}</div>`;
       if (k.edit_round) acts += `<button class="btn ${k.pending ? "btn-p" : "btn-o"} btn-sm sd-short" data-id="${i.id}"><i class="bi bi-dash-circle"></i> ${k.rounds.length && !k.pending ? `填第 ${k.edit_round} 次缺貨` : k.pending ? "修改缺貨" : "填缺貨"}</button>`;
     }
-    h += `<div class="sd-it ${i.removed ? "muted" : ""}${isHit(i) ? " hit" : ""}"><div class="r"><span class="fn" style="font-weight:700;color:var(--ink)">${esc(i.supplier_sku_id)}</span>
+    h += `<div class="sd-it ${i.removed ? "muted" : ""}${isHit(i) ? " hit" : ""}"><div class="r"><span class="fn" style="font-weight:700;color:var(--ink)" title="永豐料號（蝦皮採購單的 Supplier SKU ID）"><span class="kbd" style="font-weight:400">永豐料號</span> ${esc(i.supplier_sku_id)}</span>
         <span style="flex:1;min-width:0">${esc((i.sku_name || "").slice(0, 40))}</span><span class="nw"><b style="font-size:15px">${fmt(i.qty)}</b> ${esc(unit)}</span></div>
       <div class="sd-kv">${kv.filter(Boolean).map(x => `<span>${x}</span>`).join("")}${i.removed ? `<span class="badge b-diff">已移除</span>` : i.diff_pending ? `<span class="badge b-diff">差異待確認</span>` : ""}</div>
       ${more}${acts ? `<div class="sd-acts">${acts}</div>` : ""}</div>`;
