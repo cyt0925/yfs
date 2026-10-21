@@ -5,12 +5,13 @@
 格子照範本（Alice 的欄位填寫規則）：
   A1 進貨通路名「蝦皮特選」    C1「採購單號」 D1 EIP 採購單號    G1「下單」 H1 下載當天    G2「到庫」 H2 到貨日
   第 3 列表頭，第 4 列起一品一列：採購單ID（有入庫單號填入庫單號，沒有填 PR 單號）、供應商料號（蝦皮 Supplier SKU ID）、SKU名稱、
-  數量（蝦皮數量）、單位、箱入數（價格本）、轉換箱數（＝數量÷箱入數）、備註；最後一列 Total。範本留 15 列，品項多就往下加。
-  轉換箱數和 Total 直接寫算好的數字，不寫公式：下載的檔 Excel 會用「受保護的檢視」打開，公式不會算，整欄空白（Jerry 2026-10-21 截圖）。
+  數量（蝦皮數量）、單位、箱入數（價格本）、轉換箱數（公式 =E/G，Jerry 2026-10-21「箱數要設公式」）、備註；最後一列 Total（SUM 公式）。範本留 15 列，品項多就往下加。
+  公式格同時塞算好的值（_cache）：下載的檔 Excel 用「受保護的檢視」打開時不算公式，沒塞值整欄會是空白（Jerry 2026-10-21 截圖）。
   B21「請安排 M/D 到貨」  A22「蝦皮特選店-倉名」  C22 那個倉的進倉說明（WH_NOTES，可在資料與設定改）  C23 固定的進倉注意事項。
 採購單ID 用產檔當下的入庫單號（蝦皮入庫單常常是 EIP 產出之後才上傳），其他照 EIP 存下來的內容。
 """
 import datetime as _dt
+import re
 import zipfile
 
 import openpyxl
@@ -108,9 +109,12 @@ def direct_xlsx(e, rows, note, today=None):
     for i, h in enumerate(HEAD, start=1):
         c = ws.cell(row=3, column=i, value=h); c.font = Font(name="新細明體", size=12, bold=True); c.fill = grey; c.border = box; c.alignment = center
     n = max(len(rows), MIN_ROWS)
+    cached = {}
     for i in range(n):
         r = 4 + i; row = rows[i] if i < len(rows) else None
-        vals = [i + 1] + ([row["po_id"], row["sku"], row["name"], row["qty"], row["unit"], row["box"], _boxes(row), ""] if row else [""] * 8)
+        vals = [i + 1] + ([row["po_id"], row["sku"], row["name"], row["qty"], row["unit"], row["box"], f"=E{r}/G{r}", ""] if row else [""] * 8)
+        if row:
+            cached[f"H{r}"] = _boxes(row)
         for j, v in enumerate(vals, start=1):
             c = ws.cell(row=r, column=j, value=v); c.font = body; c.border = box
             c.alignment = center if j in (5, 8) else left
@@ -121,7 +125,8 @@ def direct_xlsx(e, rows, note, today=None):
         ws.row_dimensions[r].height = 16
     tr = 4 + n
     ws.cell(row=tr, column=4, value="Total").font = Font(name="微軟正黑體", size=12)
-    ws.cell(row=tr, column=5, value=sum(r["qty"] or 0 for r in rows)); ws.cell(row=tr, column=8, value=round(sum(_boxes(r) for r in rows), 1))
+    ws.cell(row=tr, column=5, value=f"=SUM(E4:E{tr - 1})"); ws.cell(row=tr, column=8, value=f"=SUM(H4:H{tr - 1})")
+    cached[f"E{tr}"] = sum(r["qty"] or 0 for r in rows); cached[f"H{tr}"] = round(sum(_boxes(r) for r in rows), 1)
     for j in range(1, 10):
         c = ws.cell(row=tr, column=j); c.border = box; c.alignment = center
         if j in (5, 8):
@@ -140,7 +145,22 @@ def direct_xlsx(e, rows, note, today=None):
             ws.cell(row=rr, column=j).border = box
     ws.row_dimensions[r2].height = 24 + 18 * (note.count("\n") + 1); ws.row_dimensions[r3].height = 115
     buf = io.BytesIO(); wb.save(buf)
-    return buf.getvalue()
+    return _cache(buf.getvalue(), cached)
+
+
+def _cache(data, values):
+    """把算好的值塞進公式格的 <v>（openpyxl 只寫公式不寫值）。Excel 受保護的檢視不算公式，沒有值整欄會是空白；啟用編輯後照樣重算。"""
+    src = zipfile.ZipFile(io.BytesIO(data)); out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in src.infolist():
+            blob = src.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                xml = blob.decode("utf-8")
+                for ref, v in values.items():
+                    xml = re.sub(rf'(<c r="{ref}"[^>]*><f>[^<]*</f>)<v\s*/?>(?:</v>)?', lambda m: f"{m.group(1)}<v>{v}</v>", xml, count=1)
+                blob = xml.encode("utf-8")
+            zf.writestr(item, blob)
+    return out.getvalue()
 
 
 def direct_bytes(conn, e, notes=None):
