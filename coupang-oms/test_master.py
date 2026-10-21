@@ -909,8 +909,8 @@ def main():
     r2 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "2", "kinds": ["split"], "reasons": ["產能不及"]})
     check("記兩輪 OK（第一階段下修＋改交期倉別、第二階段拆單）", r1.status_code == 200 and r2.status_code == 200, str(r1.get_json()) + str(r2.get_json()))
     st12 = client.get("/api/master/stats?month=2030-01").get_json(); t12 = st12["total"]
-    check("修改次數（OK）= 2、曾改單 1 張（佔 100%）、平均每張 2 次；階段 1:1、2:1、3:0；有下修 1、有改交期倉別 1、有拆單 1",
-          t12["rounds"] == 2 and t12["changed_pos"] == 1 and t12["changed_pct"] == 100 and t12["per_changed_po"] == 2
+    check("修改次數（OK）= 2、曾改單 1 張（佔比照 PO 張數算；CI 的 PostgreSQL 這個期間還有 test_flow 沒排日期的單）、平均每張 2 次；階段 1:1、2:1、3:0；有下修 1、有改交期倉別 1、有拆單 1",
+          t12["rounds"] == 2 and t12["changed_pos"] == 1 and t12["changed_pct"] == round(100 / t12["pos"]) and t12["per_changed_po"] == 2
           and t12["stages"] == {"1": 1, "2": 1, "3": 0} and t12["kinds"] == {"qty": 1, "date": 1, "split": 1}, str({k: t12[k] for k in ("rounds", "changed_pos", "changed_pct", "per_changed_po", "stages", "kinds")}))
     check("系統抓到的變動次數照舊是 4（灰字那欄，不算修改次數）", t12["events"] == 4, str(t12["events"]))
     rs = {(r["cat"], r["reason"]): r["n"] for r in st12["reasons"]}
