@@ -510,7 +510,7 @@ def api_fulfil():
         return jsonify({"error": "請選擇訂單。"}), 400
     if fulfil not in FULFILS:
         return jsonify({"error": f"履約方式只能選：{'、'.join(FULFILS)}。"}), 400
-    operator = _operator(); stamp = now(); changed, missing = 0, []
+    operator = _operator(); stamp = now(); changed, missing, handled = 0, [], []
     conn = get_conn()
     try:
         for no in nos:
@@ -521,16 +521,19 @@ def api_fulfil():
             olds = sorted({r["fulfil"] or "未選" for r in _rows(conn.execute(f"SELECT fulfil FROM shp_orders WHERE id IN ({marks})", ids))})
             if olds == [fulfil]:
                 continue
+            from .refulfil import apply as _refulfil        # 已產出的 EIP、拋單檔一起處理（Jerry 2026-10-22）
+            done = _refulfil(conn, no, fulfil, operator, stamp)
             conn.execute(f"UPDATE shp_orders SET fulfil = ?, updated_at = ? WHERE id IN ({marks})", [fulfil, stamp] + ids)
             line = _row(conn.execute("SELECT line FROM shp_orders WHERE id = ?", (ids[0],)))["line"]
-            _log(conn, line, no, "", "", "shopee_fulfil", "履約方式", "、".join(olds), fulfil, operator, "manual", reason=reason)
+            _log(conn, line, no, "", "", "shopee_fulfil", "履約方式", "、".join(olds), fulfil, operator, "manual", "；".join(done), reason=reason)
+            handled += done
             changed += 1
         if missing and len(missing) == len(nos):
             return jsonify({"error": "找不到這張訂單，請重新整理頁面。"}), 404
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"ok": True, "changed": changed > 0, "count": changed, "missing": missing})
+    return jsonify({"ok": True, "changed": changed > 0, "count": changed, "missing": missing, "handled": handled})
 
 
 @shopee_bp.route("/api/shopee/versions/<int:order_id>")

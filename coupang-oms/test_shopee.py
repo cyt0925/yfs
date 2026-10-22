@@ -1176,6 +1176,49 @@ def flow_tests(c, orders):
     r = up("/api/shopee/conv/import", price_xlsx({"價格本整合": [("4987176232878C", "包", "幫寶適", 4)]}), "PG價格本整合.xlsx").get_json()
     check("別的線別（寶僑）上傳不影響紙潔那兩個的狀態，只講寶僑自己的", set(r["pending"]) == {"寶僑"}, str(r["pending"]))
 
+    print("\n【21】改履約方式時，已做好的 EIP、拋單檔系統一起處理（Jerry 2026-10-22「要有按鈕讓他們修改」）")
+    A, B = "PRTWCOTWA202701050001", "PRTWCOTWA202701050002"
+    imp(purchase_xlsx([("95_1", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 40, "Pcs")], pr=A, date="2027-01-05"), "竹運採購進貨")
+    imp(purchase_xlsx([("95_1", "4987176232878_CNN", "幫寶適 清新幫 拉拉褲", 40, "Pcs")], pr=B, wh="TWX", date="2027-01-06"), "竹運採購進貨")
+    r = c.post("/api/shopee/purchase/generate", json={"fulfil": "竹運採購進貨", "order_nos": [A, B]})
+    eip = next((e for e in c.get("/api/shopee/eips", query_string={"from": "2027-01-01"}).get_json()["eips"] if A in e["orders"]), {})
+    check("兩張單一起產出：同一份 EIP（小單位，竹運採購進貨不換箱）、共 80 包", r.status_code == 200 and sorted(eip.get("orders", [])) == [A, B] and eip.get("qty") == 80, str((eip.get("qty"), eip.get("rows"))))
+    import json
+    cn = db.get_conn()          # 模擬 2026-10-21 以前產的 EIP：沒記每張單各多少（parts）
+    rows_ = json.loads(cn.execute("SELECT rows_json FROM shp_eip WHERE id = ?", (eip["id"],)).fetchone()["rows_json"])
+    for x in rows_:
+        x.pop("parts", None)
+    cn.execute("UPDATE shp_eip SET rows_json = ? WHERE id = ?", (json.dumps(rows_, ensure_ascii=False), eip["id"])); cn.commit(); cn.close()
+    chk = c.post("/api/shopee/fulfil/check", json={"order_nos": [A], "fulfil": "竹運出貨"}).get_json()["orders"]
+    check("改之前先問：A 在那份 EIP 裡、還有另外 1 張單、還沒回填", len(chk) == 1 and chk[0]["eips"][0]["id"] == eip["id"] and chk[0]["eips"][0]["others"] == 1
+          and chk[0]["eips"][0]["eip_po"] == "" and chk[0]["dispatch"] is None, str(chk))
+    check("改成同一個履約方式、或沒產過東西的單 → 不用提醒", c.post("/api/shopee/fulfil/check", json={"order_nos": [A], "fulfil": "竹運採購進貨"}).get_json()["orders"] == [])
+    r = c.post("/api/shopee/fulfil", json={"order_nos": [A], "fulfil": "竹運出貨"}).get_json()
+    eips2 = c.get("/api/shopee/eips", query_string={"from": "2027-01-01"}).get_json()["eips"]
+    e2 = next((e for e in eips2 if e["id"] == eip["id"]), {})
+    check("A 改成竹運出貨 → 從那份 EIP 拿掉；那份只留 B 的 40 包、檔名照 B 重算（安南三）、標「重新做過」",
+          r["count"] == 1 and "已從 EIP" in r["handled"][0] and e2.get("orders") == [B] and e2.get("qty") == 40 and "安南三" in e2.get("filename", "")
+          and "觀音" not in e2.get("filename", "") and "拿掉 " + A in e2.get("note", "") and "重新下載再上傳" in e2.get("note", ""), str((r, e2))[:500])
+    ov = {g["order_no"]: g for g in orders(**{"from": "2027-01-01"})["orders"]}
+    check("A 移到待產拋單檔（不用產採購單）、B 還在待回填 EIP", ov[A]["todo"] == ["ship"] and ov[A]["po_status"] == "不需產出" and ov[B]["todo"] == ["eip"],
+          str((ov[A]["todo"], ov[B]["todo"])))
+    lg = [l for l in c.get("/api/master/logs?scope=shopee&limit=300").get_json()["logs"] if l["field"] == "shopee_fulfil" and l["po_number"] == A]
+    check("歷程：履約方式竹運採購進貨 → 竹運出貨，備註寫從哪份 EIP 拿掉", lg and lg[0]["new_value"] == "竹運出貨" and "已從 EIP" in (lg[0]["note"] or ""), str(lg[:1]))
+    c.put(f"/api/shopee/eips/{eip['id']}", json={"eip_po": "PO202701001"})
+    chk = c.post("/api/shopee/fulfil/check", json={"order_nos": [B], "fulfil": "供應商直送"}).get_json()["orders"]
+    check("B 已回填單號再改：提醒裡帶 EIP 採購單號、這份只有 B", chk and chk[0]["eips"][0]["eip_po"] == "PO202701001" and chk[0]["eips"][0]["others"] == 0, str(chk))
+    r = c.post("/api/shopee/fulfil", json={"order_nos": [B], "fulfil": "供應商直送"}).get_json()
+    check("B 改成供應商直送 → 那份 EIP 只有它，整份取消；B 回到待產採購單", "整份" in r["handled"][0]
+          and not any(e["id"] == eip["id"] for e in c.get("/api/shopee/eips", query_string={"from": "2027-01-01"}).get_json()["eips"])
+          and {g["order_no"]: g for g in orders(**{"from": "2027-01-01"})["orders"]}[B]["todo"] == ["buy"], str(r))
+    H = "POTWCTWA26101500H"
+    chk = c.post("/api/shopee/fulfil/check", json={"order_nos": [H], "fulfil": "竹運採購進貨"}).get_json()["orders"]
+    check("竹運出貨產過拋單檔、要改成採購 → 提醒帶拋單檔產出時間", chk and chk[0]["dispatch"] and chk[0]["dispatch"]["created_at"], str(chk))
+    r = c.post("/api/shopee/fulfil", json={"order_nos": [H], "fulfil": "竹運採購進貨"}).get_json()
+    check("改了 → 這張的拋單檔取消、移到待產採購單", "取消這張單的竹運拋單檔" in "".join(r["handled"])
+          and c.post("/api/shopee/fulfil/check", json={"order_nos": [H], "fulfil": "竹運採購進貨"}).get_json()["orders"] == []
+          and "buy" in {g["order_no"]: g for g in orders(**{"from": "2026-01-01"})["orders"]}[H]["todo"], str(r))
+
 
 if __name__ == "__main__":
     main()

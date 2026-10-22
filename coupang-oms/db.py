@@ -1216,7 +1216,8 @@ CREATE TABLE IF NOT EXISTS shp_eip (
     created_by    TEXT DEFAULT '',
     created_at    TEXT DEFAULT '',
     updated_by    TEXT DEFAULT '',
-    updated_at    TEXT DEFAULT ''
+    updated_at    TEXT DEFAULT '',
+    note          TEXT DEFAULT ''         -- 改履約方式時拿掉某張單、重新做過的提醒（2026-10-22）
 );
 CREATE TABLE IF NOT EXISTS shp_eip_items (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1623,6 +1624,15 @@ def _migrate_columns(conn):
     if "remarks" in existing and "remarks_legacy" not in existing:
         conn.execute("ALTER TABLE orders RENAME COLUMN remarks TO remarks_legacy")
         _consolidate_legacy_remarks(conn)
+
+    # 蝦皮特選 EIP：改履約方式拿掉某張單、重新做過的提醒（2026-10-22）
+    if IS_POSTGRES:
+        eip_cols = {r["column_name"] for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'shp_eip'")}
+    else:
+        eip_cols = {r["name"] for r in conn.execute("PRAGMA table_info(shp_eip)")}
+    if eip_cols and "note" not in eip_cols:
+        conn.execute("ALTER TABLE shp_eip ADD COLUMN note TEXT DEFAULT ''")
 
     _backfill_em_shipping_method(conn)
     _unify_overridden_po_fields(conn)

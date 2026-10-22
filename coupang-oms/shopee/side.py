@@ -47,7 +47,7 @@ def api_side():
         if ids:
             marks = ",".join("?" * len(ids))
             eips = _rows(conn.execute(
-                f"SELECT DISTINCT e.id, e.line, e.fulfil, e.unit_group, e.filename, e.eip_po, e.updated_by, e.updated_at, e.created_at "
+                f"SELECT DISTINCT e.id, e.line, e.fulfil, e.unit_group, e.filename, e.eip_po, e.updated_by, e.updated_at, e.created_at, e.note "
                 f"FROM shp_eip e JOIN shp_eip_items i ON i.eip_id = e.id WHERE i.order_id IN ({marks}) ORDER BY e.id", ids))
             diffs = _rows(conn.execute(
                 f"SELECT d.*, o.supplier_sku_id, o.sku_name FROM shp_diffs d JOIN shp_orders o ON o.id = d.order_id "

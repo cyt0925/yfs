@@ -97,6 +97,15 @@
   #toasts { position:fixed; right:18px; top:78px; z-index:99; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
   .toast { background:#1f1410; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.25); max-width:560px; white-space:pre-line; }
   .toast.err { background:var(--bad); }
+  /* 改履約方式前的提醒（Jerry 2026-10-22） */
+  #dlg-ff .ff-sec { border:1px solid var(--line); border-radius:10px; padding:10px 12px; line-height:1.65; }
+  #dlg-ff .ff-sec + .ff-sec { margin-top:10px; }
+  #dlg-ff .ff-no { font-weight:700; font-family:ui-monospace,Menlo,Consolas,monospace; margin-bottom:4px; }
+  #dlg-ff .ff-file { background:#fdf3f2; border-radius:8px; padding:5px 10px; font-size:12.5px; margin:5px 0 8px; word-break:break-all; }
+  #dlg-ff .ff-h { font-weight:700; font-size:13px; margin:6px 0 2px; }
+  #dlg-ff .ff-ul { margin:0; padding-left:22px; list-style:disc; } #dlg-ff .ff-ol { list-style:decimal; } #dlg-ff .ff-ul li { margin:2px 0; }
+  #dlg-ff .ff-todo { background:var(--warnbg); border:1px solid #fde68a; border-radius:8px; padding:6px 12px 8px; margin-top:8px; }
+  .ff-note { margin-top:3px; font-size:11.5px; color:#78350f; background:var(--warnbg); border:1px solid #fde68a; border-radius:6px; padding:1px 6px; white-space:normal; }
   .toast.warn { background:#7c4a03; border-left:5px solid #fbbf24; cursor:pointer; }
   .ver { text-align:right; padding:4px 20px 14px; font-size:11px; color:var(--muted); }
   .hbtn { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; border-radius:8px; font-size:13px; font-weight:700; color:#fff; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.7); cursor:pointer; white-space:nowrap; }
@@ -298,6 +307,11 @@
 <dialog id="dlg-diff"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="dd-title">差異</span><button class="x" data-close="dlg-diff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div id="dd-body"></div>
     <div class="flex items-center gap-2 mt-3"><button id="dd-confirm" class="btn btn-p"><i class="bi bi-check2-circle"></i> 確認差異</button><span class="kbd">確認後這張單回到「已匯入」，才能往下處理。</span></div></div></dialog>
+<!-- 改履約方式前的提醒：這張單已經做過 EIP／產過拋單檔，系統會一起處理（Jerry 2026-10-22） -->
+<dialog id="dlg-ff" style="width:min(620px,96vw)"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="df-title">改履約方式</span><button class="x" data-close="dlg-ff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3"><div id="df-body"></div>
+    <div class="flex items-center gap-2 justify-end"><button id="df-no" class="btn btn-o">先不要</button><button id="df-ok" class="btn btn-p"><i class="bi bi-check2"></i> 確定改</button></div>
+  </div></dialog>
 <dialog id="dlg-adj" style="width:min(580px,96vw)"><div class="dh"><i class="bi bi-calculator"></i><span id="da-title">修改下採數量</span><button class="x" data-close="dlg-adj" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">
     <div class="alert al-warn" id="da-why"></div>

@@ -907,6 +907,17 @@ def main():
         pg.once("dialog", lambda d: d.accept()); pg.click("#e-tbl button.e-cancel:not(:disabled)"); pg.wait_for_timeout(1200)
         check("沒回填的那份按「取消產出」→ 刪掉、提示回到待產採購單、待產採購單變 1", "回到「待產採購單」" in pg.inner_text("#toasts") and count("buy") == 1
               and pg.eval_on_selector_all("#e-tbl button.e-cancel", "els => els.length") == 1, pg.inner_text("#toasts") + pg.inner_text("#stages"))
+        # 改履約方式前的提醒（Jerry 2026-10-22）：已回填 EIP 的單改成竹運出貨 → 先跳視窗講會怎樣、要做什麼；按「先不要」不改
+        no_f = pg.evaluate("async () => (await (await fetch('/api/shopee/eips?from=2026-01-01')).json()).eips.find(e => e.eip_po).orders[0]")
+        stage("all"); pg.wait_for_selector(f"#tbl .ff-cell[data-k='{no_f}']", timeout=10000)
+        pg.click(f"#tbl .ff-cell[data-k='{no_f}']"); pg.wait_for_selector("#ff-pop", timeout=5000)
+        pg.click("#ff-pop .ff-opt[data-f='竹運出貨']"); pg.wait_for_selector("#dlg-ff[open]", timeout=8000)
+        txt = pg.inner_text("#dlg-ff")
+        check("已回填 EIP 的單改成竹運出貨 → 先跳提醒：原廠已經下單、系統會自動做什麼、你要做的事（通知採購）",
+              "改成「竹運出貨」" in txt and "原廠那邊已經下單了" in txt and "系統會自動" in txt and "你要做的事" in txt and "通知採購" in txt and "待產拋單檔" in txt, txt[:400])
+        pg.click("#df-no"); pg.wait_for_timeout(600)
+        check("按「先不要」→ 視窗關掉、履約方式沒改", not pg.evaluate("document.getElementById('dlg-ff').open")
+              and "竹運出貨" not in pg.inner_text(f"#tbl .ff-cell[data-k='{no_f}']"), pg.inner_text(f"#tbl .ff-cell[data-k='{no_f}']"))
         pg.click("#btn-set"); pg.wait_for_selector("#view-set:not(.hidden)", timeout=5000)
         check("資料與設定：價格本列出寶僑、瑪氏（商品總表在瑪氏出貨上傳）", "寶僑" in pg.inner_text("#conv-st") and "瑪氏出貨" in pg.inner_text("#conv-st"), pg.inner_text("#conv-st"))
         pg.click("#wh-box summary"); pg.wait_for_selector("#wh-tbl tbody tr", timeout=10000)

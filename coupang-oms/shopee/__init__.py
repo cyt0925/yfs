@@ -26,6 +26,6 @@ from flask import Blueprint
 
 shopee_bp = Blueprint("shopee", __name__)
 
-from . import admin, direct_po, drop, mars_po, orders, purchase, ship, short, side, yx  # noqa: E402,F401 — 讓路由生效
+from . import admin, direct_po, drop, mars_po, orders, purchase, refulfil, ship, short, side, yx  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["shopee_bp"]

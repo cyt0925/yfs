@@ -686,7 +686,7 @@ def api_eips():
         out.append({k: e[k] for k in ("id", "line", "fulfil", "warehouse", "expected_date", "unit_group", "filename", "eip_po", "created_by", "created_at", "updated_by", "updated_at")}
                    | {"warehouse_name": "、".join(wh_name(w) for w in (e["warehouse"] or "").split("、") if w), "rows": len(rows), "qty": sum(r["qty"] for r in rows),
                       "mars": e["line"] == MARS, "direct": e["fulfil"] == "供應商直送" and e["line"] != MARS,
-                      "orders": sorted(set(links.get(e["id"], [])))})
+                      "orders": sorted(set(links.get(e["id"], []))), "note": e.get("note") or ""})
     return jsonify({"eips": out})
 
 

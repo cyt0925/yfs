@@ -454,8 +454,11 @@ function ffOpen(cell) {
   pop.style.left = `${Math.max(8, Math.min(r.left, document.documentElement.clientWidth - pop.offsetWidth - 8))}px`; pop.style.top = `${r.bottom + 4}px`;
   pop.querySelectorAll(".ff-opt").forEach(c => c.addEventListener("click", async () => {
     ffClose();
-    try { const d = await post("/api/shopee/fulfil", { order_nos: [k], fulfil: c.dataset.f }); toast(d.count ? `${k} 已改為${c.dataset.f}` : "履約方式相同，未修改"); SIDE_NO = k; refresh(); }
-    catch (err) { toast(err.message, "err"); }
+    try {
+      const f = c.dataset.f, chk = await ffCheck([k], f); if (!chk) return;
+      const d = await post("/api/shopee/fulfil", { order_nos: [k], fulfil: f });
+      ffToast(d, f, chk, k); SIDE_NO = k; refresh();
+    } catch (err) { toast(err.message, "err"); }
   }));
   LAST_K = k; openSide(k);
 }
@@ -465,6 +468,55 @@ document.addEventListener("click", e => {
   if (FF_POP && !e.target.closest("#ff-pop")) ffClose();
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && FF_POP) ffClose(); });
+/* 改履約方式前先問系統會動到什麼（已做過的 EIP、產過的拋單檔），有的話跳提醒、講人話（Jerry 2026-10-22「怕他們不知怎麼用」）。
+   回 null＝按了「先不要」；回 {orders}＝可以改（沒影響時 orders 是空的，不跳視窗） */
+const ffStage = f => f === "竹運出貨" ? "待產拋單檔" : "待產採購單";
+const ffMd = t => t ? `${+t.slice(5, 7)}/${+t.slice(8, 10)} ${t.slice(11, 16)}` : "";
+async function ffCheck(nos, f) {
+  const chk = await post("/api/shopee/fulfil/check", { order_nos: nos, fulfil: f });
+  if (!chk.orders.length) return chk;
+  const one = x => {
+    let h = "", sys = [], todo = [];
+    const box = e => `<div class="ff-file">${esc(e.filename)}${e.eip_po ? `（${esc(e.eip_po)}）` : ""}<br>${e.others ? `（這份檔裡還有另外 ${e.others} 張單）` : "（這份檔只有這張單）"}</div>`;
+    const open_ = x.eips.filter(e => !e.eip_po), filled = x.eips.filter(e => e.eip_po);
+    if (open_.length) h += `<div>這張單已經做過 EIP 採購單${open_.length > 1 ? `（${open_.length} 份）` : ""}：</div>${open_.map(box).join("")}`;
+    if (filled.length) h += `<div>這張單的 EIP 採購單已經回填單號 <b>${filled.map(e => esc(e.eip_po)).join("、")}</b>，表示<b>原廠那邊已經下單了</b>：</div>${filled.map(box).join("")}`;
+    const n = x.eips.length, whole = x.eips.filter(e => !e.others).length;
+    if (n) sys.push(whole === n ? (n > 1 ? `這 ${n} 份 EIP 都只有這張單，整份取消` : "那份 EIP 只有這張單，整份取消")
+      : !whole ? `把這張單從${n > 1 ? `這 ${n} 份` : "那份"} EIP 拿掉，其他單照舊、重新做好`
+      : "只有這張單的那份整份取消；有其他單的那份把這張拿掉、重新做好");
+    if (open_.some(e => e.others)) todo.push("EIP 如果<b>已經上傳到蝦皮 EIP</b>，請到「待回填 EIP 採購單號」重新下載有標「重新做過」的那份，再上傳一次，蓋掉舊的。還沒上傳就不用管。");
+    if (open_.some(e => !e.others)) todo.push(`整份取消的 EIP 如果<b>已經上傳到蝦皮 EIP</b>，請到蝦皮 EIP 把它刪掉。還沒上傳就不用管。`);
+    if (filled.length) {
+      todo.push(`通知採購：到 EIP 系統把這張單的品項從 ${filled.map(e => esc(e.eip_po)).join("、")} 拿掉（或改數量），原廠才不會照舊出貨。`);
+      if (filled.some(e => e.direct || e.mars)) todo.push(`直送的單：${filled.some(e => e.mars) ? "瑪氏採購單" : "直送採購單"}請重新下載，交給採購。`);
+    }
+    if (x.dispatch) {
+      h += `<div>這張單已經產過竹運拋單檔（${esc(ffMd(x.dispatch.created_at))} 產出）。</div>`;
+      sys.push("取消這張單的拋單檔");
+      todo.push("拋單檔如果<b>已經匯進訂單系統</b>，請到訂單系統把這張單刪掉，竹運才不會照舊出貨。");
+    }
+    sys.push(`這張單移到「${ffStage(f)}」`);
+    return `<div class="ff-sec"><div class="ff-no">${esc(x.order_no)}</div>${h}
+      <div class="ff-h">按「確定改」之後，系統會自動：</div><ul class="ff-ul">${sys.map(t => `<li>${t}</li>`).join("")}</ul>
+      <div class="ff-todo"><div class="ff-h" style="color:var(--warn)">你要做的事</div>${todo.length > 1 ? `<ol class="ff-ul ff-ol">${todo.map(t => `<li>${t}</li>`).join("")}</ol>` : todo.join("")}</div></div>`;
+  };
+  $("#df-title").textContent = `改成「${f}」？`;
+  $("#df-body").innerHTML = (nos.length > 1 ? `<div>勾選的 ${nos.length} 張裡，有 ${chk.orders.length} 張已經做過 EIP 或產過拋單檔，按「確定改」會一起處理：</div>` : "")
+    + chk.orders.map(one).join("");
+  const dlg = $("#dlg-ff"); dlg.showModal();
+  return await new Promise(res => {
+    const done = v => { $("#df-ok").onclick = $("#df-no").onclick = dlg.onclose = null; if (dlg.open) dlg.close(); res(v); };
+    $("#df-ok").onclick = () => done(chk); $("#df-no").onclick = () => done(null); dlg.onclose = () => done(null);
+  });
+}
+function ffToast(r, f, chk, k) {
+  if (!r.count) return toast(k ? "履約方式相同，未修改" : "履約方式都相同，未修改");
+  const reup = chk.orders.some(x => x.eips.some(e => !e.eip_po && e.others));
+  const msg = `${k ? `${k} ` : `${r.count} 張`}已改成${f}，移到「${ffStage(f)}」。` + (r.handled.length ? `${r.handled.join("；")}。` : "")
+    + (reup ? "如果已經上傳到蝦皮 EIP，記得重新上傳。" : "");
+  toast(msg, r.handled.length ? "warn" : "");
+}
 const tick = (c, sel, redraw) => { const k = c.dataset.k; if (c.checked) { sel.add(k); LAST_K = k; openSide(k); } else sel.delete(k); redraw(); };
 function renderBatchBar(barSel, sel, redraw) {
   const bar = $(barSel), n = sel.size;
@@ -478,8 +530,10 @@ function renderBatchBar(barSel, sel, redraw) {
   bar.querySelector(".bb-reason").addEventListener("input", e => { BB_REASON = e.target.value; });
   bar.querySelector(".bb-apply").addEventListener("click", async () => {
     const nos = [...sel]; if (!BB_FF || !nos.length) return;
-    try { const r = await post("/api/shopee/fulfil", { order_nos: nos, fulfil: BB_FF, reason: BB_REASON.trim() });
-      toast(r.count ? `${r.count} 張已改為${BB_FF}` : "履約方式都相同，未修改"); sel.clear(); BB_FF = ""; BB_REASON = ""; if (LAST_K) SIDE_NO = LAST_K; refresh();
+    try {
+      const f = BB_FF, chk = await ffCheck(nos, f); if (!chk) return;
+      const r = await post("/api/shopee/fulfil", { order_nos: nos, fulfil: f, reason: BB_REASON.trim() });
+      ffToast(r, f, chk, nos.length === 1 ? nos[0] : ""); sel.clear(); BB_FF = ""; BB_REASON = ""; if (LAST_K) SIDE_NO = LAST_K; refresh();
     } catch (err) { toast(err.message, "err"); }
   });
   const bc = bar.querySelector(".bb-confirm"); if (bc) bc.addEventListener("click", async () => {
@@ -723,7 +777,7 @@ function renderEips() {
   $("#e-direct").classList.toggle("hidden", !EIPS.some(e => e.direct && e.eip_po));
   $("#e-tbl").innerHTML = `<thead><tr>${hfTh("date")}${hfTh("wh")}${hfTh("line")}${hfTh("ff")}${hfTh("file")}${hfTh("rows", "num opt")}${hfTh("qty", "num")}${hfTh("orders")}${hfTh("by", "opt")}${hfTh("po")}</tr></thead><tbody>
     ${list.map(e => `<tr class="${e.eip_po ? "lock" : ""}"><td class="nw">${esc(e.expected_date)}</td><td class="nw">${esc(e.warehouse_name)}</td><td class="nw">${esc(e.line)}</td><td class="nw opt">${esc(e.fulfil)}</td>
-      <td><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.mars ? `<div class="mt-1">${e.eip_po
+      <td><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.note ? `<div class="ff-note">${esc(e.note)}</div>` : ""}${e.mars ? `<div class="mt-1">${e.eip_po
         ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</a>`
         : `<button class="btn btn-o btn-sm" disabled title="請先回填 EIP 採購單號"><i class="bi bi-file-earmark-excel"></i> 瑪氏採購單</button>`}</div>` : ""}${e.direct ? `<div class="mt-1">${e.eip_po
         ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/direct_po"><i class="bi bi-file-earmark-excel"></i> 直送採購單</a>`
@@ -1169,7 +1223,7 @@ function renderSide() {
 
   // EIP 採購單（竹運採購進貨、直送）
   if (d.buy) h += `<div class="sd-sec"><div class="h"><i class="bi bi-file-earmark-spreadsheet"></i> EIP 採購單 <span class="kbd">${d.eips.length ? `${d.eips.length} 份` : "尚未產出"}</span></div><div class="b">
-    ${d.eips.map(e => `<div class="sd-it"><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>
+    ${d.eips.map(e => `<div class="sd-it"><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.note ? `<div class="ff-note">${esc(e.note)}</div>` : ""}
       <div class="flex items-center gap-2 mt-1 flex-wrap"><input class="inp fn sd-po" data-id="${e.id}" value="${esc(e.eip_po)}" placeholder="EIP 採購單號，例：PO202610001" style="width:220px">
         <button class="btn ${e.eip_po ? "btn-o" : "btn-p"} btn-sm sd-po-save" data-id="${e.id}">儲存單號</button>
         ${e.mars ? (e.eip_po ? `<a class="btn btn-o btn-sm" href="/api/shopee/eips/${e.id}/mars_po"><i class="bi bi-file-earmark-excel"></i> 下載瑪氏採購單</a>` : `<span class="kbd">回填後可下載瑪氏採購單</span>`) : ""}
