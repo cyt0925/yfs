@@ -1121,8 +1121,13 @@ def main():
               "處理完成後又改：" in pg.inner_text("#rd-after") and "下修出貨數量 1 項" in pg.inner_text("#rd-after") and "再記一次處理完成" in pg.inner_text("#rd-after"), pg.inner_text("#rd-after"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.check("#f-round"); pg.wait_for_timeout(1200)
-        check("勾「只看處理完成後又有改動的（修改紀錄）」→ 那張單 PO 單號下面有小標寫原因", "處理完成後又改：" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rd-after-tag"),
-              pg.inner_text("#tbody")[:300])
+        chip = f"#tbody tr:has(button[data-open='{po_g}']) .rt-chip"
+        check("勾「只看處理完成後又有改動的（修改紀錄）」→ 那張單 PO 單號下面一行黃色標籤「M/D 完成後又改 出貨數量」，不寫人名數字（Jerry 2026-10-22 雛形）",
+              "完成後又改" in pg.inner_text(chip) and "出貨數量" in pg.inner_text(chip) and "→" not in pg.inner_text(chip) and "rt-after" in pg.get_attribute(chip, "class")
+              and pg.is_hidden(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip"), pg.inner_text("#tbody")[:300])
+        pg.hover(chip); pg.wait_for_timeout(300)
+        check("滑鼠移到標籤上 → 跳出完整內容（誰改了什麼、哪天）", pg.is_visible(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip")
+              and "下修出貨數量 1 項" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip"), pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip"))
         pg.uncheck("#f-round"); pg.wait_for_timeout(600)
 
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")

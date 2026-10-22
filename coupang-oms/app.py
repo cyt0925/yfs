@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-22.6"
+BUILD_VERSION = "2026-10-22.7"
 
 app = Flask(__name__)
 
@@ -2020,7 +2020,9 @@ def api_pos():
             item = dict(r)
             item["brands"] = _csv_clean(item.pop("brands_csv"))
             item["lines"] = _csv_clean(item.pop("lines_csv"))
-            item["round_after"] = rounds.after_text(rounds.pending_info(conn, item["po_number"])) if item["po_number"] in pend_set else ""
+            info = rounds.pending_info(conn, item["po_number"]) if item["po_number"] in pend_set else None
+            item["round_after"] = rounds.after_text(info) if info else ""          # 完整一句（PO 視窗提示、測試用）
+            item["round_tag"] = rounds.after_tag(info) if info else None          # 清單那一行標籤（2026-10-22 改短）
             out.append(item)
 
         return jsonify({

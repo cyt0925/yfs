@@ -191,17 +191,38 @@ def pending_info(conn, po):
         a, b = _num(r["old_value"]), _num(r["new_value"])
         if a is not None and b is not None and b < a:
             g["down"] += 1
-    out = []
+    out, fields = [], []
     md = lambda v: f"{int(v[5:7])}/{int(v[8:10])}" if len(v or "") == 10 and v[4] == "-" else (v or "—")  # noqa: E731
     for (field, _who, _day), g in groups.items():                 # 講人話（Jerry 2026-10-22）：誰改了什麼、從多少到多少、哪天
         if field in ("delivery_date", "warehouse"):
             out.append(f"{g['who']}改{g['label']} {md(g['first'][0])} → {md(g['first'][1])}（{str(g['n']) + ' 項，' if g['n'] > 1 else ''}{g['day']}）")
         elif g["down"]:
             out.append(f"{g['who']}下修{g['label']} {g['down']} 項（{g['day']}）")
+        else:
+            continue
+        name = SHORT_FIELD.get(field, g["label"])
+        if name not in fields:
+            fields.append(name)
     for r in conn.execute("SELECT DISTINCT po_number, first_seen_at FROM orders WHERE parent_po = ? AND first_seen_at > ? ORDER BY first_seen_at", (po, since)).fetchall():
         t = r["first_seen_at"] or ""
         out.append(f"拆出新單 {r['po_number']}（酷澎 {int(t[5:7])}/{int(t[8:10])}）" if len(t) >= 10 else f"拆出新單 {r['po_number']}")
-    return {"last_ok": last_ok(conn, po)[:10], "changes": out[:6], "more": max(0, len(out) - 6)}
+        if "拆單" not in fields:
+            fields.append("拆單")
+    return {"last_ok": last_ok(conn, po)[:10], "changes": out[:6], "more": max(0, len(out) - 6), "fields": fields}
+
+
+# 清單小標只寫改了哪幾樣（Jerry 2026-10-22「擠在一起字一堆很阿雜」，看過雛形「OK 照這樣做」）
+SHORT_FIELD = {"delivery_date": "到貨日", "warehouse": "倉別", "qty_ship": "出貨數量", "qty_coupang": "下單數量"}
+
+
+def after_tag(info):
+    """清單那一行標籤：{kind: never／after, head: 還沒記／10/22 完成後又改, fields: 到貨日、倉別, title: 滑過去看的完整內容}。"""
+    lo = info["last_ok"]
+    head = f"{int(lo[5:7])}/{int(lo[8:10])} 完成後又改" if lo else "還沒記"
+    title = (f"{lo[5:7]}/{lo[8:10]} 處理完成之後又改了：" if lo else "還沒記過處理完成，這段時間改了：")
+    lines = info["changes"] + ([f"…另 {info['more']} 項"] if info["more"] else [])
+    return {"kind": "after" if lo else "never", "head": head, "fields": "、".join(info.get("fields") or []) or "有改動",
+            "title": title, "lines": lines}
 
 
 def after_text(info):

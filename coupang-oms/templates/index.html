@@ -13,6 +13,15 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
+/* 清單「處理完成後又有改動」的一行標籤，滑過去看完整內容（Jerry 2026-10-22 看過雛形） */
+.rt-wrap { position: relative; margin-top: 3px; }
+.rt-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; line-height: 1.6; border-radius: 999px; padding: 0 9px 0 3px; white-space: nowrap; cursor: default; }
+.rt-chip b { font-weight: 700; border-radius: 999px; padding: 0 6px; font-size: 11px; }
+.rt-after { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; } .rt-after b { background: #fde68a; }
+.rt-never { background: #f3f4f6; border: 1px solid #d1d5db; color: #374151; } .rt-never b { background: #e5e7eb; }
+.rt-tip { display: none; position: fixed; left: 0; top: 0; z-index: 60; width: 340px; background: #1f2937; color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 12px; line-height: 1.7; white-space: normal; box-shadow: 0 10px 24px rgba(0,0,0,.25); font-family: inherit; }
+.rt-tip .rt-t { font-weight: 700; margin-bottom: 2px; } .rt-tip .rt-g { color: #d1d5db; font-size: 11.5px; margin-top: 2px; }
+.rt-wrap:hover .rt-tip, .rt-chip:focus + .rt-tip { display: block; }
   body { font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif; }
   .scroll-x { overflow-x: auto; }
 
@@ -225,7 +234,7 @@
         <span class="text-xs text-ink-600">只看已標記顏色</span></label>
       <label class="flex items-end gap-2 pb-1" title="上次處理完成之後又有改動、還沒再按「這一輪處理完成」的 PO（從沒記過、但有改動的也算）">
         <input id="f-round" type="checkbox" class="w-4 h-4">
-        <span class="text-xs text-ink-600">只看處理完成後又有改動的（修改紀錄）</span></label>
+        <span class="text-xs text-ink-600" style="white-space:nowrap">只看處理完成後又有改動的（修改紀錄）</span></label>
     </div>
     <div class="flex gap-2 mt-3">
       <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
@@ -949,7 +958,7 @@ function renderRows() {
           class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
       <td class="px-2 py-2 whitespace-nowrap flag-cell ${r.flagged ? "bg-amber-200" : ""}"
           data-flag="${esc(r.po_number)}" title="點單號旁的空白處可標記／取消標記顏色"><button data-open="${esc(r.po_number)}"
-          class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>${r.round_after ? `<div class="mt-0.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 rd-after-tag" style="white-space:normal;max-width:260px" title="${esc(r.round_after)}">${esc(r.round_after)}</div>` : ""}
+          class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>${r.round_tag ? `<div class="rt-wrap"><span class="rt-chip rt-${r.round_tag.kind}" tabindex="0"><b>${esc(r.round_tag.head)}</b>${esc(r.round_tag.fields)}</span><div class="rt-tip" role="tooltip"><div class="rt-t">${esc(r.po_number)}　${esc(r.round_tag.title)}</div>${r.round_tag.lines.map(x => `<div>${esc(x)}</div>`).join("")}<div class="rt-g">點 PO 單號開視窗，這一輪處理完再記一次處理完成。</div></div></div>` : ""}
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}
         ${alert}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
@@ -1969,6 +1978,18 @@ $("#check-all").addEventListener("change", e => {
 });
 
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
+/* 清單標籤的說明框浮在最上層（表格有捲軸，放在格子裡會被裁掉）：滑過去時算好位置，太靠下就改放上面 */
+function placeTip(wrap) {
+  const tip = wrap.querySelector(".rt-tip"); if (!tip) return;
+  const r = wrap.querySelector(".rt-chip").getBoundingClientRect();
+  tip.style.display = "block";
+  const h = tip.offsetHeight, below = r.bottom + 6 + h < window.innerHeight;
+  tip.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8))}px`;
+  tip.style.top = `${below ? r.bottom + 6 : r.top - 6 - h}px`;
+  tip.style.display = "";
+}
+$("#tbody").addEventListener("mouseover", e => { const w = e.target.closest(".rt-wrap"); if (w) placeTip(w); });
+$("#tbody").addEventListener("focusin", e => { const w = e.target.closest(".rt-wrap"); if (w) placeTip(w); });
 /* 篩選即時套用（Jerry 2026-10-22「不希望還要按搜尋才跳結果」）：下拉、日期、勾選框一改就查；打字的欄位停 0.4 秒再查 */
 let _autoT = null;
 function autoSearch(delay = 0) {

@@ -1675,6 +1675,9 @@ def main():
     check("處理完成後又改出貨數量 → 清單那列寫「MM-DD 處理完成後又改：出貨數量下修 1 項（小真 …）」、PO 視窗提示同一句",
           row39["round_after"].startswith(f"{md39} 處理完成後又改：") and "小真下修出貨數量 1 項" in row39["round_after"] and det["round_prefill"]["after"] == row39["round_after"],
           row39["round_after"] + " / " + det["round_prefill"]["after"])
+    check("清單一行標籤（Jerry 2026-10-22 改短）：M/D 完成後又改＋改了哪幾樣，完整內容放在滑過去看的地方",
+          row39["round_tag"]["kind"] == "after" and row39["round_tag"]["head"] == f"{int(md39[:2])}/{int(md39[3:5])} 完成後又改"
+          and row39["round_tag"]["fields"] == "出貨數量" and any("下修出貨數量 1 項" in x for x in row39["round_tag"]["lines"]), str(row39["round_tag"]))
     check("沒有改動的 PO，清單那列不寫小標", all(r["round_after"] == "" for r in client.get("/api/pos?page_size=100").get_json()["rows"] if r["po_number"] != po39
           and r["po_number"] not in pend39()))
     det = client.get(f"/api/pos/{po39}").get_json()
