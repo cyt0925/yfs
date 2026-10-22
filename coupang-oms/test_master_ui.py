@@ -1131,6 +1131,8 @@ def main():
         pg.uncheck("#po-rounds .rd-reason[value='停產']"); pg.fill("#rd-note", "改過的說明"); pg.click("#rd-ok")
         pg.wait_for_function("document.querySelector('#po-rounds').innerText.includes('改過的說明')", timeout=8000)
         check("儲存 → 那一筆更新（主因剩庫存不足、說明換了）、回到記新的一輪", "庫存不足、停產" not in pg.inner_text("#po-rounds") and pg.query_selector("#rd-cancel") is None and "處理 1 次" in pg.inner_text("#po-rounds"), pg.inner_text("#po-rounds")[:200])
+        check("備註分兩格：出貨前備註、出貨後備註（Jerry 2026-10-22）", pg.is_visible("#p-remarks") and pg.is_visible("#p-remarks-after")
+              and "出貨前備註" in pg.inner_text("#dlg-po") and "出貨後備註" in pg.inner_text("#dlg-po"))
         pg.fill("#p-remarks", pg.input_value("#p-remarks") + " 再處理=>10/21-OK"); pg.click("#btn-po-save"); pg.wait_for_timeout(900)
         check("備註自己再打一個 OK 存檔 → 擋下來、視窗還開著", "備註裡寫了「OK」" in pg.inner_text("#toast") and pg.evaluate("document.getElementById('dlg-po').open"), pg.inner_text("#toast"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)

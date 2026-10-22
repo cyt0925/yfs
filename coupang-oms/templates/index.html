@@ -1202,11 +1202,19 @@ async function openPo(poNumber) {
     </div>
 
     <div>
-      <h3 class="font-semibold text-sm mb-2">備註
-        <span class="text-xs font-normal text-ink-400">（整張單的備註，不受拉單鎖定限制）</span></h3>
-      <textarea id="p-remarks" rows="3"
-        class="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm"
-        placeholder="這張單的備註…">${esc(h.remarks)}</textarea>
+      <!-- 備註分出貨前、出貨後兩格（Jerry 2026-10-22「如果有異常，要追的流程太多」，看過示意圖「OK 照這樣做」） -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+        <div><h3 class="font-semibold text-sm mb-2">出貨前備註
+          <span class="text-xs font-normal text-ink-400">（收單、改交期、改倉、下修；不受拉單鎖定限制）</span></h3>
+          <textarea id="p-remarks" rows="4"
+            class="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="出貨前的處理…">${esc(h.remarks)}</textarea></div>
+        <div><h3 class="font-semibold text-sm mb-2">出貨後備註
+          <span class="text-xs font-normal text-ink-400">（驗收、驗退、退貨、對帳等異常追蹤）</span></h3>
+          <textarea id="p-remarks-after" rows="4"
+            class="w-full border border-ink-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="出貨後的異常追蹤…">${esc(h.remarks_after || "")}</textarea></div>
+      </div>
     </div>
 
     <div id="po-rounds">${roundsHtml(d)}</div>
@@ -1386,7 +1394,7 @@ async function savePo() {
     body: JSON.stringify({
       operator: operator(), po_version: CURRENT.header.version,
       po_status: $("#p-status").value, receiving_status: $("#p-recv").value,
-      shipping_method: $("#p-shipping").value, remarks: $("#p-remarks").value,
+      shipping_method: $("#p-shipping").value, remarks: $("#p-remarks").value, remarks_after: $("#p-remarks-after").value,
       filed_date: $("#p-filed").value, delivery_date: $("#p-date").value,
       warehouse: $("#p-wh").value, order_type: $("#p-ordertype").value,
     }),

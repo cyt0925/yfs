@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS po_headers (
     -- orders.remarks（每個品項各自一份），改放這裡，比較符合「這是這
     -- 張單的備註」的實際用法。
     remarks          TEXT DEFAULT '',
+    remarks_after    TEXT DEFAULT '',        -- 出貨後備註：驗收、驗退、退貨、對帳的異常追蹤（Jerry 2026-10-22，remarks 改叫出貨前備註）
     version          INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT DEFAULT '',
     updated_at       TEXT DEFAULT ''
@@ -392,6 +393,7 @@ CREATE TABLE IF NOT EXISTS po_headers (
     shipping_method  TEXT DEFAULT '',
     flagged          INTEGER NOT NULL DEFAULT 0,
     remarks          TEXT DEFAULT '',
+    remarks_after    TEXT DEFAULT '',        -- 出貨後備註：驗收、驗退、退貨、對帳的異常追蹤（Jerry 2026-10-22，remarks 改叫出貨前備註）
     version          INTEGER NOT NULL DEFAULT 1,
     created_at       TEXT DEFAULT '',
     updated_at       TEXT DEFAULT ''
@@ -1324,6 +1326,7 @@ SELECT
     h.shipping_method,
     h.flagged,
     h.remarks,
+    h.remarks_after,
     h.version AS po_version
 FROM orders o
 JOIN po_headers h ON h.po_number = o.po_number;
@@ -1612,6 +1615,8 @@ def _migrate_columns(conn):
             "INTEGER NOT NULL DEFAULT 0")
     if "remarks" not in poh_existing:
         conn.execute("ALTER TABLE po_headers ADD COLUMN remarks TEXT DEFAULT ''")
+    if "remarks_after" not in poh_existing:
+        conn.execute("ALTER TABLE po_headers ADD COLUMN remarks_after TEXT DEFAULT ''")
     if "receiving_status_overridden" not in poh_existing:
         conn.execute(
             "ALTER TABLE po_headers ADD COLUMN receiving_status_overridden "

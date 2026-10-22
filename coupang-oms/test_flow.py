@@ -1188,10 +1188,10 @@ def main():
     check("PO 總表匯出成功", po_sum.status_code == 200, po_sum.status_code)
     wb_sum = openpyxl.load_workbook(io.BytesIO(po_sum.data))
     sum_headers = [c.value for c in wb_sum.active[1]]
-    check("表頭跟首頁列表一致，外加備註與驗收金額",
+    check("表頭跟首頁列表一致，外加備註（出貨前、出貨後兩欄，Jerry 2026-10-22）與驗收金額",
           sum_headers == ["PO單號", "訂單類型", "PO狀態", "已拉單", "驗收狀態", "線別", "品牌",
                           "建檔日", "下單日期", "到貨日", "到貨倉別", "配送方式", "品項數", "出貨數量",
-                          "實際驗入數量", "驗收金額", "備註"],
+                          "實際驗入數量", "驗收金額", "出貨前備註", "出貨後備註"],
           sum_headers)
     data_rows = list(wb_sum.active.iter_rows(min_row=2, values_only=True))
     check("這張多品項的 PO 匯出只有一列，不是一個 SKU 一列",
@@ -1650,6 +1650,15 @@ def main():
     check("防呆：備註自己打 OK 存檔 → 擋下來（round_required）", r.status_code == 400 and r.get_json()["error"] == "round_required", r.get_json())
     r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det["header"]["version"], "remarks": "改11/9 book 確認"})
     check("備註沒有 OK（book 這種字不算）照常存", r.status_code == 200, r.get_json())
+    # 備註分出貨前、出貨後（Jerry 2026-10-22）
+    det_a = client.get(f"/api/pos/{po39}").get_json()
+    r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det_a["header"]["version"], "remarks_after": "10/15 驗退 4=>請酷澎寄回竹運"})
+    det_a = client.get(f"/api/pos/{po39}").get_json()
+    check("出貨後備註：另外一格，存好、出貨前備註不動；歷程記「出貨後備註」", r.status_code == 200 and det_a["header"]["remarks_after"] == "10/15 驗退 4=>請酷澎寄回竹運"
+          and det_a["header"]["remarks"] == "改11/9 book 確認" and any(l["field"] == "remarks_after" and l["field_label"] == "出貨後備註" for l in det_a["logs"]), str(det_a["header"].get("remarks_after")))
+    r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det_a["header"]["version"], "remarks_after": "驗退處理完=>10/22-OK"})
+    check("出貨後備註打 OK 一樣擋下來", r.status_code == 400 and r.get_json()["error"] == "round_required", r.get_json())
+    r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det_a["header"]["version"], "remarks_after": ""})
     det = client.get(f"/api/pos/{po39}").get_json()
     r = client.put(f"/api/pos/{po39}", json={"operator": "小真", "po_version": det["header"]["version"], "po_status": "已完成"})
     check("防呆：有改動還沒記 OK 就改成已完成 → 擋下來", r.status_code == 400 and r.get_json()["error"] == "round_required", r.get_json())

@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-22.10"
+BUILD_VERSION = "2026-10-22.11"
 
 app = Flask(__name__)
 
@@ -168,7 +168,8 @@ PO_EDITABLE_FIELDS = {
     "receiving_status": "驗收狀態",
     "filed_date":       "建檔日",
     "shipping_method":  "配送方式",
-    "remarks":          "備註",
+    "remarks":          "出貨前備註",
+    "remarks_after":    "出貨後備註",     # Jerry 2026-10-22：備註分出貨前、出貨後兩格
 }
 
 # 驗收狀態不受拉單鎖定限制——驗收本來就發生在拉單之後（貨到了才驗），
@@ -176,7 +177,7 @@ PO_EDITABLE_FIELDS = {
 # 配送方式是匯入後才由 OP 自己補的內部分類，跟出貨數量無關，一樣不該
 # 被拉單鎖住。備註本來就是整張單事後才寫的資訊，搬到 PO 層級後同樣
 # 不受拉單鎖定影響。
-PO_ALWAYS_EDITABLE_FIELDS = {"receiving_status", "shipping_method", "remarks"}
+PO_ALWAYS_EDITABLE_FIELDS = {"receiving_status", "shipping_method", "remarks", "remarks_after"}
 
 # 整張 PO 共用、但屬於酷澎來源的欄位：OP 可以改（跟酷澎談好調整），
 # 改的時候整張單一起改，但它們存在 orders 上、且會參與匯入比對。
@@ -448,6 +449,31 @@ def _ensure_order_date_export_column():
         save_json("export_profiles.json", data)
 
 
+def _ensure_remarks_after_export_column():
+    """備註分出貨前、出貨後（Jerry 2026-10-22）：內部用的「完整欄位」「PO 總表」在備註那一欄後面補「出貨後備註」，
+    原本標題還是「備註」的改叫「出貨前備註」。倉庫出貨表、ERP 格式是給外部的，不動（多一欄可能讓對方的檔案對不上）。
+    只補不搶：已經有 remarks_after 就不動。"""
+    data = load_json("export_profiles.json", {"profiles": {}})
+    changed = False
+    for key in ("full", "po_summary"):
+        profile = (data.get("profiles") or {}).get(key)
+        if not profile:
+            continue
+        columns = profile.get("columns") or []
+        if any(c.get("field") == "remarks_after" for c in columns):
+            continue
+        at = next((i for i, c in enumerate(columns) if c.get("field") == "remarks"), None)
+        if at is None:
+            continue
+        if columns[at].get("header") == "備註":
+            columns[at]["header"] = "出貨前備註"
+        columns.insert(at + 1, {"header": "出貨後備註", "field": "remarks_after"})
+        profile["columns"] = columns
+        changed = True
+    if changed:
+        save_json("export_profiles.json", data)
+
+
 def _ensure_po_summary_profile():
     """把「PO 總表」這個新的匯出格式補進既有安裝——只在 profiles 裡完全
     沒有 po_summary 這個 key 時才補，OP 如果自己刪掉過就不會被救回來，
@@ -477,6 +503,7 @@ _ensure_export_profile_columns()
 _ensure_po_summary_profile()
 _ensure_po_summary_amount_column()
 _ensure_order_date_export_column()
+_ensure_remarks_after_export_column()
 
 
 def verify_password(stored, given):
@@ -1972,6 +1999,7 @@ def po_summary_sql(clause):
                -- 「—」），不是「驗收金額 0 元」。
                SUM(verified_amount)         AS verified_amount,
                MIN(remarks)         AS remarks,
+               MIN(remarks_after)   AS remarks_after,
                SUM(CASE WHEN needs_review=1 THEN 1 ELSE 0 END) AS review_count,
                SUM(CASE WHEN alert_level='changed_after_pull' THEN 1 ELSE 0 END)
                                             AS after_pull_count,
@@ -2251,7 +2279,7 @@ def api_update_po(po_number):
 
         # 防呆（Jerry 2026-10-20「他們一定得填」）：備註自己打 OK、或有改動還沒記 OK 就把單結掉，都擋下來
         for field, _label, old_val, new_val in head_changes:
-            if field == "remarks" and rounds.count_ok(new_val) > rounds.count_ok(old_val):
+            if field in ("remarks", "remarks_after") and rounds.count_ok(new_val) > rounds.count_ok(old_val):
                 return jsonify({"error": "round_required", "message": rounds.MSG_TYPED_OK}), 400
             if field == "po_status" and new_val in rounds.END_STATUSES and rounds.pending_for(conn, po_number):
                 return jsonify({"error": "round_required", "message": rounds.MSG_STATUS}), 400
