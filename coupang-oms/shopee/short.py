@@ -149,12 +149,16 @@ def api_short_plan():
 
 @shopee_bp.route("/api/shopee/short/notifies")
 def api_short_notifies():
-    """通知紀錄（資料與設定頁用）。"""
+    """通知紀錄（待通知蝦皮頁下面，2026-10-22 從資料與設定搬過來）：每次刪單幾項、下修幾項、幾則。"""
     conn = get_conn()
     try:
-        notes = _rows(conn.execute("SELECT id, orders, items, created_by, created_at FROM shp_notify ORDER BY id DESC LIMIT 50"))
+        notes = _rows(conn.execute("SELECT id, orders, items, created_by, created_at, rows_json, messages_json FROM shp_notify ORDER BY id DESC LIMIT 50"))
     finally:
         conn.close()
+    for n in notes:
+        rows = json.loads(n.pop("rows_json") or "[]")
+        n["del_items"] = sum(1 for r in rows if not r.get("final")); n["cut_items"] = len(rows) - n["del_items"]
+        n["msgs"] = len(json.loads(n.pop("messages_json") or "[]")) or 1
     return jsonify({"notifies": notes})
 
 

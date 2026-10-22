@@ -105,6 +105,10 @@
   #dlg-ff .ff-h { font-weight:700; font-size:13px; margin:6px 0 2px; }
   #dlg-ff .ff-ul { margin:0; padding-left:22px; list-style:disc; } #dlg-ff .ff-ol { list-style:decimal; } #dlg-ff .ff-ul li { margin:2px 0; }
   #dlg-ff .ff-todo { background:var(--warnbg); border:1px solid #fde68a; border-radius:8px; padding:6px 12px 8px; margin-top:8px; }
+  .dn-tabs { display:inline-flex; border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  .dn-tab { padding:5px 16px; font-weight:700; color:var(--muted); background:#fff; } .dn-tab.on { background:var(--s8); color:#fff; }
+  .k-line { border-color:#86efac !important; color:#047857 !important; background:#f0fdf4 !important; }
+  .k-mail { border-color:#bfdbfe !important; color:#2563eb !important; background:#eff6ff !important; }
   .ff-note { margin-top:3px; font-size:11.5px; color:#78350f; background:var(--warnbg); border:1px solid #fde68a; border-radius:6px; padding:1px 6px; white-space:normal; }
   .toast.warn { background:#7c4a03; border-left:5px solid #fbbf24; cursor:pointer; }
   .ver { text-align:right; padding:4px 20px 14px; font-size:11px; color:var(--muted); }
@@ -232,13 +236,23 @@
     </div>
 
     <div id="st-notify" class="space-y-3 hidden">
-      <div class="flex items-center gap-2"><div class="sum flex-1" id="k-sum"></div>
-        <button id="k-hist-open" class="btn btn-o btn-sm"><i class="bi bi-clock-history"></i> 看之前的通知</button></div>
+      <div class="sum" id="k-sum"></div>
       <div class="tbl-wrap"><table class="t" id="k-tbl"></table></div>
       <div id="k-bar" class="hidden"></div>
       <div class="flex items-center gap-3 flex-wrap">
-        <button id="k-go" class="btn btn-p" disabled><i class="bi bi-chat-dots"></i> 產生蝦皮通知（LINE）</button>
+        <button id="k-go" class="btn btn-p" disabled><i class="bi bi-chat-dots"></i> 產生蝦皮通知</button>
         <span class="kbd" id="k-go-hint">請勾選要通知的訂單。</span>
+      </div>
+      <!-- 通知紀錄放在這一頁（Jerry 2026-10-22「通知紀錄的內容為何不放在待通知蝦皮的頁面」，看過雛形「OK 照這樣做」）：每一列分 LINE、Email -->
+      <div class="card p-4" id="k-hist-box" style="margin-top:14px">
+        <div style="font-weight:700;font-size:15px">通知紀錄</div>
+        <div class="kbd">每次產生的通知都存在這裡。要再貼 LINE、或用 Email 寄，按那一列的按鈕就好。</div>
+        <div class="flex items-center gap-2 flex-wrap mt-2" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:8px 12px">
+          <span><i class="bi bi-envelope"></i> Email 收件人</span>
+          <input id="nm-to" class="inp" style="width:420px;max-width:100%" placeholder="例：shopee-a@xxx.com, shopee-b@xxx.com">
+          <button id="nm-save" class="btn btn-o btn-sm">儲存</button><span class="kbd">好幾個用逗號分開，填一次就好</span></div>
+        <div class="tbl-wrap mt-2" style="max-height:360px"><table class="t" id="k-hist"></table></div>
+        <div class="kbd mt-1">最近 50 次，舊的往下捲。</div>
       </div>
     </div>
   </section>
@@ -277,13 +291,6 @@
   <details class="card p-4" id="up-box">
     <summary style="cursor:pointer;font-weight:700">上傳紀錄 <span class="kbd">（蝦皮採購單／入庫單，可下載原始檔）</span></summary>
     <div class="tbl-wrap mt-3" style="max-height:420px"><table class="t" id="up-tbl"></table></div>
-  </details>
-  <details class="card p-4" id="k-hist-box">
-    <summary style="cursor:pointer;font-weight:700">通知紀錄 <span class="kbd">（可再複製文字、用 Email 寄、下載明細；Email 收件人在這裡設）</span></summary>
-    <div class="flex items-center gap-2 flex-wrap mt-3"><span class="kbd">缺貨通知 Email 收件人</span>
-      <input id="nm-to" class="inp" style="width:420px" placeholder="例：shopee-a@xxx.com, shopee-b@xxx.com（好幾個用逗號分開）">
-      <button id="nm-save" class="btn btn-o btn-sm">儲存</button></div>
-    <div class="tbl-wrap mt-3" style="max-height:360px"><table class="t" id="k-hist"></table></div>
   </details>
   {% if is_admin %}
   <details class="card p-4" id="reset-box" style="border-color:#fca5a5">
@@ -367,16 +374,16 @@
     </div>
     <div id="dk-lock" class="alert al-warn hidden"></div>
   </div></dialog>
-<!-- 之前的通知（Penny 2026-10-22「關掉後就永遠不回頭了」）：待通知蝦皮右上角「看之前的通知」 -->
-<dialog id="dlg-nhist" style="width:min(760px,96vw)"><div class="dh"><i class="bi bi-clock-history"></i><span>之前的蝦皮缺貨通知</span><button class="x" data-close="dlg-nhist" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
-  <div class="db"><div class="kbd mb-2">最近 50 次。每次的通知文字和明細都存著，可以再複製、用 Email 寄、下載明細 Excel。</div>
-    <div class="tbl-wrap" style="max-height:60vh"><table class="t" id="nh-tbl"></table></div></div></dialog>
 <dialog id="dlg-notify" style="width:min(720px,96vw)"><div class="dh"><i class="bi bi-chat-dots"></i><span id="dn-title">蝦皮缺貨下修通知</span><button class="x" data-close="dlg-notify" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">
-    <div class="flex items-center gap-2 flex-wrap"><span class="kbd">所有刪單合成一則、所有下修合成一則，裡面照 PR 分段。逐則複製貼到 LINE，或用 Email 寄。</span>
-      <div class="flex-1"></div><a id="dn-xlsx" class="btn btn-o btn-sm"><i class="bi bi-file-earmark-excel"></i> 下載明細 Excel</a>
-      <button id="dn-mail" class="btn btn-o btn-sm" title="打開 Outlook 新郵件，收件人、主旨、內容都填好，自己按傳送"><i class="bi bi-envelope"></i> 用 Email 寄</button></div>
-    <div id="dn-msgs" class="space-y-3"></div>
+    <div class="flex items-center gap-2 flex-wrap"><div class="dn-tabs"><button class="dn-tab on" data-t="line" id="dn-tab-line">LINE</button><button class="dn-tab" data-t="mail" id="dn-tab-mail">Email</button></div>
+      <div class="flex-1"></div><a id="dn-xlsx" class="btn btn-o btn-sm"><i class="bi bi-file-earmark-excel"></i> 明細 Excel</a></div>
+    <div id="dn-line"><div class="kbd mb-2">所有刪單合成一則、所有下修合成一則，裡面照 PR 分段。逐則複製，貼到 LINE 給蝦皮窗口。</div><div id="dn-msgs" class="space-y-3"></div></div>
+    <div id="dn-mailbox" class="hidden space-y-2">
+      <div class="kbd">收件人：<span id="dn-to"></span></div><div class="kbd">主旨：<span id="dn-subj"></span></div>
+      <textarea id="dn-body" class="inp" readonly style="width:100%;height:300px;font-family:inherit;line-height:1.55"></textarea>
+      <div class="flex gap-2 flex-wrap"><button id="dn-mail" class="btn btn-p btn-sm"><i class="bi bi-envelope"></i> 打開 Outlook 寄出</button>
+        <button id="dn-mail-copy" class="btn btn-o btn-sm"><i class="bi bi-clipboard"></i> 只複製內容</button></div></div>
   </div></dialog>
 <dialog id="dlg-yx" style="width:min(1180px,96vw)"><div class="dh"><i class="bi bi-file-earmark-pdf"></i><span>瑪氏缺貨核對（勇信配送明細表）</span><button class="x" data-close="dlg-yx" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db"><div class="kbd mb-2">依收貨單號對應已回填的瑪氏 EIP 採購單，逐品比對箱數與效期。確認後寫入缺貨紀錄，訂單會出現在「待通知蝦皮」。</div><div id="yx-out" class="space-y-3"></div></div></dialog>
