@@ -8,7 +8,7 @@
   內容完全一樣只記上傳紀錄、不跳警示。同一張 PR 重傳時少掉的品項算「品項移除」（數量改 0、留紀錄）。
 - 履約方式匯入時人選一次（同一個檔的新單都套用），之後可以整張改，要寫原因、留紀錄。
 """
-from .common import group_meta, upload_cond  # noqa: F401
+from .common import group_meta, ships, upload_cond  # noqa: F401
 from .common import (
     FULFILS, LINES, ST_DIFF, ST_IMPORTED, SYSTEM, _log, _operator, _row, _rows, base64, current_app, get_conn, io, json,
     jsonify, now, render_template, request, send_file, shopee_bp, wh_name,
@@ -409,7 +409,7 @@ def overview(conn, args):
         buy = [i for i in alive if i["fulfil"] in BUY_FULFILS and (i["qty"] or 0) > 0]
         todo = {"diff": pending,
                 "buy": any(i["id"] not in po_st for i in buy),
-                "ship": any(i["fulfil"] == "竹運出貨" and (i["qty"] or 0) > 0 and i["id"] not in ship_st for i in alive),
+                "ship": any(ships(i) and (i["qty"] or 0) > 0 and i["id"] not in ship_st for i in alive),     # 竹運採購進貨入庫單到了也算（2026-10-22）
                 "eip": any(po_st.get(i["id"]) == "已產出" for i in buy),
                 "notify": pend}
         g["todo"] = [k for k, _l, _a in STAGES if todo[k]]

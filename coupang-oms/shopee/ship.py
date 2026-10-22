@@ -390,7 +390,8 @@ def build_ship(conn, d1="", d2="", line="", order_nos=None, up1="", up2=""):
     st = ship_settings(conn)
     stock = load_stock(conn)
     status = stock_status(conn)
-    where, params = ["fulfil = ?", "removed = 0"], [FULFIL]
+    sc, sp = ship_cond()
+    where, params = [sc, "removed = 0"], list(sp)
     if d1:
         where.append("expected_date >= ?"); params.append(d1)
     if d2:
@@ -816,7 +817,8 @@ def api_ship_undo():
     no = str(p.get("order_no") or "").strip()
     conn = get_conn()
     try:
-        items = [i for i in _rows(conn.execute("SELECT * FROM shp_orders WHERE fulfil = ? AND removed = 0", (FULFIL,))) if order_no(i) == no]
+        sc, sp = ship_cond()
+        items = [i for i in _rows(conn.execute(f"SELECT * FROM shp_orders WHERE {sc} AND removed = 0", sp)) if order_no(i) == no]
         if not items:
             return jsonify({"error": "找不到這張單。"}), 404
         ids = [i["id"] for i in items]

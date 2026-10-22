@@ -21,7 +21,7 @@ def _ids_of(conn, no):
 def impacts(conn, no, fulfil):
     """這張單改成 fulfil 會動到哪些已產出的東西：{eips: [...], dispatch: {...} 或 None}。"""
     ids = _ids_of(conn, no)
-    out = {"order_no": no, "eips": [], "dispatch": None}
+    out = {"order_no": no, "eips": [], "dispatch": None, "buy_to_ship": False}
     if not ids:
         return out
     marks = ",".join("?" * len(ids))
@@ -35,11 +35,14 @@ def impacts(conn, no, fulfil):
         nos = {(o["po_id"] or o["pr_id"]) for o in others}
         out["eips"].append({"id": e["id"], "filename": e["filename"], "eip_po": e["eip_po"] or "", "others": len(nos),
                             "mars": e["line"] == "瑪氏", "direct": e["fulfil"] == "供應商直送" and e["line"] != "瑪氏"})
-    if fulfil != "竹運出貨":
+    items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE id IN ({marks})", ids))
+    if not any(ships(i, fulfil) for i in items):           # 改了之後不用拋單了才取消拋單檔
         d = _row(conn.execute(f"SELECT d.filename, d.created_at FROM shp_dispatch_items i JOIN shp_dispatch d ON d.id = i.dispatch_id "
                               f"WHERE i.order_id IN ({marks}) ORDER BY d.id DESC LIMIT 1", ids))
         if d:
             out["dispatch"] = {"filename": d["filename"], "created_at": d["created_at"]}
+    # 竹運採購進貨改竹運出貨：提醒入庫單到了會自動進待產拋單檔，不用改（Becky 2026-10-22 就是為了拋單才改的）
+    out["buy_to_ship"] = fulfil == SHIP_DIRECT and any(i["fulfil"] == SHIP_AFTER_BUY for i in items)
     return out
 
 
@@ -114,7 +117,8 @@ def apply(conn, no, fulfil, operator, stamp):
         e = _row(conn.execute("SELECT * FROM shp_eip WHERE id = ?", (eid,)))
         if e:
             notes.append(_pull_from_eip(conn, e, no, oids, fulfil, operator, stamp))
-    if fulfil != "竹運出貨":
+    items = _rows(conn.execute(f"SELECT * FROM shp_orders WHERE id IN ({marks})", ids))
+    if not any(ships(i, fulfil) for i in items):
         dids = {r["dispatch_id"] for r in _rows(conn.execute(f"SELECT dispatch_id FROM shp_dispatch_items WHERE order_id IN ({marks})", ids))}
         if dids:
             conn.execute(f"DELETE FROM shp_dispatch_items WHERE order_id IN ({marks})", ids)
@@ -138,7 +142,7 @@ def api_fulfil_check():
         out = [impacts(conn, no, fulfil) for no in nos]
     finally:
         conn.close()
-    return jsonify({"orders": [x for x in out if x["eips"] or x["dispatch"]]})
+    return jsonify({"orders": [x for x in out if x["eips"] or x["dispatch"] or x["buy_to_ship"]]})
 
 
 __all__ = ["impacts", "apply", "api_fulfil_check"]

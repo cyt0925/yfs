@@ -889,7 +889,9 @@ def ship_tests(c, preview, orders, up):
               and ("4902430056519_PNN", "下修", 82, "效期不足、庫存不足", None) in acts and ("4987176386700_CNN", "刪單", 12, "庫存不足", None) in acts
               and ("4987176377708_CNN", "下修", 29, "庫存不足", None) in acts and len(srows) == 5, str(acts))
     pl = plan()
-    check("產出後兩張都「已產出」、品項照快照（不再分配庫存）", all(g["dispatch_status"] == "已產出" for g in pl["orders"])
+    check("竹運採購進貨、入庫單到了的單（L）也在拋單檔清單裡，履約方式還是竹運採購進貨（Becky 2026-10-22）", "POTWCTWA26100514L" in {g["order_no"] for g in pl["orders"]}
+          and next(g for g in pl["orders"] if g["order_no"] == "POTWCTWA26100514L")["dispatch_status"] == "未產出", str([g["order_no"] for g in pl["orders"]]))
+    check("產出後兩張都「已產出」、品項照快照（不再分配庫存）", all(g["dispatch_status"] == "已產出" for g in pl["orders"] if g["order_no"] in (H, J))
           and it(pl, H, "6903148224090_VNN")["final"] == 144 and it(pl, H, "6903148224090_VNN")["dispatch"])
     ov = next(g for g in orders()["orders"] if g["order_no"] == H)
     check("訂單總覽的出貨量、缺貨量帶出來", ov["qty_ship"] == 255 and ov["qty_short"] == 106, str((ov["qty_ship"], ov["qty_short"])))
@@ -1147,7 +1149,9 @@ def flow_tests(c, orders):
     L = side("POTWCTWA26100514L").get_json()
     check("右側面板：竹運採購進貨那張 → 品項、採購單計畫（轉換率、下採）、兩份 EIP、差異紀錄、歷程都在", L["order"]["order_no"] == "POTWCTWA26100514L"
           and L["buy"] and L["buy"]["fulfil"] == "竹運採購進貨" and {p["supplier_sku_id"] for p in L["buy"]["items"]} >= {"4987176232878_CNN"}
-          and len(L["eips"]) == 2 and L["diffs"] and L["logs"] and L["ship"] is None and L["short"]["items"], str({k: bool(v) for k, v in L.items()}))
+          and len(L["eips"]) == 2 and L["diffs"] and L["logs"] and L["ship"] and L["short"]["items"], str({k: bool(v) for k, v in L.items()}))
+    check("竹運採購進貨、入庫單到了 → 右側卡片也有拋單檔那段；下一步同時有回填 EIP（或已回填）和產出拋單檔", L["ship"]["order_no"] == "POTWCTWA26100514L"
+          and "ship" in L["order"]["todo"], str(L["order"]["todo"]))
     check("右側面板：缺貨紀錄在（寶僑兩次都通知過）", [r["round"] for r in next(x for x in L["short"]["items"] if x["supplier_sku_id"] == "4987176232878_CNN")["rounds"]] == [1, 2])
     J = side("POTWCTWA26101500J").get_json()
     check("右側面板：竹運出貨那張 → 出貨量、效期批次（跟清單同一組篩選算）", J["ship"] and J["ship"]["order_no"] == "POTWCTWA26101500J" and J["buy"] is None
@@ -1227,11 +1231,15 @@ def flow_tests(c, orders):
           and {g["order_no"]: g for g in orders(**{"from": "2027-01-01"})["orders"]}[B]["todo"] == ["buy"], str(r))
     H = "POTWCTWA26101500H"
     chk = c.post("/api/shopee/fulfil/check", json={"order_nos": [H], "fulfil": "竹運採購進貨"}).get_json()["orders"]
-    check("竹運出貨產過拋單檔、要改成採購 → 提醒帶拋單檔產出時間", chk and chk[0]["dispatch"] and chk[0]["dispatch"]["created_at"], str(chk))
-    r = c.post("/api/shopee/fulfil", json={"order_nos": [H], "fulfil": "竹運採購進貨"}).get_json()
+    check("竹運出貨產過拋單檔、有入庫單，改成竹運採購進貨 → 還是要拋單，不取消拋單檔、不用提醒", chk == [], str(chk))
+    chk = c.post("/api/shopee/fulfil/check", json={"order_nos": [H], "fulfil": "供應商直送"}).get_json()["orders"]
+    check("改成供應商直送（不走竹運了）→ 提醒帶拋單檔產出時間", chk and chk[0]["dispatch"] and chk[0]["dispatch"]["created_at"], str(chk))
+    r = c.post("/api/shopee/fulfil", json={"order_nos": [H], "fulfil": "供應商直送"}).get_json()
     check("改了 → 這張的拋單檔取消、移到待產採購單", "取消這張單的竹運拋單檔" in "".join(r["handled"])
-          and c.post("/api/shopee/fulfil/check", json={"order_nos": [H], "fulfil": "竹運採購進貨"}).get_json()["orders"] == []
+          and c.post("/api/shopee/fulfil/check", json={"order_nos": [H], "fulfil": "供應商直送"}).get_json()["orders"] == []
           and "buy" in {g["order_no"]: g for g in orders(**{"from": "2026-01-01"})["orders"]}[H]["todo"], str(r))
+    chk = c.post("/api/shopee/fulfil/check", json={"order_nos": ["POTWCTWA26100514L"], "fulfil": "竹運出貨"}).get_json()["orders"]
+    check("竹運採購進貨改竹運出貨 → 提醒「入庫單到了會自動進待產拋單檔，不用改」", chk and chk[0]["buy_to_ship"], str(chk))
 
 
 if __name__ == "__main__":

@@ -58,11 +58,26 @@ def line_of(base):
     return ""
 
 
+# 哪些品項要走竹運拋單檔（Jerry 2026-10-22，Becky：PR 先拋竹運採購進貨，PO（IN 開頭）入庫單來了要竹運出貨，改履約方式會把 Penny 的 EIP 弄掉）：
+# 竹運出貨的單；竹運採購進貨的單在蝦皮入庫單上傳之後（貨進竹運倉、蝦皮 PO 出來了）也要產拋單檔，履約方式不用改。
+SHIP_DIRECT, SHIP_AFTER_BUY = "竹運出貨", "竹運採購進貨"
+
+
+def ships(it, fulfil=None):
+    f = fulfil if fulfil is not None else it.get("fulfil")
+    return f == SHIP_DIRECT or (f == SHIP_AFTER_BUY and bool((it.get("inbound_ids") or "").strip()))
+
+
+def ship_cond(prefix=""):
+    """SQL：要走拋單檔的品項。"""
+    return (f"({prefix}fulfil = ? OR ({prefix}fulfil = ? AND COALESCE({prefix}inbound_ids, '') != ''))", [SHIP_DIRECT, SHIP_AFTER_BUY])
+
+
 def wh_name(code):
     return WAREHOUSES.get(code or "", code or "")
 
 
-__all__ = ["upload_cond", "group_meta", 
+__all__ = ["upload_cond", "group_meta", "ships", "ship_cond", "SHIP_DIRECT", "SHIP_AFTER_BUY", 
     "base64", "collections", "io", "json", "re", "current_app", "jsonify", "render_template", "request", "send_file",
     "get_conn", "_guard_ready", "_log", "_operator", "_row", "_rows", "now",
     "shopee_bp", "SYSTEM", "FULFILS", "LINES", "UNIT_CODES", "WAREHOUSES", "ST_IMPORTED", "ST_DIFF",

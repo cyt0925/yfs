@@ -50,7 +50,7 @@ def short_item(it, rounds, done):
     rs = [{"round": r["round"], "source": r["source"], "before": r["qty_before"], "after": r["qty_after"], "short": r["qty_before"] - r["qty_after"],
            "reasons": [x for x in (r["reasons"] or "").split("、") if x], "note": r["note"] or "", "operator": r["operator"], "updated_at": r["updated_at"],
            "notified": bool(r["notify_id"]), "notify_at": r.get("notify_at") or "", "saved": True} for r in rounds]
-    if it["fulfil"] == SHIP_FULFIL and done and not rs:
+    if ships(it) and done and not rs:
         short = max((done["qty_order"] or 0) - (done["qty_ship"] or 0), 0)
         if short:                                   # 竹運出貨判斷出的缺貨：還沒通知前先列著，通知時才存成第一次
             rs.append({"round": 1, "source": SHIP_FULFIL, "before": done["qty_order"] or 0, "after": done["qty_ship"] or 0, "short": short,
@@ -97,7 +97,7 @@ def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None, up1="", 
     ids = [i["id"] for i in items]
     rounds = _rounds(conn, ids)
     from .ship import ship_status_map
-    done = ship_status_map(conn, [i["id"] for i in items if i["fulfil"] == SHIP_FULFIL])
+    done = ship_status_map(conn, [i["id"] for i in items if ships(i)])
     groups = collections.OrderedDict()
     for it in items:
         no = order_no(it)

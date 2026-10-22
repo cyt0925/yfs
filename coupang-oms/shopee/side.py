@@ -34,7 +34,7 @@ def api_side():
                 if buy:
                     buy["fulfil"] = f
         ship = None
-        if "竹運出貨" in fulfils and a.get("ship") != "0":       # ship=0：畫面剛從 /api/shopee/ship/plan 拿到同一組篩選的計畫，不用再算一次（搜尋太慢，2026-10-20）
+        if any(ships(i) for i in g["items"]) and a.get("ship") != "0":       # 竹運採購進貨入庫單到了也要拋單檔（2026-10-22）       # ship=0：畫面剛從 /api/shopee/ship/plan 拿到同一組篩選的計畫，不用再算一次（搜尋太慢，2026-10-20）
             groups, ctx = build_ship(conn, d1, d2, line)
             ship = next((x for x in groups if x["order_no"] == no), None)
             if ship is None:                              # 不在目前篩選的範圍裡：只算這張單（不跟別張搶庫存）

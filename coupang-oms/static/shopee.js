@@ -168,8 +168,8 @@ const STAGE_DEF = [
     hint: "勾選訂單產出 EIP 採購單；「需處理」的訂單請點該列，在右側修正。" },
   { key: "eip", t: "待回填 EIP 採購單號", d: "上傳 EIP 後回填", act: "回填 EIP 採購單號",
     hint: "上傳 EIP 後回填採購單號，回填後即鎖定；回填後瑪氏可下載瑪氏採購單，寶僑、紙潔直送可下載直送採購單（給採購轉原廠）。" },
-  { key: "ship", t: "待產拋單檔", d: "竹運出貨", act: "產出拋單檔",
-    hint: "系統依 EC 庫存、竹運效期判斷可出貨量；勾選訂單產出拋單檔，缺貨會自動列入「待通知蝦皮」。" },
+  { key: "ship", t: "待產拋單檔", d: "竹運出貨、採購進貨入庫單到了", act: "產出拋單檔",
+    hint: "竹運出貨的單，和竹運採購進貨入庫單（IN 開頭）到了的單，都在這裡產拋單檔，履約方式不用改。系統依 EC 庫存、竹運效期判斷可出貨量；缺貨會自動列入「待通知蝦皮」。" },
   { key: "notify", t: "待通知蝦皮", d: "有缺貨、尚未通知", act: "通知蝦皮",
     hint: "勾選訂單產生蝦皮通知，可以 LINE 複製或用 Email 寄；之前的通知在下面的通知紀錄。瑪氏缺貨請上傳勇信配送明細表；寶僑、紙潔缺貨請點該單，在右側填寫。" },
   { key: "all", t: "全部訂單", d: "", hint: "點一張單，右側看品項、採購單、缺貨、差異與歷程；採購來信缺貨時，搜尋訂單後在右側填寫。" },
@@ -497,12 +497,13 @@ async function ffCheck(nos, f) {
       todo.push("拋單檔如果<b>已經匯進訂單系統</b>，請到訂單系統把這張單刪掉，竹運才不會照舊出貨。");
     }
     sys.push(`這張單移到「${ffStage(f)}」`);
+    if (x.buy_to_ship) h = `<div class="ff-tip">竹運採購進貨的單，蝦皮入庫單（IN 開頭）到了會<b>自動進「待產拋單檔」</b>，<b>不用改成竹運出貨</b>。${x.eips.length ? "改了的話，這張會從 Penny 做好的 EIP 拿掉。" : ""}</div>` + h;
     return `<div class="ff-sec"><div class="ff-no">${esc(x.order_no)}</div>${h}
       <div class="ff-h">按「確定改」之後，系統會自動：</div><ul class="ff-ul">${sys.map(t => `<li>${t}</li>`).join("")}</ul>
-      <div class="ff-todo"><div class="ff-h" style="color:var(--warn)">你要做的事</div>${todo.length > 1 ? `<ol class="ff-ul ff-ol">${todo.map(t => `<li>${t}</li>`).join("")}</ol>` : todo.join("")}</div></div>`;
+      ${todo.length ? `<div class="ff-todo"><div class="ff-h" style="color:var(--warn)">你要做的事</div>${todo.length > 1 ? `<ol class="ff-ul ff-ol">${todo.map(t => `<li>${t}</li>`).join("")}</ol>` : todo.join("")}</div>` : ""}</div>`;
   };
   $("#df-title").textContent = `改成「${f}」？`;
-  $("#df-body").innerHTML = (nos.length > 1 ? `<div>勾選的 ${nos.length} 張裡，有 ${chk.orders.length} 張已經做過 EIP 或產過拋單檔，按「確定改」會一起處理：</div>` : "")
+  $("#df-body").innerHTML = (nos.length > 1 ? `<div>勾選的 ${nos.length} 張裡，有 ${chk.orders.length} 張要先看一下，按「確定改」會一起處理：</div>` : "")
     + chk.orders.map(one).join("");
   const dlg = $("#dlg-ff"); dlg.showModal();
   return await new Promise(res => {
