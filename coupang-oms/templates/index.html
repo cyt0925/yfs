@@ -1224,7 +1224,7 @@ function roundsHtml(d) {
     </tr>` : "";
   const list = (rows.length || draft) ? rows.map(r => `
     <tr class="border-b border-ink-100 ${editing && r.id === editing.id ? "bg-amber-50" : ""}">
-      <td class="px-2 py-1.5 text-xs text-emerald-700 font-semibold whitespace-nowrap">${esc(r.ok_at.slice(5, 10))} OK</td>
+      <td class="px-2 py-1.5 text-xs text-emerald-700 font-semibold whitespace-nowrap">${esc(r.ok_at.slice(5, 10))}</td>
       <td class="px-2 py-1.5 text-xs whitespace-nowrap">${esc(r.stage_label)}</td>
       <td class="px-2 py-1.5 text-xs">${r.kind_labels.map(k => `<span class="inline-block px-1.5 rounded bg-ink-100 text-ink-700 text-[11px] mr-1">${esc(k)}</span>`).join("")}</td>
       <td class="px-2 py-1.5 text-xs">${esc(r.reason)}</td>
