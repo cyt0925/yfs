@@ -185,8 +185,16 @@
   .src { border:1px solid var(--line2); border-radius:10px; padding:8px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:2px; background:#fff; }
   .src b { font-size:13px; color:var(--ink); } .src span { color:var(--b800); font-weight:600; } .src small { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .src.none { background:#f8fafc; border-style:dashed; }
-  .st-n { color:var(--b700); font-weight:700; cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
-  .st-n:hover { color:var(--b900); background:var(--b50); }
+  /* 可點的數字不畫底線，滑過出現淺色底框（Jerry 2026-10-22） */
+  .st-n { color:var(--b700); font-weight:700; cursor:pointer; border-radius:4px; padding:1px 4px; margin:-1px -4px; }
+  .st-n:hover { color:var(--b900); background:var(--b50); box-shadow:inset 0 0 0 1px var(--line); }
+  #st-months { font-variant-numeric:tabular-nums; }
+  #st-months th, #st-months td { padding:5px 8px; }
+  #st-months tr.grp th { text-align:center; font-size:11.5px; padding:3px 8px; }
+  #st-months th .u { color:var(--muted, #8a93a6); font-weight:400; }
+  #st-months .sep { border-left:1px solid var(--line2); }
+  #st-months tbody tr:hover td { background:#f8fafc; }
+  #st-months .pct { color:#8a93a6; font-size:11.5px; font-weight:400; margin-left:4px; }
   .st-n.st-g { color:var(--muted); font-weight:500; text-decoration-color:#cbd5e1; }
   .dd { position:relative; }
   .fbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fff; border:1px solid var(--line2); border-radius:12px; padding:8px 12px; }
@@ -386,7 +394,7 @@
     </div>
     <div class="kbd mb-3">以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完記一次處理完成，算一次。修改紀錄自 <span id="st-since">2026-10-20</span> 起才有，之前的月份處理次數為 0。處理完成後又有改動的 PO 清單在 <a href="/portal/stats" style="color:var(--b700);text-decoration:underline">YFS 訂單系統的改單統計</a>。</div>
     <div class="grid gap-3 mb-4" id="st-kpi" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
-    <div class="card p-4 mb-4"><b class="text-sm">每個月</b><span class="kbd ml-2">點藍色數字看修改紀錄；灰字是系統抓到的變動次數，不算處理次數，點了看明細</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+    <div class="card p-4 mb-4"><b class="text-sm">每月統計</b><span class="kbd ml-2">藍色數字可以點，看是哪幾筆；「—」是修改紀錄開始記之前的月份</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
     <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
       <div class="card p-4"><b class="text-sm">主因</b><span class="kbd ml-2">記處理完成時勾的主因，照類別列；一輪可以勾好幾個，加總會大於處理次數</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
       <div class="card p-4"><b class="text-sm">各階段做了什麼</b><span class="kbd ml-2">這一輪在哪個階段結束 × 做了什麼；一輪可以勾好幾項</span><div class="tbl-wrap mt-2"><table class="m" id="st-stages"></table></div></div>
@@ -396,7 +404,7 @@
       <div class="mt-2 space-y-1 muted">
         <div>PO 依目前的到貨日歸屬月份，未排日期的另列「未排日期」。</div>
         <div>「處理次數」以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完記一次處理完成，算一次，一輪裡好幾個動作都算同一次。修改紀錄自 2026-10-20 起才有，之前的月份為 0。</div>
-        <div>「曾改單的 PO」是至少有一筆修改紀錄的 PO。「第一／二／三階段」是記處理完成時選的「這一輪在哪個階段結束」。</div>
+        <div>「有修改紀錄的 PO」是至少有一筆修改紀錄的 PO。「第一／二／三階段」是記處理完成時選的「這一輪在哪個階段結束」。</div>
         <div>「有下修」「有改交期／倉別」「有拆單」和主因都是記處理完成時勾的，一輪可以勾好幾項，加總會大於處理次數。</div>
         <div>「系統抓到的變動次數」（灰字）是系統從兩個系統的匯入紀錄和人工修改抓到的每一次變動，好幾次變動可能其實是同一輪，所以不算處理次數，只留著對照。勾了「這是測試」的不算。</div>
         <div>估計工時 = 處理次數 × 填寫的分鐘數，分鐘數為人工估計，不是系統計算。資料自 2026-09 中旬系統上線起計算。</div>

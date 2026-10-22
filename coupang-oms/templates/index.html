@@ -1352,7 +1352,7 @@ async function savePo() {
   const data = await res.json();
   if (!res.ok) {
     toast(data.message || data.error, "err");
-    if (data.error === "round_required") {           // 防呆：帶到下面的修改紀錄去記處理完成
+    if (data.error === "round_required") {           // 防呆：帶到下面的修改紀錄填寫修改紀錄
       const box = $("#po-rounds"); box.scrollIntoView({ behavior: "smooth", block: "center" });
       box.classList.add("ring-2", "ring-brand-500", "rounded-lg"); setTimeout(() => box.classList.remove("ring-2", "ring-brand-500"), 2500);
     }
