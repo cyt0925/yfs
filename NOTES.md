@@ -2,7 +2,7 @@
 
 > 這份文件是給「接手的人」或「換帳號後重新開始對話的自己」看的。
 > 目的是不用重講一遍背景，看完就能接著做。
-> 最後更新：2026-09-04
+> 最後更新：2026-10-22
 
 ---
 
@@ -14,6 +14,7 @@ yfs/
 ├── config.js           Google 試算表與 Apps Script 的網址設定
 ├── 404.html            GitHub Pages 的路由 fallback（/workflow 重新整理用）
 ├── img/                SOP 操作截圖 521 張（471 webp + 50 png）
+├── .claude/skills/read-video/   讓 Claude 讀影片的工具（抽關鍵畫面＋語音逐字稿）
 ├── sop.image.png       網站左上角 logo
 └── coupang-oms/        酷澎訂單管理系統（本地端 Flask 應用，與網站無關）
 ```
@@ -121,6 +122,22 @@ Jerry：「可以做一顆列印的按鈕嗎？因為直接右鍵列印，版面
 cd coupang-oms
 python test_flow.py     # 用真實整合表跑完整流程，46 項檢查
 ```
+
+---
+
+## 二之一、讓 Claude 讀影片（2026-10-22）
+
+Jerry：「我想要你擁有可以讀取影片的功能。」Claude 本身只看得懂圖和文字，所以做了
+`.claude/skills/read-video/`：
+
+- `scripts/read_video.py 影片.mp4` → `.video-cache/<檔名>/` 裡有 `summary.md`（時間軸）、
+  `sheets/`（12 格縮圖總覽，先看這個）、`frames/`（關鍵畫面原尺寸）、`transcript.txt`（逐字稿）。
+- 抽圖靠 ffmpeg 場景偵測＋固定間隔取樣，只用系統已有的 ffmpeg 與 Pillow，**現在就能用**。
+- 逐字稿用 faster-whisper（第一次用會自動從 PyPI 裝），但 Whisper 模型放在 huggingface.co，
+  **雲端環境的網路白名單目前擋住它**，所以逐字稿暫時做不出來，腳本會寫明原因。
+  要開通：環境設定 → Network access → Allowed domains 加 `huggingface.co`。
+- `.video-cache/` 已在 .gitignore；影片檔本身也不要進 repo。
+- 用途：同事錄的操作示範影片 → 整理成 SOP 步驟 → 截圖轉 webp 放 `img/`，內容寫進試算表。
 
 ---
 

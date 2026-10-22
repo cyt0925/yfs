@@ -31,6 +31,11 @@ python3 -m http.server 8791   # 然後開 http://localhost:8791/index.html
 - 沒有自動化測試。改完 `index.html` 用 Playwright 實際點過搜尋、篩選、流程圖切換。
 - 動到列印（`#printArea`、`@media print`）要用 Playwright 印成 PDF 看分頁，不能只看畫面。
 
+## 讀影片
+
+使用者給影片要你看內容時，用 `.claude/skills/read-video/`（跑 `scripts/read_video.py`，
+再 Read 縮圖總覽與 `summary.md`）。語音逐字稿需要網路白名單開 `huggingface.co`，沒開就只有畫面。
+
 ## 環境注意
 
 此環境 `git fetch` 可能給過期 ref，`git status` 的 ahead/behind 不可信。
