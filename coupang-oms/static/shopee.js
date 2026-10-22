@@ -171,7 +171,7 @@ const STAGE_DEF = [
   { key: "ship", t: "待產拋單檔", d: "竹運出貨", act: "產出拋單檔",
     hint: "系統依 EC 庫存、竹運效期判斷可出貨量；勾選訂單產出拋單檔，缺貨會自動列入「待通知蝦皮」。" },
   { key: "notify", t: "待通知蝦皮", d: "有缺貨、尚未通知", act: "通知蝦皮",
-    hint: "勾選訂單產生 LINE 通知文字。瑪氏缺貨請上傳勇信配送明細表；寶僑、紙潔缺貨請點該單，在右側填寫。" },
+    hint: "勾選訂單產生蝦皮通知，可以 LINE 複製或用 Email 寄；之前的通知在下面的通知紀錄。瑪氏缺貨請上傳勇信配送明細表；寶僑、紙潔缺貨請點該單，在右側填寫。" },
   { key: "all", t: "全部訂單", d: "", hint: "點一張單，右側看品項、採購單、缺貨、差異與歷程；採購來信缺貨時，搜尋訂單後在右側填寫。" },
 ];
 const SDEF = Object.fromEntries(STAGE_DEF.map(x => [x.key, x]));
@@ -1026,7 +1026,7 @@ function renderShort() {
   markSel();
   renderBatchBar("#k-bar", KSEL, renderShort);
   const n = KSEL.size, pn = kPicked().length; $("#k-go").disabled = !pn;
-  $("#k-go-hint").textContent = n ? `已勾選 ${n} 張訂單${pn < n ? `，其中 ${pn} 張有待通知的品項` : ""}，會把待通知的品項整理成一則 LINE 訊息，並鎖定這次的下修紀錄。` : "請勾選有「待通知」的訂單。";
+  $("#k-go-hint").textContent = n ? `已勾選 ${n} 張訂單${pn < n ? `，其中 ${pn} 張有待通知的品項` : ""}，產生後可以選 LINE 複製或用 Email 寄，並鎖定這次的下修紀錄。` : "請勾選有「待通知」的訂單。";
 }
 const kPicked = () => [...KSEL].filter(k => { const g = SHORT.orders.find(x => x.order_no === k); return g && g.pending; });
 const roundText = r => `第 ${r.round} 次：${fmt(r.before)} → ${fmt(r.after)}${r.after ? "" : "（刪單）"}`;
