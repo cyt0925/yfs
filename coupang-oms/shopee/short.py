@@ -210,32 +210,50 @@ def api_short_save():
 
 
 # ── 通知蝦皮（LINE 文字＋Excel 明細） ───────────────────────────────────────
+LINE_MAX = 4800          # LINE 一則最多 5000 字，留一點餘裕
+
+
 def line_messages(groups):
-    """照 Alice 的 LINE 機器人訊息：一張 PR 的刪單合成一則、下修合成一則，刪單在前、下修在後（Jerry 2026-10-14：
-    同一張訂單的訊息要合併，不然要複製好幾次；下修跟刪單分開）。同一則裡混到不同次的，標題用最高那次，每品後面標第幾次。"""
+    """通知文字（Penny 2026-10-22「刪單的合成一則，缺貨的合成一則，可以不用分那麼多則」，Jerry 看過示意圖「OK 照這樣做」）：
+    同一個賣場的刪單全部合成一則、下修全部合成一則，裡面照 PR 分段（每段照 Alice 的 LINE 機器人格式：PR ID、預計到貨日、到貨倉別、品項）；
+    刪單在前、下修在後；不同賣場（P&G、紙潔、瑪氏）分開。超過 LINE 上限就照 PR 切成（1/2）（2/2）。
+    混到不同次通知的，標題用最高那次，每品後面標第幾次。"""
     buckets = collections.OrderedDict()
     for g in groups:
         for p in g["items"]:
             if not p["pending"]:
                 continue
             kind = "刪單" if not p["final"] else "下修"
-            key = (p["pr_id"] or g["order_no"], 0 if kind == "刪單" else 1)
-            buckets.setdefault(key, {"g": g, "kind": kind, "items": []})["items"].append(p)
+            b = buckets.setdefault((MARKET.get(g["line"], g["line"]), 0 if kind == "刪單" else 1), {"kind": kind, "prs": collections.OrderedDict()})
+            pr = p["pr_id"] or g["order_no"]
+            b["prs"].setdefault(pr, {"g": g, "items": []})["items"].append(p)
     msgs = []
-    for (pr, _k), b in sorted(buckets.items(), key=lambda kv: kv[0]):
-        g, kind, its = b["g"], b["kind"], b["items"]
-        rounds = {p["rounds"][-1]["round"] for p in its}
+    for (market, _k), b in sorted(buckets.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        kind = b["kind"]
+        alls = [p for x in b["prs"].values() for p in x["items"]]
+        rounds = {p["rounds"][-1]["round"] for p in alls}
         rnd = max(rounds)
-        out = [f"【蝦皮缺貨{kind}通知｜{ROUND_TXT.get(rnd, f'第{rnd}次通知')}】", f"賣場：{MARKET.get(g['line'], g['line'])}", f"PR ID：{pr}",
-               f"預計到貨日：{g['expected_date'] or ''}", f"到貨倉別：{g['warehouse'] or ''}", "", f"{kind}SKU（{len(its)}項）："]
-        for i, p in enumerate(its, 1):
-            tag = f"（第{p['rounds'][-1]['round']}次）" if len(rounds) > 1 else ""
-            out += [f"{i}. PO ID：{p['po_id'] or '尚未產生'}", f"蝦皮SKU ID：{p['shopee_sku_id']}", f"{p['supplier_sku_id']} {p['name']}{tag}"]
-            if kind == "下修":
-                out += [f"訂購{p['orig']}／可出貨{p['final']}／缺貨{p['cut']}", f"處理方式：下修至{p['final']}"]
-            out.append("")
-        out.append("請協助處理刪單，完成後請回覆，謝謝。" if kind == "刪單" else "請協助下修訂單數量，完成後請回覆，謝謝。")
-        msgs.append("\n".join(out))
+        sections = []
+        for pr, x in sorted(b["prs"].items()):
+            g, its = x["g"], x["items"]
+            out = [f"■ PR ID：{pr}", f"預計到貨日：{g['expected_date'] or ''}", f"到貨倉別：{g['warehouse'] or ''}", f"{kind}SKU（{len(its)}項）："]
+            for i, p in enumerate(its, 1):
+                tag = f"（第{p['rounds'][-1]['round']}次）" if len(rounds) > 1 else ""
+                out += [f"{i}. PO ID：{p['po_id'] or '尚未產生'}", f"蝦皮SKU ID：{p['shopee_sku_id']}", f"{p['supplier_sku_id']} {p['name']}{tag}"]
+                if kind == "下修":
+                    out += [f"訂購{p['orig']}／可出貨{p['final']}／缺貨{p['cut']}", f"處理方式：下修至{p['final']}"]
+            sections.append((len(its), "\n".join(out)))
+        foot = "請協助處理刪單，完成後請回覆，謝謝。" if kind == "刪單" else "請協助下修訂單數量，完成後請回覆，謝謝。"
+        chunks, cur = [], []                     # 照 PR 切，一則不超過 LINE 上限
+        for sec in sections:
+            if cur and sum(len(t) + 2 for _n, t in cur + [sec]) > LINE_MAX - 200:
+                chunks.append(cur); cur = []
+            cur.append(sec)
+        chunks.append(cur)
+        for ci, ch in enumerate(chunks, 1):
+            part = f"（{ci}/{len(chunks)}）" if len(chunks) > 1 else ""
+            head = [f"【蝦皮缺貨{kind}通知｜{ROUND_TXT.get(rnd, f'第{rnd}次通知')}】{part}", f"賣場：{market}", f"共 {len(ch)} 張 PR、{sum(n for n, _t in ch)} 項", ""]
+            msgs.append("\n".join(head) + "\n" + "\n\n".join(t for _n, t in ch) + "\n\n" + foot)
     return msgs
 
 
@@ -323,7 +341,38 @@ def api_short_notify_get(nid):
         conn.close()
     if n is None:
         return jsonify({"error": "找不到這次通知。"}), 404
-    return jsonify({**{k: n[k] for k in ("id", "text", "orders", "items", "created_by", "created_at")}, "messages": json.loads(n["messages_json"] or "[]")})
+    rows = json.loads(n["rows_json"] or "[]")
+    return jsonify({**{k: n[k] for k in ("id", "text", "orders", "items", "created_by", "created_at")}, "messages": json.loads(n["messages_json"] or "[]"),
+                    "del_items": sum(1 for r in rows if not r.get("final")), "cut_items": sum(1 for r in rows if r.get("final"))})
+
+
+# 用 Email 寄的收件人（Jerry 2026-10-22 選 A：按鈕打開 Outlook、內容填好，自己按傳送；收件人在資料與設定填一次）
+MAIL_KEY = "shopee_notify_mail"
+
+
+@shopee_bp.route("/api/shopee/notify_mail", methods=["GET", "PUT"])
+def api_shopee_notify_mail():
+    conn = get_conn()
+    try:
+        if request.method == "PUT":
+            to = str((request.get_json(silent=True) or {}).get("to") or "").strip()
+            parts = [x.strip() for x in to.replace("；", ",").replace(";", ",").replace("，", ",").split(",") if x.strip()]
+            bad = [x for x in parts if "@" not in x or " " in x]
+            if bad:
+                return jsonify({"error": f"Email 格式不對：{'、'.join(bad)}"}), 400
+            to = ", ".join(parts)
+            old = _row(conn.execute("SELECT value FROM mst_meta WHERE key = ?", (MAIL_KEY,)))
+            if old:
+                conn.execute("UPDATE mst_meta SET value = ? WHERE key = ?", (to, MAIL_KEY))
+            else:
+                conn.execute("INSERT INTO mst_meta (key, value) VALUES (?, ?)", (MAIL_KEY, to))
+            _log(conn, "", "", "", "", "shopee_notify_mail", "缺貨通知 Email 收件人", (old or {}).get("value", ""), to, _operator(), "manual")
+            conn.commit()
+            return jsonify({"ok": True, "to": to})
+        row = _row(conn.execute("SELECT value FROM mst_meta WHERE key = ?", (MAIL_KEY,)))
+        return jsonify({"to": (row or {}).get("value", "")})
+    finally:
+        conn.close()
 
 
 @shopee_bp.route("/api/shopee/short/notify/<int:nid>/xlsx")
@@ -340,5 +389,5 @@ def api_short_notify_xlsx(nid):
                      download_name=f"蝦皮特選缺貨下修通知_{d}_{nid}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-__all__ = ["short_item", "build_short", "notify_status", "notify_status_map", "line_messages", "notify_rows", "notify_xlsx", "api_short_plan",
+__all__ = ["api_shopee_notify_mail", "short_item", "build_short", "notify_status", "notify_status_map", "line_messages", "notify_rows", "notify_xlsx", "api_short_plan",
            "api_short_notifies", "api_short_save", "api_short_notify", "api_short_notify_get", "api_short_notify_xlsx"]

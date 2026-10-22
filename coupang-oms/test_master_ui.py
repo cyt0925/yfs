@@ -948,8 +948,16 @@ def main():
               and "／缺貨6" in txt and "處理方式：下修至" in txt and "/xlsx" in (pg.get_attribute("#dn-xlsx", "href") or ""), txt[:300])
         pg.click("#dn-msgs button.dn-copy >> nth=0"); pg.wait_for_timeout(300)
         check("按複製 → 提示已複製", "已複製" in pg.inner_text("#toasts"))
+        check("通知視窗多一顆「用 Email 寄」（Jerry 2026-10-22 選 A）", pg.is_visible("#dn-mail"))
         pg.click("#dlg-notify .x"); pg.wait_for_timeout(800)
+        check("關掉通知視窗 → 右下角提示去哪裡找回（Penny 2026-10-22「關掉後就永遠不回頭了」）", "看之前的通知" in pg.inner_text("#toasts"), pg.inner_text("#toasts"))
         check("通知後：待通知蝦皮那格回到 0", count("notify") == 0, pg.inner_text("#stages"))
+        stage("notify"); pg.click("#k-hist-open"); pg.wait_for_selector("#dlg-nhist[open] #nh-tbl button.k-n", timeout=8000)
+        check("待通知蝦皮右上角「看之前的通知」→ 列出剛剛那次，可以再看、用 Email 寄、下載明細", pg.eval_on_selector_all("#nh-tbl button.k-m", "els => els.length") >= 1
+              and pg.eval_on_selector_all("#nh-tbl a[href$='/xlsx']", "els => els.length") >= 1)
+        pg.click("#nh-tbl button.k-n >> nth=0"); pg.wait_for_selector("#dlg-notify[open] #dn-msgs textarea", timeout=8000)
+        check("按「再看一次／複製」→ 打開剛剛那次的通知文字", pg.input_value("#dn-msgs textarea.dn-text >> nth=0") == txt)
+        pg.click("#dlg-notify .x"); pg.wait_for_timeout(500)
 
         print("\n【6e-5】瑪氏缺貨：勇信配送明細表從同一個上傳入口進來 → 比對視窗 → 寫入缺貨 → 待通知蝦皮")
         # 瑪氏直送的單、EIP、回填單號用 API 先備好（畫面流程前面測過了），這裡只測勇信核對這一段

@@ -946,16 +946,30 @@ def short_tests(c, orders):
     r = c.post("/api/shopee/short/notify", json={"order_nos": [L, H]})
     n = c.get(f"/api/shopee/short/notify/{r.get_json()['id']}").get_json() if r.status_code == 200 else {}
     ms = n.get("messages", [])
-    mL = next((m for m in ms if "PR ID：PRTWCOTWA202610010001" in m), "")
-    check("照 Alice 的 LINE 機器人格式：一張 PR 一種處理一則（L 下修 1 則、H 刪單 1 則＋下修 1 則）", r.status_code == 200 and len(ms) == 3
-          and [m.split("\n")[0] for m in ms if "POTWCTWA26101500H" in m] == ["【蝦皮缺貨刪單通知｜首次通知】", "【蝦皮缺貨下修通知｜首次通知】"], str([m.split("\n")[:3] for m in ms]))
-    check("下修那則：賣場 P&G、PR ID、預計到貨日、到貨倉別、PO ID、蝦皮SKU ID、料號品名、訂購／可出貨／缺貨、處理方式", mL.split("\n")[:7] == [
-        "【蝦皮缺貨下修通知｜首次通知】", "賣場：P&G", "PR ID：PRTWCOTWA202610010001", "預計到貨日：2026-10-20", "到貨倉別：TWA", "", "下修SKU（1項）："]
+    mL = next((m for m in ms if m.startswith("【蝦皮缺貨下修通知")), "")
+    check("合成兩則（Penny 2026-10-22「刪單的合成一則，缺貨的合成一則」）：同一個賣場的刪單一則、下修一則，刪單在前；L、H 的下修都在下修那則",
+          r.status_code == 200 and [m.split("\n")[0] for m in ms] == ["【蝦皮缺貨刪單通知｜首次通知】", "【蝦皮缺貨下修通知｜首次通知】"]
+          and "PR ID：PRTWCOTWA202610010001" in mL and "POTWCTWA26101500H" in mL, str([m.split("\n")[:3] for m in ms]))
+    check("下修那則：開頭賣場 P&G、共幾張 PR 幾項；裡面照 PR 分段（■ PR ID、預計到貨日、到貨倉別、下修SKU）、PO ID、蝦皮SKU ID、料號品名、訂購／可出貨／缺貨、處理方式",
+          mL.split("\n")[:3] == ["【蝦皮缺貨下修通知｜首次通知】", "賣場：P&G", f"共 2 張 PR、{mL.count('處理方式：')} 項"]
+          and "■ PR ID：PRTWCOTWA202610010001\n預計到貨日：2026-10-20\n到貨倉別：TWA\n下修SKU（1項）：" in mL
           and "1. PO ID：POTWCTWA26100514L" in mL and "蝦皮SKU ID：41511463369_285962283475" in mL and "4987176232878_CNN 幫寶適 清新幫 拉拉褲(XXL)26片" in mL
           and "訂購190／可出貨140／缺貨50" in mL and "處理方式：下修至140" in mL and mL.endswith("請協助下修訂單數量，完成後請回覆，謝謝。"), mL)
-    mH = next((m for m in ms if m.startswith("【蝦皮缺貨刪單通知") and "POTWCTWA26101500H" in m), "")
-    check("刪單那則：刪單SKU 2 項、PO ID、不寫數量、結尾請協助處理刪單", "刪單SKU（2項）：" in mH and "4987176372093_TNN" in mH and "4987176386700_CNN" in mH
+    mH = next((m for m in ms if m.startswith("【蝦皮缺貨刪單通知")), "")
+    check("刪單那則：H 那段刪單SKU 2 項、PO ID、不寫數量、結尾請協助處理刪單", "刪單SKU（2項）：" in mH and "4987176372093_TNN" in mH and "4987176386700_CNN" in mH
           and "訂購" not in mH and mH.endswith("請協助處理刪單，完成後請回覆，謝謝。"), mH)
+    check("取得通知時帶刪單幾項、下修幾項（Email 主旨用）", n.get("del_items") == 2 and n.get("cut_items", 0) >= 1, str((n.get("del_items"), n.get("cut_items"))))
+    import shopee.short as _sh
+    big = [{"line": "寶僑", "order_no": f"PO{i}", "expected_date": "2026-10-20", "warehouse": "TWA",
+            "items": [{"pending": True, "final": 1, "pr_id": f"PRBIG{i:03d}", "po_id": f"PO{i}", "shopee_sku_id": "1" * 20, "supplier_sku_id": "4987176232878_CNN",
+                       "name": "很長的品名" * 8, "orig": 10, "cut": 9, "rounds": [{"round": 1}]} for _ in range(4)]} for i in range(30)]
+    bm = _sh.line_messages(big)
+    check("超過 LINE 上限（5000 字）→ 照 PR 切成（1/2）（2/2）…，每則都不超過、每則都有開頭和結尾", len(bm) > 1 and all(len(m) <= 5000 for m in bm)
+          and bm[0].split("\n")[0].endswith(f"（1/{len(bm)}）") and all(m.endswith("完成後請回覆，謝謝。") for m in bm)
+          and sum(m.count("■ PR ID：") for m in bm) == 30, str([len(m) for m in bm]))
+    r_m = c.put("/api/shopee/notify_mail", json={"to": "a@shopee.tw；b@shopee.tw"})
+    check("Email 收件人：分號、逗號都可以，存成逗號分開；格式不對 → 400", r_m.status_code == 200 and c.get("/api/shopee/notify_mail").get_json()["to"] == "a@shopee.tw, b@shopee.tw"
+          and c.put("/api/shopee/notify_mail", json={"to": "不是信箱"}).status_code == 400, str(r_m.get_json()))
     pl = plan()
     a, h = it(pl, L, "4987176232878_CNN"), it(pl, H, "4902430056519_PNN")
     check("通知後：鎖住、狀態「已通知（第 1 次）」、竹運出貨那幾筆也存下來了", not a["pending"] and a["notified_round"] == 1 and a["rounds"][0]["notified"]

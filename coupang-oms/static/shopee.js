@@ -1060,7 +1060,9 @@ $("#dk-save").addEventListener("click", async () => {
     toast(r.cleared ? `${SHORTX.supplier_sku_id} 已取消這次缺貨` : `${SHORTX.supplier_sku_id} 第 ${r.round} 次下修：可出貨 ${fmt(r.after)}，已列入「待通知蝦皮」`); $("#dlg-short").close(); refresh();
   } catch (err) { toast(err.message, "err"); }
 });
+let NOTIFY_CUR = null;
 function showNotify(n) {
+  NOTIFY_CUR = n;
   const msgs = n.messages && n.messages.length ? n.messages : [n.text];
   $("#dn-title").textContent = `蝦皮缺貨通知（${(n.created_at || "").slice(0, 16).replace("T", " ")}，共 ${msgs.length} 則）`;
   $("#dn-xlsx").href = `/api/shopee/short/notify/${n.id}/xlsx`;
@@ -1134,14 +1136,42 @@ function renderYx() {
     } catch (err) { toast(err.message, "err"); }
   });
 }
-async function loadNotifies() {
+async function loadNotifies(sel = "#k-hist") {
   let d; try { d = await api("/api/shopee/short/notifies"); } catch (err) { return; }
-  $("#k-hist").innerHTML = `<thead><tr><th>通知時間</th><th>產生人員</th><th class="num">訂單</th><th class="num">品項</th><th></th></tr></thead><tbody>
+  $(sel).innerHTML = `<thead><tr><th>通知時間</th><th>產生人員</th><th class="num">訂單</th><th class="num">品項</th><th></th></tr></thead><tbody>
     ${d.notifies.map(n => `<tr><td class="kbd">${esc((n.created_at || "").slice(0, 16).replace("T", " "))}</td><td>${esc(n.created_by)}</td><td class="num">${n.orders}</td><td class="num">${n.items}</td>
-      <td class="nw"><button class="btn btn-o btn-sm k-n" data-id="${n.id}">再看一次／複製</button> <a class="btn btn-o btn-sm" href="/api/shopee/short/notify/${n.id}/xlsx">明細 Excel</a></td></tr>`).join("")
+      <td class="nw"><button class="btn btn-o btn-sm k-n" data-id="${n.id}">再看一次／複製</button> <button class="btn btn-o btn-sm k-m" data-id="${n.id}"><i class="bi bi-envelope"></i> 用 Email 寄</button>
+        <a class="btn btn-o btn-sm" href="/api/shopee/short/notify/${n.id}/xlsx">明細 Excel</a></td></tr>`).join("")
       || `<tr><td colspan="5" class="muted" style="padding:16px">尚無通知紀錄</td></tr>`}</tbody>`;
-  $$("#k-hist button.k-n").forEach(b => b.addEventListener("click", async () => { try { showNotify(await api(`/api/shopee/short/notify/${b.dataset.id}`)); } catch (err) { toast(err.message, "err"); } }));
+  $$(`${sel} button.k-n`).forEach(b => b.addEventListener("click", async () => { try { if ($("#dlg-nhist").open) $("#dlg-nhist").close(); showNotify(await api(`/api/shopee/short/notify/${b.dataset.id}`)); } catch (err) { toast(err.message, "err"); } }));
+  $$(`${sel} button.k-m`).forEach(b => b.addEventListener("click", async () => { try { mailNotify(await api(`/api/shopee/short/notify/${b.dataset.id}`)); } catch (err) { toast(err.message, "err"); } }));
 }
+/* 用 Email 寄（Jerry 2026-10-22 選 A）：打開 Outlook 新郵件，收件人、主旨、內容填好，自己按傳送。內容太長網址塞不下，就先複製好內容，請他在內文貼上 */
+let NM_TO = null;
+async function mailNotify(n) {
+  if (NM_TO === null) { try { NM_TO = (await api("/api/shopee/notify_mail")).to || ""; } catch (e) { NM_TO = ""; } }
+  const msgs = n.messages && n.messages.length ? n.messages : [n.text];
+  const day = (n.created_at || "").slice(0, 10);
+  const subject = `【永豐商店】蝦皮特選缺貨通知 ${day}（${[n.del_items ? `刪單 ${n.del_items} 項` : "", n.cut_items ? `下修 ${n.cut_items} 項` : ""].filter(Boolean).join("、") || `${n.items} 項`}）`;
+  const body = msgs.join("\n\n────────────\n\n").replace(/\n/g, "\r\n");
+  let url = `mailto:${encodeURIComponent(NM_TO).replace(/%2C/g, ",").replace(/%40/g, "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  let pasted = false;
+  if (url.length > 1800) {
+    try { await navigator.clipboard.writeText(body); pasted = true; } catch (e) { /* 複製不了就請他回視窗逐則複製 */ }
+    url = `mailto:${encodeURIComponent(NM_TO).replace(/%2C/g, ",").replace(/%40/g, "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(pasted ? "（請在這裡按 Ctrl+V 貼上通知內容）" : "（請回系統的通知視窗，逐則複製後貼在這裡）")}`;
+  }
+  location.href = url;
+  toast((pasted ? "內容太長，已先幫你複製好：郵件打開後在內文按 Ctrl+V 貼上，再按傳送。" : "已打開 Outlook 新郵件，確認後按傳送。")
+    + (NM_TO ? "" : "還沒設收件人：可以到「資料與設定」→「通知紀錄」填一次。"), pasted || !NM_TO ? "warn" : "");
+}
+$("#dn-mail").addEventListener("click", () => { if (NOTIFY_CUR) mailNotify(NOTIFY_CUR); });
+$("#k-hist-open").addEventListener("click", () => { loadNotifies("#nh-tbl"); $("#dlg-nhist").showModal(); });
+$("#dlg-notify").addEventListener("close", () => toast("通知文字已存好。要再複製，到「待通知蝦皮」右上角「看之前的通知」。"));
+$("#nm-save").addEventListener("click", async () => {
+  try { const r = await api("/api/shopee/notify_mail", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: $("#nm-to").value }) });
+    NM_TO = r.to; $("#nm-to").value = r.to; toast(r.to ? `收件人已儲存：${r.to}` : "已清除收件人"); } catch (err) { toast(err.message, "err"); }
+});
+async function loadNotifyMail() { try { NM_TO = (await api("/api/shopee/notify_mail")).to || ""; $("#nm-to").value = NM_TO; } catch (e) { /* 讀不到就空著 */ } }
 
 /* ── 右側面板：一張單的全部（改版第二次） ─────────────────────── */
 let SIDE = null, SIDE_NO = "";
@@ -1330,7 +1360,7 @@ function renderSide() {
 /* ── 資料與設定 ───────────────────────────────────────────── */
 function showSettings(on) {
   $("#view-work").classList.toggle("hidden", on); $("#view-set").classList.toggle("hidden", !on); $("#btn-set").classList.toggle("on", on);
-  if (on) { loadConv(); loadStock(); loadUploads(); loadNotifies(); window.scrollTo(0, 0); }
+  if (on) { loadConv(); loadStock(); loadUploads(); loadNotifies(); loadNotifyMail(); window.scrollTo(0, 0); }
   else { loadFresh(); refresh(); }
 }
 $("#btn-set").addEventListener("click", () => showSettings($("#view-set").classList.contains("hidden")));
