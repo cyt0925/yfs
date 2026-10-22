@@ -271,39 +271,39 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     <main class="content">
       <div class="head">
         <h1>改單統計</h1>
-        <span class="sub">以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完按一次 OK，算一次修改。修改紀錄自 <span id="st-since">2026-10-20</span> 起才有，之前的月份修改次數為 0。</span>
+        <span class="sub">以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完記一次處理完成，算一次。修改紀錄自 <span id="st-since">2026-10-20</span> 起才有，之前的月份處理次數為 0。</span>
       </div>
       <div class="card st-filter">
         <label>期間 <input type="month" id="st-from" class="inp" aria-label="起始月份"></label>
         <label>～ <input type="month" id="st-to" class="inp" aria-label="結束月份"></label>
         <label title="系統裡所有月份的 PO 一起算（沒排到貨日的也算）"><input type="checkbox" id="st-all"> 全部期間</label>
         <label>線別 <select id="st-line" class="inp"><option value="">全部線別</option></select></label>
-        <label title="估計值；工時＝修改次數 × 分鐘數，填 0 則不計算">每次修改約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
+        <label title="估計值；工時＝處理次數 × 分鐘數，填 0 則不計算">每次修改約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
         <span class="grow"></span>
         <a id="st-export" class="btn" href="#"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
       </div>
       <div class="kpis" id="st-kpi"></div>
       <section class="card" id="pending" aria-labelledby="h-pend">
-        <div class="sec-h"><h2 id="h-pend">改過但還沒記 OK 的 PO</h2><span class="hint">上一個 OK 之後酷澎或我們有改過，還沒按「這一輪處理完了（OK）」。點「去記 OK」會開酷澎訂單管理系統那張 PO 的視窗。標「有草稿」的是做到一半先存著的。</span></div>
+        <div class="sec-h"><h2 id="h-pend">處理完成後又有改動的 PO</h2><span class="hint">上次處理完成之後酷澎或我們有改過，還沒再按「這一輪處理完成」。點「去記處理完成」會開酷澎訂單管理系統那張 PO 的視窗。標「有草稿」的是做到一半先存著的。</span></div>
         <div class="tbl-wrap"><table class="log st" id="pd-table"></table></div>
       </section>
-      <section class="card"><div class="sec-h"><h2>每月統計</h2><span class="hint">點有底線的數字看是哪幾筆修改紀錄。灰字是系統抓到的變動次數，不算修改次數，點了看明細。</span></div>
+      <section class="card"><div class="sec-h"><h2>每月統計</h2><span class="hint">點有底線的數字看是哪幾筆修改紀錄。灰字是系統抓到的變動次數，不算處理次數，點了看明細。</span></div>
         <div class="tbl-wrap"><table class="log st" id="st-months"></table></div>
-        <div class="st-note">一輪可能同時有下修又改交期，所以「有下修」「有改交期／倉別」「有拆單」加起來會大於修改次數。</div></section>
+        <div class="st-note">一輪可能同時有下修又改交期，所以「有下修」「有改交期／倉別」「有拆單」加起來會大於處理次數。</div></section>
       <div class="bottom">
-        <section class="card"><div class="sec-h"><h2>主因</h2><span class="hint">記 OK 時勾的主因，照類別列。一輪可以勾好幾個主因，加總會大於修改次數。沒用到的主因不列。</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
+        <section class="card"><div class="sec-h"><h2>主因</h2><span class="hint">記處理完成時勾的主因，照類別列。一輪可以勾好幾個主因，加總會大於處理次數。沒用到的主因不列。</span></div><div class="tbl-wrap"><table class="log st" id="st-reasons"></table></div></section>
         <section class="card"><div class="sec-h"><h2>各階段做了什麼</h2><span class="hint">這一輪在哪個階段結束 × 做了什麼</span></div><div class="tbl-wrap"><table class="log st" id="st-stages"></table></div></section>
       </div>
-      <section class="card"><div class="sec-h"><h2>修改次數最多的 PO</h2><span class="hint">點 PO 單號開酷澎訂單管理系統的 PO 視窗</span></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
+      <section class="card"><div class="sec-h"><h2>處理次數最多的 PO</h2><span class="hint">點 PO 單號開酷澎訂單管理系統的 PO 視窗</span></div><div class="tbl-wrap"><table class="log st" id="st-top"></table></div></section>
       <details class="card st-how"><summary>計算方式說明</summary>
         <div>PO 依目前到貨日歸入月份；未排到貨日的另列「未排日期」。</div>
-        <div>「修改次數（OK）」以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完按一次「這一輪處理完了（OK）」算一次，一輪裡改交期、改倉、拆單、下修好幾個動作都算同一次。修改紀錄自 2026-10-20 起才有，之前的月份修改次數為 0。</div>
-        <div>「曾改單的 PO」指至少有一筆修改紀錄的 PO。「第一／二／三階段」是記 OK 時選的「這一輪在哪個階段結束」（收單確認、已排單確認、出貨確認）。</div>
-        <div>「有下修」「有改交期／倉別」「有拆單」是記 OK 時勾的「這一輪做了什麼」，一輪可以勾好幾項，所以三項加起來會大於修改次數。主因也一樣，一輪可以勾好幾個。</div>
-        <div>「改過但還沒記 OK 的 PO」指上一個 OK 之後酷澎或我們有改過（下單或出貨數量變少、到貨日或倉別變了、拆出新單），還沒按 OK。PO 狀態改成已完成、已取消前要先記。PO 視窗「先存著（還沒 OK）」的草稿不算 OK，清單上會標「有草稿」。</div>
-        <div>「系統抓到的變動次數」（灰字）是系統從酷澎訂單管理系統和商品主檔自動化的匯入紀錄、人工修改抓出來的每一次變動，同一張 PO、同一來源、同一時間算一次。好幾次變動可能其實是同一輪處理，所以不當修改次數，留著對照用，每個月都有。改單時勾選「這是測試」的不算。</div>
+        <div>「處理次數」以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完記一次「這一輪處理完成」，算一次，一輪裡改交期、改倉、拆單、下修好幾個動作都算同一次。修改紀錄自 2026-10-20 起才有，之前的月份處理次數為 0。</div>
+        <div>「曾改單的 PO」指至少有一筆修改紀錄的 PO。「第一／二／三階段」是記處理完成時選的「這一輪在哪個階段結束」（收單確認、已排單確認、出貨確認）。</div>
+        <div>「有下修」「有改交期／倉別」「有拆單」是記處理完成時勾的「這一輪做了什麼」，一輪可以勾好幾項，所以三項加起來會大於處理次數。主因也一樣，一輪可以勾好幾個。</div>
+        <div>「處理完成後又有改動的 PO」指上次處理完成之後酷澎或我們有改過（下單或出貨數量變少、到貨日或倉別變了、拆出新單），還沒記處理完成。PO 狀態改成已完成、已取消前要先記。PO 視窗「先存著（尚未完成）」的草稿不算處理完成，清單上會標「有草稿」。</div>
+        <div>「系統抓到的變動次數」（灰字）是系統從酷澎訂單管理系統和商品主檔自動化的匯入紀錄、人工修改抓出來的每一次變動，同一張 PO、同一來源、同一時間算一次。好幾次變動可能其實是同一輪處理，所以不當處理次數，留著對照用，每個月都有。改單時勾選「這是測試」的不算。</div>
         <div>原始下單、目前出貨用金額（數量 × 下單單價）計算，因為同一張單有箱、盒、包，數量直接相加沒有意義。原始下單是兩個系統最早看到的下單數量；目前出貨是最近更新那一邊的出貨數量，品項移除算 0。少出分「進系統前就少了」（第一次匯入時出貨數量就比下單數量少）和「進系統後才改」兩段。酷澎拆單時，原單被拿掉的品項出現在拆出來的新單裡，新單那一項接回原單計算。</div>
-        <div>估計工時＝修改次數 × 每次修改分鐘數（人工估計）。資料自 2026 年 9 月中系統啟用起才有。</div>
+        <div>估計工時＝處理次數 × 每次修改分鐘數（人工估計）。資料自 2026 年 9 月中系統啟用起才有。</div>
       </details>
     </main>
     <dialog id="st-dlg" class="st-dlg">
@@ -496,8 +496,8 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     const hours = minutes ? Math.round((c.rounds * minutes / 60) * 10) / 10 : null;
     const rmax = Math.max(1, ...c.reasons.map(r => r.count));
     $("#cost").innerHTML = `<div class="hero">
-        <div><div class="k">修改次數（OK）</div><div class="v num">${fmt(c.rounds)}<small>次</small></div><div class="note">第一階段 ${fmt(c.stages["1"])} · 第二階段 ${fmt(c.stages["2"])} · 第三階段 ${fmt(c.stages["3"])}</div></div>
-        <div><div class="k">曾改單的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div>${c.pending ? `<div class="note">改過但還沒記 OK ${fmt(c.pending)} 張</div>` : ""}</div>
+        <div><div class="k">處理次數</div><div class="v num">${fmt(c.rounds)}<small>次</small></div><div class="note">第一階段 ${fmt(c.stages["1"])} · 第二階段 ${fmt(c.stages["2"])} · 第三階段 ${fmt(c.stages["3"])}</div></div>
+        <div><div class="k">曾改單的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div>${c.pending ? `<div class="note">處理完成後又有改動 ${fmt(c.pending)} 張</div>` : ""}</div>
         <div><div class="k">估計工時</div><div class="v num">${hours == null ? "—" : fmt(hours)}<small>${hours == null ? "" : "小時"}</small></div>
           <div class="note">${hours == null ? "請到改單統計頁填寫每次修改分鐘數" : `每次約 ${minutes} 分鐘`}</div></div>
       </div>
@@ -567,26 +567,26 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     const card = (k, v, unit, sub, extra) => `<div class="kpi${extra || ""}"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div><div class="s">${sub || ""}</div></div>`;
     $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 個品項 · ${fmt(t.skus)} 個 SKU`)
       + card("曾改單的 PO", n(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
-      + card("修改次數（OK）", n(t.rounds, {}), "次", ["1", "2", "3"].map(k => `${SL[k].split(" ")[0]} ${n(t.stages[k], { stage: k })}`).join(" · "))
+      + card("處理次數", n(t.rounds, {}), "次", ["1", "2", "3"].map(k => `${SL[k].split(" ")[0]} ${n(t.stages[k], { stage: k })}`).join(" · "))
       + card("原始下單 → 目前出貨", `<span class="${t.short_amount < 0 ? "neg" : ""}">${money(t.short_amount)}</span>`, "元",
         t.orig_amount ? `${money(t.orig_amount)} → ${money(t.cur_amount)} 元，少出 ${t.short_pct}%<br>進系統前 ${money(t.pre_amount)} · 進系統後 ${money(t.post_amount)}` : "這段期間沒有金額")
-      + `<div class="kpi${t.pending ? " warn" : ""}" id="kpi-pend" role="button" tabindex="0"><div class="k">${t.pending ? "⚠ " : ""}改過但還沒記 OK</div><div class="v">${fmt(t.pending)}<small>張 PO</small></div>`
-        + `<div class="s">${t.pending ? "點一下看清單，到 PO 視窗記 OK" : "這段期間改過的 PO 都記了 OK"}</div></div>`
+      + `<div class="kpi${t.pending ? " warn" : ""}" id="kpi-pend" role="button" tabindex="0"><div class="k">${t.pending ? "⚠ " : ""}處理完成後又有改動</div><div class="v">${fmt(t.pending)}<small>張 PO</small></div>`
+        + `<div class="s">${t.pending ? "點一下看清單，到 PO 視窗記處理完成" : "這段期間改過的 PO 都記了處理完成"}</div></div>`
       + (hours == null ? "" : card("估計工時", fmt(hours), "小時", `每次約 ${minutes} 分鐘，${fmt(t.rounds)} 次`));
     const goPend = () => $("#pending").scrollIntoView({ behavior: "smooth", block: "start" });
     $("#kpi-pend").addEventListener("click", goPend);
     $("#kpi-pend").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goPend(); } });
-    // 改過但還沒記 OK 的 PO
-    $("#pd-table").innerHTML = `<thead><tr><th>PO 單號</th><th>線別</th><th>到貨日</th><th>上一個 OK</th><th>之後的改動</th><th></th></tr></thead><tbody>`
+    // 處理完成後又有改動的 PO
+    $("#pd-table").innerHTML = `<thead><tr><th>PO 單號</th><th>線別</th><th>到貨日</th><th>上次處理完成</th><th>之後的改動</th><th></th></tr></thead><tbody>`
       + (d.pending.map(p => `<tr><td class="num" style="text-align:left">${esc(p.po_number)}</td><td>${esc(p.lines)}</td><td class="k">${esc(p.delivery_date || "未排")}</td><td class="k">${p.last_ok ? esc(md(p.last_ok)) : "—"}</td>`
-        + `<td style="max-width:560px">${esc(p.changes.join("；"))}${p.more ? `<span class="k">…另 ${p.more} 項</span>` : ""}${p.draft ? `<div><span class="b b2" title="勾到一半先存著的，還沒按 OK，不算次數">有草稿</span><span class="k">${esc(p.draft)} 先存著的</span></div>` : ""}</td><td><a class="go" href="${coupang(p.po_number)}" target="_blank" rel="noopener">去記 OK</a></td></tr>`).join("")
-        || `<tr><td colspan="6" class="k" style="padding:18px">這段期間改過的 PO 都記了 OK。</td></tr>`) + `</tbody>`;
+        + `<td style="max-width:560px">${esc(p.changes.join("；"))}${p.more ? `<span class="k">…另 ${p.more} 項</span>` : ""}${p.draft ? `<div><span class="b b2" title="勾到一半先存著的，尚未完成，不算次數">有草稿</span><span class="k">${esc(p.draft)} 先存著的</span></div>` : ""}</td><td><a class="go" href="${coupang(p.po_number)}" target="_blank" rel="noopener">去記處理完成</a></td></tr>`).join("")
+        || `<tr><td colspan="6" class="k" style="padding:18px">這段期間改過的 PO 都記了處理完成。</td></tr>`) + `</tbody>`;
     // 每月統計
     const rows = d.months.concat(d.months.length > 1 ? [t] : []);
     const mf = m => m.month === "合計" ? {} : { month: m.month };
     const tr = m => m.month === "合計" ? ' class="tot"' : "";
     const early = m => m.month !== "合計" && m.month !== "未排日期" && m.month < d.since.slice(0, 7);
-    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">曾改單的 PO</th><th class="num">佔比</th><th class="num">修改次數（OK）</th><th class="num">第一階段</th><th class="num">第二階段</th><th class="num">第三階段</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th><th class="num st-gh" title="系統從匯入紀錄和人工修改抓到的每一次變動；好幾次變動可能其實是同一輪，所以不算修改次數">系統抓到的變動次數</th><th class="num">原始下單（元）</th><th class="num">目前出貨（元）</th><th class="num">少出（元）</th><th class="num">還沒記 OK</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">曾改單的 PO</th><th class="num">佔比</th><th class="num">處理次數</th><th class="num">第一階段</th><th class="num">第二階段</th><th class="num">第三階段</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th><th class="num st-gh" title="系統從匯入紀錄和人工修改抓到的每一次變動；好幾次變動可能其實是同一輪，所以不算處理次數">系統抓到的變動次數</th><th class="num">原始下單（元）</th><th class="num">目前出貨（元）</th><th class="num">少出（元）</th><th class="num">處理完成後又有改動</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
       + (rows.map(m => `<tr${tr(m)}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${n(m.changed_pos, mf(m))}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td>`
         + `<td class="num">${n(m.rounds, mf(m))}${early(m) && !m.rounds ? ` <span class="k" style="font-size:11px">（${md(d.since)} 前沒有修改紀錄）</span>` : ""}</td>`
         + ["1", "2", "3"].map(k => `<td class="num">${n(m.stages[k], { ...mf(m), stage: k })}</td>`).join("")
@@ -604,12 +604,12 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     $("#st-reasons").innerHTML = `<thead><tr><th>主因</th><th class="num">次數</th><th></th></tr></thead><tbody>`
       + (body || `<tr><td colspan="3" class="k" style="padding:18px">這段期間還沒有修改紀錄。</td></tr>`) + `</tbody>`;
     // 各階段做了什麼
-    $("#st-stages").innerHTML = `<thead><tr><th>階段</th><th class="num">修改次數（OK）</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th></tr></thead><tbody>`
+    $("#st-stages").innerHTML = `<thead><tr><th>階段</th><th class="num">處理次數</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th></tr></thead><tbody>`
       + d.stages.map(s => `<tr><td>${stageB(s.key, s.short)} ${esc(s.label.split(" ")[1] || "")}</td><td class="num">${n(s.rounds, { stage: s.key })}</td>`
         + ["qty", "date", "split"].map(k => `<td class="num">${n(s.kinds[k], { stage: s.key, kind: k })}</td>`).join("") + `</tr>`).join("")
       + `<tr class="tot"><td>合計</td><td class="num">${n(t.rounds, {})}</td>${["qty", "date", "split"].map(k => `<td class="num">${n(t.kinds[k], { kind: k })}</td>`).join("")}</tr></tbody>`;
-    // 修改次數最多的 PO
-    $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">修改次數（OK）</th><th>各輪</th><th>主因</th></tr></thead><tbody>`
+    // 處理次數最多的 PO
+    $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">處理次數</th><th>各輪</th><th>主因</th></tr></thead><tbody>`
       + (d.top_pos.map(p => `<tr><td class="num" style="text-align:left"><a class="link" href="${coupang(p.po_number)}" target="_blank" rel="noopener">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${n(p.rounds, { po: p.po_number })}</td>`
         + `<td>${p.list.map(r => `<span class="rd">${stageB(r.stage, r.stage_short.replace("階段", ""))}${r.kind_labels.map(k => `<span class="b bc">${esc(k.replace("數量下修", "下修"))}</span>`).join("")}</span>`).join(" ")}</td><td>${esc(p.reasons)}</td></tr>`).join("")
         || `<tr><td colspan="7" class="k" style="padding:18px">此期間查無曾改單的 PO</td></tr>`) + `</tbody>`;
@@ -632,7 +632,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     $("#st-dlg-title").textContent = title; $("#st-dlg-sub").textContent = desc.join(" · ");
     $("#st-dlg-table").innerHTML = html; $("#st-dlg").showModal();
   }
-  /* 點修改次數 → 列出那幾筆修改紀錄（一輪一列） */
+  /* 點處理次數 → 列出那幾筆修改紀錄（一輪一列） */
   async function roundsDlg(f) {
     const { from, to } = qs();
     let list; try { list = await rdList(); } catch (e) { alert(e.message); return; }
@@ -640,7 +640,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
       && (!f.reason || r.reasons.includes(f.reason)) && (!f.po || r.po_number === f.po));
     const SL = STAT.stage_labels, KL = STAT.kind_labels;
     const desc = [f.month || `${from}${to !== from ? "～" + to : ""}`, $("#st-line").value || "全部線別", f.po ? `PO ${f.po}` : "", f.stage ? SL[f.stage] : "", f.kind ? KL[f.kind] : "", f.reason ? `主因：${f.reason}` : ""].filter(Boolean);
-    openDlg(`修改紀錄 · ${list.length} 次`, desc, `<thead><tr><th>OK 日期</th><th>PO 單號</th><th>線別</th><th>階段</th><th>做了什麼</th><th>主因</th><th>說明</th><th>記的人</th></tr></thead><tbody>`
+    openDlg(`修改紀錄 · ${list.length} 次`, desc, `<thead><tr><th>完成日期</th><th>PO 單號</th><th>線別</th><th>階段</th><th>做了什麼</th><th>主因</th><th>說明</th><th>記的人</th></tr></thead><tbody>`
       + (list.map(r => `<tr><td class="k">${esc(r.ok_at.slice(0, 16))}</td><td class="num"><a class="link" href="${coupang(r.po_number)}" target="_blank" rel="noopener">${esc(r.po_number)}</a></td><td>${esc(r.lines)}</td><td>${stageB(r.stage, r.stage_short)} ${esc(r.stage_label.split(" ")[1] || "")}</td>`
         + `<td>${r.kind_labels.map(k => `<span class="b bc">${esc(k)}</span>`).join(" ")}</td><td>${esc(r.reason)}</td><td style="max-width:360px">${esc(r.note)}</td><td>${esc(r.operator)}</td></tr>`).join("")
         || `<tr><td colspan="8" class="k" style="padding:18px">查無符合條件的修改紀錄</td></tr>`) + `</tbody>`);
@@ -650,7 +650,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     const { from, to } = qs();
     let list; try { list = await evList(); } catch (e) { alert(e.message); return; }
     list = list.filter(e => (!f.month || e.month === f.month) && (!f.po || e.po_number === f.po));
-    const desc = [f.month || `${from}${to !== from ? "～" + to : ""}`, $("#st-line").value || "全部線別", f.po ? `PO ${f.po}` : "", "不算修改次數，只是對照用"].filter(Boolean);
+    const desc = [f.month || `${from}${to !== from ? "～" + to : ""}`, $("#st-line").value || "全部線別", f.po ? `PO ${f.po}` : "", "不算處理次數，只是對照用"].filter(Boolean);
     openDlg(`系統抓到的變動 · ${list.length} 次`, desc, `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>改了什麼</th><th class="num">金額差（元）</th></tr></thead><tbody>`
       + (list.map(e => `<tr><td class="k">${esc(e.when.slice(0, 16))}</td><td class="num">${esc(e.po_number)}</td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge">${esc(e.source_label)}</span><div class="k">${esc(e.system)}</div></td><td style="max-width:460px">${esc(e.summary)}${e.note ? `<div class="k">${esc(e.note)}</div>` : ""}</td><td class="num">${e.delta ? money(e.delta) : ""}</td></tr>`).join("")
         || `<tr><td colspan="7" class="k" style="padding:18px">查無符合條件的變動</td></tr>`) + `</tbody>`);

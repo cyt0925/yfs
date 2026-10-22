@@ -110,8 +110,8 @@ def tasks(conn, today):
 
     pend = rounds.pending_pos(conn)                 # 改過但還沒記 OK（小真的「幾個 OK 幾次修改」，2026-10-20）
     if pend:
-        out.append({"key": "rounds", "level": "warn", "level_text": "待記 OK", "icon": "bi-check2-square",
-                    "title": f"改過但還沒記 OK 的 PO {len(pend)} 張", "detail": "PO " + "、".join(pend[:2]) + ("…" if len(pend) > 2 else ""),
+        out.append({"key": "rounds", "level": "warn", "level_text": "待記處理完成", "icon": "bi-check2-square",
+                    "title": f"處理完成後又有改動的 PO {len(pend)} 張", "detail": "PO " + "、".join(pend[:2]) + ("…" if len(pend) > 2 else ""),
                     "url": COUPANG_URL + "?round_pending=1", "count": len(pend)})
 
     since = f"{_iso(today - _dt.timedelta(days=REVIEW_DAYS - 1))} 00:00:00"

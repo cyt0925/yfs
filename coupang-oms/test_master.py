@@ -264,7 +264,7 @@ def main():
     t = st["total"]
     check("9 月 PO 張數 = 兩個系統裡最早到貨日在 9 月的不同 PO 數（加上沒排日期的）", t["pos"] == len(all_pos), f"{t['pos']} vs {len(all_pos)}")
     check("有品項數與 SKU 數，SKU 數 ≤ 品項數", t["items"] >= t["skus"] > 0)
-    check("修改次數（OK）= 這些 PO 的修改紀錄筆數、曾改單的 PO = 有紀錄的 PO 數（本機從頭跑都是 0）",
+    check("處理次數= 這些 PO 的修改紀錄筆數、曾改單的 PO = 有紀錄的 PO 數（本機從頭跑都是 0）",
           t["rounds"] == sum(rd_by_po.values()) and t["changed_pos"] == len(rd_by_po) and sum(t["stages"].values()) == t["rounds"]
           and len(st["top_pos"]) == min(15, len(rd_by_po)), str({k: t[k] for k in ("rounds", "changed_pos", "stages")}))
     check("主因表只列用到的：筆數 ≤ 修改紀錄裡勾的主因數；每列有類別", all(r["cat"] and r["cat_label"] and r["reason"] and r["n"] for r in st["reasons"]) and (st["reasons"] == [] or t["rounds"]), str(st["reasons"][:2]))
@@ -327,17 +327,17 @@ def main():
     from urllib.parse import unquote
     check("匯出統計 Excel：200、是 xlsx、檔名帶月份", res.status_code == 200 and "spreadsheetml" in res.mimetype and "改單統計_2026-09" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition", ""))
     wbs = openpyxl.load_workbook(io.BytesIO(res.data))
-    check("八個分頁：每月統計／主因／各階段做了什麼／修改次數最多的 PO／修改紀錄明細／還沒記 OK 的 PO／系統抓到的變動／怎麼算的",
-          wbs.sheetnames == ["每月統計", "主因", "各階段做了什麼", "修改次數最多的 PO", "修改紀錄明細", "還沒記 OK 的 PO", "系統抓到的變動", "怎麼算的"], str(wbs.sheetnames))
+    check("八個分頁：每月統計／主因／各階段做了什麼／修改次數最多的 PO／修改紀錄明細／處理完成後又有改動的 PO／系統抓到的變動／怎麼算的",
+          wbs.sheetnames == ["每月統計", "主因", "各階段做了什麼", "處理次數最多的 PO", "修改紀錄明細", "處理完成後又有改動的 PO", "系統抓到的變動", "怎麼算的"], str(wbs.sheetnames))
     wsd = wbs["系統抓到的變動"]
     check("系統抓到的變動分頁一次一列（含表頭）、沒有原因欄", wsd.max_row == len(ev) + 1 and [c.value for c in wsd[1]][:3] == ["時間", "月份", "PO 單號"] and "原因" not in [c.value for c in wsd[1]], f"{wsd.max_row} vs {len(ev) + 1}")
     wsr = wbs["修改紀錄明細"]
-    check("修改紀錄明細分頁一輪一列（含表頭）", wsr.max_row == len(rd) + 1 and [c.value for c in wsr[1]][:5] == ["OK 時間", "月份", "PO 單號", "線別", "階段"], f"{wsr.max_row} vs {len(rd) + 1}")
+    check("修改紀錄明細分頁一輪一列（含表頭）", wsr.max_row == len(rd) + 1 and [c.value for c in wsr[1]][:5] == ["完成時間", "月份", "PO 單號", "線別", "階段"], f"{wsr.max_row} vs {len(rd) + 1}")
     wsk = wbs["各階段做了什麼"]
-    check("各階段分頁：三個階段加合計、欄是修改次數／有下修／有改交期倉別／有拆單", [c.value for c in wsk[1]] == ["階段", "修改次數（OK）", "有下修", "有改交期／倉別", "有拆單"] and wsk.max_row == 5 and wsk.cell(row=5, column=1).value == "合計")
+    check("各階段分頁：三個階段加合計、欄是修改次數／有下修／有改交期倉別／有拆單", [c.value for c in wsk[1]] == ["階段", "處理次數", "有下修", "有改交期／倉別", "有拆單"] and wsk.max_row == 5 and wsk.cell(row=5, column=1).value == "合計")
     ws1 = wbs["每月統計"]; hdr1 = [c.value for c in ws1[1]]
-    check("每月統計有修改次數（OK）、三個階段、三個類別、系統抓到的變動次數、還沒記 OK 的 PO",
-          {"修改次數（OK）", "第一階段", "第二階段", "第三階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數", "還沒記 OK 的 PO"} <= set(hdr1), str(hdr1))
+    check("每月統計有處理次數、三個階段、三個類別、系統抓到的變動次數、處理完成後又有改動的 PO",
+          {"處理次數", "第一階段", "第二階段", "第三階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數", "處理完成後又有改動的 PO"} <= set(hdr1), str(hdr1))
     check("填了分鐘數就多一欄估計工時，最後一列是合計", "估計工時（每次 15 分鐘）" in hdr1 and ws1.cell(row=ws1.max_row, column=1).value == "合計")
     check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == t["pos"])
     res0 = client.get("/api/master/stats/export?month=2026-09")
@@ -884,7 +884,7 @@ def main():
     t12 = st12["total"]
     check("原始下單→目前出貨（金額）：原始 100×500＋50×300＝65,000；目前看最近更新的商品主檔 60×500＋50×300＝45,000；少出 30.8%",
           t12["orig_amount"] == 65000 and t12["cur_amount"] == 45000 and t12["short_amount"] == -20000 and t12["short_pct"] == 30.8, str({k: t12[k] for k in ("orig_amount", "cur_amount", "short_pct")}))
-    check("系統抓到的變動 2 次（灰字）；修改次數（OK）還是 0、曾改單 0 張", t12["events"] == 2 and t12["rounds"] == 0 and t12["changed_pos"] == 0, str({k: t12[k] for k in ("events", "rounds", "changed_pos")}))
+    check("系統抓到的變動 2 次（灰字）；處理次數還是 0、曾改單 0 張", t12["events"] == 2 and t12["rounds"] == 0 and t12["changed_pos"] == 0, str({k: t12[k] for k in ("events", "rounds", "changed_pos")}))
     import time as _t2; _t2.sleep(1.05)
     conn_ = db.get_conn()
     cb = dict(conn_.execute("SELECT id, version FROM orders WHERE po_number = ? AND sku_id = ?", (XPO, XB)).fetchone()); conn_.close()
@@ -903,19 +903,19 @@ def main():
     check("目前出貨跟著最近改的那邊：A 商品主檔 55、B 酷澎訂單管理 40 → 55×500＋40×300＝39,500", t12["cur_amount"] == 39500, str(t12["cur_amount"]))
     # 修改紀錄（一輪一個 OK）→ 改單統計（Jerry 2026-10-21「OK 照這樣做」）
     pend = [p for p in st12["pending"] if p["po_number"] == XPO]
-    check("改過但還沒記 OK：這張在清單裡（上一個 OK 空白、寫出改了什麼、到貨日、線別）、每月統計那欄 ≥ 1",
+    check("處理完成後又有改動：這張在清單裡（上一個 OK 空白、寫出改了什麼、到貨日、線別）、每月統計那欄 ≥ 1",
           pend and pend[0]["last_ok"] == "" and pend[0]["changes"] and pend[0]["delivery_date"] == "2030-01-15" and pend[0]["lines"] == "寶僑" and t12["pending"] >= 1, str(pend[:1]))
     r_ = client.put(f"/api/pos/{XPO}/rounds/draft", json={"operator": "小真", "stage": "1", "kinds": ["qty"], "reasons": ["庫存不足"]})
     st12 = client.get("/api/master/stats?month=2030-01").get_json()
     pend = [p for p in st12["pending"] if p["po_number"] == XPO]
     check("先存著（草稿）：還沒記 OK 清單標出有草稿（誰、哪天）、修改次數還是 0", r_.status_code == 200 and pend and pend[0]["draft"] and st12["total"]["rounds"] == 0, str(pend[:1]))
-    wbp = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))["還沒記 OK 的 PO"]
-    check("Excel 還沒記 OK 的 PO 多一欄草稿", [c.value for c in wbp[1]][-1].startswith("草稿") and any(r[0] == XPO and r[-1] for r in wbp.iter_rows(min_row=2, values_only=True)), str([c.value for c in wbp[1]]))
+    wbp = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))["處理完成後又有改動的 PO"]
+    check("Excel 處理完成後又有改動的 PO 多一欄草稿", [c.value for c in wbp[1]][-1].startswith("草稿") and any(r[0] == XPO and r[-1] for r in wbp.iter_rows(min_row=2, values_only=True)), str([c.value for c in wbp[1]]))
     r1 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "1", "kinds": ["qty", "date"], "reasons": ["庫存不足", "約倉問題"], "note": "整張不出"})
     r2 = client.post(f"/api/pos/{XPO}/rounds", json={"operator": "小真", "stage": "2", "kinds": ["split"], "reasons": ["產能不及"]})
     check("記兩輪 OK（第一階段下修＋改交期倉別、第二階段拆單）", r1.status_code == 200 and r2.status_code == 200, str(r1.get_json()) + str(r2.get_json()))
     st12 = client.get("/api/master/stats?month=2030-01").get_json(); t12 = st12["total"]
-    check("修改次數（OK）= 2、曾改單 1 張（佔比照 PO 張數算；CI 的 PostgreSQL 這個期間還有 test_flow 沒排日期的單）、平均每張 2 次；階段 1:1、2:1、3:0；有下修 1、有改交期倉別 1、有拆單 1",
+    check("處理次數= 2、曾改單 1 張（佔比照 PO 張數算；CI 的 PostgreSQL 這個期間還有 test_flow 沒排日期的單）、平均每張 2 次；階段 1:1、2:1、3:0；有下修 1、有改交期倉別 1、有拆單 1",
           t12["rounds"] == 2 and t12["changed_pos"] == 1 and t12["changed_pct"] == round(100 / t12["pos"]) and t12["per_changed_po"] == 2
           and t12["stages"] == {"1": 1, "2": 1, "3": 0} and t12["kinds"] == {"qty": 1, "date": 1, "split": 1}, str({k: t12[k] for k in ("rounds", "changed_pos", "changed_pct", "per_changed_po", "stages", "kinds")}))
     check("系統抓到的變動次數照舊是 4（灰字那欄，不算修改次數）", t12["events"] == 4, str(t12["events"]))
@@ -938,12 +938,12 @@ def main():
           and rdx[1]["note"] == "整張不出" and rdx[1]["reason"] == "庫存不足、約倉問題", str(rdx[:1]))
     wb12 = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2030-01").data))
     h12 = [c.value for c in wb12["修改紀錄明細"][1]]; m12 = [c.value for c in wb12["每月統計"][1]]
-    check("Excel：修改紀錄明細有 OK 時間／階段／做了什麼／主因／說明；每月統計有修改次數（OK）、系統抓到的變動次數、還沒記 OK 的 PO、原始下單金額、目前出貨金額、少出",
-          {"OK 時間", "階段", "做了什麼", "主因", "說明"} <= set(h12) and {"修改次數（OK）", "系統抓到的變動次數", "還沒記 OK 的 PO", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
+    check("Excel：修改紀錄明細有 完成時間／階段／做了什麼／主因／說明；每月統計有處理次數、系統抓到的變動次數、處理完成後又有改動的 PO、原始下單金額、目前出貨金額、少出",
+          {"完成時間", "階段", "做了什麼", "主因", "說明"} <= set(h12) and {"處理次數", "系統抓到的變動次數", "處理完成後又有改動的 PO", "原始下單金額", "目前出貨金額", "少出金額", "少出比例"} <= set(m12), str(h12) + str(m12))
     rows_r = list(wb12["主因"].iter_rows(min_row=2, values_only=True))
     check("Excel 主因分頁：類別／主因／次數，有「數量下修／庫存不足 1」、最後一列合計 3",
           [c.value for c in wb12["主因"][1]] == ["類別", "主因", "次數"] and ("數量下修", "庫存不足", 1) in rows_r and rows_r[-1] == ("合計", None, 3), str(rows_r))
-    rows_t = list(wb12["修改次數最多的 PO"].iter_rows(min_row=2, values_only=True))
+    rows_t = list(wb12["處理次數最多的 PO"].iter_rows(min_row=2, values_only=True))
     check("Excel 修改次數最多的 PO：各輪寫成「日期 階段 做了什麼」", rows_t and rows_t[0][0] == XPO and rows_t[0][4] == 2 and "第一階段 數量下修、改交期／倉別" in rows_t[0][5], str(rows_t[:1]))
     rid2 = rdx[0]["id"]
     r_ = client.delete(f"/api/pos/{XPO}/rounds/{rid2}")
@@ -987,7 +987,7 @@ def main():
           codes == [200, 200] and t2["orig_amount"] == 8000 and t2["cur_amount"] == 7000 and t2["post_amount"] == 0 and t2["moved_amount"] == 3000 and t2["pre_amount"] == -1000,
           str({k: t2[k] for k in ("orig_amount", "cur_amount", "pre_amount", "post_amount", "moved_amount")}))
     pend_y = [p for p in st2_["pending"] if p["po_number"] == YPO]
-    check("拆出新單 → 原單算「改過但還沒記 OK」，改動寫「拆出新單 …」", pend_y and any("拆出新單" in x and YPO2 in x for x in pend_y[0]["changes"]), str(pend_y[:1]))
+    check("拆出新單 → 原單算「處理完成後又有改動」，改動寫「拆出新單 …」", pend_y and any("拆出新單" in x and YPO2 in x for x in pend_y[0]["changes"]), str(pend_y[:1]))
     _t2.sleep(1.05)
     w3 = ofile2([(YPO, YD, 20, 20, "2030-02-10", "TAO1", 200, ""), (YPO2, YC, 30, 25, "2030-02-12", "TAO1", 100, YPO)], "拆單_w3.xlsx")
     imp_c(w3)

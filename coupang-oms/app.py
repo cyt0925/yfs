@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-21.14"
+BUILD_VERSION = "2026-10-22.1"
 
 app = Flask(__name__)
 
@@ -1536,8 +1536,14 @@ def build_filter(args):
     elif line:
         add("line = ?", line)
 
+    # PO 狀態可以複選（Jerry 2026-10-22）：前端用逗號串起來，例如「已建立,處理中,修改中」
+    statuses = [s for s in (norm_text(x) for x in str(args.get("po_status") or "").split(",")) if s]
+    if len(statuses) == 1:
+        add("po_status = ?", statuses[0])
+    elif statuses:
+        add("po_status IN (" + ",".join("?" * len(statuses)) + ")", *statuses)
+
     for column, key in (("brand", "brand"), ("warehouse", "warehouse"),
-                        ("po_status", "po_status"),
                         ("receiving_status", "receiving_status"),
                         ("order_type", "order_type"),
                         ("shipping_method", "shipping_method")):
@@ -1964,8 +1970,8 @@ def api_pos():
 
     conn = get_conn()
     try:
-        if request.args.get("round_pending") == "1":                 # 只看改過但還沒記 OK 的（首頁今日事項連過來）
-            pend = rounds.pending_pos(conn)
+        pend = rounds.pending_pos(conn)                              # 處理完成後又有改動的 PO（清單小標用，Jerry 2026-10-22）
+        if request.args.get("round_pending") == "1":                 # 只看處理完成後又有改動的（首頁今日事項連過來）
             clause = (clause + " AND " if clause else " WHERE ") + "po_number IN (" + (",".join("?" * len(pend)) or "''") + ")"
             params = params + pend
         base = po_summary_sql(clause)
@@ -1987,10 +1993,12 @@ def api_pos():
             params + [size, (page - 1) * size]).fetchall()
 
         out = []
+        pend_set = set(pend)
         for r in rows:
             item = dict(r)
             item["brands"] = _csv_clean(item.pop("brands_csv"))
             item["lines"] = _csv_clean(item.pop("lines_csv"))
+            item["round_after"] = rounds.after_text(rounds.pending_info(conn, item["po_number"])) if item["po_number"] in pend_set else ""
             out.append(item)
 
         return jsonify({
@@ -2381,7 +2389,7 @@ def api_batch_status():
             stuck = [r["po_number"] for r in rows if rounds.pending_for(conn, r["po_number"])]
             if stuck:
                 return jsonify({"error": "round_required", "pos": stuck,
-                                "message": f"有 {len(stuck)} 張 PO 在上一個 OK 之後還有改動，請先點開記這一輪（OK）：" + "、".join(stuck[:5]) + ("…" if len(stuck) > 5 else "")}), 400
+                                "message": f"有 {len(stuck)} 張 PO 在上次處理完成之後還有改動，請先點開記這一輪處理完成：" + "、".join(stuck[:5]) + ("…" if len(stuck) > 5 else "")}), 400
         for row in rows:
             log_po_change(conn, row["po_number"], field, label,
                           row["old"], value, operator)

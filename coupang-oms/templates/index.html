@@ -202,8 +202,13 @@
         <input id="f-order-from" type="date" class="border rounded px-2 py-2"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">下單日期（迄）</span>
         <input id="f-order-to" type="date" class="border rounded px-2 py-2"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
-        <select id="f-status" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
+        <!-- PO 狀態可以複選（Jerry 2026-10-22）：外觀跟其他下拉一樣，點開是勾選清單 -->
+        <span id="f-status-box" style="position:relative">
+          <button type="button" id="f-status" class="border rounded px-2 py-2 bg-white" style="min-width:9.5rem;display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
+            <span id="f-status-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-status-pop" class="block hidden bg-white border rounded" style="position:absolute;z-index:40;top:calc(100% + 4px);left:0;min-width:11rem;padding:6px 4px;box-shadow:0 10px 24px rgba(0,0,0,.15)"></span>
+        </span></div>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
         <select id="f-receiving" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
@@ -218,9 +223,9 @@
       <label class="flex items-end gap-2 pb-1">
         <input id="f-flagged" type="checkbox" class="w-4 h-4">
         <span class="text-xs text-ink-600">只看已標記顏色</span></label>
-      <label class="flex items-end gap-2 pb-1" title="上一個 OK 之後有改動、還沒按「這一輪處理完了（OK）」的 PO">
+      <label class="flex items-end gap-2 pb-1" title="上次處理完成之後又有改動、還沒再按「這一輪處理完成」的 PO（從沒記過、但有改動的也算）">
         <input id="f-round" type="checkbox" class="w-4 h-4">
-        <span class="text-xs text-ink-600">只看還沒記 OK 的</span></label>
+        <span class="text-xs text-ink-600">只看處理完成後又有改動的</span></label>
     </div>
     <div class="flex gap-2 mt-3">
       <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
@@ -801,6 +806,28 @@ const LOGGED_IN_USER = {{ logged_in_user | tojson }};
 function operator() { return LOGGED_IN_USER; }
 function requireOperator() { return true; }
 
+/* PO 狀態複選：勾哪幾個就看哪幾個，都不勾＝全部 */
+function fillStatusPick(values) {
+  const keep = new Set(pickedStatuses());
+  $("#f-status-pop").innerHTML = values.filter(v => v !== "").map(v =>
+    `<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;white-space:nowrap">
+       <input type="checkbox" class="st-ck w-4 h-4" value="${esc(v)}" ${keep.has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")
+    + `<div style="border-top:1px solid #e5e7eb;margin-top:4px;padding:6px 10px 2px"><a href="#" id="f-status-clear" class="text-xs" style="color:#6b7280">全部清除（看全部）</a></div>`;
+  document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => c.addEventListener("change", syncStatusText));
+  $("#f-status-clear").addEventListener("click", e => { e.preventDefault(); document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => { c.checked = false; }); syncStatusText(); });
+  syncStatusText();
+}
+function pickedStatuses() { return [...document.querySelectorAll("#f-status-pop input.st-ck:checked")].map(c => c.value); }
+function syncStatusText() {
+  const p = pickedStatuses();
+  $("#f-status-text").textContent = !p.length ? "全部" : p.length <= 2 ? p.join("、") : `${p.slice(0, 2).join("、")} 等 ${p.length} 個`;
+  $("#f-status").title = p.length ? `已選：${p.join("、")}` : "";
+}
+$("#f-status").addEventListener("click", e => { e.stopPropagation(); $("#f-status-pop").classList.toggle("hidden"); });
+$("#f-status-pop").addEventListener("click", e => e.stopPropagation());
+document.addEventListener("click", () => $("#f-status-pop").classList.add("hidden"));
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("#f-status-pop").classList.add("hidden"); });
+
 function fillSelect(el, values, keepAll = true) {
   const current = el.value;
   el.innerHTML = keepAll ? '<option value="">全部</option>' : "";
@@ -834,7 +861,7 @@ async function loadConfig() {
   fillSelect($("#f-line"), groupCpgLines(CONFIG.lines));
   fillSelect($("#f-warehouse"), CONFIG.warehouses);
   fillSelect($("#f-ordertype"), CONFIG.order_types);
-  fillSelect($("#f-status"), CONFIG.po_statuses);
+  fillStatusPick(CONFIG.po_statuses);
   fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
   fillSelect($("#f-shipping"), CONFIG.shipping_methods);
 
@@ -859,7 +886,7 @@ function filters() {
     date_to: $("#f-to").value,
     order_from: $("#f-order-from").value,
     order_to: $("#f-order-to").value,
-    po_status: $("#f-status").value,
+    po_status: pickedStatuses().join(","),
     receiving_status: $("#f-receiving").value,
     shipping_method: $("#f-shipping").value,
     is_pulled: $("#f-pulled").value,
@@ -922,7 +949,7 @@ function renderRows() {
           class="row-check w-4 h-4" ${selected.has(r.po_number) ? "checked" : ""}></td>
       <td class="px-2 py-2 whitespace-nowrap flag-cell ${r.flagged ? "bg-amber-200" : ""}"
           data-flag="${esc(r.po_number)}" title="點單號旁的空白處可標記／取消標記顏色"><button data-open="${esc(r.po_number)}"
-          class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>
+          class="font-mono text-xs text-ink-900 hover:text-brand-600 hover:underline">${esc(r.po_number)}</button>${r.round_after ? `<div class="mt-0.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 rd-after-tag" style="white-space:normal;max-width:260px" title="${esc(r.round_after)}">${esc(r.round_after)}</div>` : ""}
         ${r.parent_po ? `<span class="text-[10px] text-violet-600 block" title="拆單來源">↳原單 ${esc(r.parent_po)}</span>` : ""}
         ${alert}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell ${lockedCls}"
@@ -1169,7 +1196,7 @@ async function openPo(poNumber) {
 
 // ── 修改紀錄（小真 2026-10-20：一輪處理完打一個 OK 算一筆，做了幾個動作都算一次）──
 // 「做了什麼」系統照修改歷程先勾、階段照 PO 狀態先帶，OP 只要選主因、按 OK。修改紀錄才是佐證，備註只寫過程、不再接 OK（Jerry 2026-10-20）。
-const ROUND_OK_BTN = "這一輪處理完了（OK）";
+const ROUND_OK_BTN = "這一輪處理完成";
 let RD_EDIT = null;        // 正在編輯哪一筆修改紀錄（Jerry 2026-10-21：存了發現有錯要調整）；null＝記新的一輪
 function roundReasonHtml(opt, stage, kinds, picked) {   // 主因可複選（Jerry 2026-10-21）：照勾到的類別分組列
   const groups = [], seen = new Set();
@@ -1185,7 +1212,7 @@ function roundsHtml(d) {
   const editing = RD_EDIT != null ? rows.find(r => r.id === RD_EDIT) : null;
   if (RD_EDIT != null && !editing) RD_EDIT = null;
   const stage = editing ? editing.stage : (pre.stage || "1"), kinds = editing ? editing.kinds : (pre.kinds || []), reasons = editing ? editing.reasons : (pre.reasons || []);
-  const draft = !editing && pre.draft ? pre.draft : null;        // 先存著（還沒 OK）的草稿：清單多一列、表單照它帶
+  const draft = !editing && pre.draft ? pre.draft : null;        // 先存著（尚未完成）的草稿：清單多一列、表單照它帶
   const draftRow = draft ? `
     <tr class="rd-draft-row border-b border-ink-100 bg-amber-50">
       <td class="px-2 py-1.5 text-xs whitespace-nowrap"><span class="inline-block px-2 rounded-full bg-amber-600 text-white text-[11px] font-semibold">草稿</span></td>
@@ -1205,20 +1232,21 @@ function roundsHtml(d) {
       <td class="px-2 py-1.5 text-xs text-ink-500 whitespace-nowrap">${esc(r.operator)}</td>
       <td class="px-2 py-1.5 text-right whitespace-nowrap"><button type="button" class="rd-edit text-ink-400 hover:text-brand-600 text-xs mr-1" data-id="${r.id}" title="修改這筆（階段、做了什麼、主因、說明都能改）"><i class="bi bi-pencil"></i></button><button type="button" class="rd-del text-ink-300 hover:text-red-600 text-xs" data-id="${r.id}" title="刪除這筆修改紀錄（會記歷程）"><i class="bi bi-x-lg"></i></button></td>
     </tr>`).join("") + draftRow : `<tr><td colspan="7" class="px-3 py-2 text-xs text-ink-300">尚無修改紀錄。</td></tr>`;
-  const preNote = editing ? `正在修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆。` : pre.changes ? `上一個 OK 之後有 ${pre.changes} 筆改動，系統先勾好了，不對可以改。` : "上一個 OK 之後沒有改動。";
+  const preNote = editing ? `正在修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆。` : pre.changes ? `${pre.since ? "上次處理完成之後" : "這張單"}有 ${pre.changes} 筆改動，系統先勾好了，不對可以改。` : `${pre.since ? "上次處理完成之後" : "這張單"}沒有改動。`;
+  const afterNote = !editing && pre.after ? `<div class="mb-2 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2" id="rd-after"><i class="bi bi-exclamation-triangle-fill"></i> ${esc(pre.after)}。這一輪處理完，記得再記一次處理完成。</div>` : "";
   return `
     <h3 class="font-semibold text-sm mb-2">修改紀錄
-      <span class="inline-block ml-1 px-2 rounded-full text-xs font-semibold ${rows.length ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-ink-100 text-ink-500"}">修改 ${rows.length} 次（OK × ${rows.length}）</span>
-      <span class="text-xs font-normal text-ink-400">（一輪處理完按一次 OK 算一筆，裡面做了幾個動作都算一次）</span></h3>
+      <span class="inline-block ml-1 px-2 rounded-full text-xs font-semibold ${rows.length ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-ink-100 text-ink-500"}">處理 ${rows.length} 次</span>
+      <span class="text-xs font-normal text-ink-400">（一輪處理完記一次，算一筆；裡面做了幾個動作都算一次）</span></h3>${afterNote}
     <div class="border border-ink-200 rounded-lg overflow-auto max-h-48">
       <table class="w-full text-sm"><thead class="bg-ink-100 text-xs sticky top-0"><tr>
-        <th class="px-2 py-1.5 text-left">OK 日期</th><th class="px-2 py-1.5 text-left">階段</th><th class="px-2 py-1.5 text-left">這輪做了什麼</th>
+        <th class="px-2 py-1.5 text-left">完成日期</th><th class="px-2 py-1.5 text-left">階段</th><th class="px-2 py-1.5 text-left">這輪做了什麼</th>
         <th class="px-2 py-1.5 text-left">主因</th><th class="px-2 py-1.5 text-left">說明</th><th class="px-2 py-1.5 text-left">人員</th><th class="w-8"></th>
       </tr></thead><tbody>${list}</tbody></table>
     </div>
     <div class="mt-2 ${editing || draft ? "bg-amber-50 border-amber-300" : "bg-ink-50 border-ink-200"} border rounded-lg p-3 grid grid-cols-1 md:grid-cols-[180px_1fr_1fr] gap-3 text-sm">
-      ${draft ? `<div class="md:col-span-3 text-xs text-amber-800"><i class="bi bi-pencil-square"></i> <b>這一輪還沒 OK：</b>下面是 ${esc(draft.operator)} ${esc(draft.saved_at.slice(5, 16))} 先存著的，接著填就好。${draft.added_labels.length ? `<b>${esc(draft.saved_at.slice(5, 10))} 之後又有改動，「${esc(draft.added_labels.join("、"))}」系統已經幫你勾著。</b>` : ""}　<a href="#" id="rd-discard" class="underline">丟掉草稿</a></div>` : ""}
-      ${editing ? `<div class="md:col-span-3 text-xs text-amber-800 font-semibold"><i class="bi bi-pencil"></i> 修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆（OK 日期、人員不會變）　<a href="#" id="rd-cancel" class="underline font-normal">取消，回到記新的一輪</a></div>` : ""}
+      ${draft ? `<div class="md:col-span-3 text-xs text-amber-800"><i class="bi bi-pencil-square"></i> <b>這一輪尚未完成：</b>下面是 ${esc(draft.operator)} ${esc(draft.saved_at.slice(5, 16))} 先存著的，接著填就好。${draft.added_labels.length ? `<b>${esc(draft.saved_at.slice(5, 10))} 之後又有改動，「${esc(draft.added_labels.join("、"))}」系統已經幫你勾著。</b>` : ""}　<a href="#" id="rd-discard" class="underline">丟掉草稿</a></div>` : ""}
+      ${editing ? `<div class="md:col-span-3 text-xs text-amber-800 font-semibold"><i class="bi bi-pencil"></i> 修改 ${esc(editing.ok_at.slice(5, 10))} 那一筆（完成日期、人員不會變）　<a href="#" id="rd-cancel" class="underline font-normal">取消，回到記新的一輪</a></div>` : ""}
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">這輪在哪個階段結束</span>
         <select id="rd-stage" class="border rounded px-2 py-1.5">${opt.stages.map(s => `<option value="${s.key}" ${s.key === stage ? "selected" : ""}>${esc(s.label)}</option>`).join("")}</select></label>
       <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">這輪做了什麼（可複選）</span>
@@ -1229,11 +1257,11 @@ function roundsHtml(d) {
       <div class="md:col-span-3 flex gap-2 items-end">
         <label class="flex-1 flex flex-col gap-1"><span class="text-xs text-ink-400">說明（選填）</span>
           <input id="rd-note" class="border rounded px-2 py-1.5" placeholder="例如：改 11/9 → 11/4、拆 1 支、整張不出 #10589655" value="${esc(editing ? editing.note : (pre.note || ""))}"></label>
-        ${editing ? "" : `<button type="button" id="rd-draft" class="bg-white border-2 border-amber-300 text-amber-800 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap" title="勾到一半先留著，不算次數、不算 OK；誰開這張 PO 都看得到">先存著（還沒 OK）</button>`}
+        ${editing ? "" : `<button type="button" id="rd-draft" class="bg-white border-2 border-amber-300 text-amber-800 px-3 py-2 rounded-lg text-sm font-semibold whitespace-nowrap" title="勾到一半先留著，不算次數、不算處理完成；誰開這張 PO 都看得到">先存著（尚未完成）</button>`}
         <button type="button" id="rd-ok" class="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap disabled:opacity-50" disabled>
           <i class="bi ${editing ? "bi-save" : "bi-check2-circle"}"></i> ${editing ? "儲存這筆修改" : ROUND_OK_BTN}</button>
       </div>
-      <div class="md:col-span-3 text-[11px] text-ink-400">按 OK 就存：修改紀錄多一筆、修改歷程記一筆。修改次數以這裡為準，備註只寫過程、不用再打 OK（打了存檔會被擋下來）。「先存著」只是把勾的留著，不算次數、不算 OK，按 OK 草稿才變成正式的一筆。</div>
+      <div class="md:col-span-3 text-[11px] text-ink-400">按「這一輪處理完成」就存：修改紀錄多一筆、修改歷程記一筆。處理次數以這裡為準，備註只寫過程，不用再寫 OK（寫了存檔會被擋下來）。「先存著」只是把勾的留著，不算次數；按「這一輪處理完成」，草稿才變成正式的一筆。</div>
     </div>`;
 }
 function bindRounds() {
@@ -1255,7 +1283,7 @@ function bindRounds() {
   const discard = $("#rd-discard"); if (discard) discard.addEventListener("click", e => { e.preventDefault(); discardRoundDraft(); });
   sync();
 }
-/* 先存著（還沒 OK）：勾到一半先留在系統裡，不算次數（小真 2026-10-21） */
+/* 先存著（尚未完成）：勾到一半先留在系統裡，不算次數（小真 2026-10-21） */
 async function saveRoundDraft() {
   if (!requireOperator() || !CURRENT) return;
   const po = CURRENT.header.po_number;
@@ -1265,11 +1293,11 @@ async function saveRoundDraft() {
   if (!d) return;
   CURRENT.round_prefill = d.round_prefill;
   $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
-  toast("先存著了，還沒算 OK。這一輪處理完記得按「這一輪處理完了（OK）」。");
+  toast("先存著了，還沒算處理完成。這一輪處理完，記得按「這一輪處理完成」。");
 }
 async function discardRoundDraft() {
   if (!CURRENT) return;
-  if (!confirm("丟掉這份草稿？（已經記的 OK 不受影響）")) return;
+  if (!confirm("丟掉這份草稿？（已經記的處理完成不受影響）")) return;
   const po = CURRENT.header.po_number;
   const d = await roundApi(`/api/pos/${encodeURIComponent(po)}/rounds/draft`, { method: "DELETE" });
   if (!d) return;
@@ -1292,7 +1320,7 @@ async function recordRound() {
   if (!d) return;
   RD_EDIT = null; CURRENT.rounds = d.rounds; CURRENT.round_prefill = d.round_prefill;
   $("#po-rounds").innerHTML = roundsHtml(CURRENT); bindRounds();
-  toast(editing ? "這筆修改紀錄已更新。" : `已記這一輪（OK），這張單修改 ${d.rounds.length} 次。`);
+  toast(editing ? "這筆修改紀錄已更新。" : `已記這一輪處理完成，這張單處理 ${d.rounds.length} 次。`);
 }
 async function deleteRound(id) {
   if (!requireOperator() || !CURRENT) return;
@@ -1324,7 +1352,7 @@ async function savePo() {
   const data = await res.json();
   if (!res.ok) {
     toast(data.message || data.error, "err");
-    if (data.error === "round_required") {           // 防呆：帶到下面的修改紀錄去記 OK
+    if (data.error === "round_required") {           // 防呆：帶到下面的修改紀錄去記處理完成
       const box = $("#po-rounds"); box.scrollIntoView({ behavior: "smooth", block: "center" });
       box.classList.add("ring-2", "ring-brand-500", "rounded-lg"); setTimeout(() => box.classList.remove("ring-2", "ring-brand-500"), 2500);
     }
@@ -1943,8 +1971,9 @@ $("#check-all").addEventListener("change", e => {
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to", "#f-order-from", "#f-order-to"].forEach(s => $(s).value = "");
-  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-status", "#f-receiving", "#f-shipping", "#f-pulled"]
+  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-receiving", "#f-shipping", "#f-pulled"]
     .forEach(s => $(s).value = "");
+  document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => { c.checked = false; }); syncStatusText();
   $("#f-review").checked = false;
   $("#f-flagged").checked = false;
   $("#f-round").checked = false;

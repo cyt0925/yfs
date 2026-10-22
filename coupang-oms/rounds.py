@@ -43,8 +43,8 @@ CHANGE_FIELDS = ("qty_coupang", "qty_ship", "delivery_date", "warehouse")
 OPTIONS = {"stages": [{"key": k, "label": STAGE_LABEL[k]} for k, _a, _b in STAGES],
            "kinds": [{"key": k, "label": v} for k, v in KINDS],
            "reasons": {"qty": REASONS_QTY, "date": REASONS_DATE, "split": REASONS_SPLIT}}
-MSG_TYPED_OK = "備註裡打了 OK。修改次數以下方「修改紀錄」為準，請改按「這一輪處理完了（OK）」記這一輪，備註不用再打 OK。"
-MSG_STATUS = "這張單在上一個 OK 之後還有改動，請先按「這一輪處理完了（OK）」記這一輪，再改 PO 狀態。"
+MSG_TYPED_OK = "備註裡寫了「OK」。處理次數以下方「修改紀錄」為準，請改按「這一輪處理完成」記這一輪，備註不用再寫 OK。"
+MSG_STATUS = "這張單在上次處理完成之後還有改動，請先按「這一輪處理完成」記這一輪，再改 PO 狀態。"
 _OK = re.compile(r"(?<![A-Za-z])OK(?![A-Za-z])", re.I)
 
 
@@ -160,7 +160,8 @@ def prefill(conn, po, status, rows=None):
     ch = changes_since(conn, po, since)
     stage = STAGE_BY_STATUS.get(status) or (rows[-1]["stage"] if rows else "1")
     out = {"stage": stage, "kinds": [k for k, _v in KINDS if k in ch["kinds"]], "reasons": [], "note": "", "changes": ch["n"],
-           "since": since if since > f"{SINCE} 00:00:00" else "", "draft": None}
+           "since": since if since > f"{SINCE} 00:00:00" else "", "draft": None,
+           "after": after_text(pending_info(conn, po)) if ch["n"] and rows else ""}       # 處理完成後又改了什麼（PO 視窗提示）
     d = draft_for(conn, po)
     if d:
         later = changes_since(conn, po, max(since, d["saved_at"]))["kinds"]
@@ -197,6 +198,13 @@ def pending_info(conn, po):
         t = r["first_seen_at"] or ""
         out.append(f"拆出新單 {r['po_number']}（酷澎 {int(t[5:7])}/{int(t[8:10])}）" if len(t) >= 10 else f"拆出新單 {r['po_number']}")
     return {"last_ok": last_ok(conn, po)[:10], "changes": out[:6], "more": max(0, len(out) - 6)}
+
+
+def after_text(info):
+    """清單小標、PO 視窗提示用的一句話（Jerry 2026-10-22「講人話」）：10-21 處理完成後又改：…／還沒記過處理完成：…"""
+    head = f"{info['last_ok'][5:10]} 處理完成後又改" if info["last_ok"] else "有改動還沒記處理完成"
+    body = "；".join(info["changes"][:3]) + (f"…等 {len(info['changes']) + info['more']} 項" if len(info["changes"]) + info["more"] > 3 else "")
+    return f"{head}：{body}" if body else head
 
 
 def pending_pos(conn):
@@ -240,7 +248,7 @@ def _validate(stage, kinds, reasons):
 
 
 def _summary(stage, kinds, reason):
-    return f"{STAGE_SHORT.get(stage, '')} OK（{'、'.join(KIND_LABEL.get(k, k) for k in kinds)}；主因 {reason.replace(',', '、')}）"
+    return f"{STAGE_SHORT.get(stage, '')} 處理完成（{'、'.join(KIND_LABEL.get(k, k) for k in kinds)}；主因 {reason.replace(',', '、')}）"
 
 
 def add_round(conn, po, stage, kinds, reasons, note, operator):

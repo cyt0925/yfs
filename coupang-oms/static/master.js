@@ -742,14 +742,14 @@ function renderStats(d, minutes) {
   const card = (title, num, unit, sub, cls) => `<div class="kpi${cls || ""}" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
   $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
     + card("曾改單的 PO", stN(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
-    + card("修改次數（OK）", stN(t.rounds, {}), "次", ["1", "2", "3"].map(k => `${SL[k].split(" ")[0]} ${stN(t.stages[k], { stage: k })}`).join(" · "))
-    + card(`${t.pending ? "⚠ " : ""}改過但還沒記 OK`, fmt(t.pending), "張 PO", t.pending ? `清單在 <a href="/portal/stats" style="text-decoration:underline">YFS 訂單系統的改單統計</a>` : "這段期間改過的 PO 都記了 OK", t.pending ? " warn" : "")
+    + card("處理次數", stN(t.rounds, {}), "次", ["1", "2", "3"].map(k => `${SL[k].split(" ")[0]} ${stN(t.stages[k], { stage: k })}`).join(" · "))
+    + card(`${t.pending ? "⚠ " : ""}處理完成後又有改動`, fmt(t.pending), "張 PO", t.pending ? `清單在 <a href="/portal/stats" style="text-decoration:underline">YFS 訂單系統的改單統計</a>` : "這段期間改過的 PO 都記了處理完成", t.pending ? " warn" : "")
     + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.rounds)} 次`) : card("估計工時", "—", "", "請在上方「每次修改約＿分鐘」填寫分鐘數"));
   const rows = d.months.concat(d.months.length > 1 ? [t] : []);
   const mf = m => m.month === "合計" ? {} : { month: m.month };
   const early = m => m.month !== "合計" && m.month !== "未排日期" && m.month < d.since.slice(0, 7);
   const tot = 'style="font-weight:700;background:#f8fafc"';
-  $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">曾改單</th><th class="num">佔比</th><th class="num">修改次數（OK）</th><th class="num">第一階段</th><th class="num">第二階段</th><th class="num">第三階段</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th><th class="num muted" style="font-weight:500" title="系統從匯入紀錄和人工修改抓到的每一次變動；好幾次變動可能其實是同一輪，所以不算修改次數">系統抓到的變動次數</th><th class="num">還沒記 OK</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+  $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">曾改單</th><th class="num">佔比</th><th class="num">處理次數</th><th class="num">第一階段</th><th class="num">第二階段</th><th class="num">第三階段</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th><th class="num muted" style="font-weight:500" title="系統從匯入紀錄和人工修改抓到的每一次變動；好幾次變動可能其實是同一輪，所以不算處理次數">系統抓到的變動次數</th><th class="num">處理完成後又有改動</th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
     + (rows.map(m => `<tr ${m.month === "合計" ? tot : ""}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td><td class="num">${stN(m.changed_pos, mf(m))}</td><td class="num">${m.pos ? m.changed_pct + "%" : ""}</td>`
       + `<td class="num">${stN(m.rounds, mf(m))}${early(m) && !m.rounds ? ` <span class="kbd">${stMd(d.since)} 前沒有修改紀錄</span>` : ""}</td>`
       + ["1", "2", "3"].map(k => `<td class="num">${stN(m.stages[k], { ...mf(m), stage: k })}</td>`).join("")
@@ -763,18 +763,18 @@ function renderStats(d, minutes) {
   }
   $("#st-reasons").innerHTML = `<thead><tr><th>主因</th><th class="num">次數</th></tr></thead><tbody>`
     + (body || `<tr><td colspan="2" class="muted p-4 text-center">這段期間還沒有修改紀錄</td></tr>`) + `</tbody>`;
-  $("#st-stages").innerHTML = `<thead><tr><th>階段</th><th class="num">修改次數（OK）</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th></tr></thead><tbody>`
+  $("#st-stages").innerHTML = `<thead><tr><th>階段</th><th class="num">處理次數</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th></tr></thead><tbody>`
     + d.stages.map(s => `<tr><td>${stStage(s.key, s.short)} ${esc(s.label.split(" ")[1] || "")}</td><td class="num">${stN(s.rounds, { stage: s.key })}</td>`
       + ["qty", "date", "split"].map(k => `<td class="num">${stN(s.kinds[k], { stage: s.key, kind: k })}</td>`).join("") + `</tr>`).join("")
     + `<tr ${tot}><td>合計</td><td class="num">${stN(t.rounds, {})}</td>${["qty", "date", "split"].map(k => `<td class="num">${stN(t.kinds[k], { kind: k })}</td>`).join("")}</tr></tbody>`;
-  $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">修改次數（OK）</th><th>各輪</th><th>主因</th></tr></thead><tbody>`
+  $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">處理次數</th><th>各輪</th><th>主因</th></tr></thead><tbody>`
     + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${stN(p.rounds, { po: p.po_number })}</td>`
       + `<td>${p.list.map(r => `<span style="white-space:nowrap;margin-right:6px">${stStage(r.stage, r.stage_short.replace("階段", ""))}${r.kind_labels.map(k => `<span class="badge bd-gray">${esc(k.replace("數量下修", "下修"))}</span>`).join("")}</span>`).join(" ")}</td><td>${esc(p.reasons)}</td></tr>`).join("")
       || `<tr><td colspan="7" class="muted p-4 text-center">這段期間沒有曾改單的 PO</td></tr>`) + `</tbody>`;
   $("#st-top").querySelectorAll(".st-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
   $("#tab-stats").querySelectorAll(".st-n").forEach(el => el.addEventListener("click", () => { const f = JSON.parse(el.dataset.f); f.ev ? showStatEvents(f) : showStatRounds(f); }));
 }
-/* 點修改次數 → 撈這段期間全部修改紀錄，照條件過濾後列出來 */
+/* 點處理次數 → 撈這段期間全部修改紀錄，照條件過濾後列出來 */
 let STRD = null, STEV = null;
 function stKey() { const from = $("#st-from").value, to = $("#st-to").value || from; return { from, to, line: $("#st-line").value, key: `${from}|${to}|${$("#st-line").value}` }; }
 async function showStatRounds(f) {
@@ -787,13 +787,13 @@ async function showStatRounds(f) {
     && (!f.reason || r.reasons.includes(f.reason)) && (!f.po || r.po_number === f.po));
   const desc = [f.month ? f.month : `${from}${to !== from ? "～" + to : ""}`, line || "全部線別", f.po ? `PO ${f.po}` : "", f.stage ? STATS.stage_labels[f.stage] : "", f.kind ? STATS.kind_labels[f.kind] : "", f.reason ? `主因：${f.reason}` : ""].filter(Boolean);
   $("#stev-title").textContent = `修改紀錄 · ${list.length} 次`; $("#stev-sub").textContent = desc.join(" · ");
-  $("#stev-table").innerHTML = `<thead><tr><th>OK 日期</th><th>PO 單號</th><th>線別</th><th>階段</th><th>做了什麼</th><th>主因</th><th>說明</th><th>記的人</th></tr></thead><tbody>`
+  $("#stev-table").innerHTML = `<thead><tr><th>完成日期</th><th>PO 單號</th><th>線別</th><th>階段</th><th>做了什麼</th><th>主因</th><th>說明</th><th>記的人</th></tr></thead><tbody>`
     + (list.map(r => `<tr><td class="kbd" style="white-space:nowrap">${esc(r.ok_at.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(r.po_number)}">${esc(r.po_number)}</a></td><td>${esc(r.lines)}</td><td>${stStage(r.stage, r.stage_short)} ${esc(r.stage_label.split(" ")[1] || "")}</td><td>${r.kind_labels.map(k => `<span class="badge bd-gray">${esc(k)}</span>`).join(" ")}</td><td>${esc(r.reason)}</td><td style="max-width:360px">${esc(r.note)}</td><td>${esc(r.operator)}</td></tr>`).join("")
       || `<tr><td colspan="8" class="muted p-4 text-center">沒有符合的修改紀錄</td></tr>`) + `</tbody>`;
   $("#stev-table").querySelectorAll(".stev-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
   $("#dlg-stev").showModal();
 }
-/* 點灰字 → 系統抓到的變動（兩個系統合起來算的每一次變動），不算修改次數 */
+/* 點灰字 → 系統抓到的變動（兩個系統合起來算的每一次變動），不算處理次數 */
 async function showStatEvents(f) {
   const { from, to, line, key } = stKey();
   if (!STEV || STEV.key !== key) {
@@ -801,7 +801,7 @@ async function showStatEvents(f) {
     catch (e) { toast(e.message, "err"); return; }
   }
   const list = STEV.events.filter(e => (!f.month || e.month === f.month) && (!f.po || e.po_number === f.po));
-  const desc = [f.month ? f.month : `${from}${to !== from ? "～" + to : ""}`, line || "全部線別", f.po ? `PO ${f.po}` : "", "不算修改次數，只是對照用"].filter(Boolean);
+  const desc = [f.month ? f.month : `${from}${to !== from ? "～" + to : ""}`, line || "全部線別", f.po ? `PO ${f.po}` : "", "不算處理次數，只是對照用"].filter(Boolean);
   $("#stev-title").textContent = `系統抓到的變動 · ${list.length} 次`; $("#stev-sub").textContent = desc.join(" · ");
   $("#stev-table").innerHTML = `<thead><tr><th>時間</th><th>PO 單號</th><th>線別</th><th>操作人員</th><th>來源</th><th>修改內容</th></tr></thead><tbody>`
     + (list.map(e => `<tr><td class="kbd" style="white-space:nowrap">${esc(e.when.slice(0, 16))}</td><td class="mono"><a href="#" class="stev-po" data-po="${esc(e.po_number)}">${esc(e.po_number)}</a></td><td>${esc(e.lines)}</td><td>${esc(e.operator)}</td><td><span class="badge ${e.source === "import" ? "bd-blue" : "bd-gray"}">${e.source_label}</span><div class="kbd">${esc(e.system)}</div></td><td style="max-width:480px">${esc(e.summary)}${e.note ? `<div class="kbd">${esc(e.note)}</div>` : ""}</td></tr>`).join("")

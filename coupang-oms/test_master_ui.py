@@ -101,6 +101,14 @@ def main():
 
         print("\n【1b】線別工具選單（三頁共用）")
         pg.goto(f"{base}/coupang"); pg.wait_for_selector("#lm-btn"); pg.wait_for_timeout(400)
+        pg.click("#f-status"); pg.wait_for_selector("#f-status-pop:not(.hidden) input.st-ck", timeout=5000)
+        pg.check("#f-status-pop input.st-ck[value='已建立']"); pg.check("#f-status-pop input.st-ck[value='修改中']")
+        check("PO 狀態可以複選：勾兩個 → 按鈕寫「已建立、修改中」", pg.inner_text("#f-status-text") == "已建立、修改中", pg.inner_text("#f-status-text"))
+        with pg.expect_response(lambda r: "/api/pos?" in r.url) as rq:
+            pg.click("body", position={"x": 5, "y": 5}); pg.click("#btn-search")
+        check("按搜尋 → 帶兩個狀態去查、選單收起來", "po_status=%E5%B7%B2%E5%BB%BA%E7%AB%8B%2C%E4%BF%AE%E6%94%B9%E4%B8%AD" in rq.value.url and pg.is_hidden("#f-status-pop"), rq.value.url)
+        pg.click("#btn-reset"); pg.wait_for_timeout(500)
+        check("按重設 → PO 狀態回到「全部」", pg.inner_text("#f-status-text") == "全部")
         check("首頁也是一顆「線別工具」、不放 logo、有三個線別色點", pg.eval_on_selector_all("#lm-btn img", "els => els.length") == 0 and pg.eval_on_selector_all("#lm-btn .lm-dots i", "els => els.length") == 3)
         pg.click("#lm-btn"); pg.wait_for_timeout(200)
         check("首頁點開 → 三欄、寶僑那欄標題是寶僑藍", pg.eval_on_selector_all("#lm-pop .lm-h", "els => els.length") == 3 and pg.eval_on_selector("#lm-pop .lm-h", "e => getComputedStyle(e).color") == "rgb(23, 95, 171)")
@@ -261,11 +269,11 @@ def main():
 
         print("\n【4c】④ 改單統計分頁（2026-10-21 起以修改紀錄的 OK 數為準）")
         pg.click('.m-tab[data-tab="stats"]'); pg.wait_for_timeout(900)
-        check("五張卡：PO 張數／曾改單的 PO／修改次數（OK）／改過但還沒記 OK／估計工時", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5
-              and all(w in pg.inner_text("#st-kpi") for w in ("曾改單的 PO", "修改次數（OK）", "還沒記 OK", "估計工時")), pg.inner_text("#st-kpi"))
+        check("五張卡：PO 張數／曾改單的 PO／處理次數／處理完成後又有改動／估計工時", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5
+              and all(w in pg.inner_text("#st-kpi") for w in ("曾改單的 PO", "處理次數", "處理完成後又有改動", "估計工時")), pg.inner_text("#st-kpi"))
         check("拿掉的：含測試勾選框、酷澎修改／我方修改、改單類型表", pg.query_selector("#st-test") is None and "我方修改" not in pg.inner_text("#st-kpi") and pg.query_selector("#st-kinds") is None)
         check("每月表有 9 月那列、有三個階段、三個類別、灰字的系統抓到的變動次數那欄", "2026-09" in pg.inner_text("#st-months")
-              and all(w in pg.inner_text("#st-months thead") for w in ("修改次數（OK）", "第一階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數")), pg.inner_text("#st-months thead"))
+              and all(w in pg.inner_text("#st-months thead") for w in ("處理次數", "第一階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數")), pg.inner_text("#st-months thead"))
         check("主因表、各階段做了什麼（三個階段加合計）都有", pg.query_selector("#st-reasons thead") and all(w in pg.inner_text("#st-stages") for w in ("第一階段", "第二階段", "第三階段", "合計")))
         check("剛剛改的那筆算進系統抓到的變動：灰字可以點", pg.eval_on_selector_all("#st-months .st-n.st-g", "els => els.length") >= 1)
         pg.click('#st-months .st-n.st-g >> nth=0'); pg.wait_for_timeout(900)
@@ -642,9 +650,9 @@ def main():
         pg.click("#btn-yfs"); pg.wait_for_selector("#chs .ch", timeout=15000)
         check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁（網站首頁 /）", pg.url.rstrip("/") == base)
         pg.click("#nav a:has-text('改單統計')"); pg.wait_for_selector("#st-kpi .kpi", timeout=15000); pg.wait_for_timeout(500)
-        check("左側「改單統計」：在 YFS 訂單系統裡看，五張數字卡（PO 張數、曾改單的 PO、修改次數（OK）、原始下單→目前出貨、改過但還沒記 OK）、還沒記 OK 清單、每月表、主因、各階段做了什麼、修改次數最多的 PO 都有（Jerry 2026-10-21 看過示意圖）",
+        check("左側「改單統計」：在 YFS 訂單系統裡看，五張數字卡（PO 張數、曾改單的 PO、處理次數、原始下單→目前出貨、處理完成後又有改動）、還沒記 OK 清單、每月表、主因、各階段做了什麼、修改次數最多的 PO 都有（Jerry 2026-10-21 看過示意圖）",
               pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5 and pg.query_selector("#kpi-pend")
-              and "原始下單" in pg.inner_text("#st-kpi") and "修改次數（OK）" in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
+              and "原始下單" in pg.inner_text("#st-kpi") and "處理次數" in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
               and all(pg.query_selector(sel) for sel in ("#st-months thead", "#st-reasons thead", "#st-stages thead", "#st-top thead")) and "/api/master/stats/export" in pg.get_attribute("#st-export", "href"), pg.inner_text("#st-kpi"))
         check("拿掉的：含測試、待補原因、酷澎修改／我方修改、改單類型；寫了修改紀錄從 2026-10-20 起",
               pg.query_selector("#st-test") is None and "待補" not in pg.inner_text("main") and "我方修改" not in pg.inner_text("#st-months thead") and pg.query_selector("#st-kinds") is None
@@ -671,15 +679,15 @@ def main():
         check("各階段做了什麼：第一階段有數字", "第一階段" in pg.inner_text("#st-stages") and pg.query_selector("#st-stages .st-n"))
         check("修改次數最多的 PO：那張在、PO 單號連到酷澎頁開 PO 視窗、各輪寫階段和做了什麼", po_s in pg.inner_text("#st-top") and f"/coupang?po={po_s}" in pg.get_attribute("#st-top a.link", "href") and "下修" in pg.inner_text("#st-top"))
         pg.click("#st-top .st-n >> nth=0"); pg.wait_for_selector("#st-dlg[open]", timeout=8000)
-        check("點修改次數 → 跳出修改紀錄明細（OK 日期／階段／做了什麼／主因／說明）", "修改紀錄" in pg.inner_text("#st-dlg-title") and "UI 測試" in pg.inner_text("#st-dlg-table") and "庫存不足" in pg.inner_text("#st-dlg-table")); pg.click("#st-dlg-x")
-        check("改過但還沒記 OK：卡片是警示、清單有那張 PO、寫出改了什麼、有「去記 OK」", "warn" in pg.get_attribute("#kpi-pend", "class") and po_s2 in pg.inner_text("#pd-table") and "下修" in pg.inner_text("#pd-table") and pg.query_selector("#pd-table a.go"), pg.inner_text("#pd-table"))
+        check("點修改次數 → 跳出修改紀錄明細（完成日期／階段／做了什麼／主因／說明）", "修改紀錄" in pg.inner_text("#st-dlg-title") and "UI 測試" in pg.inner_text("#st-dlg-table") and "庫存不足" in pg.inner_text("#st-dlg-table")); pg.click("#st-dlg-x")
+        check("處理完成後又有改動：卡片是警示、清單有那張 PO、寫出改了什麼、有「去記處理完成」", "warn" in pg.get_attribute("#kpi-pend", "class") and po_s2 in pg.inner_text("#pd-table") and "下修" in pg.inner_text("#pd-table") and pg.query_selector("#pd-table a.go"), pg.inner_text("#pd-table"))
         href_go = pg.get_attribute("#pd-table a.go", "href")
         pg.uncheck("#st-all"); pg.wait_for_timeout(600)
         pg.goto(f"{base}{href_go}"); pg.wait_for_selector("#dlg-po[open]", timeout=15000); pg.wait_for_selector("#po-rounds #rd-ok", timeout=10000)
-        check("「去記 OK」連到 /coupang?po=單號 → 直接打開那張 PO 的視窗、看得到修改紀錄", pg.inner_text("#po-title").strip() == po_s2 and "修改紀錄" in pg.inner_text("#po-rounds") and "po=" not in pg.url)
+        check("「去記處理完成」連到 /coupang?po=單號 → 直接打開那張 PO 的視窗、看得到修改紀錄", pg.inner_text("#po-title").strip() == po_s2 and "修改紀錄" in pg.inner_text("#po-rounds") and "po=" not in pg.url)
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.goto(f"{base}/"); pg.wait_for_selector("#cost .hero", timeout=15000)
-        check("首頁「本月改單與估計工時」卡改成修改次數（OK）、三個階段、主因", "修改次數（OK）" in pg.inner_text("#cost") and "第一階段" in pg.inner_text("#cost") and "我方修改" not in pg.inner_text("#cost"), pg.inner_text("#cost"))
+        check("首頁「本月改單與估計工時」卡改成處理次數、三個階段、主因", "處理次數" in pg.inner_text("#cost") and "第一階段" in pg.inner_text("#cost") and "我方修改" not in pg.inner_text("#cost"), pg.inner_text("#cost"))
         pg.goto(f"{base}/master#stats"); pg.wait_for_selector("#tab-stats:not(.hidden)", timeout=15000)
         check("商品主檔的 /master#stats 還是能直接打開改單統計分頁（原本的分頁先留著）", pg.is_visible("#tab-stats"))
         pg.set_viewport_size({"width": 390, "height": 844}); pg.goto(f"{base}/"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
@@ -1056,31 +1064,43 @@ def main():
         po_g = tc.get("/api/pos?page_size=5").get_json()["rows"][0]["po_number"]
         pg.goto(f"{base}/coupang"); pg.wait_for_selector("#lm-btn", timeout=15000)
         pg.evaluate(f"openPo('{po_g}')"); pg.wait_for_selector("#po-rounds #rd-ok", timeout=10000)
-        check("PO 視窗有修改紀錄：OK 鈕一開始按不下去（主因必選）", pg.is_disabled("#rd-ok") and "修改 0 次" in pg.inner_text("#po-rounds"))
+        check("PO 視窗有修改紀錄：OK 鈕一開始按不下去（主因必選）", pg.is_disabled("#rd-ok") and "處理 0 次" in pg.inner_text("#po-rounds"))
         pg.check("#po-rounds .rd-kind[value='qty']"); pg.wait_for_timeout(200)
         opts_g = pg.eval_on_selector_all("#po-rounds .rd-reason", "els => els.map(e => e.value)")
         pg.check("#po-rounds .rd-reason[value='庫存不足']"); pg.check("#po-rounds .rd-reason[value='停產']"); pg.wait_for_timeout(200)
         check("勾數量下修 → 主因只列第一階段的下修原因、可複選；勾了主因 OK 鈕才能按", "庫存不足" in opts_g and "約倉問題" not in opts_g and not pg.is_disabled("#rd-ok"), str(opts_g))
         # 先存著（小真 2026-10-21「還沒完成可以先暫存嗎」）
         pg.fill("#rd-note", "先存的說明"); pg.click("#rd-draft"); pg.wait_for_selector("#po-rounds .rd-draft-row", timeout=8000)
-        check("按「先存著（還沒 OK）」→ 清單多一列草稿、修改還是 0 次、主因還勾著、寫是誰存的", "修改 0 次" in pg.inner_text("#po-rounds") and pg.is_checked("#po-rounds .rd-reason[value='停產']")
+        check("按「先存著（尚未完成）」→ 清單多一列草稿、修改還是 0 次、主因還勾著、寫是誰存的", "處理 0 次" in pg.inner_text("#po-rounds") and pg.is_checked("#po-rounds .rd-reason[value='停產']")
               and "先存著的" in pg.inner_text("#po-rounds") and pg.query_selector("#rd-discard"), pg.inner_text("#po-rounds")[:300])
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.evaluate(f"openPo('{po_g}')"); pg.wait_for_selector("#po-rounds #rd-ok", timeout=10000)
         check("關掉再開 → 草稿還在、主因和說明照草稿帶、OK 鈕能按", pg.query_selector("#po-rounds .rd-draft-row") and pg.is_checked("#po-rounds .rd-reason[value='庫存不足']")
               and pg.input_value("#rd-note") == "先存的說明" and not pg.is_disabled("#rd-ok"), pg.inner_text("#po-rounds")[:300])
         pg.fill("#rd-note", "")
-        pg.click("#rd-ok"); pg.wait_for_function("document.querySelector('#po-rounds').innerText.includes('修改 1 次')", timeout=8000)
-        check("按 OK → 修改 1 次、兩個主因用「、」接、備註不動（修改紀錄才是佐證）、草稿那列沒了", "庫存不足、停產" in pg.inner_text("#po-rounds") and "OK" not in pg.input_value("#p-remarks")
+        pg.click("#rd-ok"); pg.wait_for_function("document.querySelector('#po-rounds').innerText.includes('處理 1 次')", timeout=8000)
+        check("按 OK → 處理 1 次、兩個主因用「、」接、備註不動（修改紀錄才是佐證）、草稿那列沒了", "庫存不足、停產" in pg.inner_text("#po-rounds") and "OK" not in pg.input_value("#p-remarks")
               and pg.query_selector("#po-rounds .rd-draft-row") is None, pg.inner_text("#po-rounds")[:200])
         pg.click("#po-rounds .rd-edit >> nth=0"); pg.wait_for_selector("#rd-cancel", timeout=5000)
         check("點鉛筆 → 表單帶入那一筆（主因勾著）、按鈕變「儲存這筆修改」", pg.is_checked("#po-rounds .rd-reason[value='停產']") and "儲存這筆修改" in pg.inner_text("#rd-ok"))
         pg.uncheck("#po-rounds .rd-reason[value='停產']"); pg.fill("#rd-note", "改過的說明"); pg.click("#rd-ok")
         pg.wait_for_function("document.querySelector('#po-rounds').innerText.includes('改過的說明')", timeout=8000)
-        check("儲存 → 那一筆更新（主因剩庫存不足、說明換了）、回到記新的一輪", "庫存不足、停產" not in pg.inner_text("#po-rounds") and pg.query_selector("#rd-cancel") is None and "修改 1 次" in pg.inner_text("#po-rounds"), pg.inner_text("#po-rounds")[:200])
+        check("儲存 → 那一筆更新（主因剩庫存不足、說明換了）、回到記新的一輪", "庫存不足、停產" not in pg.inner_text("#po-rounds") and pg.query_selector("#rd-cancel") is None and "處理 1 次" in pg.inner_text("#po-rounds"), pg.inner_text("#po-rounds")[:200])
         pg.fill("#p-remarks", pg.input_value("#p-remarks") + " 再處理=>10/21-OK"); pg.click("#btn-po-save"); pg.wait_for_timeout(900)
-        check("備註自己再打一個 OK 存檔 → 擋下來、視窗還開著", "備註裡打了 OK" in pg.inner_text("#toast") and pg.evaluate("document.getElementById('dlg-po').open"), pg.inner_text("#toast"))
+        check("備註自己再打一個 OK 存檔 → 擋下來、視窗還開著", "備註裡寫了「OK」" in pg.inner_text("#toast") and pg.evaluate("document.getElementById('dlg-po').open"), pg.inner_text("#toast"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        # 處理完成之後又改（Jerry 2026-10-22「講人話」）：PO 視窗上方提示、清單 PO 單號下面的小標
+        pg.wait_for_timeout(1100)
+        pg.evaluate("""async po => { const d = await (await fetch(`/api/pos/${po}`)).json(); const s = d.skus.find(x => (x.qty_ship || 0) > 0);
+            await fetch(`/api/orders/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: s.version, qty_ship: s.qty_ship - 1, operator: "小真" }) }); }""", po_g)
+        pg.evaluate(f"openPo('{po_g}')"); pg.wait_for_selector("#po-rounds #rd-after", timeout=10000)
+        check("處理完成後又改了數量 → PO 視窗修改紀錄上方黃色提示「MM-DD 處理完成後又改：出貨數量下修 1 項…記得再記一次處理完成」",
+              "處理完成後又改：" in pg.inner_text("#rd-after") and "下修 1 項" in pg.inner_text("#rd-after") and "再記一次處理完成" in pg.inner_text("#rd-after"), pg.inner_text("#rd-after"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        pg.check("#f-round"); pg.click("#btn-search"); pg.wait_for_timeout(1200)
+        check("勾「只看處理完成後又有改動的」→ 那張單 PO 單號下面有小標寫原因", "處理完成後又改：" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rd-after-tag"),
+              pg.inner_text("#tbody")[:300])
+        pg.uncheck("#f-round"); pg.click("#btn-search"); pg.wait_for_timeout(600)
 
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/master", "#dd-line-btn"),
