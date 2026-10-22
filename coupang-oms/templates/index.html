@@ -225,7 +225,7 @@
         <span class="text-xs text-ink-600">只看已標記顏色</span></label>
       <label class="flex items-end gap-2 pb-1" title="上次處理完成之後又有改動、還沒再按「這一輪處理完成」的 PO（從沒記過、但有改動的也算）">
         <input id="f-round" type="checkbox" class="w-4 h-4">
-        <span class="text-xs text-ink-600">只看處理完成後又有改動的</span></label>
+        <span class="text-xs text-ink-600">只看處理完成後又有改動的（修改紀錄）</span></label>
     </div>
     <div class="flex gap-2 mt-3">
       <button id="btn-search" class="bg-ink-900 hover:bg-ink-800 text-white px-5 py-2 rounded-lg text-sm font-semibold">
@@ -814,7 +814,7 @@ function fillStatusPick(values) {
        <input type="checkbox" class="st-ck w-4 h-4" value="${esc(v)}" ${keep.has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")
     + `<div style="border-top:1px solid #e5e7eb;margin-top:4px;padding:6px 10px 2px"><a href="#" id="f-status-clear" class="text-xs" style="color:#6b7280">全部清除（看全部）</a></div>`;
   document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => c.addEventListener("change", syncStatusText));
-  $("#f-status-clear").addEventListener("click", e => { e.preventDefault(); document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => { c.checked = false; }); syncStatusText(); });
+  $("#f-status-clear").addEventListener("click", e => { e.preventDefault(); document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => { c.checked = false; }); syncStatusText(); autoSearch(); });
   syncStatusText();
 }
 function pickedStatuses() { return [...document.querySelectorAll("#f-status-pop input.st-ck:checked")].map(c => c.value); }
@@ -1969,6 +1969,16 @@ $("#check-all").addEventListener("change", e => {
 });
 
 $("#btn-search").addEventListener("click", () => { PAGE = 1; filters._alert = ""; loadOrders(); });
+/* 篩選即時套用（Jerry 2026-10-22「不希望還要按搜尋才跳結果」）：下拉、日期、勾選框一改就查；打字的欄位停 0.4 秒再查 */
+let _autoT = null;
+function autoSearch(delay = 0) {
+  clearTimeout(_autoT);
+  _autoT = setTimeout(() => { PAGE = 1; filters._alert = ""; loadOrders(); }, delay);
+}
+["#f-line", "#f-warehouse", "#f-ordertype", "#f-receiving", "#f-shipping", "#f-pulled", "#f-from", "#f-to", "#f-order-from", "#f-order-to",
+ "#f-review", "#f-flagged", "#f-round"].forEach(s => $(s).addEventListener("change", () => autoSearch()));
+["#f-po", "#f-keyword"].forEach(s => $(s).addEventListener("input", () => autoSearch(400)));
+$("#f-status-pop").addEventListener("change", () => autoSearch(250));      // PO 狀態連勾好幾個，停一下再查
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to", "#f-order-from", "#f-order-to"].forEach(s => $(s).value = "");
   ["#f-line", "#f-warehouse", "#f-ordertype", "#f-receiving", "#f-shipping", "#f-pulled"]

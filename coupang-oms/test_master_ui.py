@@ -104,9 +104,16 @@ def main():
         pg.click("#f-status"); pg.wait_for_selector("#f-status-pop:not(.hidden) input.st-ck", timeout=5000)
         pg.check("#f-status-pop input.st-ck[value='已建立']"); pg.check("#f-status-pop input.st-ck[value='修改中']")
         check("PO 狀態可以複選：勾兩個 → 按鈕寫「已建立、修改中」", pg.inner_text("#f-status-text") == "已建立、修改中", pg.inner_text("#f-status-text"))
-        with pg.expect_response(lambda r: "/api/pos?" in r.url) as rq:
-            pg.click("body", position={"x": 5, "y": 5}); pg.click("#btn-search")
-        check("按搜尋 → 帶兩個狀態去查、選單收起來", "po_status=%E5%B7%B2%E5%BB%BA%E7%AB%8B%2C%E4%BF%AE%E6%94%B9%E4%B8%AD" in rq.value.url and pg.is_hidden("#f-status-pop"), rq.value.url)
+        with pg.expect_response(lambda r: "/api/pos?" in r.url and "po_status=" in r.url, timeout=5000) as rq:
+            pg.wait_for_timeout(10)
+        check("不用按搜尋：勾完自己帶兩個狀態去查（Jerry 2026-10-22「要即刻跳結果」）", "po_status=%E5%B7%B2%E5%BB%BA%E7%AB%8B%2C%E4%BF%AE%E6%94%B9%E4%B8%AD" in rq.value.url, rq.value.url)
+        pg.click("body", position={"x": 5, "y": 5}); check("點旁邊 → 選單收起來", pg.is_hidden("#f-status-pop"))
+        with pg.expect_response(lambda r: "/api/pos?" in r.url and "is_pulled=0" in r.url, timeout=5000):
+            pg.select_option("#f-pulled", "0")
+        check("改拉單狀態下拉 → 不用按搜尋就查", True)
+        with pg.expect_response(lambda r: "/api/pos?" in r.url and "keyword=" in r.url, timeout=5000):
+            pg.fill("#f-keyword", "偉嘉")
+        check("打關鍵字 → 停一下自己查", True)
         pg.click("#btn-reset"); pg.wait_for_timeout(500)
         check("按重設 → PO 狀態回到「全部」", pg.inner_text("#f-status-text") == "全部")
         check("首頁也是一顆「線別工具」、不放 logo、有三個線別色點", pg.eval_on_selector_all("#lm-btn img", "els => els.length") == 0 and pg.eval_on_selector_all("#lm-btn .lm-dots i", "els => els.length") == 3)
@@ -1097,10 +1104,10 @@ def main():
         check("處理完成後又改了數量 → PO 視窗修改紀錄上方黃色提示「MM-DD 處理完成後又改：出貨數量下修 1 項…記得再記一次處理完成」",
               "處理完成後又改：" in pg.inner_text("#rd-after") and "下修 1 項" in pg.inner_text("#rd-after") and "再記一次處理完成" in pg.inner_text("#rd-after"), pg.inner_text("#rd-after"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
-        pg.check("#f-round"); pg.click("#btn-search"); pg.wait_for_timeout(1200)
-        check("勾「只看處理完成後又有改動的」→ 那張單 PO 單號下面有小標寫原因", "處理完成後又改：" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rd-after-tag"),
+        pg.check("#f-round"); pg.wait_for_timeout(1200)
+        check("勾「只看處理完成後又有改動的（修改紀錄）」→ 那張單 PO 單號下面有小標寫原因", "處理完成後又改：" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rd-after-tag"),
               pg.inner_text("#tbody")[:300])
-        pg.uncheck("#f-round"); pg.click("#btn-search"); pg.wait_for_timeout(600)
+        pg.uncheck("#f-round"); pg.wait_for_timeout(600)
 
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/master", "#dd-line-btn"),
