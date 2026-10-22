@@ -40,6 +40,9 @@ STAGE_BY_STATUS = {"已建立": "1", "已回覆": "1", "處理中": "2", "已完
 END_STATUSES = ("已完成", "已取消")
 SINCE = "2026-10-20"                     # 這天以前的改動不算（小真：從今天開始）
 CHANGE_FIELDS = ("qty_coupang", "qty_ship", "delivery_date", "warehouse")
+# 匯入時「保留人工調整、沒改資料」的紀錄不算改動（Jerry 2026-10-22，PO 13000000624267 被寫成「11-03 → 10-23（酷澎）」）。
+# LIKE 樣式一律綁參數（PostgreSQL 的 % 紅線）
+KEPT = "%保留人工調整結果不覆蓋%"
 OPTIONS = {"stages": [{"key": k, "label": STAGE_LABEL[k]} for k, _a, _b in STAGES],
            "kinds": [{"key": k, "label": v} for k, v in KINDS],
            "reasons": {"qty": REASONS_QTY, "date": REASONS_DATE, "split": REASONS_SPLIT}}
@@ -96,8 +99,8 @@ def changes_since(conn, po, since):
     """上一個 OK 之後這張單改了什麼：{kinds: set, n: 筆數}。下修＝下單數量或出貨數量變少（品項被拿掉也是出貨歸 0）。"""
     marks = ",".join("?" * len(CHANGE_FIELDS))
     rows = conn.execute(
-        f"SELECT field, old_value, new_value FROM edit_logs WHERE po_number = ? AND changed_at > ? AND source IN ('import', 'manual') "
-        f"AND field IN ({marks})", [po, since] + list(CHANGE_FIELDS)).fetchall()
+        f"SELECT field, old_value, new_value FROM edit_logs WHERE po_number = ? AND changed_at > ? AND source IN ('import', 'manual') AND COALESCE(note, '') NOT LIKE ? "
+        f"AND field IN ({marks})", [po, since, KEPT] + list(CHANGE_FIELDS)).fetchall()
     kinds, n = set(), 0
     for r in rows:
         if r["field"] in ("delivery_date", "warehouse"):
@@ -177,7 +180,7 @@ def pending_info(conn, po):
     marks = ",".join("?" * len(CHANGE_FIELDS))
     rows = conn.execute(
         f"SELECT field, field_label, old_value, new_value, source, operator, changed_at FROM edit_logs WHERE po_number = ? AND changed_at > ? "
-        f"AND source IN ('import', 'manual') AND field IN ({marks}) ORDER BY changed_at, id", [po, since] + list(CHANGE_FIELDS)).fetchall()
+        f"AND source IN ('import', 'manual') AND COALESCE(note, '') NOT LIKE ? AND field IN ({marks}) ORDER BY changed_at, id", [po, since, KEPT] + list(CHANGE_FIELDS)).fetchall()
     groups = {}
     for r in rows:
         who = "酷澎" if r["source"] == "import" else (r["operator"] or "我方")
@@ -189,11 +192,12 @@ def pending_info(conn, po):
         if a is not None and b is not None and b < a:
             g["down"] += 1
     out = []
-    for (field, _who, _day), g in groups.items():
+    md = lambda v: f"{int(v[5:7])}/{int(v[8:10])}" if len(v or "") == 10 and v[4] == "-" else (v or "—")  # noqa: E731
+    for (field, _who, _day), g in groups.items():                 # 講人話（Jerry 2026-10-22）：誰改了什麼、從多少到多少、哪天
         if field in ("delivery_date", "warehouse"):
-            out.append(f"{g['label']} {g['first'][0] or '—'} → {g['first'][1] or '—'}{'（' + str(g['n']) + ' 項）' if g['n'] > 1 else ''}（{g['who']} {g['day']}）")
+            out.append(f"{g['who']}改{g['label']} {md(g['first'][0])} → {md(g['first'][1])}（{str(g['n']) + ' 項，' if g['n'] > 1 else ''}{g['day']}）")
         elif g["down"]:
-            out.append(f"{g['label']}下修 {g['down']} 項（{g['who']} {g['day']}）")
+            out.append(f"{g['who']}下修{g['label']} {g['down']} 項（{g['day']}）")
     for r in conn.execute("SELECT DISTINCT po_number, first_seen_at FROM orders WHERE parent_po = ? AND first_seen_at > ? ORDER BY first_seen_at", (po, since)).fetchall():
         t = r["first_seen_at"] or ""
         out.append(f"拆出新單 {r['po_number']}（酷澎 {int(t[5:7])}/{int(t[8:10])}）" if len(t) >= 10 else f"拆出新單 {r['po_number']}")
@@ -213,8 +217,8 @@ def pending_pos(conn):
         "SELECT po_number AS po, MAX(ok_at) AS t FROM po_rounds WHERE deleted_at = '' GROUP BY po_number").fetchall()}
     marks = ",".join("?" * len(CHANGE_FIELDS))
     cand = {r["po"] for r in conn.execute(
-        f"SELECT DISTINCT po_number AS po FROM edit_logs WHERE changed_at >= ? AND source IN ('import', 'manual') AND field IN ({marks})",
-        [f"{SINCE} 00:00:00"] + list(CHANGE_FIELDS)).fetchall()}
+        f"SELECT DISTINCT po_number AS po FROM edit_logs WHERE changed_at >= ? AND source IN ('import', 'manual') AND COALESCE(note, '') NOT LIKE ? AND field IN ({marks})",
+        [f"{SINCE} 00:00:00", KEPT] + list(CHANGE_FIELDS)).fetchall()}
     cand |= {r["po"] for r in conn.execute("SELECT DISTINCT parent_po AS po FROM orders WHERE parent_po != '' AND first_seen_at >= ?",
                                           (f"{SINCE} 00:00:00",)).fetchall()}
     out = []

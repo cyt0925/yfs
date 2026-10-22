@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-22.4"
+BUILD_VERSION = "2026-10-22.5"
 
 app = Flask(__name__)
 
@@ -1434,6 +1434,28 @@ def api_sync_verified_qty():
 
 # ---------------------------------------------------------------- 歷程
 
+KEEP_NOTE = "酷澎檔案仍是舊值，保留人工調整結果不覆蓋"
+
+
+def _coupang_baseline(conn, order_id, po_number, field):
+    """人工改交期／倉別之前，酷澎那邊是什麼值（拿來判斷酷澎後來有沒有又改）。
+    從這個品項的歷程往回找到最近一次「真的套用」的匯入，取它之後最早那次人工改之前的值（沒有人工改就取那次匯入的值）。
+    「保留人工調整」那種匯入紀錄跳過：那次可能就是酷澎又改了卻被擋下（PO 13000000624267），不能拿來當基準。
+    找不到（例如新品項沿用整張單的調整）回 None，照舊保留人工調整。"""
+    first_manual = None
+    # 整張單一起改的人工紀錄記在 order_id = 0、po_number 那張單（log_po_change），一起看
+    for l in conn.execute("SELECT source, old_value, new_value, note FROM edit_logs WHERE field = ? "
+                          "AND (order_id = ? OR (order_id = 0 AND po_number = ?)) ORDER BY id DESC",
+                          (field, order_id, po_number)).fetchall():
+        if l["source"] == "import":
+            if (l["note"] or "").startswith(KEEP_NOTE):
+                continue
+            return first_manual if first_manual is not None else l["new_value"]
+        if l["source"] == "manual":
+            first_manual = l["old_value"]
+    return first_manual
+
+
 def log_change(conn, order, field, label, old, new, operator, source, note=""):
     conn.execute(
         """INSERT INTO edit_logs
@@ -2612,11 +2634,22 @@ def api_import_commit():
                 # OP 已經人工調整過的交期／倉別不覆蓋——那是跟酷澎談好的
                 # 結果，酷澎後台只是還沒更新。但差異照樣記歷程、照樣亮燈，
                 # 不會把「兩邊還沒同步」這件事藏起來。
+                # 例外（Jerry 2026-10-22，PO 13000000624267：小真 10/21 改 10-22→10-23，酷澎 10/22 又改成 11-03）：
+                # 檔案的值跟人工改之前酷澎的值不一樣，代表酷澎後來又改了 → 跟著酷澎、取消人工調整標記。
+                if current.get(f"{field}_overridden"):
+                    base = _coupang_baseline(conn, current["id"], current["po_number"], field)
+                    if base is not None and not _same(base, change["new"]):
+                        sets.append(f"{field} = ?"); values.append(row.get(field))
+                        sets.append(f"{field}_overridden = 0")
+                        log_change(conn, current, field, change["label"], change["old"], change["new"], operator, "import",
+                                   f"酷澎又改了（人工調整前酷澎是 {base}），改跟酷澎；{preview['filename']}")
+                        critical_hit = critical_hit or field in CRITICAL_FIELDS
+                        continue
                 if current.get(f"{field}_overridden"):
                     unsynced.append(f"{change['label']}（酷澎仍為 {change['new']}）")
                     log_change(conn, current, field, change["label"],
                                change["new"], change["old"], operator, "import",
-                               "酷澎檔案仍是舊值，保留人工調整結果不覆蓋")
+                               KEEP_NOTE)
                     critical_hit = critical_hit or field in CRITICAL_FIELDS
                     continue
                 sets.append(f"{field} = ?")
@@ -2651,7 +2684,7 @@ def api_import_commit():
 
             reason_parts = [
                 f"{c['label']} {c['old']}→{c['new']}" for c in item["changes"]
-                if not current.get(f"{c['field']}_overridden")
+                if not current.get(f"{c['field']}_overridden") or f"{c['field']} = ?" in sets
             ]
             # 出貨數量沒有現成的「舊值→新值」文字（它不是 item["changes"]
             # 裡的一員），只有真的同步了才需要另外補一句，不然一張單只有

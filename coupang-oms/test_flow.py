@@ -501,6 +501,26 @@ def main():
               for s in fixed_det["skus"]),
           f"實際 {sorted({s['delivery_date'] for s in fixed_det['skus']})}")
 
+    print("\n【18-2b】談好交期之後酷澎又改成別的日期 → 跟酷澎（Jerry 2026-10-22，PO 13000000624267：小真改 10/23，酷澎又改 11/3，系統還留 10/23）")
+    again = os.path.join(_tmp, "again.xlsx")
+    shutil.copy(grown, again)
+    wb = openpyxl.load_workbook(again)
+    ws = wb["整合表"]
+    for r in range(2, ws.max_row + 1):
+        if str(ws.cell(row=r, column=col["PO單號"]).value) == sync_po:
+            ws.cell(row=r, column=col["交付日期"]).value = "2026/12/5"
+    wb.save(again)
+    d = upload(client, again).get_json()
+    client.post("/api/import/commit", json={"batch_id": d["batch_id"], "operator": "小真"})
+    again_det = client.get(f"/api/pos/{sync_po}").get_json()
+    check("檔案的日期跟人工改之前酷澎的日期不一樣 → 酷澎又改了，整張單跟著改成 2026-12-05、取消人工調整標記",
+          all(s_["delivery_date"] == "2026-12-05" and not s_["delivery_date_overridden"] for s_ in again_det["skus"]),
+          f"實際 {sorted({(s_['delivery_date'], s_['delivery_date_overridden']) for s_ in again_det['skus']})}")
+    check("歷程寫「酷澎又改了」、舊→新照實記（2026-11-11 → 2026-12-05）",
+          any(l["field"] == "delivery_date" and "酷澎又改了" in (l["note"] or "") and l["old_value"] == "2026-11-11" and l["new_value"] == "2026-12-05"
+              for l in again_det["logs"]), str([(l["old_value"], l["new_value"], l["note"]) for l in again_det["logs"] if l["field"] == "delivery_date"][:3]))
+    check("首頁列表也是 2026-12-05、亮燈提醒", next(r for r in client.get("/api/pos?page_size=100").get_json()["rows"] if r["po_number"] == sync_po)["delivery_date"] == "2026-12-05")
+
     print("\n【18-3】酷澎只改部分品項的交期：首頁與明細不能各說各話")
     # 實際遇過的狀況（PO 13000000481036）：酷澎只把其中幾個品項的交期改掉，
     # 同一張單就出現兩種交期。舊版首頁取 MIN 顯示 9/1、明細取第一個品項
@@ -1653,7 +1673,7 @@ def main():
     row39 = next(r for r in client.get("/api/pos", query_string={"page_size": 100, "round_pending": "1"}).get_json()["rows"] if r["po_number"] == po39)
     md39 = det["rounds"][-1]["ok_at"][5:10]
     check("處理完成後又改出貨數量 → 清單那列寫「MM-DD 處理完成後又改：出貨數量下修 1 項（小真 …）」、PO 視窗提示同一句",
-          row39["round_after"].startswith(f"{md39} 處理完成後又改：") and "下修 1 項" in row39["round_after"] and det["round_prefill"]["after"] == row39["round_after"],
+          row39["round_after"].startswith(f"{md39} 處理完成後又改：") and "小真下修出貨數量 1 項" in row39["round_after"] and det["round_prefill"]["after"] == row39["round_after"],
           row39["round_after"] + " / " + det["round_prefill"]["after"])
     check("沒有改動的 PO，清單那列不寫小標", all(r["round_after"] == "" for r in client.get("/api/pos?page_size=100").get_json()["rows"] if r["po_number"] != po39
           and r["po_number"] not in pend39()))

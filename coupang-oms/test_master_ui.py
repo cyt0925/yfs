@@ -1107,7 +1107,7 @@ def main():
             await fetch(`/api/orders/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: s.version, qty_ship: s.qty_ship - 1, operator: "小真" }) }); }""", po_g)
         pg.evaluate(f"openPo('{po_g}')"); pg.wait_for_selector("#po-rounds #rd-after", timeout=10000)
         check("處理完成後又改了數量 → PO 視窗修改紀錄上方黃色提示「MM-DD 處理完成後又改：出貨數量下修 1 項…記得再記一次處理完成」",
-              "處理完成後又改：" in pg.inner_text("#rd-after") and "下修 1 項" in pg.inner_text("#rd-after") and "再記一次處理完成" in pg.inner_text("#rd-after"), pg.inner_text("#rd-after"))
+              "處理完成後又改：" in pg.inner_text("#rd-after") and "下修出貨數量 1 項" in pg.inner_text("#rd-after") and "再記一次處理完成" in pg.inner_text("#rd-after"), pg.inner_text("#rd-after"))
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.check("#f-round"); pg.wait_for_timeout(1200)
         check("勾「只看處理完成後又有改動的（修改紀錄）」→ 那張單 PO 單號下面有小標寫原因", "處理完成後又改：" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rd-after-tag"),
