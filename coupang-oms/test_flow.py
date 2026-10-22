@@ -402,6 +402,15 @@ def main():
     one = {r["po_number"] for r in client.get("/api/pos", query_string={"page_size": 100, "po_status": "已完成"}).get_json()["rows"]}
     check("PO 狀態複選：勾兩個狀態 → 兩種都列出來；只勾一個照舊", len(two) == 2 and multi == by_st[two[0]] | by_st[two[1]]
           and one == by_st["已完成"], f"{two} {len(multi)}")
+    # 其他下拉也能複選（Jerry 2026-10-22）
+    def nums(**q):
+        return {r["po_number"] for r in client.get("/api/pos", query_string={"page_size": 500, **q}).get_json()["rows"]}
+    whs = sorted({r["warehouse"] for r in now_rows.values() if r.get("warehouse")})[:2]
+    lines_ = sorted({ln for r in now_rows.values() for ln in r["lines"].split(",") if ln.strip()})
+    check("到貨倉別複選：兩個倉 → 兩個倉的單都有", len(whs) < 2 or nums(warehouse=",".join(whs)) == nums(warehouse=whs[0]) | nums(warehouse=whs[1]), str(whs))
+    check("線別複選：紙潔（CPG 開頭的都算）加另一個線別 → 兩邊都有", len(lines_) < 2 or nums(line="CPG," + next((x for x in lines_ if not x.startswith("CPG")), lines_[0]))
+          == nums(line="CPG") | nums(line=next((x for x in lines_ if not x.startswith("CPG")), lines_[0])), str(lines_))
+    check("拉單狀態兩個都勾（前端送空的）＝全部；只勾一個照舊", nums(is_pulled="0") | nums(is_pulled="1") == nums(), "")
 
     print("\n【17】驗收註記掛在個別品項上")
     sku = after_po["skus"][0]

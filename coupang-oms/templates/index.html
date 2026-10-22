@@ -13,6 +13,13 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
+/* 複選下拉 */
+.pk-btn { width: 100%; min-width: 8rem; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
+.pk-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-pop { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; min-width: 100%; max-height: 320px; overflow-y: auto; padding: 6px 4px; box-shadow: 0 10px 24px rgba(0,0,0,.15); }
+.pk-pop label { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+.pk-pop label:hover { background: #f3f4f6; border-radius: 6px; }
+.pk-pop .pk-clear { border-top: 1px solid #e5e7eb; margin-top: 4px; padding: 6px 10px 2px; }
 /* 清單「處理完成後又有改動」的一行標籤，滑過去看完整內容（Jerry 2026-10-22 看過雛形） */
 .rt-wrap { position: relative; margin-top: 3px; }
 .rt-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; line-height: 1.6; border-radius: 999px; padding: 0 9px 0 3px; white-space: nowrap; cursor: default; }
@@ -197,12 +204,21 @@
         <input id="f-po" class="border rounded px-2 py-2" placeholder="模糊搜尋"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">品名 / 料號 / 條碼</span>
         <input id="f-keyword" autocomplete="off" class="border rounded px-2 py-2" placeholder="關鍵字"></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
-        <select id="f-line" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨倉別</span>
-        <select id="f-warehouse" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型</span>
-        <select id="f-ordertype" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">線別</span>
+        <span class="pk" id="f-line-box" style="position:relative">
+          <button type="button" id="f-line" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-line-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-line-pop" class="pk-pop block hidden bg-white border rounded"></span>
+        </span></div>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨倉別</span>
+        <span class="pk" id="f-warehouse-box" style="position:relative">
+          <button type="button" id="f-warehouse" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-warehouse-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-warehouse-pop" class="pk-pop block hidden bg-white border rounded"></span>
+        </span></div>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">訂單類型</span>
+        <span class="pk" id="f-ordertype-box" style="position:relative">
+          <button type="button" id="f-ordertype" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-ordertype-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-ordertype-pop" class="pk-pop block hidden bg-white border rounded"></span>
+        </span></div>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨日（起）</span>
         <input id="f-from" type="date" class="border rounded px-2 py-2"></label>
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">到貨日（迄）</span>
@@ -212,20 +228,26 @@
       <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">下單日期（迄）</span>
         <input id="f-order-to" type="date" class="border rounded px-2 py-2"></label>
       <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">PO 狀態</span>
-        <!-- PO 狀態可以複選（Jerry 2026-10-22）：外觀跟其他下拉一樣，點開是勾選清單 -->
-        <span id="f-status-box" style="position:relative">
-          <button type="button" id="f-status" class="border rounded px-2 py-2 bg-white" style="min-width:9.5rem;display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left">
-            <span id="f-status-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
-          <span id="f-status-pop" class="block hidden bg-white border rounded" style="position:absolute;z-index:40;top:calc(100% + 4px);left:0;min-width:11rem;padding:6px 4px;box-shadow:0 10px 24px rgba(0,0,0,.15)"></span>
+        <!-- 篩選下拉都可以複選（PO 狀態 Jerry 2026-10-22 先做，其他下拉同一天「也想要複選」）：點開是勾選清單，都不勾＝全部 -->
+        <span class="pk" id="f-status-box" style="position:relative">
+          <button type="button" id="f-status" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-status-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-status-pop" class="pk-pop block hidden bg-white border rounded"></span>
         </span></div>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
-        <select id="f-receiving" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
-        <select id="f-shipping" class="border rounded px-2 py-2"><option value="">全部</option></select></label>
-      <label class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
-        <select id="f-pulled" class="border rounded px-2 py-2">
-          <option value="">全部</option><option value="0">未拉單</option><option value="1">已拉單</option>
-        </select></label>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">驗收狀態</span>
+        <span class="pk" id="f-receiving-box" style="position:relative">
+          <button type="button" id="f-receiving" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-receiving-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-receiving-pop" class="pk-pop block hidden bg-white border rounded"></span>
+        </span></div>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">配送方式</span>
+        <span class="pk" id="f-shipping-box" style="position:relative">
+          <button type="button" id="f-shipping" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-shipping-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-shipping-pop" class="pk-pop block hidden bg-white border rounded"></span>
+        </span></div>
+      <div class="flex flex-col gap-1"><span class="text-xs text-ink-400">拉單狀態</span>
+        <span class="pk" id="f-pulled-box" style="position:relative">
+          <button type="button" id="f-pulled" class="pk-btn border rounded px-2 py-2 bg-white"><span id="f-pulled-text" class="pk-text">全部</span><i class="bi bi-chevron-down" style="font-size:11px"></i></button>
+          <span id="f-pulled-pop" class="pk-pop block hidden bg-white border rounded"></span>
+        </span></div>
       <label class="flex items-end gap-2 pb-1">
         <input id="f-review" type="checkbox" class="w-4 h-4">
         <span class="text-xs text-ink-600">只看待確認</span></label>
@@ -815,27 +837,37 @@ const LOGGED_IN_USER = {{ logged_in_user | tojson }};
 function operator() { return LOGGED_IN_USER; }
 function requireOperator() { return true; }
 
-/* PO 狀態複選：勾哪幾個就看哪幾個，都不勾＝全部 */
-function fillStatusPick(values) {
-  const keep = new Set(pickedStatuses());
-  $("#f-status-pop").innerHTML = values.filter(v => v !== "").map(v =>
-    `<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;cursor:pointer;white-space:nowrap">
-       <input type="checkbox" class="st-ck w-4 h-4" value="${esc(v)}" ${keep.has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("")
-    + `<div style="border-top:1px solid #e5e7eb;margin-top:4px;padding:6px 10px 2px"><a href="#" id="f-status-clear" class="text-xs" style="color:#6b7280">全部清除（看全部）</a></div>`;
-  document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => c.addEventListener("change", syncStatusText));
-  $("#f-status-clear").addEventListener("click", e => { e.preventDefault(); document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => { c.checked = false; }); syncStatusText(); autoSearch(); });
-  syncStatusText();
+/* 篩選複選下拉（通用）：勾哪幾個就看哪幾個，都不勾＝全部；送後端用逗號串起來 */
+const PICKS = {};
+function makePick(id, options) {             // options: [[值, 顯示文字], ...]
+  const keep = new Set(pickVals(id));
+  PICKS[id] = options;
+  $(`#${id}-pop`).innerHTML = options.map(([v, t]) =>
+    `<label><input type="checkbox" class="st-ck w-4 h-4" value="${esc(v)}" ${keep.has(v) ? "checked" : ""}> ${esc(t)}</label>`).join("")
+    + `<div class="pk-clear"><a href="#" id="${id}-clear" class="text-xs" style="color:#6b7280">全部清除（看全部）</a></div>`;
+  document.querySelectorAll(`#${id}-pop input.st-ck`).forEach(c => c.addEventListener("change", () => { syncPick(id); autoSearch(250); }));
+  $(`#${id}-clear`).addEventListener("click", e => { e.preventDefault(); clearPick(id); autoSearch(); });
+  syncPick(id);
 }
-function pickedStatuses() { return [...document.querySelectorAll("#f-status-pop input.st-ck:checked")].map(c => c.value); }
-function syncStatusText() {
-  const p = pickedStatuses();
-  $("#f-status-text").textContent = !p.length ? "全部" : p.length <= 2 ? p.join("、") : `${p.slice(0, 2).join("、")} 等 ${p.length} 個`;
-  $("#f-status").title = p.length ? `已選：${p.join("、")}` : "";
+function pickVals(id) { return [...document.querySelectorAll(`#${id}-pop input.st-ck:checked`)].map(c => c.value); }
+function clearPick(id) { document.querySelectorAll(`#${id}-pop input.st-ck`).forEach(c => { c.checked = false; }); syncPick(id); }
+function syncPick(id) {
+  const v = pickVals(id), name = new Map(PICKS[id] || []), p = v.map(x => name.get(x) || x);
+  $(`#${id}-text`).textContent = !p.length ? "全部" : p.length <= 2 ? p.join("、") : `${p.slice(0, 2).join("、")} 等 ${p.length} 個`;
+  $(`#${id}`).title = p.length ? `已選：${p.join("、")}` : "";
 }
-$("#f-status").addEventListener("click", e => { e.stopPropagation(); $("#f-status-pop").classList.toggle("hidden"); });
-$("#f-status-pop").addEventListener("click", e => e.stopPropagation());
-document.addEventListener("click", () => $("#f-status-pop").classList.add("hidden"));
-document.addEventListener("keydown", e => { if (e.key === "Escape") $("#f-status-pop").classList.add("hidden"); });
+document.querySelectorAll(".pk").forEach(box => {
+  box.querySelector(".pk-btn").addEventListener("click", e => {
+    e.stopPropagation(); const pop = box.querySelector(".pk-pop"), was = pop.classList.contains("hidden");
+    document.querySelectorAll(".pk-pop").forEach(x => x.classList.add("hidden"));
+    if (was) pop.classList.remove("hidden");
+  });
+  box.querySelector(".pk-pop").addEventListener("click", e => e.stopPropagation());
+});
+document.addEventListener("click", () => document.querySelectorAll(".pk-pop").forEach(x => x.classList.add("hidden")));
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".pk-pop").forEach(x => x.classList.add("hidden")); });
+const PICK_IDS = ["f-line", "f-warehouse", "f-ordertype", "f-status", "f-receiving", "f-shipping", "f-pulled"];
+const optsOf = (vals, label = v => v) => vals.filter(v => v !== "" && v != null).map(v => [v, label(v)]);
 
 function fillSelect(el, values, keepAll = true) {
   const current = el.value;
@@ -867,12 +899,13 @@ const LINE_LABEL = { CPG: "紙潔" };
 
 async function loadConfig() {
   CONFIG = await (await fetch("/api/config")).json();
-  fillSelect($("#f-line"), groupCpgLines(CONFIG.lines));
-  fillSelect($("#f-warehouse"), CONFIG.warehouses);
-  fillSelect($("#f-ordertype"), CONFIG.order_types);
-  fillStatusPick(CONFIG.po_statuses);
-  fillSelect($("#f-receiving"), CONFIG.receiving_statuses.filter(Boolean));
-  fillSelect($("#f-shipping"), CONFIG.shipping_methods);
+  makePick("f-line", optsOf(groupCpgLines(CONFIG.lines), v => LINE_LABEL[v] || v));
+  makePick("f-warehouse", optsOf(CONFIG.warehouses));
+  makePick("f-ordertype", optsOf(CONFIG.order_types));
+  makePick("f-status", optsOf(CONFIG.po_statuses));
+  makePick("f-receiving", optsOf(CONFIG.receiving_statuses));
+  makePick("f-shipping", optsOf(CONFIG.shipping_methods));
+  makePick("f-pulled", [["0", "未拉單"], ["1", "已拉單"]]);
 
   const xp = $("#x-profile");
   xp.innerHTML = "";
@@ -888,17 +921,17 @@ function filters() {
   return {
     po_number: $("#f-po").value.trim(),
     keyword: $("#f-keyword").value.trim(),
-    line: $("#f-line").value,
-    warehouse: $("#f-warehouse").value,
-    order_type: $("#f-ordertype").value,
+    line: pickVals("f-line").join(","),
+    warehouse: pickVals("f-warehouse").join(","),
+    order_type: pickVals("f-ordertype").join(","),
     date_from: $("#f-from").value,
     date_to: $("#f-to").value,
     order_from: $("#f-order-from").value,
     order_to: $("#f-order-to").value,
-    po_status: pickedStatuses().join(","),
-    receiving_status: $("#f-receiving").value,
-    shipping_method: $("#f-shipping").value,
-    is_pulled: $("#f-pulled").value,
+    po_status: pickVals("f-status").join(","),
+    receiving_status: pickVals("f-receiving").join(","),
+    shipping_method: pickVals("f-shipping").join(","),
+    is_pulled: pickVals("f-pulled").length === 1 ? pickVals("f-pulled")[0] : "",       // 兩個都勾＝全部
     needs_review: $("#f-review").checked ? "1" : "",
     flagged: $("#f-flagged").checked ? "1" : "",
     round_pending: $("#f-round").checked ? "1" : "",
@@ -1996,15 +2029,12 @@ function autoSearch(delay = 0) {
   clearTimeout(_autoT);
   _autoT = setTimeout(() => { PAGE = 1; filters._alert = ""; loadOrders(); }, delay);
 }
-["#f-line", "#f-warehouse", "#f-ordertype", "#f-receiving", "#f-shipping", "#f-pulled", "#f-from", "#f-to", "#f-order-from", "#f-order-to",
+["#f-from", "#f-to", "#f-order-from", "#f-order-to",
  "#f-review", "#f-flagged", "#f-round"].forEach(s => $(s).addEventListener("change", () => autoSearch()));
 ["#f-po", "#f-keyword"].forEach(s => $(s).addEventListener("input", () => autoSearch(400)));
-$("#f-status-pop").addEventListener("change", () => autoSearch(250));      // PO 狀態連勾好幾個，停一下再查
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to", "#f-order-from", "#f-order-to"].forEach(s => $(s).value = "");
-  ["#f-line", "#f-warehouse", "#f-ordertype", "#f-receiving", "#f-shipping", "#f-pulled"]
-    .forEach(s => $(s).value = "");
-  document.querySelectorAll("#f-status-pop input.st-ck").forEach(c => { c.checked = false; }); syncStatusText();
+  PICK_IDS.forEach(clearPick);
   $("#f-review").checked = false;
   $("#f-flagged").checked = false;
   $("#f-round").checked = false;

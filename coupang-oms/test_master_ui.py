@@ -108,14 +108,25 @@ def main():
             pg.wait_for_timeout(10)
         check("不用按搜尋：勾完自己帶兩個狀態去查（Jerry 2026-10-22「要即刻跳結果」）", "po_status=%E5%B7%B2%E5%BB%BA%E7%AB%8B%2C%E4%BF%AE%E6%94%B9%E4%B8%AD" in rq.value.url, rq.value.url)
         pg.click("body", position={"x": 5, "y": 5}); check("點旁邊 → 選單收起來", pg.is_hidden("#f-status-pop"))
+        pg.click("#f-pulled"); pg.wait_for_selector("#f-pulled-pop:not(.hidden) input.st-ck", timeout=5000)
+        check("其他下拉也是勾選清單（Jerry 2026-10-22「其他下拉選單也想要複選」）：點開拉單狀態，PO 狀態那個自己收起來",
+              pg.is_hidden("#f-status-pop") and pg.eval_on_selector_all("#f-pulled-pop input.st-ck", "els => els.length") == 2)
         with pg.expect_response(lambda r: "/api/pos?" in r.url and "is_pulled=0" in r.url, timeout=5000):
-            pg.select_option("#f-pulled", "0")
-        check("改拉單狀態下拉 → 不用按搜尋就查", True)
+            pg.check("#f-pulled-pop input.st-ck[value='0']")
+        check("勾未拉單 → 不用按搜尋就查、按鈕寫「未拉單」", pg.inner_text("#f-pulled-text") == "未拉單")
+        pg.click("#f-line"); pg.wait_for_selector("#f-line-pop:not(.hidden)", timeout=5000)
+        n_line = pg.eval_on_selector_all("#f-line-pop input.st-ck", "els => els.length")
+        if n_line >= 2:
+            with pg.expect_response(lambda r: "/api/pos?" in r.url and "line=" in r.url and "%2C" in r.url, timeout=5000):
+                pg.check("#f-line-pop input.st-ck >> nth=0"); pg.check("#f-line-pop input.st-ck >> nth=1")
+            check("線別勾兩個 → 帶兩個線別去查、按鈕寫兩個", "、" in pg.inner_text("#f-line-text"), pg.inner_text("#f-line-text"))
+        pg.click("body", position={"x": 5, "y": 5})
         with pg.expect_response(lambda r: "/api/pos?" in r.url and "keyword=" in r.url, timeout=5000):
             pg.fill("#f-keyword", "偉嘉")
         check("打關鍵字 → 停一下自己查", True)
         pg.click("#btn-reset"); pg.wait_for_timeout(500)
-        check("按重設 → PO 狀態回到「全部」", pg.inner_text("#f-status-text") == "全部")
+        check("按重設 → PO 狀態、拉單狀態、線別都回到「全部」", pg.inner_text("#f-status-text") == "全部" and pg.inner_text("#f-pulled-text") == "全部"
+              and pg.inner_text("#f-line-text") == "全部")
         check("首頁也是一顆「線別工具」、不放 logo、有三個線別色點", pg.eval_on_selector_all("#lm-btn img", "els => els.length") == 0 and pg.eval_on_selector_all("#lm-btn .lm-dots i", "els => els.length") == 3)
         pg.click("#lm-btn"); pg.wait_for_timeout(200)
         check("首頁點開 → 三欄、寶僑那欄標題是寶僑藍", pg.eval_on_selector_all("#lm-pop .lm-h", "els => els.length") == 3 and pg.eval_on_selector("#lm-pop .lm-h", "e => getComputedStyle(e).color") == "rgb(23, 95, 171)")

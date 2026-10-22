@@ -42,7 +42,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-22.8"
+BUILD_VERSION = "2026-10-22.9"
 
 app = Flask(__name__)
 
@@ -1552,26 +1552,33 @@ def build_filter(args):
 
     # 篩選選單把「CPG-潔品」「CPG-紙品」這類 CPG 開頭的線別合併成一個
     # 「CPG」選項，選了它要撈出所有 CPG- 開頭的線別，不是精準比對。
-    line = norm_text(args.get("line"))
-    if line == "CPG":
-        add("line LIKE ?", "CPG-%")
-    elif line:
-        add("line = ?", line)
+    # 篩選下拉都可以複選（Jerry 2026-10-22）：前端用逗號串起來，例如「已建立,處理中,修改中」；一個就用 =，好幾個用 IN
+    def multi(key):
+        return [v for v in (norm_text(x) for x in str(args.get(key) or "").split(",")) if v]
 
-    # PO 狀態可以複選（Jerry 2026-10-22）：前端用逗號串起來，例如「已建立,處理中,修改中」
-    statuses = [s for s in (norm_text(x) for x in str(args.get("po_status") or "").split(",")) if s]
-    if len(statuses) == 1:
-        add("po_status = ?", statuses[0])
-    elif statuses:
-        add("po_status IN (" + ",".join("?" * len(statuses)) + ")", *statuses)
+    lines = multi("line")
+    if lines:
+        parts, vals = [], []
+        for ln in lines:
+            if ln == "CPG":                      # LIKE 樣式綁參數（PostgreSQL 的 % 紅線）
+                parts.append("line LIKE ?"); vals.append("CPG-%")
+            else:
+                parts.append("line = ?"); vals.append(ln)
+        add("(" + " OR ".join(parts) + ")", *vals)
 
-    for column, key in (("brand", "brand"), ("warehouse", "warehouse"),
+    for column, key in (("po_status", "po_status"), ("warehouse", "warehouse"),
                         ("receiving_status", "receiving_status"),
                         ("order_type", "order_type"),
                         ("shipping_method", "shipping_method")):
-        value = norm_text(args.get(key))
-        if value:
-            add(f"{column} = ?", value)
+        vals = multi(key)
+        if len(vals) == 1:
+            add(f"{column} = ?", vals[0])
+        elif vals:
+            add(f"{column} IN (" + ",".join("?" * len(vals)) + ")", *vals)
+
+    brand = norm_text(args.get("brand"))
+    if brand:
+        add("brand = ?", brand)
 
     if args.get("flagged") == "1":
         add("flagged = 1")
