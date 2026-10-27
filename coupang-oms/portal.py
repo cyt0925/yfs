@@ -5,7 +5,7 @@ Alice 2026-10-06：「各通路可以分開……最外層我們做一個訂單�
 
 這一頁只讀、不寫：數字全部從既有的表現算，不新增任何資料表。
 - 酷澎：訂單管理的 orders／po_headers（整合表整份匯進來的那套），加上瑪氏拆單、竹運匯出紀錄、改單統計。
-- 蝦皮特選、PChome：還沒有資料，只顯示「建置中／規劃中」，**不放假數字**。
+- MOMO、PChome：還沒有系統，只顯示「建置中／規劃中」，**不放假數字**（MOMO 2026-10-27 Jerry：「我們要來做 MOMO 系統了，先在 YFS 訂單系統上加入」）。
 - 左側選單的酷澎工具是捷徑，跟酷澎系統裡的「線別工具」是同樣的工具（Jerry：「兩邊都有，捷徑的概念」）。
 - 營運 SOP 檢索是另一個獨立網站（GitHub Pages），這裡只是開在框裡，不動它。
 
@@ -42,7 +42,8 @@ CHANNELS = [
     # title／logo：首頁「各通路系統」卡片的標題與圖示（Jerry 2026-10-06 給的三個圖檔，縮成 160px 高放 static/）
     {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": "", "url": COUPANG_URL},
     {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理系統", "logo": "logo_shopee.png", "live": True, "status": "", "url": "/shopee"},
-    {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中"},
+    {"key": "momo", "name": "MOMO", "title": "MOMO 訂單管理系統", "logo": "logo_momo.png", "live": False, "status": "建置中", "note": "系統建置中，完成後從這裡進入"},
+    {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中", "note": "預計於 MOMO 之後建置"},
 ]
 
 

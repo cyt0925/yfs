@@ -650,16 +650,19 @@ def main():
         print("\n【6d】YFS 訂單系統入口（/portal）")
         pg.set_viewport_size({"width": 1440, "height": 900})
         pg.goto(f"{base}/"); pg.wait_for_selector("#chs .ch", timeout=15000); pg.wait_for_selector("#c-line svg"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)
-        check("入口頁：三個通路卡、兩張圖都畫出來", pg.eval_on_selector_all("#chs .ch", "els => els.length") == 3 and pg.eval_on_selector_all("#c-bar svg .hb", "els => els.length") == 7)
+        check("入口頁：四個通路卡（含 MOMO）、兩張圖都畫出來", pg.eval_on_selector_all("#chs .ch", "els => els.length") == 4 and pg.eval_on_selector_all("#c-bar svg .hb", "els => els.length") == 7)
         nav = pg.inner_text("#nav")
         check("左側選單：酷澎底下有訂單管理、驗收單簽名、採購表轉換、商品主檔、竹運、瑪氏，還有 SOP 與歷程", all(k in nav for k in ("訂單管理", "驗收單簽名", "採購表轉換", "商品主檔自動化", "竹運出貨拋檔", "瑪氏出貨", "營運 SOP 檢索", "歷程紀錄")))
         check("沒有寫買斷、寄倉", "買斷" not in pg.inner_text("body") and "寄倉" not in pg.inner_text("body"))
         check("左上角是文字「YFS 訂單系統」、選單不畫捲軸", pg.inner_text(".brand").strip() == "YFS 訂單系統" and pg.eval_on_selector(".side", "e => getComputedStyle(e).scrollbarWidth") == "none")
-        check("各通路系統卡片：logo 圖都載得出來、標題是 XX 訂單管理系統、酷澎線紅色、PChome 線藍色",
-              pg.eval_on_selector_all("#chs .ch-h img", "els => els.length === 3 && els.every(i => i.complete && i.naturalWidth > 0)")
+        check("各通路系統卡片：logo 圖都載得出來、標題是 XX 訂單管理系統、酷澎線紅色、MOMO 桃紅、PChome 線藍色",
+              pg.eval_on_selector_all("#chs .ch-h img", "els => els.length === 4 && els.every(i => i.complete && i.naturalWidth > 0)")
               and "酷澎訂單管理系統" in pg.inner_text("#ch-coupang") and "蝦皮特選訂單管理系統" in pg.inner_text("#ch-shopee") and "PChome 訂單管理系統" in pg.inner_text("#ch-pchome")
               and pg.eval_on_selector("#ch-coupang", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(224, 20, 34)"
               and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)"
+              and "MOMO 訂單管理系統" in pg.inner_text("#ch-momo") and "建置中" in pg.inner_text("#ch-momo")
+              and pg.eval_on_selector("#ch-momo", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(228, 0, 127)"
+              and pg.eval_on_selector_all("#chs .ch-h b", "els => els.every(b => b.scrollHeight <= b.clientHeight + 2)")
               and pg.eval_on_selector("#ch-coupang .ch-go", "e => getComputedStyle(e).backgroundColor") == "rgb(224, 20, 34)")
         check("蝦皮特選卡片有「進入後台」連到 /shopee、本月出貨箱數先放 —；PChome 不放數字", pg.get_attribute("#ch-shopee .ch-go", "href") == "/shopee"
               and "—" in pg.inner_text("#ch-shopee") and "規劃中" in pg.inner_text("#ch-pchome") and "—" in pg.inner_text("#ch-pchome"))

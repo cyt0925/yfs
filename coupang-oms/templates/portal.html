@@ -15,7 +15,7 @@
   --bg: #f6f4f8; --surface: #ffffff; --surface-2: #faf8fc; --ink: #1d1626; --ink-2: #4b4257; --muted: #776d84;
   --line: #e7e2ed; --line-2: #f0ecf3; --accent: #8c1436; --accent-wash: #fbeaf0;
   /* 通路顏色跟著通路走（卡片頂端線、選單小圓點、圖表） */
-  --ch-coupang: #e01422; --ch-shopee: #ee4d2d; --ch-pchome: #0046bf;   /* 照各通路 logo 取的顏色（Jerry 2026-10-06：酷澎紅、PChome 藍） */
+  --ch-coupang: #e01422; --ch-shopee: #ee4d2d; --ch-pchome: #0046bf; --ch-momo: #e4007f;   /* 照各通路 logo 取的顏色（Jerry 2026-10-06：酷澎紅、PChome 藍；MOMO 桃紅 2026-10-27） */
   --st-critical: #d03b3b; --st-warning: #b07400; --st-info: #6b6378;
   --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
   --f-num: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans TC", sans-serif;
@@ -85,13 +85,13 @@ a { color: inherit; }
 .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; padding: 0 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
 .pill.crit { color: var(--st-critical); } .pill.warn { color: var(--st-warning); } .pill.info { color: var(--st-info); }
 
-.chs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.chs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
 .ch { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; position: relative; overflow: hidden; }
 .ch::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--chc); }
 .ch-h { display: flex; align-items: center; gap: 8px; }
-.ch-h b { font-size: 16px; }
+.ch-h b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ch-h img { height: 34px; width: auto; flex: none; }
-.chip { font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
+.chip { white-space: nowrap; font-size: 11px; padding: 1px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .stat .k { font-size: 12px; color: var(--muted); }
 .stat .v { font-size: 22px; font-weight: 700; line-height: 1.2; }
@@ -420,7 +420,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     $("#chs").innerHTML = D.channels.map(c => {
       const v = (n, unit) => c.live && n != null ? `${fmt(n)}<small>${unit}</small>` : `—`;
       return `<div class="card ch ${c.live ? "" : "soon"}" id="ch-${esc(c.key)}" style="--chc:var(--ch-${esc(c.key)})">
-        <div class="ch-h"><img src="${STATIC}${esc(c.logo)}" alt=""><b>${esc(c.title)}</b>${c.live ? "" : `<span class="chip">${esc(c.status)}</span>`}</div>
+        <div class="ch-h"><img src="${STATIC}${esc(c.logo)}" alt=""><b title="${esc(c.title)}">${esc(c.title)}</b></div>
         <div class="stats">
           <div class="stat"><div class="k">今日新進</div><div class="v num">${v(c.new_today, "張 PO")}</div></div>
           <div class="stat"><div class="k">待出貨</div><div class="v num">${v(c.pending_pos, "張 PO")}</div></div>
@@ -428,7 +428,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
         </div>
         <div class="ch-f">${c.live
           ? `<span>${c.last_import ? `最後匯入 ${esc(c.last_import.slice(5, 16))}` : (c.key === "shopee" ? "尚未匯入蝦皮採購單" : "尚未匯入訂單彙總表")}</span><span class="grow"></span><a class="btn ch-go" href="${esc(c.url)}" style="background:var(--ch-${esc(c.key)});border-color:var(--ch-${esc(c.key)})">進入後台 <i class="bi bi-arrow-right"></i></a>`
-          : `<span>預計於蝦皮特選之後建置</span>`}</div></div>`;
+          : `<span class="chip">${esc(c.status)}</span><span>${esc(c.note || "")}</span>`}</div></div>`;
     }).join("");
   }
 

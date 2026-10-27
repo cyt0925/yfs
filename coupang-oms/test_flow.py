@@ -1370,7 +1370,7 @@ def main():
     check("改單統計在 YFS 訂單系統裡有自己一頁（不再跳到商品主檔）", "改單統計" in st and 'id="st-kpi"' in st and "/api/master/stats" in st)
     check("首頁標題：今日事項、各通路系統；卡片用各通路 logo＋訂單管理系統名稱",
           "今日事項" in html and "各通路系統" in html and "今天要處理的事" not in html
-          and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理系統", "蝦皮特選訂單管理系統", "PChome 訂單管理系統"]
+          and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理系統", "蝦皮特選訂單管理系統", "MOMO 訂單管理系統", "PChome 訂單管理系統"]
           and all(os.path.exists(os.path.join(BASE_DIR, "static", c["logo"])) for c in portal.CHANNELS))
     idx = client.get("/coupang").get_data(as_text=True)
     check("酷澎訂單管理系統：logo 換成酷澎配送與購物清單圖示、有回 YFS 訂單系統的連結", "logo_coupang.png" in idx and 'id="btn-yfs"' in idx and '<a href="/" id="btn-yfs"' in idx)
@@ -1381,8 +1381,9 @@ def main():
     check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
     res = client.get("/api/portal/summary"); d = res.get_json()
     chs = {c["key"]: c for c in d["channels"]}
-    check("三個通路：酷澎、蝦皮特選有數字（蝦皮特選 2026-10-07 上線），PChome 不放假數字",
-          res.status_code == 200 and list(chs) == ["coupang", "shopee", "pchome"] and chs["coupang"]["live"]
+    check("四個通路：酷澎、蝦皮特選有數字（蝦皮特選 2026-10-07 上線），MOMO（2026-10-27 建置中）、PChome 不放假數字",
+          res.status_code == 200 and list(chs) == ["coupang", "shopee", "momo", "pchome"] and chs["coupang"]["live"]
+          and not chs["momo"]["live"] and chs["momo"]["status"] == "建置中" and "new_today" not in chs["momo"]
           and chs["shopee"]["live"] and chs["shopee"]["url"] == "/shopee" and isinstance(chs["shopee"]["new_today"], int)
           and chs["shopee"]["month_boxes"] is None and not chs["pchome"]["live"] and "new_today" not in chs["pchome"])
     conn = db.get_conn()
