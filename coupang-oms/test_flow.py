@@ -1725,8 +1725,35 @@ def main():
     d = r.get_json()
     check("主因可複選（Jerry 2026-10-21）：存兩個、照清單順序、重複的去掉、畫面用「、」接", r.status_code == 200 and d["rounds"][-1]["reasons"] == ["庫存不足", "約倉問題"]
           and d["rounds"][-1]["reason"] == "庫存不足、約倉問題", str(d["rounds"][-1:]))
+    # 快到貨還沒完成（Jerry 2026-10-27「OK 照這樣做」）：3 個工作天內到貨（或已過）、狀態還是已建立／已回覆／處理中／修改中
+    import due
+    check("工作天：10/8（四）往後 3 個工作天跳過 10/9 國慶補假和週末 → 10/14；小字剩 3 天／已過 3 天／今天",
+          due.cutoff(_dt.date(2026, 10, 8)) == _dt.date(2026, 10, 14) and due.label("2026-10-14", _dt.date(2026, 10, 8)) == "剩 3 天"
+          and due.label("2026-10-05", _dt.date(2026, 10, 8)) == "已過 3 天" and due.label("2026-10-08", _dt.date(2026, 10, 8)) == "今天")
+    today_d = _dt.date.fromisoformat(db.today())
+    open_pos = sorted({r["po_number"] for r in client.get("/api/pos", query_string={"page_size": 500, "po_status": ",".join(due.DUE_STATUSES)}).get_json()["rows"]})
+    near, far = open_pos[0], open_pos[1]
+    conn = db.get_conn()
+    conn.execute("UPDATE orders SET delivery_date = ? WHERE po_number = ?", (due.cutoff(today_d).isoformat(), near))
+    conn.execute("UPDATE orders SET delivery_date = ? WHERE po_number = ?", ((due.cutoff(today_d) + _dt.timedelta(days=1)).isoformat(), far))
+    dw, dp = due.where(today_d)
+    exp_due = {r["po_number"] for r in conn.execute(f"SELECT DISTINCT po_number FROM order_rows WHERE {dw}", dp).fetchall()}
+    conn.commit(); conn.close()
+    dj = client.get("/api/pos", query_string={"page_size": 500, "due": "1"}).get_json()
+    got_due = {r["po_number"] for r in dj["rows"]}
+    allj = client.get("/api/pos", query_string={"page_size": 500}).get_json()
+    tag = {r["po_number"]: r["due_tag"] for r in allj["rows"]}
+    check("只看快到貨還沒完成（due=1）：第 3 個工作天到貨的有、第 4 個工作天的沒有；跟資料庫算的一樣",
+          near in got_due and far not in got_due and got_due == exp_due, f"{near} {far} {len(got_due)}/{len(exp_due)}")
+    check("上面紅卡的數字＝篩出來的張數；清單到貨日旁有「剩 N 天」、沒到的不標",
+          allj["summary"]["due"] == len(got_due) == dj["total"] == dj["summary"]["due"]
+          and tag[near] == f"剩 {due.WORK_DAYS} 天" and tag[far] == "", f"{allj['summary']} {tag[near]!r} {tag[far]!r}")
+    tasks = client.get("/api/portal/summary").get_json()["tasks"]
+    check("首頁今日事項：「酷澎快到貨還沒完成的 PO N 張」、連到 ?due=1",
+          any(t["key"] == "due" and t["title"] == f"酷澎快到貨還沒完成的 PO {len(got_due)} 張" and t["url"].endswith("?due=1") for t in tasks), str([t["title"] for t in tasks]))
+
     page39 = client.get("/coupang").get_data(as_text=True)
-    check("酷澎頁有「只看處理完成後又有改動的」篩選、PO 視窗有修改紀錄、有「先存著」", 'id="f-round"' in page39 and "roundsHtml" in page39 and "這一輪處理完成" in page39 and "先存著（尚未完成）" in page39)
+    check("酷澎頁有「只看處理完成後又有改動的」「只看快到貨還沒完成」篩選、紅卡、PO 視窗有修改紀錄、有「先存著」", 'id="f-round"' in page39 and 'id="f-due"' in page39 and 'id="stat-due-card"' in page39 and "roundsHtml" in page39 and "這一輪處理完成" in page39 and "先存著（尚未完成）" in page39)
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

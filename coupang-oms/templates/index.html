@@ -13,6 +13,10 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='tailwind.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap-icons.css') }}">
 <style>
+/* 快到貨還沒完成：到貨日紅字＋剩幾天 */
+.due-d { color: #c81e1e; font-weight: 700; }
+.due-chip { display: block; width: fit-content; margin-top: 2px; font-size: 11px; line-height: 16px; font-weight: 700; color: #fff; background: #c81e1e; border-radius: 999px; padding: 0 7px; }
+.due-chip.over { background: #7f1d1d; }
 /* 複選下拉 */
 .pk-btn { width: 100%; min-width: 8rem; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
 .pk-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -178,7 +182,7 @@
 <main class="max-w-[1800px] mx-auto px-5 py-5 pb-24 space-y-4">
 
   <!-- ── 統計 ───────────────────────────────────────── -->
-  <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
+  <section class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">
     <div class="bg-white rounded-xl p-4 shadow-sm border border-ink-100">
       <p class="text-xs text-ink-400">符合條件筆數</p>
       <p id="stat-total" class="text-2xl font-bold text-ink-900">0</p>
@@ -194,6 +198,11 @@
     <button id="stat-alert-card" class="bg-white rounded-xl p-4 shadow-sm border-2 border-red-300 text-left hover:bg-red-50">
       <p class="text-xs text-red-700"><i class="bi bi-exclamation-octagon-fill"></i> 已拉單後酷澎修改</p>
       <p id="stat-alert" class="text-2xl font-bold text-red-600">0</p>
+    </button>
+    <!-- 快到貨還沒完成（Jerry 2026-10-27）：3 個工作天內到貨、狀態還是已建立／已回覆／處理中／修改中 -->
+    <button id="stat-due-card" class="rounded-xl p-4 shadow-sm text-left" style="background:#fef2f2;border:2px solid #c81e1e" title="點一下只看這些單">
+      <p class="text-xs" style="color:#991b1b"><i class="bi bi-alarm-fill"></i> 快到貨還沒完成（3 個工作天內）</p>
+      <p id="stat-due" class="text-2xl font-bold" style="color:#c81e1e">0</p>
     </button>
   </section>
 
@@ -251,6 +260,9 @@
       <label class="flex items-end gap-2 pb-1">
         <input id="f-review" type="checkbox" class="w-4 h-4">
         <span class="text-xs text-ink-600">只看待確認</span></label>
+      <label class="flex items-end gap-2 pb-1" title="到貨日在 3 個工作天內（或已經過了），PO 狀態還是已建立、已回覆、處理中、修改中">
+        <input id="f-due" type="checkbox" class="w-4 h-4">
+        <span class="text-xs text-ink-600" style="white-space:nowrap">只看快到貨還沒完成</span></label>
       <label class="flex items-end gap-2 pb-1">
         <input id="f-flagged" type="checkbox" class="w-4 h-4">
         <span class="text-xs text-ink-600">只看已標記顏色</span></label>
@@ -935,6 +947,7 @@ function filters() {
     needs_review: $("#f-review").checked ? "1" : "",
     flagged: $("#f-flagged").checked ? "1" : "",
     round_pending: $("#f-round").checked ? "1" : "",
+    due: $("#f-due").checked ? "1" : "",
     alert_level: filters._alert || "",
   };
 }
@@ -950,6 +963,7 @@ async function loadOrders() {
   $("#stat-total").textContent = data.total.toLocaleString();
   $("#stat-qty").textContent = (data.summary.qty_ship || 0).toLocaleString();
   $("#stat-review").textContent = data.summary.needs_review;
+  $("#stat-due").textContent = data.summary.due ?? 0;
   $("#stat-alert").textContent = data.summary.changed_after_pull;
 
   const pages = Math.max(1, Math.ceil(TOTAL / PAGE_SIZE));
@@ -1012,7 +1026,7 @@ function renderRows() {
           data-inline="filed_date" data-po="${esc(r.po_number)}"
           title="${r.is_pulled ? "已拉單鎖定，無法修改" : "點選即可修改"}">${esc(r.filed_date)}</td>
       <td class="px-2 py-2 whitespace-nowrap" title="酷澎整合表的下單日期">${esc(r.order_date) || "—"}</td>
-      <td class="px-2 py-2 whitespace-nowrap">${esc(r.delivery_date)}${mixedTag(r.delivery_date_variants, "到貨日")}</td>
+      <td class="px-2 py-2 whitespace-nowrap">${r.due_tag ? `<span class="due-d">${esc(r.delivery_date)}</span><span class="due-chip${r.due_tag.startsWith("已過") ? " over" : ""}" title="到貨日快到了，PO 狀態還沒完成">${esc(r.due_tag)}</span>` : esc(r.delivery_date)}${mixedTag(r.delivery_date_variants, "到貨日")}</td>
       <td class="px-2 py-2 whitespace-nowrap">${esc(r.warehouse)}${mixedTag(r.warehouse_variants, "到貨倉別")}</td>
       <td class="px-2 py-2 whitespace-nowrap inline-cell"
           data-inline="shipping_method" data-po="${esc(r.po_number)}"
@@ -2038,7 +2052,7 @@ function autoSearch(delay = 0) {
   _autoT = setTimeout(() => { PAGE = 1; filters._alert = ""; loadOrders(); }, delay);
 }
 ["#f-from", "#f-to", "#f-order-from", "#f-order-to",
- "#f-review", "#f-flagged", "#f-round"].forEach(s => $(s).addEventListener("change", () => autoSearch()));
+ "#f-review", "#f-flagged", "#f-round", "#f-due"].forEach(s => $(s).addEventListener("change", () => autoSearch()));
 ["#f-po", "#f-keyword"].forEach(s => $(s).addEventListener("input", () => autoSearch(400)));
 $("#btn-reset").addEventListener("click", () => {
   ["#f-po", "#f-keyword", "#f-from", "#f-to", "#f-order-from", "#f-order-to"].forEach(s => $(s).value = "");
@@ -2046,6 +2060,7 @@ $("#btn-reset").addEventListener("click", () => {
   $("#f-review").checked = false;
   $("#f-flagged").checked = false;
   $("#f-round").checked = false;
+  $("#f-due").checked = false;
   filters._alert = ""; PAGE = 1; loadOrders();
 });
 if (new URLSearchParams(location.search).get("round_pending") === "1") $("#f-round").checked = true;   // 首頁今日事項連過來
@@ -2054,6 +2069,10 @@ $("#btn-next").addEventListener("click", () => { PAGE++; loadOrders(); });
 $("#stat-review-card").addEventListener("click", () => {
   $("#f-review").checked = true; filters._alert = ""; PAGE = 1; loadOrders();
 });
+$("#stat-due-card").addEventListener("click", () => {
+  $("#f-due").checked = true; filters._alert = ""; PAGE = 1; loadOrders();
+});
+if (new URLSearchParams(location.search).get("due") === "1") $("#f-due").checked = true;   // 首頁今日事項連過來
 $("#stat-alert-card").addEventListener("click", () => {
   filters._alert = "changed_after_pull"; $("#f-review").checked = false; PAGE = 1; loadOrders();
 });

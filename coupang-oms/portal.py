@@ -17,7 +17,8 @@ Alice 2026-10-06：「各通路可以分開……最外層我們做一個訂單�
   1. 酷澎改了單要確認：orders.needs_review＝1、而且最近 7 天有被整合表改過（edit_logs source＝import）的 PO。
   2. 瑪氏拆單還沒填 EIP 單號：交貨日今天以後、eip_po 空白的拆單。
   3. 寶僑竹運拋檔還沒產：今天以後最近一個有寶僑訂單的交貨日，每個倉查竹運匯出紀錄有沒有那天那倉。
-  4. 過了交期還沒驗收：交貨日在過去 14 天、驗收狀態還是「未驗收」、沒取消的 PO。
+  4. 酷澎快到貨還沒完成：到貨日在 3 個工作天內（或已經過了）、PO 狀態還是已建立／已回覆／處理中／修改中（規則在 due.py）。
+  5. 過了交期還沒驗收：交貨日在過去 14 天、驗收狀態還是「未驗收」、沒取消的 PO。
 - 改單：直接用改單統計（master/stats.py）這個月的合計，估計工時用改單統計頁填的「每次幾分鐘」（存在瀏覽器）。
 """
 import datetime as _dt
@@ -25,6 +26,7 @@ import datetime as _dt
 from flask import Blueprint, current_app, jsonify, redirect, render_template, session, url_for
 
 import db
+import due
 import rounds
 
 portal_bp = Blueprint("portal", __name__)
@@ -124,6 +126,13 @@ def tasks(conn, today):
         out.append({"key": "review", "level": "crit", "level_text": "待確認", "icon": "bi-pencil-square",
                     "title": f"酷澎近 {REVIEW_DAYS} 天修改 {len(pos)} 張 PO", "detail": "PO " + "、".join(pos[:2]) + ("…" if len(pos) > 2 else ""),
                     "url": COUPANG_URL, "count": len(pos)})
+
+    dw, dp = due.where(today)
+    n = _one(conn, f"SELECT COUNT(DISTINCT po_number) FROM order_rows WHERE {dw}", tuple(dp)) or 0
+    if n:
+        out.append({"key": "due", "level": "crit", "level_text": "快到貨", "icon": "bi-alarm",
+                    "title": f"酷澎快到貨還沒完成的 PO {n} 張", "detail": f"到貨日在 {due.WORK_DAYS} 個工作天內，PO 狀態還沒完成",
+                    "url": COUPANG_URL + "?due=1", "count": int(n)})
 
     # 商品主檔、瑪氏的表 init_db 一定會建；不包 try：PostgreSQL 一句失敗整個交易就不能再查，包了反而後面全錯
     n = _one(conn, "SELECT COUNT(*) FROM mst_mars_splits WHERE COALESCE(eip_po, '') = '' AND delivery_date >= ?", (t,)) or 0

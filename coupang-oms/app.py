@@ -21,6 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import db
 import rounds                    # PO 修改紀錄（一輪一個 OK）
+import due                       # 快到貨還沒完成（2026-10-27）
 from db import get_conn, init_db, now
 from importer import (
     COUPANG_FIELDS, CRITICAL_FIELDS, ImportError_, desired_ship, diff_rows,
@@ -42,7 +43,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-22.13"
+BUILD_VERSION = "2026-10-27.1"
 
 app = Flask(__name__)
 
@@ -1632,6 +1633,10 @@ def build_filter(args):
     if args.get("needs_review") == "1":
         add("needs_review = 1")
 
+    if args.get("due") == "1":                   # 快到貨還沒完成：3 個工作天內到貨（含已過）、狀態還沒完成
+        due_where, due_params = due.where(_dt.date.fromisoformat(db.today()))
+        add(due_where, *due_params)
+
     if args.get("alert_level"):
         add("alert_level = ?", norm_text(args.get("alert_level")))
 
@@ -2035,6 +2040,10 @@ def api_pos():
         total = conn.execute(
             f"SELECT COUNT(*) AS c FROM ({base})", params).fetchone()["c"]
 
+        today_d = _dt.date.fromisoformat(db.today())
+        due_where, due_params = due.where(today_d)
+        due_n = conn.execute(f"SELECT COUNT(*) AS c FROM ({base}) s WHERE po_number IN (SELECT po_number FROM order_rows WHERE {due_where})",
+                             params + due_params).fetchone()["c"]
         summary = conn.execute(
             f"""SELECT COALESCE(SUM(qty_ship),0) AS qty,
                        SUM(CASE WHEN review_count>0 THEN 1 ELSE 0 END) AS review,
@@ -2058,6 +2067,7 @@ def api_pos():
             info = rounds.pending_info(conn, item["po_number"]) if item["po_number"] in pend_set else None
             item["round_after"] = rounds.after_text(info) if info else ""          # 完整一句（PO 視窗提示、測試用）
             item["round_tag"] = rounds.after_tag(info) if info else None          # 清單那一行標籤（2026-10-22 改短）
+            item["due_tag"] = due.label(item.get("delivery_date"), today_d) if due.is_due(item.get("po_status"), item.get("delivery_date"), today_d) else ""
             out.append(item)
 
         return jsonify({
@@ -2066,6 +2076,7 @@ def api_pos():
                 "qty_ship": summary["qty"] or 0,
                 "needs_review": summary["review"] or 0,
                 "changed_after_pull": summary["after_pull"] or 0,
+                "due": due_n or 0,
                 "pulled": summary["pulled"] or 0,
             },
             "rows": out,

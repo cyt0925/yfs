@@ -1153,6 +1153,25 @@ def main():
         check("滑鼠移到標籤上 → 跳出完整內容（誰改了什麼、哪天）", pg.is_visible(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip")
               and "下修出貨數量 1 項" in pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip"), pg.inner_text(f"#tbody tr:has(button[data-open='{po_g}']) .rt-tip"))
         pg.uncheck("#f-round"); pg.wait_for_timeout(600)
+        # 快到貨還沒完成（Jerry 2026-10-27「OK 照這樣做」）：紅卡、到貨日紅字＋剩幾天、點卡只看這些單
+        import due
+        cn = db.get_conn()
+        cn.execute("UPDATE po_headers SET po_status = ? WHERE po_number = ?", ("已建立", po_g))
+        cn.execute("UPDATE orders SET delivery_date = ? WHERE po_number = ?", (due.cutoff(datetime.date.fromisoformat(db.today())).isoformat(), po_g))
+        cn.commit(); cn.close()
+        pg.goto(f"{base}/coupang"); pg.wait_for_selector("#tbody tr", timeout=15000); pg.wait_for_timeout(500)
+        n_due = int(pg.inner_text("#stat-due")); PG_SIZE = pg.evaluate("PAGE_SIZE")
+        pg.click("#stat-due-card"); pg.wait_for_timeout(1200)
+        row_g = f"#tbody tr:has(button[data-open='{po_g}'])"
+        check("上面有紅卡「快到貨還沒完成（3 個工作天內）」；點一下 → 勾起「只看快到貨還沒完成」、清單只剩這些單",
+              n_due >= 1 and "快到貨還沒完成" in pg.inner_text("#stat-due-card") and pg.is_checked("#f-due")
+              and pg.locator("#tbody tr:has(button[data-open])").count() == min(n_due, PG_SIZE) and pg.query_selector(row_g), f"{n_due} {pg.inner_text('#tbody')[:200]}")
+        check("那張單的到貨日紅字、旁邊寫「剩 3 天」", pg.inner_text(f"{row_g} .due-chip") == "剩 3 天"
+              and pg.evaluate(f"getComputedStyle(document.querySelector(\"{row_g} .due-d\")).color") == "rgb(200, 30, 30)")
+        pg.uncheck("#f-due"); pg.wait_for_timeout(600)
+        pg.goto(f"{base}/coupang?due=1"); pg.wait_for_selector("#tbody tr", timeout=15000); pg.wait_for_timeout(800)
+        check("首頁今日事項連過來（/coupang?due=1）→ 已經勾好、只看這些單", pg.is_checked("#f-due") and pg.locator("#tbody tr:has(button[data-open])").count() == min(n_due, PG_SIZE))
+        pg.uncheck("#f-due"); pg.wait_for_timeout(600)
 
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/master", "#dd-line-btn"),
