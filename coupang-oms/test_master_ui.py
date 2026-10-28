@@ -1252,8 +1252,10 @@ def main():
         pg.click(f"#tbl tr.og[data-no='{no0}']"); pg.wait_for_selector("#sd-body .ck-t", timeout=10000)
         ntie = pg.locator("#sd-body [data-pick]").count()
         check("右側 ③：兩批數量一樣的標「要決定」、效期可以點", ntie >= 2 and "要決定" in pg.inner_text("#sd-body .ck-t"), pg.inner_text("#sd-body .ck-t")[:300])
-        while pg.locator("#sd-body [data-pick]").count():
-            pg.click("#sd-body [data-pick] >> nth=0"); pg.wait_for_timeout(900)
+        for _ in range(10):                                # 選過的列效期還能再點（可以改），所以只點還在「要決定」的列；最多 10 次
+            if not pg.locator("#sd-body tr.ask [data-pick]").count():
+                break
+            pg.click("#sd-body tr.ask [data-pick] >> nth=0"); pg.wait_for_timeout(900)
         check("點一批的效期 → 寫入效期、不用再決定", "要決定" not in pg.inner_text("#sd-body .ck-t") and "寫入效期" in pg.inner_text("#sd-body .ck-t"), pg.inner_text("#sd-body .ck-t")[:300])
         xh = ["倉別", "入庫單號", "入庫預定日期", "商品編號", "商品名稱", "單品編號", "商品有效日期", "入庫最低有效期限", "採購數量", "商品原廠編號"]
         wbx = openpyxl.Workbook(); wsx = wbx.active; wsx.append(xh)
