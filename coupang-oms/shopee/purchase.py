@@ -544,12 +544,14 @@ def eip_xls(rows, line):
     return buf.getvalue()
 
 
-def detail_xlsx(rows):
-    """採購下採明細：照「蝦皮特選-商品下採.xlsx」，兩頁「箱」（轉換率 1）「小單位」；數量/箱＝進貨÷轉換率（公式）。"""
+def detail_xlsx(rows, line="寶僑"):
+    """採購下採明細：照「蝦皮特選-商品下採.xlsx」，寶僑兩頁「箱」（轉換率 1）「小單位」；紙潔 EIP 一律換箱、不分，明細也只出一頁
+    （Jerry 2026-10-28）。數量/箱＝進貨÷轉換率（公式）。"""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     head = ["永豐料號", "品名", "單位", "進貨", "轉換率", "數量/箱"]
-    for title, pick in (("箱", lambda r: r["conv"] == 1), ("小單位", lambda r: r["conv"] != 1)):
+    pages = (("箱", lambda r: r["conv"] == 1), ("小單位", lambda r: r["conv"] != 1)) if line == "寶僑" else (("下採", lambda r: True),)
+    for title, pick in pages:
         ws = wb.create_sheet(title)
         ws.append(head)
         for c in ws[1]:
@@ -641,7 +643,7 @@ def api_purchase_generate():
                     conn.execute("INSERT INTO shp_eip_items (eip_id, order_id) VALUES (?,?)", (eid, p["order_id"]))
             for (line, _d, _w), ps in details.items():
                 name = detail_filename(line, fulfil, sorted({p["_date"] for p in ps}), sorted({p["_wh"] for p in ps}))
-                zf.writestr(name, detail_xlsx([r for r in _merge_rows(ps) if r["in_qty"]]))
+                zf.writestr(name, detail_xlsx([r for r in _merge_rows(ps) if r["in_qty"]], line))
                 names.append(name)
         for g in orders:
             _log(conn, g["line"], g["order_no"], "", "", "shopee_eip", "產出 EIP 採購單", "", f"{fulfil}；{len(g['items'])} 品項", operator, "manual",

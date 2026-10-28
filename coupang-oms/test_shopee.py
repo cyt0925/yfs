@@ -478,6 +478,8 @@ def stage2(c, preview, orders):
         check("紙潔：一律換成箱（360÷12＝30、1392÷12＝116、箱購 42），備註空白，第 10 欄標題不動",
               [(r_[1], r_[3], r_[6], r_[8]) for r_ in rows] == [("1022257", "箱", 30, ""), ("1022248", "箱", 116, ""), ("1021315", "箱", 42, "")]
               and head[9] != "", str(rows))
+        wbd = openpyxl.load_workbook(io.BytesIO(z.read("蝦皮特選-商品下採_紙潔直送_1022到觀音.xlsx")))
+        check("紙潔下採明細只有一頁（不分箱、小單位；Jerry 2026-10-28）", wbd.sheetnames == ["下採"] and wbd["下採"].max_row == 4, str(wbd.sheetnames))
         head, rows = xls_rows(z.read("產品採購表上傳-寶僑直送_1023到高鐵南-小單位.xls"))
         check("寶僑直送小單位：單位寫箱、數量 216÷4＝54、轉換率 4", [(r_[1], r_[3], r_[6], r_[9]) for r_ in rows] == [("4987176232878", "箱", 54, 4)], str(rows))
         head, rows = xls_rows(z.read("產品採購表上傳-寶僑直送_1023到高鐵南-箱單位.xls"))
