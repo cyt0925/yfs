@@ -655,12 +655,12 @@ def main():
         check("左側選單：酷澎底下有訂單管理、驗收單簽名、採購表轉換、商品主檔、竹運、瑪氏，還有 SOP 與歷程", all(k in nav for k in ("訂單管理", "驗收單簽名", "採購表轉換", "商品主檔自動化", "竹運出貨拋檔", "瑪氏出貨", "營運 SOP 檢索", "歷程紀錄")))
         check("沒有寫買斷、寄倉", "買斷" not in pg.inner_text("body") and "寄倉" not in pg.inner_text("body"))
         check("左上角是文字「YFS 訂單系統」、選單不畫捲軸", pg.inner_text(".brand").strip() == "YFS 訂單系統" and pg.eval_on_selector(".side", "e => getComputedStyle(e).scrollbarWidth") == "none")
-        check("各通路系統卡片：logo 圖都載得出來、標題是 XX 訂單管理系統、酷澎線紅色、MOMO 桃紅、PChome 線藍色",
+        check("各通路系統卡片：logo 圖都載得出來（52px 看得到吉祥物）、標題是 XX 訂單管理（不寫系統）、酷澎線紅色、MOMO 桃紅、PChome 線藍色",
               pg.eval_on_selector_all("#chs .ch-h img", "els => els.length === 4 && els.every(i => i.complete && i.naturalWidth > 0)")
-              and "酷澎訂單管理系統" in pg.inner_text("#ch-coupang") and "蝦皮特選訂單管理系統" in pg.inner_text("#ch-shopee") and "PChome 訂單管理系統" in pg.inner_text("#ch-pchome")
+              and "酷澎訂單管理" in pg.inner_text("#ch-coupang") and "蝦皮特選訂單管理" in pg.inner_text("#ch-shopee") and "PChome 訂單管理" in pg.inner_text("#ch-pchome")
               and pg.eval_on_selector("#ch-coupang", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(224, 20, 34)"
               and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)"
-              and "MOMO 訂單管理系統" in pg.inner_text("#ch-momo") and pg.get_attribute("#ch-momo .ch-go", "href") == "/momo"
+              and "MOMO 訂單管理" in pg.inner_text("#ch-momo") and pg.get_attribute("#ch-momo .ch-go", "href") == "/momo"
               and pg.eval_on_selector("#ch-momo", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(228, 0, 127)"
               and pg.eval_on_selector_all("#chs .ch-h b", "els => els.every(b => b.scrollHeight <= b.clientHeight + 2)")
               and pg.eval_on_selector("#ch-coupang .ch-go", "e => getComputedStyle(e).backgroundColor") == "rgb(224, 20, 34)")

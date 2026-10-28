@@ -1370,7 +1370,7 @@ def main():
     check("改單統計在 YFS 訂單系統裡有自己一頁（不再跳到商品主檔）", "改單統計" in st and 'id="st-kpi"' in st and "/api/master/stats" in st)
     check("首頁標題：今日事項、各通路系統；卡片用各通路 logo＋訂單管理系統名稱",
           "今日事項" in html and "各通路系統" in html and "今天要處理的事" not in html
-          and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理系統", "蝦皮特選訂單管理系統", "MOMO 訂單管理系統", "PChome 訂單管理系統"]
+          and [c["title"] for c in portal.CHANNELS] == ["酷澎訂單管理", "蝦皮特選訂單管理", "MOMO 訂單管理", "PChome 訂單管理"]   # 拿掉「系統」兩字（Jerry 2026-10-28）
           and all(os.path.exists(os.path.join(BASE_DIR, "static", c["logo"])) for c in portal.CHANNELS))
     idx = client.get("/coupang").get_data(as_text=True)
     check("酷澎訂單管理系統：logo 換成酷澎配送與購物清單圖示、有回 YFS 訂單系統的連結", "logo_coupang.png" in idx and 'id="btn-yfs"' in idx and '<a href="/" id="btn-yfs"' in idx)

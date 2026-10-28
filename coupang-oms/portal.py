@@ -40,10 +40,10 @@ DONE_STATUSES = ("已完成", "已取消")
 
 CHANNELS = [
     # title／logo：首頁「各通路系統」卡片的標題與圖示（Jerry 2026-10-06 給的三個圖檔，縮成 160px 高放 static/）
-    {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": "", "url": COUPANG_URL},
-    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理系統", "logo": "logo_shopee.png", "live": True, "status": "", "url": "/shopee"},
-    {"key": "momo", "name": "MOMO", "title": "MOMO 訂單管理系統", "logo": "logo_momo.png", "live": True, "status": "", "url": "/momo"},
-    {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中", "note": "預計於 MOMO 之後建置"},
+    {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理", "logo": "logo_coupang.png", "live": True, "status": "", "url": COUPANG_URL},
+    {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理", "logo": "logo_shopee.png", "live": True, "status": "", "url": "/shopee"},
+    {"key": "momo", "name": "MOMO", "title": "MOMO 訂單管理", "logo": "logo_momo.png", "live": True, "status": "", "url": "/momo"},
+    {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理", "logo": "logo_pchome.png", "live": False, "status": "規劃中", "note": "預計於 MOMO 之後建置"},
 ]
 
 
