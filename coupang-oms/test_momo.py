@@ -1,7 +1,7 @@
 """MOMO 訂單管理系統（/momo）端到端測試（第一批，2026-10-28）。
 讀 MOMO 下載檔（單據首列往下帶、單位代碼、自動分線別、錯誤清單）→ 一次好幾個檔預覽、確認匯入 → 換成箱數、除不盡改數量、
 贈品改 0 → 產 EIP 採購單（瑪氏依倉／到貨日／箱或盒包／品類／中標分檔）→ 回填 EIP 單號 → 瑪氏採購單、直送採購單 →
-重傳差異、出貨方式、取消產出、右側面板、首頁卡片、歷程。
+重傳差異、出貨方式、取消產出、右側面板 → ③ 勇信配送明細表核缺貨與效期、填 MOMO 效期匯入檔 → 首頁卡片、歷程。
 
 測試檔照 MOMO 下載檔的表頭用程式造（真的業務檔不放進 repo）；瑪氏商品總表用 samples/mars/fake 那份假的。
 執行：python test_momo.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -86,6 +86,26 @@ def price_xlsx(rows):
     return buf.getvalue()
 
 
+def yx_pdf(pages):
+    """假的勇信配送明細表（文字排法照真檔，跟 test_shopee.yx_pdf 一樣）：pages = [(EIP單號, [(瑪氏貨號, 箱數, 效期) 或 (瑪氏貨號, [(箱數, 效期), ...])])]。"""
+    import pymupdf
+    doc = pymupdf.open()
+    for eip, items in pages:
+        lines = ["桃園市觀音區", "BMS100230-永豐商店-momo", "出貨廠商名稱：A5888-台灣瑪氏股份有限公司", "指送日期：2026/10/23",
+                 "配 送 明 細 表(預排鮮度)", "產品編號", "產品名稱", "入數", "配送數量", f"收貨單號：{eip}-momo-DC6"]
+        total = 0
+        for n, it in enumerate(items, start=1):
+            batches = it[1] if isinstance(it[1], list) else [(it[1], it[2])]
+            lines += [f"58880{it[0]}", str(n), f"假品名 {it[0]} 1:6:10"]
+            for q, exp in batches:
+                lines += [f"{q}C  ", "625D1TAP01"] + ([exp] if exp else []); total += q
+        lines += ["備註:momo嘜頭+入倉單", "單據金額:", f"合計箱數:{total}", "客戶簽章:"]
+        page = doc.new_page(); y = 40
+        for ln in lines:
+            page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
+    return doc.tobytes()
+
+
 def up(c, url, files):
     return c.post(url, data={"file": [(io.BytesIO(b), n) for n, b in files]}, content_type="multipart/form-data")
 
@@ -140,7 +160,7 @@ def main():
 
     print("\n【2】上傳入口認檔、一次好幾個檔預覽、確認匯入")
     r = up(c, "/api/momo/kinds", [("a.xls", unsend_xls([MARS_A])), ("紙潔價格本.xlsx", price_xlsx([("0102365R", "箱", "x", 1)])), ("x.pdf", b"%PDF-1.4")])
-    check("認檔：MOMO 下載檔 orders、價格本 conv、PDF 認不出來", [f["kind"] for f in r.get_json()["files"]] == ["orders", "conv", ""], str(r.get_json()))
+    check("認檔：MOMO 下載檔 orders、價格本 conv、PDF 當勇信配送明細表", [f["kind"] for f in r.get_json()["files"]] == ["orders", "conv", "yx"], str(r.get_json()))
     master = os.path.join(BASE_DIR, "samples", "mars", "fake", "假_瑪氏商品總表.xlsx")
     up(c, "/api/mars/products/import", [("假_瑪氏商品總表.xlsx", open(master, "rb").read())])
     up(c, "/api/shopee/conv/import", [("紙潔價格本整合.xlsx", price_xlsx([("0102365R", "箱", "新柔韌", 1), ("0104074C", "包", "摩力抽", 24),
@@ -166,7 +186,7 @@ def main():
     print("\n【3】訂單總覽、搜尋、篩選")
     o = c.get("/api/momo/orders").get_json()
     st = {s["key"]: s["count"] for s in o["stages"]}
-    check("作業流程格子：待產 EIP 4 張、待回填 0、全部 4", st == {"diff": 0, "buy": 4, "eip": 0, "all": 4}, str(st))
+    check("作業流程格子：待產 EIP 4 張、待回填 0、全部 4", st == {"diff": 0, "buy": 4, "eip": 0, "yx": 0, "notice": 0, "all": 4}, str(st))
     g = {x["inbound_no"]: x for x in o["orders"]}
     check("一張入庫單一列：線別、倉別、品項數、MOMO 數量、上傳日", g["26101657-0001"]["lines"] == ["瑪氏"] and g["26101657-0001"]["item_count"] == 4
           and g["26101657-0001"]["qty"] == 453 and g["26101657-0001"]["upload_date"] == db.now()[:10], str(g["26101657-0001"])[:300])
@@ -295,7 +315,81 @@ def main():
     check("同一張入庫單少掉的品項算移除", pv["counts"]["remove"] == 1 and pv["counts"]["new"] == 1, str(pv["counts"]))
     c.post("/api/momo/import/cancel", json={"upload_id": pv["upload_id"]})
 
-    print("\n【9】首頁、歷程、頁面")
+    print("\n【9】③ 待核缺貨與效期：勇信配送明細表、效期匯入檔")
+    conn = db.get_conn()
+    eip_of = {}
+    for e in conn.execute("SELECT * FROM momo_eip WHERE line = '瑪氏'").fetchall():
+        e = dict(e)
+        for oid in [x["order_id"] for x in conn.execute("SELECT order_id FROM momo_eip_items WHERE eip_id = ?", (e["id"],)).fetchall()]:
+            o = dict(conn.execute("SELECT inbound_no, base_code FROM momo_orders WHERE id = ?", (oid,)).fetchone())
+            eip_of[(o["inbound_no"], o["base_code"])] = e["eip_po"]
+    conn.close()
+    o = c.get("/api/momo/orders").get_json()
+    st = {s["key"]: s["count"] for s in o["stages"]}
+    g = {x["inbound_no"]: x for x in o["orders"]}
+    check("瑪氏回填過 EIP 的單進「待核缺貨與效期」（勇信表還沒來）；紙品、潔品不走這一步", st["yx"] == 2 and g["26101657-0001"]["check"]["wait"] == 3
+          and g["26101657-0004"]["check"] is None and "yx" not in g["26101657-0004"]["todo"], str(st))
+    choc, gum, pet = eip_of[("26101657-0001", "M89297484")], eip_of[("26101657-0001", "M81232885")], eip_of[("26101657-0001", "M69072565")]
+    choc2 = eip_of[("26101657-0002", "M89297484")]
+    pdf1 = yx_pdf([(choc, [("89297484", [(1, "2028/02/08"), (1, "2028/02/09")])]), (gum, [("81232885", 0, "")])])
+    pdf2 = yx_pdf([(pet, [("69072565", [(3, "2028/03/11"), (2, "2028/03/12")])]), (choc2, [("89297484", 2, "2028/02/08")]),
+                   ("PO202699999", [("89297484", 5, "2028/02/08")])])
+    r = up(c, "/api/momo/yx", [("勇信1.pdf", pdf1), ("勇信2.pdf", pdf2)])
+    d = r.get_json()
+    check("一次丟兩份勇信表：照收貨單號對回 MOMO 的 EIP；不是 MOMO 的單號列出來", r.status_code == 200 and d["unknown"] == ["PO202699999"]
+          and sorted(x["inbound_no"] for x in d["orders"]) == ["26101657-0001", "26101657-0002"], str(d)[:400])
+    ck = lambda no: {x["factory_code"]: x for x in c.get(f"/api/momo/check?no={no}").get_json()["orders"][0]["items"]}  # noqa: E731
+    it = ck("26101657-0001")
+    check("勇信 0 箱 → 不出貨（先勾好）", it["M81232885_CMN"]["decision"] == "noship" and it["M81232885_CMN"]["status"] == "none", str(it["M81232885_CMN"]))
+    check("兩批效期取數量多的那批（3 箱 2028/03/11 > 2 箱）→ 寫入效期", it["M69072565_RMN"]["decision"] == "ship" and it["M69072565_RMN"]["expiry"] == "2028-03-11",
+          str(it["M69072565_RMN"]))
+    check("兩批一樣多 → 要人選", it["M89297484_QMN"]["decision"] == "pending" and it["M89297484_QMN"]["tie"], str(it["M89297484_QMN"]))
+    check("贈品（改成 0 不下採）→ 不出貨", it["MARS260905-GIF_TMN"]["decision"] == "noship" and it["MARS260905-GIF_TMN"]["status"] == "skip")
+    it2 = ck("26101657-0002")
+    check("勇信出的比下的多 → 要人決定", it2["M89297484_QMN"]["decision"] == "pending" and it2["M89297484_QMN"]["status"] == "over", str(it2["M89297484_QMN"]))
+    choc_id = it["M89297484_QMN"]["order_id"]
+    r = c.post("/api/momo/check", json={"order_id": choc_id, "expiry": "2027-06-20"})
+    check("人選的效期沒有晚於 MOMO 最低效期（剛好同一天）→ 還是要人看", r.status_code == 200 and ck("26101657-0001")["M89297484_QMN"]["decision"] == "pending"
+          and "沒有晚於" in ck("26101657-0001")["M89297484_QMN"]["why"])
+    up_ = [("11000003", "001", "【喵愛餡】貓點心 化毛 箱購", "5", "M69072565_RMN"), ("15763571", "001", "贈【假】造型地墊", "100", "MARS260905-GIF_TMN"),
+           ("11000002", "002", "【口香糖王】薄荷", "300", "M81232885_CMN"), ("11000001", "001", "【彩豆豆】牛奶巧克力 40g*12", "48", "M89297484_QMN")]
+    exp_xls = unsend_xls([("DC6", "26101657-0001", "2026/10/23", up_, None)])
+    r = up(c, "/api/momo/kinds", [("UnsendList_效期.xls", exp_xls)])
+    check("上傳入口認得效期匯入檔（裡面的單都核過勇信表）", r.get_json()["files"][0]["kind"] == "expfill", str(r.get_json()))
+    r = up(c, "/api/momo/expfill", [("UnsendList_效期.xls", exp_xls)])
+    check("還有要人決定的品項 → 不產，列出來", r.status_code == 400 and any("M89297484_QMN" in x for x in r.get_json()["details"]), str(r.get_json()))
+    c.post("/api/momo/check", json={"order_id": choc_id, "expiry": "2028/02/09", "reason": "跟勇信確認"})
+    check("人選效期 2028/02/09 → 寫入效期", ck("26101657-0001")["M89297484_QMN"]["decision"] == "ship" and ck("26101657-0001")["M89297484_QMN"]["override"])
+    r = up(c, "/api/momo/expfill", [("UnsendList_效期.xls", exp_xls)])
+    sh = xlrd.open_workbook(file_contents=r.data).sheet_by_index(0) if r.status_code == 200 else None
+    u = HDR.index("商品有效日期")
+    got = {sh.cell_value(k, HDR.index("商品原廠編號")): sh.cell_value(k, u) for k in range(1, 5)} if sh else {}
+    check("填好效期：照入庫單號＋商品編號＋單品編號找（列的順序跟系統不一樣也對）；不出貨的留白", got == {"M69072565_RMN": "2028/03/11", "MARS260905-GIF_TMN": "",
+          "M81232885_CMN": "", "M89297484_QMN": "2028/02/09"} and r.headers.get("X-Momo-Filled") == "2", str(got) if sh else str(r.get_json()))
+    check("檔名後面加「_已填效期」", "_%E5%B7%B2%E5%A1%AB%E6%95%88%E6%9C%9F.xls" in r.headers.get("Content-Disposition", ""), r.headers.get("Content-Disposition"))
+    r = up(c, "/api/momo/expfill", [("UnsendList_效期.xlsx", unsend_xlsx([("DC6", "26101657-0001", "2026/10/23", up_, None)]))])
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).active if r.status_code == 200 else None
+    check(".xlsx 的效期匯入檔也能填", ws is not None and ws.cell(2, u + 1).value == "2028/03/11" and ws.cell(5, u + 1).value == "2028/02/09")
+    bad = unsend_xls([("DC7", "26101657-0001", "2026/10/23", up_, None)])
+    r = up(c, "/api/momo/expfill", [("錯倉.xls", bad)])
+    check("倉別跟系統不一樣 → 擋", r.status_code == 400 and any("倉別" in x for x in r.get_json()["details"]), str(r.get_json()))
+    o = c.get("/api/momo/orders").get_json()
+    st = {s["key"]: s["count"] for s in o["stages"]}
+    g = {x["inbound_no"]: x for x in o["orders"]}
+    check("填完效期：這張離開「待核缺貨與效期」、有不出貨的進「待畫入庫通知單」", "yx" not in g["26101657-0001"]["todo"] and "notice" in g["26101657-0001"]["todo"]
+          and g["26101657-0001"]["check"]["done"] and st["yx"] == 1, str(st))
+    oid2 = it2["M89297484_QMN"]["order_id"]
+    c.post("/api/momo/check", json={"order_id": oid2, "ship": 1, "reason": "勇信多出的照收"})
+    check("要人決定的品項改成出貨", ck("26101657-0002")["M89297484_QMN"]["decision"] == "ship")
+    c.post("/api/momo/check", json={"order_id": oid2})
+    check("清掉人工判斷 → 回到系統判斷", ck("26101657-0002")["M89297484_QMN"]["decision"] == "pending")
+    r = up(c, "/api/momo/yx", [("勇信3.pdf", yx_pdf([(choc2, [("89297484", 1, "2028/02/08")])]))])
+    check("同一份 EIP 勇信表再傳：換掉上一次", ck("26101657-0002")["M89297484_QMN"]["decision"] == "ship", str(ck("26101657-0002")["M89297484_QMN"]))
+    side = c.get("/api/momo/order?no=26101657-0001").get_json()
+    check("右側面板有缺貨與效期、歷程記到勇信表和人工判斷", side["check"] and len(side["check"]["items"]) == 4
+          and {"momo_yx", "momo_check", "momo_expfill"} <= {x["field"] for x in side["logs"]}, str([x["field"] for x in side["logs"]]))
+
+    print("\n【10】首頁、歷程、頁面")
     sm = c.get("/api/portal/summary").get_json()
     ch = {x["key"]: x for x in sm["channels"]}
     check("首頁 MOMO 卡片上線：有今日新進、連到 /momo", ch["momo"]["live"] and ch["momo"]["url"] == "/momo" and ch["momo"]["new_today"] == 4, str(ch["momo"])[:200])

@@ -1,6 +1,7 @@
 /* MOMO 訂單管理系統（/momo）——版面照蝦皮特選（Jerry 2026-10-28 看過示意圖「好 開始做」）
    - 最上面一個入口收檔案：MOMO 下載檔可一次選好幾個（合在一起預覽）；價格本、瑪氏商品總表送去原本那支（跟蝦皮特選共用）
-   - 作業流程格子：差異待確認 → 待產 EIP 採購單 → 待回填 EIP 採購單號 →（待核缺貨與效期、待畫入庫通知單：下一批）→ 全部入庫單
+   - 作業流程格子：差異待確認 → 待產 EIP 採購單 → 待回填 EIP 採購單號 → 待核缺貨與效期（瑪氏）→（待畫入庫通知單：下一批）→ 全部入庫單
+   - 待核缺貨與效期（2026-10-28 示意圖「OK 照這樣做」）：勇信配送明細表 PDF、MOMO 效期匯入檔都丟同一個上傳區
    - 到貨日、上傳日、線別、倉別、搜尋一組篩選，各步共用；改了馬上出結果
    - 點一張入庫單，右邊打開這張單的全部（品項與下採、EIP、差異、歷程） */
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -37,8 +38,8 @@ dz.addEventListener("click", e => { if (!e.target.closest(".fresh") && e.target.
 ["dragenter", "dragover"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("over"); }));
 ["dragleave", "drop"].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("over"); }));
 dz.addEventListener("drop", e => {
-  const fs = [...e.dataTransfer.files].filter(f => /\.(xlsx|xls|xlsm)$/i.test(f.name));
-  if (fs.length) handleFiles(fs); else toast("請拖曳 Excel 檔（MOMO 下載檔、價格本、瑪氏商品總表）", "err");
+  const fs = [...e.dataTransfer.files].filter(f => /\.(xlsx|xls|xlsm|pdf)$/i.test(f.name));
+  if (fs.length) handleFiles(fs); else toast("請拖曳 Excel 或 PDF 檔（MOMO 下載檔、勇信配送明細表、效期匯入檔、價格本、瑪氏商品總表）", "err");
 });
 $("#file").addEventListener("change", () => { const fs = [...$("#file").files]; $("#file").value = ""; if (fs.length) handleFiles(fs); });
 $("#fresh").addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); showSettings(true); });
@@ -47,15 +48,55 @@ async function handleFiles(files) {
   const fd = new FormData(); files.forEach(f => fd.append("file", f));
   let kinds;
   try { kinds = (await api("/api/momo/kinds", { method: "POST", body: fd })).files; } catch (err) { toast(err.message, "err"); return; }
-  const orders = [], refs = [];
+  const orders = [], refs = [], pdfs = [], exps = [];
   files.forEach((f, i) => {
     const k = kinds[i] && kinds[i].kind;
     if (k === "orders") orders.push(f); else if (k === "conv" || k === "mars") refs.push([f, k]);
-    else toast(`${f.name}：認不出是哪一種檔案。可以上傳 MOMO 下載的未出貨清單、價格本、瑪氏商品總表。`, "err");
+    else if (k === "yx") pdfs.push(f); else if (k === "expfill") exps.push(f);
+    else toast(`${f.name}：認不出是哪一種檔案。可以上傳 MOMO 下載的未出貨清單、勇信配送明細表、價格本、瑪氏商品總表。`, "err");
   });
   for (const [f, k] of refs) await uploadRef(f, k);
+  if (pdfs.length) await uploadYx(pdfs);
+  exps.forEach(askExpfill);
   if (orders.length) await previewOrders(orders);
   if (refs.length) { loadFresh(); refresh(); }
+}
+/* 勇信配送明細表：上傳完在上傳區下面列出每張入庫單核對的結果 */
+async function uploadYx(files) {
+  const fd = new FormData(); files.forEach(f => fd.append("file", f));
+  const box = document.createElement("div"); box.className = "pv"; box.innerHTML = `<div class="kbd"><i class="bi bi-hourglass-split"></i> 讀取勇信配送明細表 ${files.length} 份…</div>`;
+  $("#previews").prepend(box);
+  let d; try { d = await api("/api/momo/yx", { method: "POST", body: fd }); }
+  catch (err) { box.innerHTML = `<div class="alert al-bad">${esc(err.message).replace(/\n/g, "<br>")}</div>`; setTimeout(() => box.remove(), 15000); return; }
+  const line = o => `<div><b class="fn" style="color:var(--ink)">${esc(o.inbound_no)}</b>（${esc(o.warehouse)}）`
+    + [o.noship_bought ? `缺貨 ${o.noship_bought} 品` : "", o.ship ? `可寫入效期 ${o.ship} 品` : "", o.pending ? `<b style="color:var(--warn)">要人決定 ${o.pending} 品</b>` : "",
+       o.wait ? `還沒收到勇信表 ${o.wait} 品` : ""].filter(Boolean).join("、") + `</div>`;
+  box.innerHTML = `<h3><i class="bi bi-truck" style="color:var(--s8)"></i> 勇信配送明細表 ${files.length} 份、對到 ${d.eip_pos.length} 份 EIP
+      <span class="kbd" style="font-weight:400">${files.map(f => esc(f.name)).join("、")}</span><span style="flex:1"></span><button class="btn btn-o btn-sm" data-a="x">關閉</button></h3>
+    <div class="mt-2" style="font-size:13px">${d.orders.map(line).join("") || `<span class="kbd">沒有對到 MOMO 的入庫單。</span>`}</div>
+    ${d.unknown.length ? `<div class="alert al-warn mt-2">這幾個收貨單號不是 MOMO 瑪氏 EIP（可能是蝦皮、酷澎的，或 EIP 單號還沒回填）：${d.unknown.map(esc).join("、")}</div>` : ""}
+    ${d.warnings.length ? `<div class="alert al-warn mt-2">${d.warnings.map(esc).join("<br>")}</div>` : ""}`;
+  box.querySelector("[data-a=x]").addEventListener("click", () => box.remove());
+  if (d.orders.length && STAGE !== "yx") STAGE = "yx";
+  refresh(); if (SIDE) openSide(SIDE);
+}
+/* MOMO 效期匯入檔跟 MOMO 下載檔長得一樣：裡面的單都核過勇信表時，讓人選要填效期還是當訂單匯入 */
+function askExpfill(f) {
+  const box = document.createElement("div"); box.className = "pv";
+  box.innerHTML = `<h3><i class="bi bi-calendar-check" style="color:var(--s8)"></i> ${esc(f.name)}</h3>
+    <div class="kbd" style="font-size:12.5px">這份檔裡的入庫單都已經核過勇信配送明細表，應該是 MOMO 的效期匯入檔。</div>
+    <div class="flex gap-2 mt-2"><button class="btn btn-p" data-a="fill"><i class="bi bi-download"></i> 填好效期下載</button>
+      <button class="btn btn-o" data-a="imp">當作 MOMO 下載檔匯入</button><button class="btn btn-o" data-a="x">取消</button></div>`;
+  $("#previews").prepend(box);
+  box.querySelector("[data-a=fill]").addEventListener("click", async () => { if (await fillExp(f)) box.remove(); });
+  box.querySelector("[data-a=imp]").addEventListener("click", () => { box.remove(); previewOrders([f]); });
+  box.querySelector("[data-a=x]").addEventListener("click", () => box.remove());
+}
+async function fillExp(f) {
+  const fd = new FormData(); fd.append("file", f);
+  try { const res = await download("/api/momo/expfill", { method: "POST", body: fd });
+    toast(`已填好 ${res.headers.get("X-Momo-Filled")} 筆效期，請把下載的檔上傳 MOMO。`); refresh(); if (SIDE) openSide(SIDE); return true; }
+  catch (err) { toast(err.message, "err"); return false; }
 }
 async function uploadRef(f, kind) {
   const fd = new FormData(); fd.append("file", f);
@@ -149,19 +190,19 @@ const STAGE_TEXT = {
   diff: ["差異待確認", "MOMO 重新下載後內容有變", "點一張單，右側確認差異後才能往下做。"],
   buy: ["待產 EIP 採購單", "新匯入的 MOMO 入庫單", "勾選入庫單產出 EIP 採購單；「需處理」的單點該列，右側會列出原因和修正方式。"],
   eip: ["待回填 EIP 採購單號", "回填後就能下載瑪氏採購單／直送採購單", "上傳 EIP 後回填單號；回填後同一列可以下載瑪氏採購單、直送採購單，寄給採購。"],
-  yx: ["待核缺貨與效期", "瑪氏：等勇信配送明細表（下一批上線）", ""],
-  notice: ["待畫入庫通知單", "瑪氏：有不出貨的品項（下一批上線）", ""],
+  yx: ["待核缺貨與效期", "瑪氏：勇信表核缺貨、填效期", "瑪氏、已回填 EIP 單號的入庫單。丟勇信配送明細表進來就自動核對；再丟 MOMO 效期匯入檔，下載填好效期的檔上傳 MOMO。"],
+  notice: ["待畫入庫通知單", "瑪氏：有不出貨的品項（下一批）", ""],
   all: ["全部入庫單", "", "所有入庫單；勾選可以批次改出貨方式。"],
 };
 let STAGE = "", DATA = null, PLAN = {}, SEL = new Set(), SIDE = "";
 function drawStages(stages) {
   const n = Object.fromEntries(stages.map(s => [s.key, s.count]));
-  if (!STAGE) STAGE = n.diff ? "diff" : n.buy ? "buy" : n.eip ? "eip" : "buy";
+  if (!STAGE) STAGE = n.diff ? "diff" : n.buy ? "buy" : n.eip ? "eip" : n.yx ? "yx" : "buy";
   const keys = ["diff", "buy", "eip", "yx", "notice", "all"].filter(k => k !== "diff" || n.diff || STAGE === "diff");
   $("#stages").innerHTML = keys.map((k, i) => {
-    const soon = k === "yx" || k === "notice", c = soon ? "—" : n[k] ?? 0;
-    const cls = ["st", soon ? "soon" : "", STAGE === k ? "on" : "", !soon && !c ? "zero" : "", k === "diff" && c ? "bad" : "", k === "all" ? "all" : ""].join(" ");
-    return (i ? `<i class="bi bi-chevron-right arr"></i>` : "") + `<div class="${cls}" data-st="${k}" title="${soon ? "下一批上線" : ""}"><div class="n">${c}</div>
+    const soon = k === "notice", c = n[k] ?? 0;
+    const cls = ["st", soon ? "soon" : "", STAGE === k ? "on" : "", !c ? "zero" : "", k === "diff" && c ? "bad" : "", k === "all" ? "all" : ""].join(" ");
+    return (i ? `<i class="bi bi-chevron-right arr"></i>` : "") + `<div class="${cls}" data-st="${k}" title="${soon ? "畫入庫通知單下一批上線" : ""}"><div class="n">${c}</div>
       <div class="t">${STAGE_TEXT[k][0]}</div><div class="d">${k === "all" ? `其中 ${fmt(n.all - (DATA ? DATA.orders.filter(g => g.todo.length).length : 0))} 張已處理完` : STAGE_TEXT[k][1]}</div></div>`;
   }).join("");
   $$("#stages .st").forEach(el => el.addEventListener("click", () => { if (el.classList.contains("soon")) return; STAGE = el.dataset.st; SEL.clear(); refresh(); }));
@@ -175,6 +216,7 @@ async function refresh() {
   drawStages(d.stages);
   $("#st-title").textContent = STAGE_TEXT[STAGE][0]; $("#st-hint").textContent = STAGE_TEXT[STAGE][2];
   $("#pane-orders").classList.toggle("hidden", STAGE === "eip"); $("#pane-eip").classList.toggle("hidden", STAGE !== "eip");
+  $("#yx-help").classList.toggle("hidden", STAGE !== "yx");
   if (STAGE === "eip") return drawEips();
   if (STAGE === "buy") {
     try { PLAN = Object.fromEntries((await api("/api/momo/purchase/plan?" + qs())).orders.map(g => [g.inbound_no, g])); } catch (err) { PLAN = {}; toast(err.message, "err"); }
@@ -187,6 +229,7 @@ function rowsOf() {
   return STAGE === "all" ? all : all.filter(g => g.todo.includes(STAGE));
 }
 function drawOrders() {
+  if (STAGE === "yx") return drawChecks();
   const rows = rowsOf(), buy = STAGE === "buy";
   [...SEL].forEach(no => { if (!rows.some(g => g.inbound_no === no)) SEL.delete(no); });
   const ready = rows.filter(g => buy && PLAN[g.inbound_no] && !PLAN[g.inbound_no].blocking).length;
@@ -218,6 +261,28 @@ function drawOrders() {
     if (all) all.addEventListener("change", () => { $$("#tbl .rk:not(:disabled)").forEach(ck => { ck.checked = all.checked; all.checked ? SEL.add(ck.value) : SEL.delete(ck.value); }); drawBar(); });
   }
   $("#buy-go").classList.toggle("hidden", !buy);
+  drawBar();
+}
+/* ③ 待核缺貨與效期：一張入庫單一列（示意圖的欄位） */
+function drawChecks() {
+  const rows = rowsOf();
+  $("#sum").innerHTML = `<span><b>${rows.length}</b>張入庫單</span><span><b style="color:var(--warn)">${rows.filter(g => g.check.pending).length}</b>張要人決定</span>`
+    + `<span><b>${rows.filter(g => g.check.wait === g.check.items).length}</b>張還沒收到勇信表</span>`;
+  $("#tbl").innerHTML = !rows.length ? `<tr><td class="kbd" style="padding:24px;text-align:center">這一步目前沒有入庫單。瑪氏的 EIP 單號回填後會出現在這裡。</td></tr>`
+    : `<tr><th>MOMO 入庫單號</th><th>倉別</th><th>到貨日</th><th class="num">品項</th><th>勇信配送明細表</th><th>缺貨</th><th>效期</th><th>效期匯入檔</th></tr>` + rows.map(g => {
+      const c = g.check, none = c.wait === c.items;
+      const yx = c.yx_at ? `<span class="badge b-ok">已核對 ${when(c.yx_at)}</span>` : none ? `<span class="badge b-blue">還沒收到</span>` : `<span class="badge b-warn">還差 ${c.wait} 品</span>`;
+      const short = none ? "—" : (c.noship_bought ? `<span class="badge b-bad">${c.noship_bought} 品不出貨</span>` : c.ask_qty ? "" : `<span class="kbd">沒有缺貨</span>`)
+        + (c.ask_qty ? ` <span class="badge b-warn">${c.ask_qty} 品數量不對</span><div class="kbd">要人決定</div>` : "") + (c.skip ? `<div class="kbd">另有 ${c.skip} 品不下採</div>` : "");
+      const ask = c.pending - c.ask_qty;
+      const exp = none ? "—" : `${c.ship} 品可寫入` + (ask > 0 ? `<div class="prob" style="color:var(--warn)">${ask} 品效期要人看</div>` : "");
+      const fill = c.filled_at ? `<span class="badge b-ok">已填 ${when(c.filled_at)}</span>` : none ? "—" : c.ship ? `<span class="badge b-warn">還沒填</span>` : `<span class="kbd">不用填</span>`;
+      return `<tr class="og ${c.pending ? "ask" : ""} ${SIDE === g.inbound_no ? "sel" : ""}" data-no="${esc(g.inbound_no)}">
+        <td class="nw"><b class="fn" style="font-size:12.5px;color:var(--ink)">${esc(g.inbound_no)}</b></td><td>${esc(g.warehouse)}</td><td class="nw">${mdw(g.expected_date)}</td>
+        <td class="num">${c.items}</td><td>${yx}</td><td>${short}</td><td>${exp}</td><td>${fill}</td></tr>`;
+    }).join("");
+  $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", () => openSide(tr.dataset.no)));
+  $("#buy-go").classList.add("hidden");
   drawBar();
 }
 function drawBar() {
@@ -296,6 +361,7 @@ async function openSide(no) {
   if (open.length) html += sec(`<i class="bi bi-arrow-left-right" style="color:var(--bad)"></i> MOMO 改過（${open.length} 項）`,
     open.map(x => `<div class="sd-it">${esc(x.factory_code)} ${esc((x.product_name || "").slice(0, 26))}<div class="sd-kv">${esc(x.field_label)}：${esc(x.old_value)} → <b>${esc(x.new_value)}</b>　<span>${esc(x.uploaded_by)} ${when(x.uploaded_at)}</span></div></div>`).join("")
     + `<button class="btn btn-p btn-sm mt-2" id="sd-diff-ok"><i class="bi bi-check2-circle"></i> 確認差異</button><span class="kbd"> 確認後才能產 EIP 採購單</span>`);
+  if (d.check) html += checkSec(d.check, sec);
   html += sec(`品項與下採（${items.length} 品）`, items.length ? items.map(x => `<div class="sd-it">
       <div class="flex gap-2 items-baseline"><span class="fn">${esc(x.factory_code)}</span><span style="flex:1">${esc(x.name)}</span></div>
       <div class="sd-kv"><span>MOMO <b>${fmt(x.qty)} ${esc(x.unit)}</b></span><span>箱入數 <b>${x.conv ?? "—"}</b></span>
@@ -317,6 +383,53 @@ async function openSide(no) {
   if (ok) ok.addEventListener("click", async () => { try { await post("/api/momo/diffs/confirm", { inbound_nos: [no] }); toast("已確認差異"); refresh(); openSide(no); } catch (err) { toast(err.message, "err"); } });
   $$("#sd-body [data-adj]").forEach(b => b.addEventListener("click", () => openAdj(JSON.parse(b.dataset.adj))));
   bindEipActs($("#sd-body"), () => openSide(no));
+  bindCheck(no);
+}
+
+/* 右側面板 ③：一品一列，勇信出幾箱、效期、結果；不出貨可以改、效期可以換 */
+const RES = { ship: ["b-ok", "寫入效期"], noship: ["b-bad", "不出貨"], pending: ["b-warn", "要決定"], wait: ["b-dim", "等勇信表"] };
+const slash = t => (t || "").replaceAll("-", "/");
+function checkSec(ck, sec) {
+  const s = ck.summary, its = ck.items;
+  const rows = its.map(x => {
+    const r = RES[x.decision], x_ = x.decision === "noship", can = x.status !== "wait" && x.status !== "skip", ov = x.override;
+    const pick = can && !x_ && x.batches.length > 1;          // 兩批效期：點一下就選那批
+    const bt = x.batches.length ? x.batches.map(b => `<div class="nw">${x.batches.length > 1 ? `${b.qty} 箱 ` : ""}${pick && b.expiry ? `<a class="lnk" data-pick="${x.order_id}" data-v="${esc(b.expiry)}" title="用這批的效期">${slash(b.expiry)}</a>` : slash(b.expiry) || "沒印效期"}</div>`).join("") : "—";
+    const ord = x.skip ? "不下採" : `${fmt(x.ordered)} 箱`;
+    return `<tr class="${x_ ? "x" : ""} ${x.decision === "pending" ? "ask" : ""}"><td class="xs"><div class="nm" title="${esc(x.name)}">${esc(x.name)}</div><div class="fn" style="font-size:10.5px">${esc(x.factory_code)}</div></td>
+      <td class="xs nw">${ord}${x.unit !== "箱" ? `<div class="kbd">MOMO ${fmt(x.qty)} ${esc(x.unit)}</div>` : ""}</td>
+      <td><b class="nw">${x.shipped == null ? "—" : fmt(x.shipped) + " 箱"}</b>${x.shipped ? `<div class="kbd xs">${bt}</div>` : ""}</td><td class="xs nw">${slash(x.min_expiry) || "—"}</td>
+      <td style="min-width:118px"><span class="badge ${r[0]}">${r[1]}</span>${x.decision === "ship" && x.expiry ? ` <span class="nw">${slash(x.expiry)}</span>` : ""}
+        ${x.why && x.decision !== "ship" ? `<div class="kbd" style="color:${x.decision === "pending" ? "var(--warn)" : ""}">${esc(x.why)}</div>` : ""}
+        ${can ? `<div class="flex gap-1 mt-1 flex-wrap"><span class="chip ${x.decision === "ship" ? "on" : ""}" style="padding:1px 8px;font-size:12px" data-ship1="${x.order_id}">出貨</span>
+          <span class="chip ${x_ ? "on" : ""}" style="padding:1px 8px;font-size:12px" data-ship0="${x.order_id}">不出貨</span></div>
+          ${!x_ && x.decision !== "pending" && !(ov && ov.expiry) ? `<a class="lnk kbd" data-showexp="${x.order_id}">換效期</a>` : ""}
+          ${!x_ ? `<input type="date" class="inp mt-1 ${x.decision === "pending" || (ov && ov.expiry) ? "" : "hidden"}" style="padding:2px 4px;font-size:12px;width:118px" data-exp="${x.order_id}" data-ov="${ov && ov.ship != null ? ov.ship : ""}" value="${esc(x.expiry)}" title="換一個效期">` : ""}` : ""}
+        ${ov ? `<div class="kbd">${esc(ov.operator)} ${when(ov.at)} 改過・<a class="lnk" data-clr="${x.order_id}">回到系統判斷</a></div>` : ""}</td></tr>`;
+  }).join("");
+  const top = s.yx_at ? `<div class="kbd mb-1"><i class="bi bi-check2-circle" style="color:var(--ok)"></i> 勇信配送明細表 ${when(s.yx_at)} 上傳</div>`
+    : `<div class="alert al-warn mb-2">${s.wait === s.items ? "還沒收到這張單的勇信配送明細表。" : `還差 ${s.wait} 品的勇信配送明細表。`}收到後丟進最上面的上傳區。</div>`;
+  const foot = s.ship ? `<div class="flex items-center gap-2 flex-wrap mt-2"><button class="btn btn-p btn-sm" id="ck-fill" ${s.pending || s.wait ? "disabled" : ""}><i class="bi bi-download"></i> 下載填好效期的匯入檔（${s.ship} 筆）</button>
+      <span class="kbd">${s.pending ? "還有要決定的品項。" : "先從 MOMO 後台下載這張的效期匯入檔，按這裡選檔（或丟進上傳區）。"}${s.filled_at ? ` 上次填好：${when(s.filled_at)}` : ""}</span>
+      <input type="file" id="ck-file" accept=".xls,.xlsx" class="hidden"></div>` : "";
+  const nb = s.noship_bought + s.skip;
+  return sec(`<span style="color:var(--s8)">③</span> 缺貨與效期`, top + `<div class="tbl-wrap" style="max-height:none"><table class="t ck-t"><tr><th>商品</th><th>下採</th><th>勇信出／效期</th><th>MOMO 最低</th><th>結果</th></tr>${rows}</table></div>
+      <div class="kbd mt-1">不出貨的可以改成出貨（例如採購說會補出）；改了會記誰改的。</div>` + foot)
+    + (nb ? sec(`<span style="color:var(--muted)">④</span> 入庫通知單（下一批）`, `<div class="kbd">有 ${nb} 品不出貨${s.skip ? `（含不下採 ${s.skip} 品）` : ""}要畫掉；做完效期後這張單會到「待畫入庫通知單」。</div>`) : "");
+}
+function bindCheck(no) {
+  const ck = (body, msg) => post("/api/momo/check", body).then(() => { toast(msg); refresh(); openSide(no); }).catch(err => toast(err.message, "err"));
+  const exp = id => { const el = $(`#sd-body [data-exp="${id}"]`); return el ? el.value : ""; };
+  $$("#sd-body [data-ship1]").forEach(b => b.addEventListener("click", () => ck({ order_id: b.dataset.ship1, ship: 1, expiry: exp(b.dataset.ship1) }, "已改成出貨")));
+  $$("#sd-body [data-ship0]").forEach(b => b.addEventListener("click", () => ck({ order_id: b.dataset.ship0, ship: 0 }, "已改成不出貨")));
+  const setExp = (id, v) => { const i = $(`#sd-body [data-exp="${id}"]`); ck({ order_id: id, ship: i ? i.dataset.ov : "", expiry: v }, `效期改成 ${slash(v)}`); };
+  $$("#sd-body [data-exp]").forEach(i => i.addEventListener("change", () => i.value && setExp(i.dataset.exp, i.value)));
+  $$("#sd-body [data-showexp]").forEach(a => a.addEventListener("click", () => { a.remove(); $(`#sd-body [data-exp="${a.dataset.showexp}"]`).classList.remove("hidden"); }));
+  $$("#sd-body [data-pick]").forEach(a => a.addEventListener("click", () => setExp(a.dataset.pick, a.dataset.v)));
+  $$("#sd-body [data-clr]").forEach(a => a.addEventListener("click", () => ck({ order_id: a.dataset.clr }, "已回到系統判斷")));
+  const btn = $("#ck-fill");
+  if (btn) { btn.addEventListener("click", () => $("#ck-file").click());
+    $("#ck-file").addEventListener("change", () => { const f = $("#ck-file").files[0]; if (f) fillExp(f); }); }
 }
 
 /* ── 改下採數量 ─────────────────────────────────────────── */

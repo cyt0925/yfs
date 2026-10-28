@@ -1,6 +1,7 @@
 """右側面板：點一張入庫單，這張單的全部在這裡看、在這裡改（照蝦皮特選，清單不被蓋住）。
-品項與下採計畫（箱入數、除不盡、改數量）、這張單的 EIP 檔（回填單號、下載採購單）、MOMO 改過的差異、歷程。"""
+品項與下採計畫（箱入數、除不盡、改數量）、這張單的 EIP 檔（回填單號、下載採購單）、③ 缺貨與效期、MOMO 改過的差異、歷程。"""
 from .common import *  # noqa: F401,F403
+from .check import check_orders
 from .orders import _ids, overview
 from .purchase import build_plan, eips_of
 
@@ -25,12 +26,13 @@ def api_side():
         logs = _rows(conn.execute("SELECT field, field_label, old_value, new_value, operator, note, reason, changed_at FROM mst_logs "
                                   "WHERE po_number = ? AND field LIKE ? ORDER BY id DESC LIMIT 60", (no, "momo_%")))
         whs = wh_settings(conn)
+        check = check_orders(conn, [no]).get(no)
     finally:
         conn.close()
     for d in diffs:
         d["confirmed"] = bool(d["confirmed_at"])
     w = whs.get(wh_canon(g["warehouse"], whs))
-    return jsonify({"order": g, "plan": plan, "eips": eips, "diffs": diffs, "logs": logs,
+    return jsonify({"order": g, "plan": plan, "eips": eips, "diffs": diffs, "logs": logs, "check": check,
                     "warehouse": {"name": wh_canon(g["warehouse"], whs), "note": wh_note(w)} if w else None})
 
 

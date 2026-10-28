@@ -1224,6 +1224,52 @@ def main():
         pg.click("#e-all"); pg.wait_for_timeout(800)
         check("顯示已回填 → 那份出現「瑪氏採購單」下載", "瑪氏採購單" in pg.inner_text("#e-tbl"), pg.inner_text("#e-tbl")[:300])
 
+        print("\n【6i】MOMO ③ 待核缺貨與效期：丟勇信 PDF → 點單 → 兩批一樣多點一批 → 填效期匯入檔下載")
+        import json as _json
+        cm = db.get_conn()
+        em = dict(cm.execute("SELECT * FROM momo_eip WHERE eip_po = ?", ("PO202610777",)).fetchone())
+        erows = _json.loads(em["rows_json"])
+        oids = [x["order_id"] for r_ in erows for x in r_["parts"]]
+        ords = [dict(cm.execute("SELECT * FROM momo_orders WHERE id = ?", (i,)).fetchone()) for i in oids]
+        cm.close()
+        ydoc = pymupdf.open(); ypg = ydoc.new_page(); yy = 40
+        ylines = ["配 送 明 細 表(預排鮮度)", "收貨單號：PO202610777-momo"]
+        ytot = 0
+        for r_ in erows:
+            q = int(r_["qty"]); a, b_ = q // 2 or 1, q - (q // 2 or 1)
+            ylines += [f"58880{r_['mars_code']}", "1", "假品名", f"{a}C", "X", "2028/02/08"] + ([f"{b_}C", "X", "2028/02/09"] if b_ else [])
+            ytot += q
+        ylines.append(f"合計箱數:{ytot}")
+        for ln in ylines:
+            ypg.insert_text((40, yy), ln, fontname="china-t", fontsize=9); yy += 14
+        ypdf = os.path.join(os.environ["COUPANG_OMS_DATA"], "勇信配送明細表.pdf"); ydoc.save(ypdf)
+        pg.goto(f"{base}/momo"); pg.wait_for_selector("#stages .st", timeout=15000)
+        pg.set_input_files("#file", [ypdf]); pg.wait_for_selector(".pv h3:has-text('勇信配送明細表')", timeout=15000)
+        pg.wait_for_selector("#stages .st.on[data-st='yx']", timeout=8000); pg.wait_for_selector("#tbl tr.og", timeout=8000)
+        no0 = ords[0]["inbound_no"]
+        check("丟勇信 PDF → 上傳區列出核對結果、跳到「待核缺貨與效期」、那張單已核對", no0 in pg.inner_text(".pv") and "已核對" in pg.inner_text(f"#tbl tr.og[data-no='{no0}']"),
+              pg.inner_text(".pv")[:300])
+        pg.click(f"#tbl tr.og[data-no='{no0}']"); pg.wait_for_selector("#sd-body .ck-t", timeout=10000)
+        ntie = pg.locator("#sd-body [data-pick]").count()
+        check("右側 ③：兩批數量一樣的標「要決定」、效期可以點", ntie >= 2 and "要決定" in pg.inner_text("#sd-body .ck-t"), pg.inner_text("#sd-body .ck-t")[:300])
+        while pg.locator("#sd-body [data-pick]").count():
+            pg.click("#sd-body [data-pick] >> nth=0"); pg.wait_for_timeout(900)
+        check("點一批的效期 → 寫入效期、不用再決定", "要決定" not in pg.inner_text("#sd-body .ck-t") and "寫入效期" in pg.inner_text("#sd-body .ck-t"), pg.inner_text("#sd-body .ck-t")[:300])
+        xh = ["倉別", "入庫單號", "入庫預定日期", "商品編號", "商品名稱", "單品編號", "商品有效日期", "入庫最低有效期限", "採購數量", "商品原廠編號"]
+        wbx = openpyxl.Workbook(); wsx = wbx.active; wsx.append(xh)
+        for j, o_ in enumerate(ords):
+            wsx.append([o_["warehouse"] if j == 0 else "", o_["inbound_no"] if j == 0 else "", "2026/10/30" if j == 0 else "", o_["product_no"], o_["product_name"],
+                        o_["item_no"], "", "2027/06/20", str(o_["qty"]), o_["factory_code"]])
+        xfp = os.path.join(os.environ["COUPANG_OMS_DATA"], "UnsendList_效期.xlsx"); wbx.save(xfp)
+        with pg.expect_download(timeout=15000) as dlx:
+            pg.set_input_files("#ck-file", xfp)
+        wsd = openpyxl.load_workbook(dlx.value.path()).active
+        check("右側按「下載填好效期的匯入檔」選檔 → 下載 _已填效期、商品有效日期填好", dlx.value.suggested_filename == "UnsendList_效期_已填效期.xlsx"
+              and wsd.cell(2, 7).value == "2028/02/08", f"{dlx.value.suggested_filename} {wsd.cell(2, 7).value}")
+        pg.wait_for_timeout(800)
+        check("填好後清單那張「效期匯入檔」變已填", "已填" in pg.inner_text(f"#tbl tr.og[data-no='{no0}']") or pg.locator(f"#tbl tr.og[data-no='{no0}']").count() == 0)
+        pg.click("#sd-close")
+
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
         for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/momo", "#stages .st"), ("/master", "#dd-line-btn"),
                             ("/mars", "#sp-table thead"), ("/zhuyun", "#dz"), ("/purchase", "#ac-btn")]:

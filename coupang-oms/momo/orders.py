@@ -218,7 +218,8 @@ def api_import_cancel():
 
 
 # ── 訂單總覽：一張入庫單一列 ─────────────────────────────────────────────
-STAGES = (("diff", "差異待確認", "確認差異"), ("buy", "待產 EIP 採購單", "產出 EIP 採購單"), ("eip", "待回填 EIP 採購單號", "回填 EIP 採購單號"))
+STAGES = (("diff", "差異待確認", "確認差異"), ("buy", "待產 EIP 採購單", "產出 EIP 採購單"), ("eip", "待回填 EIP 採購單號", "回填 EIP 採購單號"),
+          ("yx", "待核缺貨與效期", "核對缺貨與效期"), ("notice", "待畫入庫通知單", "畫入庫通知單"))
 
 
 def _filter(args):
@@ -248,6 +249,7 @@ def _filter(args):
 
 
 def overview(conn, args):
+    from .check import check_orders
     from .purchase import eip_map, skipped_ids
     where, params = _filter(args)
     items = _rows(conn.execute(f"SELECT * FROM momo_orders WHERE {where} ORDER BY expected_date, warehouse, inbound_no, id", params))
@@ -259,6 +261,7 @@ def overview(conn, args):
                                                  "items": []})
         g["items"].append(it)
     whs = wh_settings(conn)
+    checks = check_orders(conn, list(groups)) if groups else {}
     out = []
     for g in groups.values():
         its = g["items"]
@@ -274,6 +277,10 @@ def overview(conn, args):
                  else "已產出" if any(i["id"] in eips for i in buy) else "未產出")
         todo = {"diff": pending, "buy": any(i["id"] not in eips for i in buy),
                 "eip": any(i["id"] in eips and not eips[i["id"]]["eip_po"] for i in buy)}
+        ck = checks.get(g["inbound_no"])
+        g["check"] = ck["summary"] if ck else None
+        todo["yx"] = bool(ck) and not ck["summary"]["done"]
+        todo["notice"] = bool(ck) and not ck["summary"]["wait"] and not ck["summary"]["pending"] and ck["summary"]["noship"] > 0
         g["todo"] = [k for k, _l, _a in STAGES if todo[k]]
         g["next"] = next((a for k, _l, a in STAGES if todo[k]), "")
         g["codes"] = [i["factory_code"] for i in alive]

@@ -571,7 +571,7 @@ _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
                      "SHP_UPLOADS", "SHP_ORDERS",   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
                      "SHP_EIP", "SHP_DISPATCH", "SHP_NOTIFY",                     # 產 EIP 採購單：存檔要拿 id 掛品項
-                     "MOMO_UPLOADS", "MOMO_ORDERS", "MOMO_EIP")                  # MOMO：上傳預覽、新品項記版本、EIP 掛品項
+                     "MOMO_UPLOADS", "MOMO_ORDERS", "MOMO_EIP", "MOMO_YX", "MOMO_EXPFILL")   # MOMO：上傳預覽、新品項記版本、EIP 掛品項、勇信表、效期檔
 
 
 def _wants_returning_id(sql):
@@ -1414,6 +1414,37 @@ CREATE TABLE IF NOT EXISTS momo_eip_items (
     id        INTEGER PRIMARY KEY AUTOINCREMENT,
     eip_id    INTEGER NOT NULL,
     order_id  INTEGER NOT NULL
+);
+-- ③ 待核缺貨與效期（2026-10-28）：勇信配送明細表一份 EIP 存一筆（同一份 EIP 再傳就換掉）；data_json＝{瑪氏貨號: {cases, name, batches:[{qty, expiry}]}}
+CREATE TABLE IF NOT EXISTS momo_yx (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    eip_id        INTEGER NOT NULL,
+    eip_po        TEXT DEFAULT '',
+    filename      TEXT DEFAULT '',
+    pages         TEXT DEFAULT '',
+    data_json     TEXT DEFAULT '{}',
+    warnings_json TEXT DEFAULT '[]',
+    uploaded_by   TEXT DEFAULT '',
+    uploaded_at   TEXT DEFAULT ''
+);
+-- 人改的：這品出不出貨（ship 1／0）、用哪個效期；沒改就照系統判斷，不存
+CREATE TABLE IF NOT EXISTS momo_check (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL UNIQUE,
+    ship        INTEGER,
+    expiry      TEXT DEFAULT '',
+    reason      TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT ''
+);
+-- 填好效期的 MOMO 效期匯入檔：哪幾張入庫單、什麼時候、誰；有這筆（而且在最後一次勇信表之後）就算這張單效期填完了
+CREATE TABLE IF NOT EXISTS momo_expfill (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename    TEXT DEFAULT '',
+    inbound_nos TEXT DEFAULT '',
+    filled      INTEGER DEFAULT 0,
+    created_by  TEXT DEFAULT '',
+    created_at  TEXT DEFAULT ''
 );
 """
 

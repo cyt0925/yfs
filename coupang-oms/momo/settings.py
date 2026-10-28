@@ -53,9 +53,9 @@ def api_warehouse_save(name):
 
 
 def detect(data, filename):
-    """orders（MOMO 下載檔）／mars（瑪氏商品總表）／conv（價格本）；認不出來回空字串。蝦皮的檔不收，免得傳錯頁。"""
+    """orders（MOMO 下載檔）／mars（瑪氏商品總表）／conv（價格本）／yx（PDF，勇信配送明細表）；認不出來回空字串。蝦皮的檔不收，免得傳錯頁。"""
     if data[:5] == b"%PDF-":
-        return ""
+        return "yx"                                       # 勇信配送明細表（讀不到收貨單號，/api/momo/yx 會講）
     if looks_like(data, filename):
         return "orders"
     try:
@@ -74,10 +74,19 @@ def detect(data, filename):
 @momo_bp.route("/api/momo/kinds", methods=["POST"])
 def api_kinds():
     """上傳入口：先認每個檔是什麼。MOMO 下載檔畫面再一起送去預覽；價格本、瑪氏商品總表送去原本那支（跟蝦皮特選、瑪氏出貨共用）。"""
+    from .check import is_expfill
     out = []
-    for f in request.files.getlist("file"):
-        if f and f.filename:
-            out.append({"name": f.filename, "kind": detect(f.read(), f.filename)})
+    conn = get_conn()
+    try:
+        for f in request.files.getlist("file"):
+            if f and f.filename:
+                data = f.read()
+                kind = detect(data, f.filename)
+                if kind == "orders" and is_expfill(conn, data, f.filename):
+                    kind = "expfill"                      # MOMO 下載檔，裡面的單都已經核過勇信表：多半是效期匯入檔，畫面讓人選
+                out.append({"name": f.filename, "kind": kind})
+    finally:
+        conn.close()
     return jsonify({"files": out})
 
 
