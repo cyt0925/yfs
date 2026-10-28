@@ -1753,6 +1753,36 @@ def main():
     check("首頁今日事項：「酷澎快到貨還沒完成的 PO N 張」、連到 ?due=1",
           any(t["key"] == "due" and t["title"] == f"酷澎快到貨還沒完成的 PO {len(got_due)} 張" and t["url"].endswith("?due=1") for t in tasks), str([t["title"] for t in tasks]))
 
+    # 一張 PO 的到貨日只看還有數量的品項（Jerry 2026-10-28：13000000651538 原本 11/9，其他品提前到 11/5，下修成 0 那品一直停在 11/9）
+    conn = db.get_conn()
+    multi = [r["po_number"] for r in conn.execute("SELECT po_number FROM orders WHERE removed_from_coupang = 0 GROUP BY po_number "
+                                                  "HAVING COUNT(*) >= 2 AND SUM(delivery_date_overridden) = 0 ORDER BY po_number").fetchall()]
+    pz = multi[0]
+    zrow = conn.execute("SELECT id, sku_id FROM orders WHERE po_number = ? ORDER BY seq_no, sku_id", (pz,)).fetchall()
+    conn.execute("UPDATE orders SET delivery_date = ? WHERE po_number = ?", ("2026-11-05", pz))
+    conn.execute("UPDATE orders SET delivery_date = ?, qty_coupang = 0 WHERE id = ?", ("2026-11-09", zrow[0]["id"]))
+    conn.commit(); conn.close()
+    rowz = next(r for r in client.get("/api/pos", query_string={"page_size": 500, "po_number": pz}).get_json()["rows"] if r["po_number"] == pz)
+    check("下修成 0 的品項交期是舊的（11/9）：整張 PO 到貨日看還有數量的品項（11/5），不標「各品項不一致」",
+          rowz["delivery_date"] == "2026-11-05" and rowz["delivery_date_variants"] <= 1, str({k: rowz[k] for k in ("delivery_date", "delivery_date_variants")}))
+    hit = lambda q: pz in [r["po_number"] for r in client.get("/api/pos", query_string={"page_size": 500, **q}).get_json()["rows"]]  # noqa: E731
+    check("到貨日篩 11/9 不會撈到這張；篩 11/5 才會", not hit({"date_from": "2026-11-09", "date_to": "2026-11-09"})
+          and hit({"date_from": "2026-11-05", "date_to": "2026-11-05"}))
+    det = client.get(f"/api/pos/{pz}").get_json()
+    check("PO 視窗表頭到貨日也是 11/5", det["delivery_date"] == "2026-11-05", det["delivery_date"])
+    ex = client.post("/api/export", json={"operator": "小真", "profile": "full", "mark_pulled": False, "filters": {}, "po_numbers": [pz]})
+    wbx = openpyxl.load_workbook(io.BytesIO(ex.data)); hx = [c.value for c in wbx.active[1]]
+    dcol = next(i for i, h in enumerate(hx) if h in ("到貨日", "交期"))
+    dates = {str(r[dcol].value)[:10] for r in wbx.active.iter_rows(min_row=2)}
+    check("匯出明細：下修 0 那行到貨日也跟整張 PO 一樣（11/5）", ex.status_code == 200 and dates == {"2026-11-05"}, str(dates))
+    from due import where as _due_where
+    dw2, dp2 = _due_where(_dt.date(2026, 11, 4))
+    conn = db.get_conn()
+    duez = {r["po_number"] for r in conn.execute(f"SELECT DISTINCT po_number FROM order_rows WHERE {dw2}", dp2).fetchall()}
+    conn.close()
+    st_pz = next(r["po_status"] for r in client.get("/api/pos", query_string={"page_size": 500, "po_number": pz}).get_json()["rows"] if r["po_number"] == pz)
+    check("快到貨也照 11/5 算（11/4 看，3 個工作天內）", (pz in duez) == (st_pz in ("已建立", "已回覆", "處理中", "修改中")), f"{st_pz} {pz in duez}")
+
     page39 = client.get("/coupang").get_data(as_text=True)
     check("酷澎頁有「只看處理完成後又有改動的」「只看快到貨還沒完成」篩選、紅卡、PO 視窗有修改紀錄、有「先存著」", 'id="f-round"' in page39 and 'id="f-due"' in page39 and 'id="stat-due-card"' in page39 and "roundsHtml" in page39 and "這一輪處理完成" in page39 and "先存著（尚未完成）" in page39)
 

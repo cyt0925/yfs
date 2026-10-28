@@ -52,9 +52,11 @@ def label(delivery, today):
 
 
 def where(today):
-    """挑出快到貨還沒完成的品項（order_rows 一列一個品項）：清單篩選、上面那張卡、首頁今日事項都用這句，數字才會一樣。"""
+    """挑出快到貨還沒完成的品項（order_rows 一列一個品項）：清單篩選、上面那張卡、首頁今日事項都用這句，數字才會一樣。
+    到貨日看整張 PO 的那一天（db.PO_DELIVERY_SQL：下修成 0 的品項交期是舊的，不算，Jerry 2026-10-28）。"""
+    import db
     sql = ("po_status IN (" + ",".join("?" * len(DUE_STATUSES)) + ") "
-           "AND delivery_date != '' AND delivery_date <= ?")
+           f"AND po_number IN (SELECT po_number FROM ({db.PO_DELIVERY_SQL}) pd WHERE pd.po_date != '' AND pd.po_date <= ?)")
     return sql, list(DUE_STATUSES) + [cutoff(today).isoformat()]
 
 

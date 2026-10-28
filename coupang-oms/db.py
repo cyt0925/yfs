@@ -1448,6 +1448,17 @@ JOIN po_headers h ON h.po_number = o.po_number;
 # 保留舊名字，避免漏改到還在引用它的地方。
 ORDER_ROWS_VIEW_POSTGRES = ORDER_ROWS_VIEW
 
+# 一張 PO 的到貨日（Jerry 2026-10-28「同一張 PO 的所有品項都會是同一天到貨，以最新的那個交貨日為主」）：
+# 人工改過的優先；再來只看還有數量、沒被酷澎拿掉的品項——酷澎把某品下修成 0 之後就不再更新那一行的交期，
+# 那行會一直停在舊日期（13000000651538：原本 11/9，其他品提前到 11/5，下修 0 那品還是 11/9）；全部都是 0 才退回看全部。
+# 只改「整張 PO 看哪一天」，orders 裡每一行照酷澎原樣存（改掉的話下次匯入會誤判成酷澎又改了）。
+# po_summary_sql、app.po_shared_value、到貨日篩選、快到貨（due.py）都照這條，數字才會一致。
+PO_DATE_LIVE = "COALESCE(qty_coupang, 0) > 0 AND COALESCE(removed_from_coupang, 0) = 0"
+PO_DELIVERY_SQL = (
+    "SELECT po_number, COALESCE(MAX(CASE WHEN delivery_date_overridden = 1 THEN delivery_date END), "
+    f"MIN(NULLIF(CASE WHEN {PO_DATE_LIVE} THEN delivery_date END, '')), MIN(NULLIF(delivery_date, '')), '') AS po_date "
+    "FROM orders GROUP BY po_number")
+
 
 def init_db():
     ensure_data_dir()

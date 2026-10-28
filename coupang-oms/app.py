@@ -44,7 +44,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 用來確認「現在看到的畫面」跟「最新給的檔案」是不是同一份——
 # 之前吃過虧：舊的黑視窗沒關乾淨，背景還留著一個沒更新到的伺服器
 # 在跑，怎麼換檔案畫面都不會變，肉眼完全看不出來是這個原因。
-BUILD_VERSION = "2026-10-28.2"
+BUILD_VERSION = "2026-10-28.3"
 
 app = Flask(__name__)
 
@@ -271,10 +271,16 @@ def po_shared_value(skus, field):
     這裡的規則必須跟 po_summary_sql 裡那段 SQL 一字不差地對應，否則
     同一張單在首頁跟明細會是兩個答案——實際踩過：明細取第一列拿到
     9/9、首頁取 MIN 拿到 9/1，同事以為系統壞了。空字串要排除掉（對應
-    SQL 的 NULLIF），不然「還沒填」會排在日期前面被選中。"""
+    SQL 的 NULLIF），不然「還沒填」會排在日期前面被選中。
+    到貨日只看還有數量、沒被酷澎拿掉的品項（db.PO_DELIVERY_SQL，Jerry 2026-10-28）；全部都是 0 才看全部。"""
     for s in skus:
         if s.get(f"{field}_overridden"):
             return s[field]
+    if field == "delivery_date":
+        live = [s for s in skus if (s.get("qty_coupang") or 0) > 0 and not s.get("removed_from_coupang")]
+        values = [s[field] for s in live if s.get(field)]
+        if values:
+            return min(values)
     values = [s[field] for s in skus if s.get(field)]
     return min(values) if values else ""
 
@@ -1614,12 +1620,13 @@ def build_filter(args):
     if args.get("flagged") == "1":
         add("flagged = 1")
 
+    # 到貨日看整張 PO 的那一天，不看個別品項（下修成 0 的品項交期是舊的，Jerry 2026-10-28）
     date_from = norm_date(args.get("date_from"))
     if date_from:
-        add("delivery_date >= ?", date_from)
+        add(f"po_number IN (SELECT po_number FROM ({db.PO_DELIVERY_SQL}) pd WHERE pd.po_date >= ?)", date_from)
     date_to = norm_date(args.get("date_to"))
     if date_to:
-        add("delivery_date <= ?", date_to)
+        add(f"po_number IN (SELECT po_number FROM ({db.PO_DELIVERY_SQL}) pd WHERE pd.po_date != '' AND pd.po_date <= ?)", date_to)
 
     # 下單日期（整合表 AP 欄）。舊單還沒補到日期的是空白，篩選時自然不會出現。
     order_from = norm_date(args.get("order_from"))
@@ -1984,7 +1991,8 @@ def po_summary_sql(clause):
                -- po_shared_value 同一套邏輯，兩邊顯示才會一致。
                COALESCE(MAX(CASE WHEN delivery_date_overridden = 1
                                  THEN delivery_date END),
-                        MIN(NULLIF(delivery_date, '')), '') AS delivery_date,
+                        MIN(NULLIF(CASE WHEN {db.PO_DATE_LIVE} THEN delivery_date END, '')),
+                        MIN(NULLIF(delivery_date, '')), '') AS delivery_date,   -- 下修成 0 的品項不算（db.PO_DELIVERY_SQL）
                COALESCE(MAX(CASE WHEN warehouse_overridden = 1
                                  THEN warehouse END),
                         MIN(NULLIF(warehouse, '')), '')     AS warehouse,
@@ -1994,7 +2002,7 @@ def po_summary_sql(clause):
                -- 首頁挑一個顯示會跟明細對不起來，所以一併帶出「有幾種
                -- 值」，畫面上直接標示不一致。NULLIF 把空字串排除掉，
                -- 免得「還沒填」被算成一種值。
-               COUNT(DISTINCT NULLIF(delivery_date, '')) AS delivery_date_variants,
+               COUNT(DISTINCT NULLIF(CASE WHEN {db.PO_DATE_LIVE} THEN delivery_date END, '')) AS delivery_date_variants,
                COUNT(DISTINCT NULLIF(warehouse, ''))     AS warehouse_variants,
                COUNT(*)             AS sku_count,
                COALESCE(SUM(qty_coupang),0) AS qty_coupang,
@@ -2260,7 +2268,7 @@ def api_update_po(po_number):
         po_rows = [dict(r) for r in conn.execute(
             """SELECT delivery_date, warehouse, order_type,
                       delivery_date_overridden, warehouse_overridden,
-                      order_type_overridden
+                      order_type_overridden, qty_coupang, removed_from_coupang
                FROM orders WHERE po_number = ? ORDER BY seq_no, sku_id""",
             (po_number,)).fetchall()]
         if po_rows:
@@ -2949,6 +2957,15 @@ def api_export():
                 export_records.append(rec)
         else:
             export_records = [dict(r) for r in rows]
+            # 下修成 0 的品項交期是舊的：匯出時跟整張 PO 的到貨日一致（Jerry 2026-10-28，db.PO_DELIVERY_SQL）
+            pos = sorted({r["po_number"] for r in export_records})
+            if pos:
+                marks = ",".join("?" * len(pos))
+                po_date = {r["po_number"]: r["po_date"] for r in conn.execute(
+                    f"SELECT po_number, po_date FROM ({db.PO_DELIVERY_SQL}) pd WHERE po_number IN ({marks})", pos).fetchall()}
+                for rec in export_records:
+                    if not ((rec.get("qty_coupang") or 0) > 0 and not rec.get("removed_from_coupang")) and po_date.get(rec["po_number"]):
+                        rec["delivery_date"] = po_date[rec["po_number"]]
 
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
