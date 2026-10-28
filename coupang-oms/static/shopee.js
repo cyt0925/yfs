@@ -777,7 +777,10 @@ function renderEips() {
     by: { label: "產出", get: e => [e.created_by || "—"], sort: e => e.created_at || "", date: true },
     po: { label: "EIP 採購單號", get: e => [e.eip_po || "未回填"], first: ["未回填"] } };
   const list = hfUse(every, cols, renderEips, "個檔");
-  $("#e-hf").innerHTML = hfNote(list.length);
+  const cnt = (f, keys) => keys.map(k => [k, every.filter(e => f(e) === k).length]).filter(([, n]) => n);
+  $("#e-hf").innerHTML = `<span><b>${every.length}</b> 個檔${withFilled ? "" : "待回填"}</span>`         // 數字可以點、只看那些（跟其他步驟一樣；Jerry 2026-10-28）
+    + cnt(e => e.line, ["寶僑", "紙潔", "瑪氏"]).map(([k, n]) => hfQuick("line", [k], `<b>${n}</b> 份${esc(k)}`)).join("")
+    + cnt(e => e.fulfil, FULFILS).map(([k, n]) => hfQuick("ff", [k], `<b>${n}</b> 份${esc(k)}`)).join("") + hfNote(list.length);
   $("#e-mars").classList.toggle("hidden", !EIPS.some(e => e.mars && e.eip_po));
   $("#e-direct").classList.toggle("hidden", !EIPS.some(e => e.direct && e.eip_po));
   $("#e-tbl").innerHTML = `<thead><tr>${hfTh("date")}${hfTh("wh")}${hfTh("line")}${hfTh("ff")}${hfTh("file")}${hfTh("rows", "num opt")}${hfTh("qty", "num")}${hfTh("orders")}${hfTh("by", "opt")}${hfTh("po")}</tr></thead><tbody>
