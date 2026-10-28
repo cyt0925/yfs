@@ -19,7 +19,7 @@
 **Jerry 2026-10-14：以後改完直接推正式站，不用等他說「OK 推正式站」。** 推完請 Jerry 看右下角版本號。
 **本機只跑跟改動有關的測試**（Jerry 2026-10-14「改成跟改動有關的測試 我相信你」，全部跑一次要十幾分鐘），其餘交給 CI：
 - 改到 `app.py`、`importer.py`、酷澎訂單畫面 → `test_flow`；`purchase.py` → `test_purchase`；`master/` → `test_master`＋`test_mars`；
-  `mars/` → `test_mars`；`shopee/` → `test_shopee`；`db.py`、`master/common.py`、`normalize.py` 這種共用的 → 全部。
+  `mars/` → `test_mars`；`shopee/` → `test_shopee`；`momo/` → `test_momo`；`db.py`、`master/common.py`、`normalize.py` 這種共用的 → 全部。
 - 有動到 SQL 的，相關那幾支在 PostgreSQL 也跑；動到畫面（templates、static）就跑 `test_master_ui`；`check_chinese` 每次都跑（很快）。
 - 開發分支推上去後 **GitHub 三項檢查（全部測試）綠燈**，才把正式站分支快轉過去。紅燈不推。
 
@@ -61,6 +61,7 @@ Flask 應用。把酷澎整合表整份上傳，自動去重、抓出酷澎偷�
 - YFS 訂單系統（`coupang-oms/portal.py`，**網站首頁 `/`**；酷澎訂單管理在 `/coupang`，舊的 `/portal` 轉回首頁）：先讀 [`coupang-oms/docs/YFS訂單系統_設計筆記.md`](coupang-oms/docs/YFS訂單系統_設計筆記.md)。只讀不寫（例外：改單統計補原因）；SQL 一律用欄名取值（正式站 PostgreSQL 回 dict，不能 `row[0]`）。
 - 竹運出貨拋檔（`coupang-oms/zhuyun.py`，網址 `/zhuyun`）：先讀 [`coupang-oms/docs/竹運出貨拋檔_設計筆記.md`](coupang-oms/docs/竹運出貨拋檔_設計筆記.md)。
 - 蝦皮特選寄倉訂單系統（`coupang-oms/shopee/`，網址 `/shopee`，表 `shp_` 開頭）：先讀 [`coupang-oms/docs/蝦皮特選_設計筆記.md`](coupang-oms/docs/蝦皮特選_設計筆記.md)。測試 `python test_shopee.py`。
+- MOMO 訂單管理系統（`coupang-oms/momo/`，網址 `/momo`，表 `momo_` 開頭；價格本、瑪氏商品總表跟蝦皮特選共用）：先讀 [`coupang-oms/docs/MOMO_設計筆記.md`](coupang-oms/docs/MOMO_設計筆記.md)，很多做法在等 Alice 回問題清單。測試 `python test_momo.py`。
 - **做畫面、改版前先讀 [`.claude/skills/ux-design/SKILL.md`](.claude/skills/ux-design/SKILL.md)**（Jerry 2026-10-13：蝦皮特選六個頁籤「ux 簡直 0 分」。畫面照作業流程和「東西」排，不照程式模組切；先給示意圖再寫程式）。
 - **寫中文前先讀 [`.claude/skills/zh-writing/SKILL.md`](.claude/skills/zh-writing/SKILL.md)**（Jerry 2026-10-07 確認的寫作規矩：對話口語、畫面正式、名詞表、去翻譯腔）。
 - 跟使用者講話用口語，不要術語。中文怪字：「匯」「驟」曾被打成 Big5 裡沒有的罕見字，`python coupang-oms/check_chinese.py` 會掃 repo（CI 跑）；對話訊息沒有工具擋，送出前自己再看一次，能換詞就換詞（例如用「做法」代替「步驟」）。

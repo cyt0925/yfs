@@ -570,7 +570,8 @@ _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "MST_ORDERS", "MST_PRODUCTS", "MST_IMPORT_BATCHES",
                      "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
                      "SHP_UPLOADS", "SHP_ORDERS",   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
-                     "SHP_EIP", "SHP_DISPATCH", "SHP_NOTIFY")                     # 產 EIP 採購單：存檔要拿 id 掛品項
+                     "SHP_EIP", "SHP_DISPATCH", "SHP_NOTIFY",                     # 產 EIP 採購單：存檔要拿 id 掛品項
+                     "MOMO_UPLOADS", "MOMO_ORDERS", "MOMO_EIP")                  # MOMO：上傳預覽、新品項記版本、EIP 掛品項
 
 
 def _wants_returning_id(sql):
@@ -1301,6 +1302,118 @@ CREATE TABLE IF NOT EXISTS shp_notify (
     items       INTEGER DEFAULT 0,
     created_by  TEXT DEFAULT '',
     created_at  TEXT NOT NULL
+);
+
+-- ── MOMO（momo/，2026-10-28）────────────────────────────────────────
+-- 一次上傳（可以好幾個檔）一筆；原始檔一個檔一筆存在 momo_upload_files。status 跟蝦皮一樣：pending／ok／canceled。
+CREATE TABLE IF NOT EXISTS momo_uploads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    filenames     TEXT DEFAULT '',
+    payload_json  TEXT DEFAULT '',
+    rows_total    INTEGER DEFAULT 0,
+    new_count     INTEGER DEFAULT 0,
+    changed_count INTEGER DEFAULT 0,
+    same_count    INTEGER DEFAULT 0,
+    removed_count INTEGER DEFAULT 0,
+    errors_json   TEXT DEFAULT '[]',
+    status        TEXT DEFAULT 'pending',
+    uploaded_by   TEXT DEFAULT '',
+    uploaded_at   TEXT DEFAULT '',
+    committed_at  TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS momo_upload_files (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    upload_id   INTEGER NOT NULL,
+    filename    TEXT DEFAULT '',
+    content_b64 TEXT DEFAULT ''
+);
+
+-- MOMO 入庫單的一個品項一筆。okey＝「入庫單號|商品編號|單品編號」。數量是 MOMO 的單位（W 採購數量）。
+CREATE TABLE IF NOT EXISTS momo_orders (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    okey            TEXT NOT NULL UNIQUE,
+    inbound_no      TEXT NOT NULL,            -- 入庫單號 26101657-7472
+    warehouse       TEXT DEFAULT '',          -- MOMO 寫的倉別（DC6、新竹物流幼獅倉…）
+    expected_date   TEXT DEFAULT '',          -- 入庫預定日期 YYYY-MM-DD
+    purchase_date   TEXT DEFAULT '',          -- 採購日
+    product_no      TEXT DEFAULT '',          -- 商品編號
+    item_no         TEXT DEFAULT '',          -- 單品編號（001，保留前面的 0）
+    product_name    TEXT DEFAULT '',
+    spec            TEXT DEFAULT '',          -- 單品詳細
+    shelf_days      TEXT DEFAULT '',          -- 保存天數
+    min_expiry      TEXT DEFAULT '',          -- 入庫最低有效期限
+    factory_code    TEXT DEFAULT '',          -- 商品原廠編號 M10279581_RMN
+    base_code       TEXT DEFAULT '',          -- 底線前面：永豐料號
+    unit_code       TEXT DEFAULT '',          -- 底線後第一個字：R 箱、Q 盒、C 包…
+    unit_name       TEXT DEFAULT '',
+    line            TEXT DEFAULT '',          -- 紙品／潔品／瑪氏／寶僑（看料號）
+    qty             INTEGER DEFAULT 0,
+    qty_original    INTEGER DEFAULT 0,
+    momo_note       TEXT DEFAULT '',          -- momo採購備註
+    ship_method     TEXT DEFAULT '原廠直出',   -- 原廠直出／竹運出貨（需求一：預設原廠直出，可改）
+    removed         INTEGER DEFAULT 0,        -- 重傳同一張入庫單時已經沒有這個品項
+    diff_pending    INTEGER DEFAULT 0,
+    version         INTEGER DEFAULT 1,
+    source_file     TEXT DEFAULT '',
+    source_sheet    TEXT DEFAULT '',
+    source_row      INTEGER DEFAULT 0,
+    first_upload_id INTEGER,
+    last_upload_id  INTEGER,
+    created_at      TEXT DEFAULT '',
+    updated_at      TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS momo_order_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL,
+    version     INTEGER NOT NULL,
+    upload_id   INTEGER,
+    data_json   TEXT DEFAULT '{}',
+    created_at  TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS momo_diffs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id     INTEGER NOT NULL,
+    upload_id    INTEGER,
+    field        TEXT NOT NULL,
+    field_label  TEXT DEFAULT '',
+    old_value    TEXT DEFAULT '',
+    new_value    TEXT DEFAULT '',
+    uploaded_by  TEXT DEFAULT '',
+    uploaded_at  TEXT DEFAULT '',
+    confirmed_by TEXT DEFAULT '',
+    confirmed_at TEXT DEFAULT ''
+);
+-- 換箱數除不盡、贈品不下採時人改的下採數量（照蝦皮特選的做法）
+CREATE TABLE IF NOT EXISTS momo_qty_adj (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL UNIQUE,
+    qty_before  INTEGER,
+    qty_after   INTEGER,
+    conv        INTEGER,
+    reason      TEXT DEFAULT '',
+    operator    TEXT DEFAULT '',
+    updated_at  TEXT DEFAULT ''
+);
+-- 產出的 EIP 採購單：一個檔一筆，存當時的內容（重新下載、回填單號、產瑪氏／直送採購單都照這份）
+CREATE TABLE IF NOT EXISTS momo_eip (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch         TEXT DEFAULT '',
+    line          TEXT DEFAULT '',
+    warehouse     TEXT DEFAULT '',
+    expected_date TEXT DEFAULT '',
+    unit_group    TEXT DEFAULT '',            -- 瑪氏：箱／盒包＋品類＋中標；其他空白
+    filename      TEXT DEFAULT '',
+    rows_json     TEXT DEFAULT '[]',
+    eip_po        TEXT DEFAULT '',
+    created_by    TEXT DEFAULT '',
+    created_at    TEXT DEFAULT '',
+    updated_by    TEXT DEFAULT '',
+    updated_at    TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS momo_eip_items (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    eip_id    INTEGER NOT NULL,
+    order_id  INTEGER NOT NULL
 );
 """
 

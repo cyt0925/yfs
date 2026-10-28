@@ -42,7 +42,7 @@ CHANNELS = [
     # title／logo：首頁「各通路系統」卡片的標題與圖示（Jerry 2026-10-06 給的三個圖檔，縮成 160px 高放 static/）
     {"key": "coupang", "name": "酷澎", "title": "酷澎訂單管理系統", "logo": "logo_coupang.png", "live": True, "status": "", "url": COUPANG_URL},
     {"key": "shopee", "name": "蝦皮特選", "title": "蝦皮特選訂單管理系統", "logo": "logo_shopee.png", "live": True, "status": "", "url": "/shopee"},
-    {"key": "momo", "name": "MOMO", "title": "MOMO 訂單管理系統", "logo": "logo_momo.png", "live": False, "status": "建置中", "note": "系統建置中，完成後從這裡進入"},
+    {"key": "momo", "name": "MOMO", "title": "MOMO 訂單管理系統", "logo": "logo_momo.png", "live": True, "status": "", "url": "/momo"},
     {"key": "pchome", "name": "PChome", "title": "PChome 訂單管理系統", "logo": "logo_pchome.png", "live": False, "status": "規劃中", "note": "預計於 MOMO 之後建置"},
 ]
 
@@ -188,7 +188,7 @@ def change_stats(conn, today):
 # 最近的動作「系統」欄（Jerry 2026-10-06：「是否可以增加是從哪個系統上做修改的」）。
 # 訂單管理的紀錄在 edit_logs；其他工具都寫 mst_logs，看紀錄種類（field）的開頭分。
 _SYSTEM_BY_PREFIX = (("mars_", "瑪氏出貨"), ("zhuyun_", "竹運出貨拋檔"), ("purchase_", "採購表轉換"),
-                     ("shopee_", "蝦皮特選訂單管理系統"))
+                     ("shopee_", "蝦皮特選訂單管理系統"), ("momo_", "MOMO 訂單管理系統"))
 
 
 def system_of(table, field, note=""):
@@ -235,6 +235,9 @@ def summary(conn, today):
             item.update(coupang_summary(conn, today))
         elif c["key"] == "shopee":
             item.update(_shopee(conn, today), month_boxes=None)    # 蝦皮特選還沒有箱數（第三段才有出貨量）
+        elif c["key"] == "momo":
+            from momo.orders import portal_summary as _momo
+            item.update(_momo(conn, today.isoformat()), month_boxes=None)
         channels.append(item)
     changes = change_stats(conn, today)
     return {"today": _iso(today), "now": db.now(), "channels": channels, "tasks": tasks(conn, today),

@@ -87,8 +87,8 @@ def _boxes(row):
         return 0
 
 
-def direct_xlsx(e, rows, note, today=None):
-    """照 Alice 的範本畫。rows 來自 direct_rows。"""
+def direct_xlsx(e, rows, note, today=None, channel=CHANNEL, a22=None, notice=NOTICE):
+    """照 Alice 的範本畫。rows 來自 direct_rows。channel／a22／notice：MOMO 直送採購單共用這個版型（2026-10-28），換 A1、A22、C23。"""
     today = today or _dt.date.today()
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "直送採購單"
     hei = Font(name="微軟正黑體", size=20, bold=True); mid = Font(name="微軟正黑體", size=16); body = Font(name="微軟正黑體", size=11)
@@ -98,7 +98,7 @@ def direct_xlsx(e, rows, note, today=None):
     for col, w in zip("ABCDEFGHI", (5.6, 31.5, 24.5, 55.5, 13.9, 9.8, 10.7, 22.4, 8.6)):
         ws.column_dimensions[col].width = w
     ws.merge_cells("A1:B2"); ws.merge_cells("C1:C2"); ws.merge_cells("D1:D2")
-    ws["A1"] = CHANNEL; ws["A1"].font = hei; ws["A1"].alignment = center; ws["A1"].border = box
+    ws["A1"] = channel; ws["A1"].font = hei; ws["A1"].alignment = center; ws["A1"].border = box
     ws["C1"] = "採購單號"; ws["C1"].font = hei; ws["C1"].alignment = center
     ws["D1"] = e["eip_po"] or ""; ws["D1"].font = Font(name="微軟正黑體", size=24, bold=True); ws["D1"].alignment = center
     ws["G1"] = "下單"; ws["G1"].font = mid; ws["G1"].alignment = center
@@ -137,13 +137,13 @@ def direct_xlsx(e, rows, note, today=None):
     ws.cell(row=r1, column=2, value=f"請安排{int(d[5:7])}/{int(d[8:10])} 到貨" if len(d) >= 10 else "請安排到貨").font = Font(name="Arial", size=12, bold=True)
     ws.row_dimensions[r1].height = 43
     ws.merge_cells(start_row=r2, start_column=1, end_row=r3, end_column=2); ws.merge_cells(start_row=r2, start_column=3, end_row=r2, end_column=9); ws.merge_cells(start_row=r3, start_column=3, end_row=r3, end_column=9)
-    a = ws.cell(row=r2, column=1, value=f"{CHANNEL}店-{wh_name(e['warehouse'])}"); a.font = Font(name="細明體", size=14, bold=True); a.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    a = ws.cell(row=r2, column=1, value=a22 if a22 is not None else f"{CHANNEL}店-{wh_name(e['warehouse'])}"); a.font = Font(name="細明體", size=14, bold=True); a.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     c22 = ws.cell(row=r2, column=3, value=note); c22.font = Font(name="Arial", size=14, bold=True); c22.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    c23 = ws.cell(row=r3, column=3, value=NOTICE); c23.font = Font(name="微軟正黑體", size=12); c23.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    c23 = ws.cell(row=r3, column=3, value=notice or None); c23.font = Font(name="微軟正黑體", size=12); c23.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     for rr in (r2, r3):
         for j in range(1, 10):
             ws.cell(row=rr, column=j).border = box
-    ws.row_dimensions[r2].height = 24 + 18 * (note.count("\n") + 1); ws.row_dimensions[r3].height = 115
+    ws.row_dimensions[r2].height = 24 + 18 * (note.count("\n") + 1); ws.row_dimensions[r3].height = 115 if notice else 24
     buf = io.BytesIO(); wb.save(buf)
     return _cache(buf.getvalue(), cached)
 

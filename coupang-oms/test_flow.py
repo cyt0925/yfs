@@ -1381,9 +1381,9 @@ def main():
     check("營運 SOP 檢索開在框裡（iframe 指到 SOP 網站）", f'<iframe class="sop-frame" src="{portal.SOP_URL}"' in sop)
     res = client.get("/api/portal/summary"); d = res.get_json()
     chs = {c["key"]: c for c in d["channels"]}
-    check("四個通路：酷澎、蝦皮特選有數字（蝦皮特選 2026-10-07 上線），MOMO（2026-10-27 建置中）、PChome 不放假數字",
+    check("四個通路：酷澎、蝦皮特選、MOMO（2026-10-28 上線）有數字，PChome 不放假數字",
           res.status_code == 200 and list(chs) == ["coupang", "shopee", "momo", "pchome"] and chs["coupang"]["live"]
-          and not chs["momo"]["live"] and chs["momo"]["status"] == "建置中" and "new_today" not in chs["momo"]
+          and chs["momo"]["live"] and chs["momo"]["url"] == "/momo" and isinstance(chs["momo"]["new_today"], int)
           and chs["shopee"]["live"] and chs["shopee"]["url"] == "/shopee" and isinstance(chs["shopee"]["new_today"], int)
           and chs["shopee"]["month_boxes"] is None and not chs["pchome"]["live"] and "new_today" not in chs["pchome"])
     conn = db.get_conn()

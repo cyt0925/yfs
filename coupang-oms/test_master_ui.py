@@ -660,7 +660,7 @@ def main():
               and "酷澎訂單管理系統" in pg.inner_text("#ch-coupang") and "蝦皮特選訂單管理系統" in pg.inner_text("#ch-shopee") and "PChome 訂單管理系統" in pg.inner_text("#ch-pchome")
               and pg.eval_on_selector("#ch-coupang", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(224, 20, 34)"
               and pg.eval_on_selector("#ch-pchome", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(0, 70, 191)"
-              and "MOMO 訂單管理系統" in pg.inner_text("#ch-momo") and "建置中" in pg.inner_text("#ch-momo")
+              and "MOMO 訂單管理系統" in pg.inner_text("#ch-momo") and pg.get_attribute("#ch-momo .ch-go", "href") == "/momo"
               and pg.eval_on_selector("#ch-momo", "e => getComputedStyle(e, '::before').backgroundColor") == "rgb(228, 0, 127)"
               and pg.eval_on_selector_all("#chs .ch-h b", "els => els.every(b => b.scrollHeight <= b.clientHeight + 2)")
               and pg.eval_on_selector("#ch-coupang .ch-go", "e => getComputedStyle(e).backgroundColor") == "rgb(224, 20, 34)")
@@ -1177,8 +1177,55 @@ def main():
         check("首頁今日事項連過來（/coupang?due=1）→ 已經勾好、只看這些單", pg.is_checked("#f-due") and pg.locator("#tbody tr:has(button[data-open])").count() == min(n_due, PG_SIZE))
         pg.uncheck("#f-due"); pg.wait_for_timeout(600)
 
+        print("\n【6h】MOMO 訂單管理系統（2026-10-28）：一次丟兩個下載檔 → 預覽 → 匯入 → 搜尋 → 右側面板 → 產 EIP → 回填")
+        mhdr = ["項次", "倉別", "到倉日", "採購日", "入庫單號", "入庫預定日期", "採購總量", "商品編號", "商品名稱", "單品編號", "單品詳細", "採購數量", "商品原廠編號"]
+        mfiles = []
+        for k, (whm, nom, items) in enumerate([("DC6", "26109999-0001", [("11000001", "【彩豆豆】牛奶巧克力", "48", "M89297484_QMN")]),
+                                               ("SDC", "26109999-0002", [("11000002", "【口香糖王】薄荷", "200", "M81232885_CMN"),
+                                                                         ("11000003", "【喵愛餡】貓點心 箱購", "3", "M69072565_RMN")])]):
+            wbm = openpyxl.Workbook(); wsm = wbm.active; wsm.append(mhdr)
+            for j, (prod, nm, q, code) in enumerate(items):
+                wsm.append([str(k + 1) if j == 0 else "", whm if j == 0 else "", "", "2026/10/20" if j == 0 else "", nom if j == 0 else "",
+                            "2026/10/30" if j == 0 else "", str(sum(int(x[2]) for x in items)) if j == 0 else "", prod, nm, "001", "無", q, code])
+            fp = os.path.join(os.environ["COUPANG_OMS_DATA"], f"UnsendList_{k + 1}.xlsx"); wbm.save(fp); mfiles.append(fp)
+        tc.post("/api/mars/products/import", data={"file": (open(os.path.join(BASE, "samples", "mars", "fake", "假_瑪氏商品總表.xlsx"), "rb"), "假_瑪氏商品總表.xlsx")},
+                content_type="multipart/form-data")
+        pg.goto(f"{base}/momo"); pg.wait_for_selector("#stages .st", timeout=15000)
+        pg.set_input_files("#file", mfiles); pg.wait_for_selector(".pv [data-a=ok]", timeout=15000)
+        check("一次選兩個 MOMO 下載檔 → 合在一起預覽：2 個檔、2 張入庫單、新增 3", "MOMO 下載檔 2 個" in pg.inner_text(".pv") and "入庫單 2 張" in pg.inner_text(".pv")
+              and "新增 3" in pg.inner_text(".pv"), pg.inner_text(".pv")[:300])
+        pg.click(".pv [data-a=ok]"); pg.wait_for_function("document.querySelectorAll('#tbl tr.og').length === 2", timeout=15000)
+        check("確認匯入 → 待產 EIP 採購單 2 張、清單兩列、都可產出", pg.inner_text("#stages .st.on .n").strip() == "2" and pg.locator("#tbl tr.og").count() == 2
+              and pg.inner_text("#tbl").count("可產出") == 2, pg.inner_text("#tbl")[:300])
+        pg.fill("#f-q", "26109999-0002"); pg.wait_for_function("document.querySelectorAll('#tbl tr.og').length === 1", timeout=8000)
+        check("搜尋入庫單號：打字就出結果、只剩那張", "26109999-0002" in pg.inner_text("#tbl"))
+        pg.fill("#f-q", ""); pg.wait_for_function("document.querySelectorAll('#tbl tr.og').length === 2", timeout=8000)
+        pg.click("#pk-line [data-pk]"); pg.check("#pk-line .pick-pop input[value='瑪氏']"); pg.wait_for_timeout(800)
+        check("線別複選：勾瑪氏馬上篩、選單還開著可以再勾", pg.locator("#tbl tr.og").count() == 2 and "瑪氏" in pg.inner_text("#pk-line [data-pk]")
+              and pg.is_visible("#pk-line .pick-pop"))
+        pg.check("#pk-line .pick-pop input[value='紙品']"); pg.wait_for_timeout(800)
+        check("再勾紙品：兩個都勾著（瑪氏、紙品）", "瑪氏、紙品" in pg.inner_text("#pk-line [data-pk]") and pg.locator("#tbl tr.og").count() == 2)
+        pg.uncheck("#pk-line .pick-pop input[value='紙品']")
+        pg.uncheck("#pk-line .pick-pop input[value='瑪氏']"); pg.click("body", position={"x": 5, "y": 5}); pg.wait_for_timeout(600)
+        pg.click("#tbl tr.og[data-no='26109999-0002']"); pg.wait_for_selector("#sd-body .sd-sec", timeout=10000)
+        check("點一張入庫單 → 右側面板：出貨方式、品項與下採（200 包 ÷ 200 ＝ 1 箱）、倉別資料", "品項與下採" in pg.inner_text("#sd-body") and "下採 1 箱" in pg.inner_text("#sd-body")
+              and "台南市新市區" in pg.inner_text("#sd-body"), pg.inner_text("#sd-body")[:400])
+        pg.click("#sd-close")
+        pg.check("#ck-all")
+        with pg.expect_download(timeout=15000) as dlm:
+            pg.click("#b-go")
+        check("勾全部 → 產出 EIP 採購單（壓縮檔）", dlm.value.suggested_filename.startswith("MOMO_EIP採購單_1030"), dlm.value.suggested_filename)
+        pg.wait_for_timeout(800)
+        pg.click("#stages .st[data-st='eip']"); pg.wait_for_selector("#e-tbl .eip-in", timeout=8000)
+        n_eip = pg.locator("#e-tbl .eip-in").count()
+        check("待回填 EIP 採購單號：瑪氏依倉、品類、箱／盒包分成 3 份", n_eip == 3, str(n_eip))
+        pg.fill("#e-tbl .eip-in >> nth=0", "PO202610777"); pg.click("#e-tbl .eip-save >> nth=0"); pg.wait_for_timeout(1000)
+        check("回填一份 → 待回填剩 2 份", pg.locator("#e-tbl .eip-in").count() == 2)
+        pg.click("#e-all"); pg.wait_for_timeout(800)
+        check("顯示已回填 → 那份出現「瑪氏採購單」下載", "瑪氏採購單" in pg.inner_text("#e-tbl"), pg.inner_text("#e-tbl")[:300])
+
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
-        for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/master", "#dd-line-btn"),
+        for path, ready in [("/", "#chs .ch"), ("/coupang", "#lm-btn"), ("/shopee", "#stages .st"), ("/momo", "#stages .st"), ("/master", "#dd-line-btn"),
                             ("/mars", "#sp-table thead"), ("/zhuyun", "#dz"), ("/purchase", "#ac-btn")]:
             pg.goto(f"{base}{path}"); pg.wait_for_selector(ready, state="attached", timeout=15000)
             pg.click("#ac-btn"); pg.wait_for_selector("#ac-menu:not([hidden])", timeout=5000); pg.wait_for_selector("#ac-users-item:not([hidden])", timeout=5000)

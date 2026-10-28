@@ -167,8 +167,9 @@ def api_logs():
     if barcode:
         where.append("barcode = ?"); params.append(barcode)
     if scope == "mars":       # 瑪氏出貨頁：線別瑪氏的訂單變動＋mars_ 開頭的；採購表轉換、竹運、蝦皮特選自己的紀錄不算
-        where.append("(line = ? OR field LIKE ?) AND field NOT LIKE ? AND field NOT LIKE ? AND field NOT LIKE ?"); params += ["瑪氏", "mars_%", "purchase_%", "zhuyun_%", "shopee_%"]
-    elif scope in ("purchase", "zhuyun", "shopee"):
+        where.append("(line = ? OR field LIKE ?) AND field NOT LIKE ? AND field NOT LIKE ? AND field NOT LIKE ? AND field NOT LIKE ?")
+        params += ["瑪氏", "mars_%", "purchase_%", "zhuyun_%", "shopee_%", "momo_%"]      # MOMO 的瑪氏單也不算瑪氏出貨（2026-10-28）
+    elif scope in ("purchase", "zhuyun", "shopee", "momo"):
         where.append("field LIKE ?"); params.append(f"{scope}_%")
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d_from):
         where.append("changed_at >= ?"); params.append(d_from)
