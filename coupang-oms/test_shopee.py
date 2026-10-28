@@ -532,8 +532,9 @@ def stage2(c, preview, orders):
     r = c.get(f"/api/shopee/eips/{box_['id']}/mars_po")
     import datetime as _dt
     ws = openpyxl.load_workbook(io.BytesIO(r.data)).active if r.status_code == 200 else None
-    check("瑪氏採購單檔名：EIP 採購單號＋到貨日＋倉＋單位＋品類＋中標", "PO202610101" in r.headers.get("Content-Disposition", "")
-          and "_1013_" in __import__("urllib.parse").parse.unquote(r.headers.get("Content-Disposition", "")), r.headers.get("Content-Disposition"))
+    check("瑪氏採購單檔名：EIP 採購單號＋單位＋品類＋中標＋到貨日（不寫倉別；Jerry 2026-10-28）",
+          __import__("urllib.parse").parse.unquote(r.headers.get("Content-Disposition", "")).endswith("PO202610101永豐Mars採購單_盒_PET_需貼中標_20261013.xlsx"),
+          r.headers.get("Content-Disposition"))
     if ws:
         check("表頭：下單日 10/8（往前 2 個工作天，跳過 10/9 補假和週末）、配送日 10/13、EIP 採購單號、觀音倉資料、1/2效期以上、品類",
               ws["C3"].value == _dt.datetime(2026, 10, 8) and ws["F3"].value == _dt.datetime(2026, 10, 13) and ws["C5"].value == "PO202610101"
@@ -548,7 +549,7 @@ def stage2(c, preview, orders):
           and ws.cell(12, 13).value == "需加工貼小白標" and ws.cell(12, 5).value == 18, repr(ws["F5"].value))
     r = c.get("/api/shopee/mars_po.zip")
     zn = sorted(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) if r.status_code == 200 else []
-    check("打包下載只放已回填的 2 份", zn == ["PO202610101永豐Mars採購單_1013_觀音_盒_PET_需貼中標.xlsx", "PO202610102永豐Mars採購單_1013_觀音_箱_PET_不貼中標.xlsx"], str(zn))
+    check("打包下載只放已回填的 2 份", zn == ["PO202610101永豐Mars採購單_盒_PET_需貼中標_20261013.xlsx", "PO202610102永豐Mars採購單_箱_PET_不貼中標_20261013.xlsx"], str(zn))
     whs = {w["code"]: w for w in c.get("/api/shopee/warehouses").get_json()["warehouses"]}
     check("蝦皮倉資料：觀音、安南三照需求書，其他倉 ship-to 空著", whs["TWX"]["ship_to"] == "17647732" and whs["TWX"]["contact"] == "曾小姐"
           and whs["TWG"]["address"].startswith("桃園市中壢區") and whs["TWG"]["ship_to"] == "", str(whs["TWG"]))

@@ -1265,7 +1265,7 @@ def main():
         xfp = os.path.join(os.environ["COUPANG_OMS_DATA"], "UnsendList_效期.xlsx"); wbx.save(xfp)
         with pg.expect_download(timeout=15000) as dlx:
             pg.set_input_files("#ck-file", xfp)
-        wsd = openpyxl.load_workbook(dlx.value.path()).active
+        wsd = openpyxl.load_workbook(io.BytesIO(open(dlx.value.path(), "rb").read())).active
         check("右側按「下載填好效期的匯入檔」選檔 → 下載 _已填效期、商品有效日期填好", dlx.value.suggested_filename == "UnsendList_效期_已填效期.xlsx"
               and wsd.cell(2, 7).value == "2028/02/08", f"{dlx.value.suggested_filename} {wsd.cell(2, 7).value}")
         pg.wait_for_timeout(800)

@@ -8,7 +8,7 @@ EIP 採購單在 purchase.py 產（一份＝一個倉、一個到貨日、一個
   F6 固定「1/2效期以上」（需求 11.1；酷澎那邊巧克力、口香糖是 3/5，蝦皮照需求書）
   F5 作業備註一行一條：蝦皮特選嘜頭(入庫通知單)+採購單／需貼中盒標（中標 V）／貼板嘜（箱單位）／指定品需加工貼小白標（有採購單箱備註）
   第 12 列起：A 永豐料號（蝦皮 Supplier SKU）、D 單位需求＝蝦皮數量、E 採購數量(箱)＝蝦皮數量÷箱入數，其他照商品總表
-檔名：PO202610101永豐Mars採購單_1013_觀音_盒_PET_需貼中標.xlsx（前面 EIP 採購單號，加到貨日和倉別；Jerry 2026-10-12）。
+檔名：PO202610435永豐Mars採購單_箱_PET_需貼中標_20261022.xlsx（EIP 採購單號＋單位＋品類＋中標＋到貨日，不寫倉別；Jerry 2026-10-28 改，原本是 _1022_觀音_箱_…）。
 """
 import zipfile
 
@@ -123,7 +123,7 @@ def po_name(e, rows):
     r0 = rows[0] if rows else {}
     lab = "需貼中標" if r0.get("label") == "V" else "不貼中標"
     d = e["expected_date"] or ""
-    return f"{e['eip_po'] or ''}永豐Mars採購單_{d[5:7]}{d[8:10]}_{wh_name(e['warehouse'])}_{r0.get('unit', '')}_{r0.get('category') or '品類不明'}_{lab}.xlsx"
+    return f"{e['eip_po'] or ''}永豐Mars採購單_{r0.get('unit', '')}_{r0.get('category') or '品類不明'}_{lab}_{d.replace('-', '')}.xlsx"
 
 
 def po_bytes(conn, e, whs=None, base=None):
