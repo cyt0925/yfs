@@ -85,22 +85,24 @@ async function loadFresh() {
   let c, k, u, m; try { [c, k, u, m] = await Promise.all([api("/api/shopee/conv"), api("/api/shopee/stock"), api("/api/shopee/uploads"), api("/api/mars/status")]); } catch (err) { return; }
   const md = t => t ? `${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))}` : "";
   const today = iso(new Date(Date.now() - new Date().getTimezoneOffset() * 6e4));
+  // 一天可能傳好幾次，日期後面帶到幾點幾分（Jerry 2026-10-28）：今天 14:32／10/27 14:32
+  const when = t => t ? `${t.slice(0, 10) === today ? "今天" : md(t)}${t.length >= 16 ? " " + t.slice(11, 16) : ""}` : "";
   const chips = [["purchase", "蝦皮採購單"], ["inbound", "蝦皮入庫單"]].map(([kind, label]) => {
     const x = u.uploads.find(r => r.kind === kind), at = x && (x.committed_at || x.uploaded_at);
-    if (x) return `<span title="${esc(x.filename)}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${label} ${at.slice(0, 10) === today ? "今天" : md(at)}</span>`;
+    if (x) return `<span title="${esc(x.filename)}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${label} ${when(at)}</span>`;
     return kind === "purchase" ? `<span class="w"><i class="bi bi-exclamation-circle"></i> ${label}未匯入</span>`
       : `<span title="竹運出貨產拋單檔需要入庫單號"><i class="bi bi-dash-circle"></i> ${label}未匯入</span>`;
   });
-  chips.push(...["寶僑", "紙潔"].map(l => { const x = c.lines[l]; return x ? `<span title="${esc(x.file || "")}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${l}價格本 ${md(x.updated_at)}</span>`
+  chips.push(...["寶僑", "紙潔"].map(l => { const x = c.lines[l]; return x ? `<span title="${esc(x.file || "")}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> ${l}價格本 ${when(x.updated_at)}</span>`
     : `<span class="w"><i class="bi bi-exclamation-circle"></i> ${l}價格本未上傳</span>`; }));
   const mu = m.last_upload;     // 瑪氏商品總表跟瑪氏出貨頁共用，這裡也能傳
-  chips.push(mu ? `<span title="${esc(mu.filename)}${(m.manual || []).length ? `；蝦皮特選補登 ${m.manual.length} 品` : ""}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> 瑪氏商品總表 ${mu.uploaded_at.slice(0, 10) === today ? "今天" : md(mu.uploaded_at)}</span>`
+  chips.push(mu ? `<span title="${esc(mu.filename)}${(m.manual || []).length ? `；蝦皮特選補登 ${m.manual.length} 品` : ""}"><i class="bi bi-check-circle" style="color:var(--ok)"></i> 瑪氏商品總表 ${when(mu.uploaded_at)}</span>`
     : `<span class="w"><i class="bi bi-exclamation-circle"></i> 瑪氏商品總表未上傳</span>`);
   for (const kk of KIND_ORDER) {
     const x = k.stock[kk];
     if (!x) { chips.push(`<span class="w"><i class="bi bi-exclamation-circle"></i> ${KIND_LABEL[kk]}未上傳</span>`); continue; }
     const old = kk !== "life" && !x.today;
-    chips.push(`<span class="${old ? "w" : ""}" title="${esc(x.filename)}"><i class="bi ${old ? "bi-exclamation-circle" : "bi-check-circle"}" ${old ? "" : `style="color:var(--ok)"`}></i> ${KIND_LABEL[kk]} ${x.today ? "今天" : md(x.uploaded_at)}</span>`);
+    chips.push(`<span class="${old ? "w" : ""}" title="${esc(x.filename)}"><i class="bi ${old ? "bi-exclamation-circle" : "bi-check-circle"}" ${old ? "" : `style="color:var(--ok)"`}></i> ${KIND_LABEL[kk]} ${when(x.uploaded_at)}</span>`);
   }
   $("#fresh").innerHTML = chips.join("");
 }

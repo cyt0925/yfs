@@ -758,7 +758,8 @@ def main():
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)
         pg.click(".pv .ff[data-f='竹運出貨']"); pg.click(".pv .ok"); pg.wait_for_function("document.querySelectorAll('.pv').length === 0", timeout=10000); pg.wait_for_timeout(800)
         check("匯入後：「待產拋單檔」那格 1 張", count("ship") == 1, pg.inner_text("#stages"))
-        check("匯入後上傳區寫「蝦皮採購單 今天」", "蝦皮採購單 今天" in pg.inner_text("#fresh"), pg.inner_text("#fresh"))
+        check("匯入後上傳區寫「蝦皮採購單 今天 HH:MM」（一天傳好幾次要看得出是哪一次，Jerry 2026-10-28）",
+              __import__("re").search(r"蝦皮採購單 今天 \d{2}:\d{2}", pg.inner_text("#fresh")) is not None, pg.inner_text("#fresh"))
         sp3 = os.path.join(tempfile.gettempdir(), "ui_PurchaseOrder_mixed.xlsx")
         wbm = openpyxl.Workbook(); wsm = wbm.active
         wsm.append(["PR ID", "PO ID", "Warehouse", "Expected Delivery Time", "Shopee SKU ID", "Shopee SKU Name", "Supplier SKU ID",
