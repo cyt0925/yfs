@@ -273,9 +273,8 @@ def eip_xls(rows, line):
         ws.write(i, 3, row["unit"])
         ws.write(i, 6, row["qty"])
         ws.write(i, 8, row["remark"])
-    if name == "paper_template.xls":                      # 標題「採購數量398」是活的公式，範本存的是舊總數，要重寫
-        from purchase import _write_qty_header_formula
-        _write_qty_header_formula(wb, ws, rows)
+    from purchase import _write_qty_header_formula       # 標題「採購數量398」帶總數（紙潔範本本來就有，瑪氏也加；Jerry 2026-10-28 蝦皮要跟酷澎一樣）
+    _write_qty_header_formula(wb, ws, rows)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

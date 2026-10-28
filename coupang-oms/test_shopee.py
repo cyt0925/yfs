@@ -410,7 +410,8 @@ def stage2(c, preview, orders):
               head[:4] == ["項目", "料號", "品名", "單位"] and head[9] == "" and [r_[1] for r_ in rows] == ["4987176232878", "6903148358214"]
               and [(r_[3], r_[6], r_[8], r_[9]) for r_ in rows] == [("包", 188, "蝦皮特選", 4), ("包", 30, "蝦皮特選", 3)], str(rows))
         head, rows = xls_rows(z.read("產品採購表上傳-寶僑竹運進貨_1020到觀音-箱單位.xls"))
-        check("箱單位檔：箱 26、轉換率 1", [(r_[1], r_[3], r_[6], r_[9]) for r_ in rows] == [("4987176232878", "箱", 26, 1)], str(rows))
+        check("箱單位檔：箱 26、轉換率 1；標題「採購數量」帶總數（跟酷澎一樣，Jerry 2026-10-28）", [(r_[1], r_[3], r_[6], r_[9]) for r_ in rows] == [("4987176232878", "箱", 26, 1)]
+              and head[6] == "採購數量26", str((head[6], rows)))
         wb = openpyxl.load_workbook(io.BytesIO(z.read("蝦皮特選-商品下採_寶僑竹運進貨_1020-1021到觀音、安南三.xlsx")))
         small = [list(r_) for r_ in wb["小單位"].iter_rows(values_only=True)]
         check("下採明細：箱、小單位兩頁；欄位永豐料號／品名／單位／進貨／轉換率／數量每箱（公式）", wb.sheetnames == ["箱", "小單位"]

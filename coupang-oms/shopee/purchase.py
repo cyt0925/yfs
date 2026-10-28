@@ -539,6 +539,8 @@ def eip_xls(rows, line):
         ws.write(i, 8, row["remark"])
         if with_conv:
             ws.write(i, 9, row["conv"])
+    from purchase import _write_qty_header_formula       # 標題「採購數量941」帶總數，跟酷澎一樣（Jerry 2026-10-28）
+    _write_qty_header_formula(wb, ws, rows)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
