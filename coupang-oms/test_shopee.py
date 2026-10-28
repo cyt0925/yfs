@@ -897,6 +897,11 @@ def ship_tests(c, preview, orders, up):
     ov = next(g for g in orders()["orders"] if g["order_no"] == H)
     check("訂單總覽的出貨量、缺貨量帶出來", ov["qty_ship"] == 255 and ov["qty_short"] == 106, str((ov["qty_ship"], ov["qty_short"])))
     check("再產一次同樣的單 → 400（要先取消產出）", c.post("/api/shopee/ship/generate", json={"order_nos": [H, J], **q}).status_code == 400)
+    pv = preview(inbound_xlsx([("INZA01", "z1", "4987176377708_CNN", "幫寶適 安睡褲", 81)], H, date="2026-10-20"), "InboundOrder_again.xlsx").get_json()
+    check("重傳已產過拋單檔那張的入庫單 → 預覽當場講「已產過拋單檔」、幾點產的（Jerry 2026-10-28）", [x["order_no"] for x in pv["dispatched"]] == [H]
+          and pv["dispatched"][0]["at"][:10] == db.now()[:10], str(pv.get("dispatched")))
+    c.post("/api/shopee/import/cancel", json={"upload_id": pv["upload_id"]})
+    check("待產拋單檔有「顯示已產出」", 'id="z-done"' in c.get("/shopee").get_data(as_text=True))
     r = c.post("/api/shopee/ship/adjust", json={**q, "order_id": b_it["order_id"], "lots": [{"exp": "2029-07-24", "qty": 96}], "reason": "x"})
     check("已產出的不能改出貨量 → 400", r.status_code == 400 and "取消產出" in r.get_json()["error"])
     r = c.post("/api/shopee/ship/undo", json={"order_no": J})

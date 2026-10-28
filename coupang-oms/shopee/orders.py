@@ -214,6 +214,7 @@ def api_import_preview():
         acts, diffs = plan(conn, parsed["kind"], parsed["rows"])
         c = _counts(acts)
         nl = _new_lines(acts)
+        disp = _dispatched_orders(conn, parsed["rows"])
         cur = conn.execute(
             """INSERT INTO shp_uploads (kind, filename, content_b64, payload_json, rows_total, new_count, changed_count, same_count,
                removed_count, errors_json, status, uploaded_by, uploaded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -224,7 +225,7 @@ def api_import_preview():
         uid = cur.lastrowid
     finally:
         conn.close()
-    return jsonify(_preview_out(uid, parsed["kind"], f.filename, parsed["rows"], parsed["lines"], parsed["errors"], c, diffs, nl))
+    return jsonify(_preview_out(uid, parsed["kind"], f.filename, parsed["rows"], parsed["lines"], parsed["errors"], c, diffs, nl, disp))
 
 
 def _new_lines(acts):
@@ -237,8 +238,23 @@ def _new_lines(acts):
     return {k: out[k] for k in [x for x in LINES if x in out] + sorted(set(out) - set(LINES))}
 
 
-def _preview_out(uid, kind, filename, rows, lines, errors, c, diffs, new_lines):
-    return {"upload_id": uid, "new_lines": new_lines, "kind": kind, "kind_text": KIND_TEXT[kind], "filename": filename,
+def _dispatched_orders(conn, rows):
+    """檔裡哪幾張單已經產過拋單檔：[{order_no, at}]。重傳入庫單時人會以為那張會進「待產拋單檔」，要當場講（Jerry 2026-10-28）。"""
+    nos = sorted({(r.get("po_id") or r.get("pr_id") or "") for r in rows} - {""})
+    if not nos:
+        return []
+    marks = ",".join("?" * len(nos))
+    out = {}
+    for r in _rows(conn.execute(f"SELECT o.po_id, o.pr_id, MAX(d.created_at) AS at FROM shp_orders o "
+                                f"JOIN shp_dispatch_items i ON i.order_id = o.id JOIN shp_dispatch d ON d.id = i.dispatch_id "
+                                f"WHERE (o.po_id IN ({marks}) OR o.pr_id IN ({marks})) AND o.removed = 0 GROUP BY o.po_id, o.pr_id", nos + nos)):
+        no = order_no(r)
+        out[no] = max(out.get(no, ""), r["at"] or "")
+    return [{"order_no": k, "at": v} for k, v in sorted(out.items())]
+
+
+def _preview_out(uid, kind, filename, rows, lines, errors, c, diffs, new_lines, dispatched=()):
+    return {"upload_id": uid, "new_lines": new_lines, "kind": kind, "kind_text": KIND_TEXT[kind], "filename": filename, "dispatched": list(dispatched),
             "rows_total": len(rows), "orders": sorted({(r.get("po_id") or r.get("pr_id")) for r in rows}), "lines": lines,
             "warehouses": sorted({r["warehouse"] for r in rows if r["warehouse"]}),
             "dates": sorted({r["expected_date"] for r in rows if r["expected_date"]}),
@@ -263,7 +279,7 @@ def api_import_pending():
             for r in rows:
                 lines[r.get("line") or ""] = lines.get(r.get("line") or "", 0) + 1
             out.append(_preview_out(u["id"], u["kind"], u["filename"], rows, lines, json.loads(u["errors_json"] or "[]"), _counts(acts), diffs,
-                                    _new_lines(acts)))
+                                    _new_lines(acts), _dispatched_orders(conn, rows)))
     finally:
         conn.close()
     return jsonify({"pending": out})

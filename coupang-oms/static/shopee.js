@@ -117,6 +117,8 @@ function renderPreview(box, d) {
     <div class="facts">${same ? `<span class="badge b-ok">與上一版內容完全相同，確認後只記錄這次上傳</span>`
       : `<span>新增 <b>${c.new}</b> 項</span><span>有變 <b class="${c.changed ? "neg" : ""}">${c.changed}</b> 項</span><span>移除 <b class="${c.remove ? "neg" : ""}">${c.remove}</b> 項</span><span>無異動 <b>${c.same}</b> 項</span>`}</div>`;
   if (d.errors.length) h += `<details class="alert al-warn mt-3"><summary>${d.errors.length} 則提醒</summary>${d.errors.map(esc).join("<br>")}</details>`;
+  if ((d.dispatched || []).length) h += `<div class="alert al-warn mt-3"><b><i class="bi bi-info-circle"></i> ${d.dispatched.length} 張單已經產過拋單檔，不會再進「待產拋單檔」</b>：
+    ${d.dispatched.map(x => `${esc(x.order_no)}（${esc((x.at || "").slice(5, 16).replace("T", " "))} 產出）`).join("、")}。要重產請到「全部訂單」點那張單，按「取消拋單檔產出」。</div>`;
   if (d.diffs.length) h += `<div class="alert al-bad mt-3"><b><i class="bi bi-exclamation-triangle-fill"></i> 跟上一版有 ${d.diffs.length} 處不同</b>，匯入後這些訂單會標成「匯入差異待確認」，確認後才能往下處理。</div>
     <div class="tbl-wrap mt-3" style="max-height:300px"><table class="t"><thead><tr><th>訂單編號</th><th>廠商料號</th><th>品名</th><th>欄位</th><th>上一版本</th><th>新版本</th><th class="num">數量增減</th></tr></thead><tbody>
     ${d.diffs.map(x => `<tr><td class="fn">${esc(x.order_no)}</td><td class="fn">${esc(x.supplier_sku_id)}</td><td>${esc((x.sku_name || "").slice(0, 40))}</td><td>${esc(x.label)}</td><td>${esc(x.old)}</td><td><b>${esc(x.new)}</b></td><td class="num">${delta(x.qty_delta)}</td></tr>`).join("")}
@@ -860,7 +862,8 @@ $("#s-rule").addEventListener("change", () => saveShipSet({ rule: $("#s-rule").v
 $("#s-ratio").addEventListener("change", () => saveShipSet({ ratio: $("#s-ratio").value.trim() }));
 
 /* ── 竹運出貨：訂單、出貨量、效期批次 ─────────────────────── */
-let SHIP = { orders: [] }; const ZOPEN = new Set(), ZSEL = new Set();
+let SHIP = { orders: [] }, SHOW_DONE = false; const ZOPEN = new Set(), ZSEL = new Set();
+$("#z-done").addEventListener("click", () => { SHOW_DONE = !SHOW_DONE; $("#z-done").classList.toggle("on", SHOW_DONE); renderShip(); });
 const zq = () => fq();
 const zPick = g => g.dispatch_status !== "已產出" && !g.blocking;
 async function loadShip() {
@@ -872,7 +875,7 @@ async function loadShip() {
 const SHIP_FREE = new Set(["已產出拋單檔", "可全數出貨", "部分缺貨", "缺貨（有刪單）"]);
 const shipChk = g => g.dispatch_status === "已產出" ? ["已產出拋單檔"] : g.blocking ? whyKeys(g.items) : [g.short ? (g.deleted ? "缺貨（有刪單）" : "部分缺貨") : "可全數出貨"];
 function renderShip() {
-  const every = SHIP.orders.filter(g => inStage(g.order_no));
+  const every = SHIP.orders.filter(g => inStage(g.order_no) || (SHOW_DONE && STAGE === "ship" && g.dispatch_status === "已產出"));   // 顯示已產出：看得到、能取消重產（Jerry 2026-10-28）
   const list = hfUse(every, { no: HF_NO, line: HF_LINE, date: HF_DATE, up: HF_UP, wh: HF_WH, ff: { label: "履約方式", get: g => [g.fulfil || "竹運出貨"] }, codes: HF_CODES, items: hfNum("品項", g => g.items.length), qty: hfNum("訂購量", g => g.qty),
     ship: hfNum("出貨量", g => g.ship), short: hfNum("缺貨量", g => g.short),
     chk: { label: "檢查結果", get: shipChk, first: ["可全數出貨", "部分缺貨", "缺貨（有刪單）"], group: v => SHIP_FREE.has(v) ? "" : NEED },
