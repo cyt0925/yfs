@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>酷澎訂單管理系統</title>
-<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo_coupang.png') }}">
+<link rel="icon" type="image/png" href="{{ url_for('static', filename='logo_coupang.png') }}?v={{ build_version }}">
 <!-- Tailwind 跟圖示字型都改成本機檔案，不再連國外 CDN——這個系統本來就
      要求完全不碰雲端，之前每次開頁面都連去抓樣式表，違反了這個前提，
      公司網路一擋或那個服務掛掉，畫面會直接爛掉變純文字。編譯方式見
@@ -142,7 +142,7 @@
 <header class="bg-ink-900 text-white shadow-lg border-b-[3px] border-brand-600">
   <div class="max-w-[1800px] mx-auto px-5 py-3 flex items-center gap-4 flex-wrap">
     <div class="flex items-center gap-2.5">
-      <img src="{{ url_for('static', filename='logo_coupang.png') }}" width="43" height="36"
+      <img src="{{ url_for('static', filename='logo_coupang.png') }}?v={{ build_version }}" width="43" height="36"
            class="h-9 w-auto flex-none" alt="酷澎配送與購物清單圖示">
       <div>
         <h1 class="text-lg font-bold leading-tight tracking-tight">酷澎訂單管理系統</h1>
