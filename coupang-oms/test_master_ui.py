@@ -1269,7 +1269,8 @@ def main():
         check("右側按「下載填好效期的匯入檔」選檔 → 下載 _已填效期、商品有效日期填好", dlx.value.suggested_filename == "UnsendList_效期_已填效期.xlsx"
               and wsd.cell(2, 7).value == "2028/02/08", f"{dlx.value.suggested_filename} {wsd.cell(2, 7).value}")
         pg.wait_for_timeout(800)
-        check("填好後清單那張「效期匯入檔」變已填", "已填" in pg.inner_text(f"#tbl tr.og[data-no='{no0}']") or pg.locator(f"#tbl tr.og[data-no='{no0}']").count() == 0)
+        rowx = pg.locator(f"#tbl tr.og[data-no='{no0}']")
+        check("填好後這張單離開「待核缺貨與效期」（全部出貨、效期填過就完成）", rowx.count() == 0 or "已填" in rowx.inner_text(), str(rowx.count()))
         pg.click("#sd-close")
 
         print("\n【6f】帳號選單：每個系統點名字都有修改密碼、帳號管理、登出")
