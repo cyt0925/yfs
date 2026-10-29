@@ -255,8 +255,8 @@ def main():
     check("瑪氏採購單檔名：EIP 單號＋永豐Mars採購單_箱_品類_中標_倉_到貨日，盒包那份後面加 (盒包)", "_CHO_" in cd and "DC6_1023" in cd and "%28%E7%9B%92%E5%8C%85%29" in cd, cd)
     check("C3 下單日＝到貨日往前 2 個工作天（10/23 四 → 10/21 二）、F3 配送日、C5 EIP 單號", ws["C3"].value.date() == _dt.date(2026, 10, 21)
           and ws["F3"].value.date() == _dt.date(2026, 10, 23) and ws["C5"].value == e1["eip_po"])
-    check("C6 DC6 顯示「新竹物流幼獅倉-DC6」、F7 ship-to 17617038、C7 地址從倉別主檔、F6 1/2效期以上、B9 品類全名",
-          ws["C6"].value == "新竹物流幼獅倉-DC6" and ws["F7"].value == 17617038 and "高獅路589號" in ws["C7"].value and ws["F6"].value == "1/2效期以上"
+    check("C6 DC6 顯示「momo進貨組-DC6」（Alice 2026-10-29：不加幼獅倉）、F7 ship-to 17617038、C7 地址從倉別主檔、F6 1/2效期以上、B9 品類全名",
+          ws["C6"].value == "momo進貨組-DC6" and ws["F7"].value == 17617038 and "高獅路589號" in ws["C7"].value and ws["F6"].value == "1/2效期以上"
           and ws["B9"].value == "Chocolate巧克力", str([ws[k].value for k in ("C6", "F7", "C7", "F6", "B9")]))
     check("F5 作業備註：momo嘜頭+入倉單、需貼中盒標（盒包不貼板嘜）", ws["F5"].value == "momo嘜頭+入倉單\n需貼中盒標", repr(ws["F5"].value))
     check("明細：A 永豐料號、D 單位需求＝MOMO 原數量 48、E 採購數量＝2 箱、H 中標 V", [ws.cell(12, k).value for k in (1, 4, 5, 8)] == ["M89297484", 48, 2, "V"],

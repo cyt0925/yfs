@@ -21,6 +21,7 @@ NEED = ("入庫單號", "採購數量", "商品原廠編號", "商品編號")
 COLS = {"倉別": "warehouse", "入庫單號": "inbound_no", "入庫預定日期": "expected_date", "採購日": "purchase_date", "採購總量": "total",
         "momo採購備註": "momo_note", "商品編號": "product_no", "商品名稱": "product_name", "單品編號": "item_no", "單品詳細": "spec",
         "保存天數": "shelf_days", "入庫最低有效期限": "min_expiry", "採購數量": "qty", "商品原廠編號": "factory_code"}
+HEAD_ALIAS = {"商品原廠編": "商品原廠編號"}        # Becky 2026-10-29 給的 26101657-8435.xls 表頭最後一欄被截成「商品原廠編」（其他檔是全名）
 DOC_LEVEL = ("warehouse", "inbound_no", "expected_date", "purchase_date", "total", "momo_note")
 BAD = ("#N/A", "#REF!", "#VALUE!", "#DIV/0!", "#NAME?", "#NUM!", "#NULL!")
 
@@ -97,7 +98,7 @@ def _sheets(data, filename):
 def _header(rows):
     """前 5 列找表頭；回 (列號, {欄位: 第幾欄})，找不到回 (None, None)。"""
     for i, row in enumerate(rows[:5]):
-        heads = [_text(v).replace("\n", "") for v in row]
+        heads = [HEAD_ALIAS.get(_text(v).replace("\n", ""), _text(v).replace("\n", "")) for v in row]
         if all(h in heads for h in NEED):
             return i, {COLS[h]: j for j, h in enumerate(heads) if h in COLS}
     return None, None
