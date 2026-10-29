@@ -539,10 +539,28 @@ let WH_LABELS = {};
 async function loadWh() {
   let d; try { d = await api("/api/momo/warehouses"); } catch (err) { toast(err.message, "err"); return; }
   WH_LABELS = d.labels;
-  const cols = ["address", "hours", "phone", "contact", "ship_to", "mars_name"];
+  // MOMO 檔出現過、主檔還沒有的倉：點一下加成新的倉，或當成某個倉的別名（倉名不給人打，才會跟 MOMO 檔一字不差；Jerry 2026-10-29）
+  const opts = d.warehouses.map(w => `<option value="${esc(w.name)}">${esc(w.name)}</option>`).join("");
+  $("#wh-missing").innerHTML = d.missing.length ? `<div class="alert al-warn"><b>MOMO 檔出現過、主檔還沒有的倉（${d.missing.length} 個）</b>：沒加的話採購單的地址、電話會空白。
+      ${d.missing.map(m => `<div class="flex items-center gap-2 flex-wrap mt-2" data-miss="${esc(m.name)}"><b>${esc(m.name)}</b><span class="kbd">${m.orders} 張入庫單</span>
+        <button class="btn btn-p btn-sm wm-add"><i class="bi bi-plus-lg"></i> 加成新的倉</button><span class="kbd">或是</span>
+        <select class="inp wm-of" style="padding:3px 6px"><option value="">選一個倉…</option>${opts}</select><button class="btn btn-o btn-sm wm-alias">的別名</button></div>`).join("")}</div>`
+    : `<div class="kbd"><i class="bi bi-check-circle" style="color:var(--ok)"></i> MOMO 檔裡的倉別主檔都有。</div>`;
+  $$("#wh-missing [data-miss]").forEach(row => {
+    const name = row.dataset.miss;
+    row.querySelector(".wm-add").addEventListener("click", async () => {
+      try { await post("/api/momo/warehouses", { name }); toast(`已加入 ${name}，請把地址、電話等填上`); loadWh(); refresh(); } catch (err) { toast(err.message, "err"); }
+    });
+    row.querySelector(".wm-alias").addEventListener("click", async () => {
+      const of = row.querySelector(".wm-of").value; if (!of) return toast("請先選是哪個倉", "err");
+      try { await post("/api/momo/warehouses", { name, alias_of: of }); toast(`以後「${name}」就當 ${of}`); loadWh(); refresh(); } catch (err) { toast(err.message, "err"); }
+    });
+  });
+  const cols = ["aliases", "address", "hours", "phone", "contact", "ship_to", "mars_name"];
+  const show = (w, c) => c === "aliases" ? w.aliases.join("、") : w[c];
   $("#wh-tbl").innerHTML = `<tr><th>倉別</th>${cols.map(c => `<th>${esc(WH_LABELS[c])}</th>`).join("")}</tr>` + d.warehouses.map(w => `<tr data-wh="${esc(w.name)}">
-    <td class="nw"><b>${esc(w.name)}</b>${w.aliases.length ? `<div class="kbd">也認：${w.aliases.map(esc).join("、")}</div>` : ""}${w.edited ? `<div><span class="badge b-s">改過</span></div>` : ""}</td>
-    ${cols.map(c => `<td class="wh-edit" data-f="${c}" style="${c === "hours" ? "min-width:260px" : ""}">${esc(w[c]) || `<span class="kbd">（空白）</span>`}</td>`).join("")}</tr>`).join("");
+    <td class="nw"><b>${esc(w.name)}</b>${w.custom ? `<div><span class="badge b-blue">畫面上加的</span></div>` : ""}${w.edited ? `<div><span class="badge b-s">改過</span></div>` : ""}</td>
+    ${cols.map(c => `<td class="wh-edit" data-f="${c}" style="${c === "hours" ? "min-width:260px" : ""}" ${c === "aliases" ? 'title="MOMO 檔寫成別的樣子也認得；好幾個用頓號分開"' : ""}>${esc(show(w, c)) || `<span class="kbd">（空白）</span>`}</td>`).join("")}</tr>`).join("");
   $$("#wh-tbl td.wh-edit").forEach(td => td.addEventListener("click", () => {
     if (td.querySelector("textarea")) return;
     const name = td.parentElement.dataset.wh, f = td.dataset.f, old = td.querySelector(".kbd") ? "" : td.textContent;

@@ -96,22 +96,36 @@ WH_KEY = "momo_wh"
 RECEIVER = "momo進貨組"
 
 
-def wh_settings(conn):
-    """{倉名: {address, hours, phone, contact, ship_to, mars_name, aliases, edited}}；資料與設定存過的蓋預設。"""
+def _saved_wh(conn):
     row = conn.execute("SELECT value FROM mst_meta WHERE key = ?", (WH_KEY,)).fetchone()
-    saved = {}
-    if row:
-        try:
-            saved = json.loads(row["value"] or "{}")
-        except ValueError:
-            saved = {}
+    try:
+        return (json.loads(row["value"] or "{}") if row else {}), row is not None
+    except ValueError:
+        return {}, row is not None
+
+
+def save_wh(conn, saved, existed):
+    value = json.dumps(saved, ensure_ascii=False)
+    if existed:
+        conn.execute("UPDATE mst_meta SET value = ? WHERE key = ?", (value, WH_KEY))
+    else:
+        conn.execute("INSERT INTO mst_meta (key, value) VALUES (?, ?)", (WH_KEY, value))
+
+
+def wh_settings(conn):
+    """{倉名: {address, hours, phone, contact, ship_to, mars_name, aliases, edited, custom}}；資料與設定存過的蓋預設。
+    custom＝畫面上加的倉（MOMO 檔出現過、需求書沒有的；Jerry 2026-10-29）；aliases 存過就用存的（畫面可以改）。"""
+    saved, _ = _saved_wh(conn)
+    names = list(WH_DEFAULTS) + [n for n, d in saved.items() if n not in WH_DEFAULTS and isinstance(d, dict) and d.get("custom")]
     out = {}
-    for name, d in WH_DEFAULTS.items():
+    for name in names:
+        d, sv = WH_DEFAULTS.get(name, {}), saved.get(name) or {}
         v = {k: str(d.get(k) or "") for k in WH_FIELDS}
+        v.update({k: str(x) for k, x in sv.items() if k in WH_FIELDS})
         v["mars_name"] = v["mars_name"] or name
-        v.update({k: str(x) for k, x in (saved.get(name) or {}).items() if k in WH_FIELDS})
-        v["aliases"] = list(d.get("aliases") or [])
-        v["edited"] = bool(saved.get(name))
+        v["aliases"] = [str(a) for a in sv["aliases"]] if isinstance(sv.get("aliases"), list) else list(d.get("aliases") or [])
+        v["edited"] = any(k != "custom" for k in sv)
+        v["custom"] = name not in WH_DEFAULTS
         out[name] = v
     return out
 
@@ -142,5 +156,5 @@ __all__ = [
     "base64", "collections", "io", "json", "re", "current_app", "jsonify", "render_template", "request", "send_file",
     "get_conn", "_guard_ready", "_log", "_operator", "_row", "_rows", "now", "momo_bp",
     "SYSTEM", "CHANNEL", "LINES", "MARS", "SHIP_METHODS", "DIRECT", "ZHUYUN", "UNIT_CODES",
-    "split_code", "line_of", "conv_line", "WH_DEFAULTS", "WH_FIELDS", "WH_KEY", "RECEIVER", "wh_settings", "wh_canon", "wh_note",
+    "split_code", "line_of", "conv_line", "WH_DEFAULTS", "WH_FIELDS", "WH_KEY", "RECEIVER", "wh_settings", "wh_canon", "wh_note", "_saved_wh", "save_wh",
 ]

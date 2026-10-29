@@ -476,6 +476,24 @@ def main():
     check("倉別主檔 19 個倉", len(whs) == 19 and any(w["name"] == "DC6" and w["ship_to"] == "17617038" for w in whs))
     r = c.put("/api/momo/warehouses/DC4", json={"contact": "駐倉廠服"})
     check("倉別主檔可以改、記歷程", r.status_code == 200 and next(w for w in c.get("/api/momo/warehouses").get_json()["warehouses"] if w["name"] == "DC4")["contact"] == "駐倉廠服")
+    pv = up(c, "/api/momo/import/preview", [("新倉.xls", unsend_xls([("新富倉", "26109999-0101", "2026/10/30", [("1", "001", "x", "6", "1021357_CNN")], None),
+                                                                ("DC1 自", "26109999-0102", "2026/10/30", [("2", "001", "y", "6", "1021357_CNN")], None)]))]).get_json()
+    c.post("/api/momo/import/commit", json={"upload_id": pv["upload_id"]})
+    wd = c.get("/api/momo/warehouses").get_json()
+    check("MOMO 檔出現主檔沒有的倉 → 列出來（新富倉、DC1 自）", sorted(m["name"] for m in wd["missing"]) == ["DC1 自", "新富倉"], str(wd["missing"]))
+    check("只能加 MOMO 檔真的出現過的倉名（打錯字的擋）", c.post("/api/momo/warehouses", json={"name": "新富 倉"}).status_code == 400)
+    check("新富倉加成新的倉", c.post("/api/momo/warehouses", json={"name": "新富倉"}).status_code == 200)
+    check("「DC1 自」當成 DC1(自) 的別名", c.post("/api/momo/warehouses", json={"name": "DC1 自", "alias_of": "DC1(自)"}).status_code == 200)
+    wd = c.get("/api/momo/warehouses").get_json()
+    nw = next(w for w in wd["warehouses"] if w["name"] == "新富倉")
+    check("加完：不再列在缺的；新富倉標畫面上加的、DC1(自) 也認 DC1、DC1 自", wd["missing"] == [] and nw["custom"] and len(wd["warehouses"]) == 20
+          and next(w for w in wd["warehouses"] if w["name"] == "DC1(自)")["aliases"] == ["DC1", "DC1 自"], str(wd["missing"]))
+    r = c.put("/api/momo/warehouses/新富倉", json={"address": "桃園市某路1號", "aliases": "新富、新富物流倉"})
+    nw = next(w for w in c.get("/api/momo/warehouses").get_json()["warehouses"] if w["name"] == "新富倉")
+    check("畫面上加的倉也能改地址、別名", r.status_code == 200 and nw["address"] == "桃園市某路1號" and nw["aliases"] == ["新富", "新富物流倉"], str(nw))
+    check("別名不能跟別的倉重複", c.put("/api/momo/warehouses/新富倉", json={"aliases": "DC6"}).status_code == 400)
+    o = {x["inbound_no"]: x for x in c.get("/api/momo/orders").get_json()["orders"]}
+    check("訂單清單：兩張單都認得倉了（不再標主檔沒有）", o["26109999-0101"]["wh_known"] and o["26109999-0102"]["wh_known"])
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")
