@@ -2,7 +2,8 @@
 
 - 跟原廠下採一律用「箱」（需求四.2、七）：數量÷箱入數。箱入數：紙品、潔品、寶僑查「價格本」（料號＋單位代碼，shp_conv），
   瑪氏查「瑪氏商品總表」（永豐料號＋單位，mst_mars_products）；兩份都跟蝦皮特選、瑪氏出貨共用，更新一次全部換新。
-- 除不盡（瑪氏口香糖一箱 30 包、MOMO 開 96 包）：照蝦皮特選的做法，不自動進位也不捨去，擋下來要人改數量、寫原因。
+- 除不盡（瑪氏口香糖一箱 30 包、MOMO 開 96 包）：瑪氏一律捨去（96 包→3 箱＝90 包；Becky 8435 的採購單就是這樣，Jerry 2026-10-29「平常是怎樣那就是怎樣」），
+  少的那些到 ④ 入庫通知單畫掉寫實際數；不到一箱的擋下來要人決定。紙品、潔品還沒看過實際做法，先照蝦皮特選擋下來要人改數量。
   改成 0＝這品不下採（贈品、價格本查不到又不用下採的），不用箱入數。這是 2026-10-28 先用的做法，問題清單第 2 題 Alice 回了再改。
 - 分檔：瑪氏依倉、到貨日、來源單位（箱／盒包）、品類、中標分（需求一、七）；紙品、潔品、寶僑一天一倉一份（還沒問，先跟蝦皮特選直送一樣）。
   同一個料號同一個單位合成一列。
@@ -124,8 +125,13 @@ def item_plan(it, conv, adj, eip, other_units=()):
         p["blocking"] = True
         return p
     rem = use % box
+    if rem and line == MARS and not p["adj"] and use - rem > 0:   # 瑪氏：除不盡一律捨去（Becky 的做法）；人改過數量就照人改的
+        use -= rem
+        p["use_qty"], p["rounded"] = use, True
+        p["note"] = f"{qty:,} {p['unit']} ÷ 箱入數 {box} 除不盡，捨去成 {use // box} 箱（{use:,} {p['unit']}），少的在入庫通知單畫掉"
+        rem = 0
     if rem:
-        p["problems"].append(f"{use:,} {p['unit']} ÷ 箱入數 {box} 除不盡（{use / box:.1f} 箱），請修改數量")
+        p["problems"].append(f"{use:,} {p['unit']} ÷ 箱入數 {box} 除不盡（{use / box:.1f} 箱），請修改數量" + ("；不到一箱，改成 0 就是不下採" if use < box else ""))
         p["blocking"] = True
     p["out_qty"] = use // box if not rem else round(use / box, 2)
     if line == MARS:

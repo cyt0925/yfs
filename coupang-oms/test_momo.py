@@ -224,7 +224,9 @@ def main():
     p = plan()
     it = {x["factory_code"]: x for x in p["26101657-0001"]["items"]}
     check("瑪氏 48 盒 ÷ 箱入數 24 ＝ 2 箱；分檔條件：盒包、品類、中標", it["M89297484_QMN"]["out_qty"] == 2 and it["M89297484_QMN"]["unit_group"] == "盒包_CHO_需貼中標")
-    check("300 包 ÷ 200 除不盡 → 擋下來要改數量", it["M81232885_CMN"]["blocking"] and "除不盡" in it["M81232885_CMN"]["problems"][0], str(it["M81232885_CMN"]["problems"]))
+    check("瑪氏 300 包 ÷ 200 除不盡 → 自動捨去成 1 箱（200 包），不擋、寫一行說明（Jerry 2026-10-29「平常是怎樣那就是怎樣」）",
+          not it["M81232885_CMN"]["blocking"] and it["M81232885_CMN"]["out_qty"] == 1 and it["M81232885_CMN"]["use_qty"] == 200 and "捨去" in it["M81232885_CMN"]["note"],
+          str(it["M81232885_CMN"]))
     check("贈品商品總表查不到 → 擋下來，提示改成 0", it["MARS260905-GIF_TMN"]["blocking"] and "改成 0" in it["MARS260905-GIF_TMN"]["problems"][-1])
     check("紙品查紙潔價格本：48 包 ÷ 24 ＝ 2 箱；潔品 60 包 ÷ 6 ＝ 10 箱", {x["factory_code"]: x["out_qty"] for x in p["26102158-0003"]["items"]}
           == {"0102365_RNN": 120, "0104074_CNV": 2} and p["26101657-0004"]["items"][0]["out_qty"] == 10)

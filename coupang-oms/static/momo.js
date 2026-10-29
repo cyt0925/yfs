@@ -409,6 +409,7 @@ async function openSide(no) {
         <span>下採 <b>${x.skip ? "不下採（0）" : x.out_qty != null ? fmt(x.out_qty) + " 箱" : "—"}</b></span>${x.unit_group ? `<span class="kbd">${esc(x.unit_group.replaceAll("_", "・"))}</span>` : ""}
         ${x.eip ? `<span class="badge ${x.eip.eip_po ? "b-ok" : "b-s"}">${x.eip.eip_po ? esc(x.eip.eip_po) : "已產出"}</span>` : ""}</div>
       ${x.adj ? `<div class="kbd">已改下採數量 ${fmt(x.adj.qty_before)} → <b>${fmt(x.adj.qty_after)}</b>：${esc(x.adj.reason)}（${esc(x.adj.operator)} ${when(x.adj.updated_at)}）</div>` : ""}
+      ${x.note ? `<div class="kbd" style="color:var(--warn)">${esc(x.note)}</div>` : ""}
       ${x.problems.map(t => `<div class="prob">${esc(t)}</div>`).join("")}
       ${!(x.eip && x.eip.eip_po) ? `<div class="mt-1"><button class="btn btn-o btn-sm" data-adj='${esc(JSON.stringify({ id: x.order_id, qty: x.qty, conv: x.conv, unit: x.unit, code: x.factory_code, name: x.name, adj: x.adj, why: x.problems.join("；") }))}'><i class="bi bi-calculator"></i> 改數量</button></div>` : ""}
     </div>`).join("") : `<div class="kbd">${g.ship_method === "竹運出貨" ? "這張單是竹運出貨，不用下採。" : "沒有要下採的品項。"}</div>`);
