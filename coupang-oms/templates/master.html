@@ -186,10 +186,13 @@
   .src b { font-size:13px; color:var(--ink); } .src span { color:var(--b800); font-weight:600; } .src small { color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .src.none { background:#f8fafc; border-style:dashed; }
   /* 可點的數字不畫底線，滑過出現淺色底框（Jerry 2026-10-22） */
-  .st-n { color:var(--b700); font-weight:700; cursor:pointer; border-radius:4px; padding:1px 4px; margin:-1px -4px; }
-  .st-n:hover { color:var(--b900); background:var(--b50); box-shadow:inset 0 0 0 1px var(--line); }
+  .st-n { color:var(--ink, #0f172a); font-weight:700; cursor:pointer; border-radius:4px; padding:1px 4px; margin:-1px -4px; }  /* 黑色粗體、滑過才上色（Jerry 2026-10-29） */
+  .st-n:hover { color:var(--b900); background:var(--b50); }
+  .u2 { color:var(--muted, #8a93a6); font-size:11.5px; font-weight:400; margin-left:2px; }
+  .sub2 { color:var(--muted, #8a93a6); font-size:11.5px; margin-top:1px; white-space:nowrap; } .sub2 .st-n { font-weight:600; font-size:11.5px; }
+  .big { font-size:15px; }
   #st-months { font-variant-numeric:tabular-nums; }
-  #st-months th, #st-months td { padding:5px 8px; }
+  #st-months th, #st-months td { padding:7px 10px; }
   #st-months tr.grp th { text-align:center; font-size:11.5px; padding:3px 8px; }
   #st-months th .u { color:var(--muted, #8a93a6); font-weight:400; }
   #st-months .sep { border-left:1px solid var(--line2); }
@@ -394,7 +397,7 @@
     </div>
     <div class="kbd mb-3">以酷澎訂單管理系統 PO 視窗的「修改紀錄」為準：一輪處理完記一次處理完成，算一次。修改紀錄自 <span id="st-since">2026-10-20</span> 起才有，之前的月份處理次數為 0。處理完成後又有改動的 PO 清單在 <a href="/portal/stats" style="color:var(--b700);text-decoration:underline">YFS 訂單系統的改單統計</a>。</div>
     <div class="grid gap-3 mb-4" id="st-kpi" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
-    <div class="card p-4 mb-4"><b class="text-sm">每月統計</b><span class="kbd ml-2">藍色數字可以點，看是哪幾筆；「—」是修改紀錄開始記之前的月份</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
+    <div class="card p-4 mb-4"><b class="text-sm">每月統計</b><span class="kbd ml-2">粗體數字可以點，看是哪幾筆；「—」是修改紀錄開始記之前的月份</span><div class="tbl-wrap mt-2"><table class="m" id="st-months"></table></div></div>
     <div class="grid gap-4 mb-4" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
       <div class="card p-4"><b class="text-sm">主因</b><span class="kbd ml-2">記處理完成時勾的主因，照類別列；一輪可以勾好幾個，加總會大於處理次數</span><div class="tbl-wrap mt-2"><table class="m" id="st-reasons"></table></div></div>
       <div class="card p-4"><b class="text-sm">各階段做了什麼</b><span class="kbd ml-2">這一輪在哪個階段結束 × 做了什麼；一輪可以勾好幾項</span><div class="tbl-wrap mt-2"><table class="m" id="st-stages"></table></div></div>

@@ -292,7 +292,8 @@ def main():
         check("拿掉的：含測試勾選框、酷澎修改／我方修改、改單類型表", pg.query_selector("#st-test") is None and "我方修改" not in pg.inner_text("#st-kpi") and pg.query_selector("#st-kinds") is None)
         check("每月統計（Jerry 2026-10-22 第二版）：9 月那列、表頭分組（訂單／修改紀錄／這輪做了什麼／參考）、單位寫在表頭、10/20 以前寫「—」",
               "2026-09" in pg.inner_text("#st-months")
-              and all(w in pg.inner_text("#st-months thead") for w in ("訂單", "修改紀錄", "這輪做了什麼", "參考", "處理 次", "第一階段", "數量下修", "改交期／倉別", "拆單", "系統變動 次"))
+              and all(w in pg.inner_text("#st-months thead") for w in ("PO", "有修改紀錄", "處理次數", "這輪做了什麼", "系統變動"))
+              and all(w in pg.inner_text("#st-months tbody") for w in ("張", "次", "收單", "下修", "改交期／倉別", "拆單"))
               and "—" in pg.inner_text("#st-months tbody tr >> nth=0"), pg.inner_text("#st-months thead"))
         check("可點的數字不畫底線", pg.eval_on_selector("#st-months .st-n", "e => getComputedStyle(e).textDecorationLine") == "none")
         check("主因表、各階段做了什麼（三個階段加合計）都有", pg.query_selector("#st-reasons thead") and all(w in pg.inner_text("#st-stages") for w in ("第一階段", "第二階段", "第三階段", "合計")))

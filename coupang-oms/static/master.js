@@ -732,7 +732,9 @@ async function loadStats() {
 }
 let STATS = null;
 /* 數字可以點：data-f 帶篩選條件（月份／階段／做了什麼／主因／PO），點了去撈修改紀錄再過濾；灰字（ev）是系統抓到的變動 */
-const stN = (n, f, cls) => n ? `<span class="st-n${cls ? " " + cls : ""}" data-f="${esc(JSON.stringify(f))}">${fmt(n)}</span>` : `<span class="muted">0</span>`;
+const stU = unit => unit ? `<span class="u2">${unit}</span>` : "";
+const stN = (n, f, cls, unit = "") => (n ? `<span class="st-n${cls ? " " + cls : ""}" data-f="${esc(JSON.stringify(f))}">${fmt(n)}</span>` : `<span class="muted">0</span>`) + stU(unit);
+const ST_SHORT = { "1": "收單", "2": "排單", "3": "出貨" };     // 小字拆解用短名（Jerry 2026-10-29）
 const ST_SB = { "1": "bd-blue", "2": "bd-warn", "3": "bd-pink" };
 const stStage = (k, label) => `<span class="badge ${ST_SB[k] || "bd-gray"}">${esc(label)}</span>`;
 const stMd = s => s && s.length >= 10 ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : (s || "");
@@ -742,40 +744,39 @@ function renderStats(d, minutes) {
   const card = (title, num, unit, sub, cls) => `<div class="kpi${cls || ""}" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
   $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
     + card("有修改紀錄的 PO", stN(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
-    + card("處理次數", stN(t.rounds, {}), "次", ["1", "2", "3"].map(k => `${SL[k].split(" ")[0]} ${stN(t.stages[k], { stage: k })}`).join(" · "))
+    + card("處理次數", stN(t.rounds, {}), "次", ["1", "2", "3"].map(k => `<span title="${esc(SL[k])}">${ST_SHORT[k]} ${stN(t.stages[k], { stage: k }, "", "次")}</span>`).join(" · "))
     + card(`${t.pending ? "⚠ " : ""}處理完成後又有改動`, fmt(t.pending), "張 PO", t.pending ? `清單在 <a href="/portal/stats" style="text-decoration:underline">YFS 訂單系統的改單統計</a>` : "這段期間改過的 PO 都記了處理完成", t.pending ? " warn" : "")
     + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.rounds)} 次`) : card("估計工時", "—", "", "請在上方「每次修改約＿分鐘」填寫分鐘數"));
   const rows = d.months.concat(d.months.length > 1 ? [t] : []);
   const mf = m => m.month === "合計" ? {} : { month: m.month };
   const early = m => m.month !== "合計" && m.month !== "未排日期" && m.month < d.since.slice(0, 7);
   const tot = 'style="font-weight:700;background:#f8fafc"';
-  // 每月統計：照 YFS 訂單系統改單統計的排法（Jerry 2026-10-22 示意圖第二版），這頁沒有金額
-  const dash = `<span class="muted">—</span>`, rc = (m, v, f) => early(m) ? dash : stN(v, f);
-  $("#st-months").innerHTML = `<thead><tr class="grp"><th></th><th colspan="2">訂單</th><th colspan="4" class="sep">修改紀錄</th><th colspan="3" class="sep">這輪做了什麼</th><th colspan="${minutes ? 2 : 1}" class="sep">參考</th></tr>`
-    + `<tr><th>月份</th><th class="num">PO <span class="u">張</span></th><th class="num">有修改紀錄 <span class="u">張</span></th>`
-    + `<th class="num sep">處理 <span class="u">次</span></th><th class="num">第一階段</th><th class="num">第二階段</th><th class="num">第三階段</th>`
-    + `<th class="num sep">數量下修</th><th class="num">改交期／倉別</th><th class="num">拆單</th>`
-    + `<th class="num sep">系統變動 <span class="u">次</span></th>${minutes ? `<th class="num">估計工時 <span class="u">小時</span></th>` : ""}</tr></thead><tbody>`
-    + (rows.map(m => `<tr ${m.month === "合計" ? tot : ""}><td>${esc(m.month)}</td><td class="num">${fmt(m.pos)}</td>`
-      + `<td class="num">${early(m) ? dash : stN(m.changed_pos, mf(m)) + (m.pos && m.changed_pos ? `<span class="pct">${m.changed_pct}%</span>` : "")}</td>`
-      + `<td class="num sep">${rc(m, m.rounds, mf(m))}</td>`
-      + ["1", "2", "3"].map(k => `<td class="num">${rc(m, m.stages[k], { ...mf(m), stage: k })}</td>`).join("")
-      + ["qty", "date", "split"].map((k, x) => `<td class="num${x ? "" : " sep"}">${rc(m, m.kinds[k], { ...mf(m), kind: k })}</td>`).join("")
-      + `<td class="num sep">${stN(m.events, { ...mf(m), ev: 1 }, "st-g")}</td>${minutes ? `<td class="num">${early(m) ? dash : fmt(Math.round(m.rounds * minutes / 6) / 10)}</td>` : ""}</tr>`).join("")
-      || `<tr><td colspan="12" class="muted p-4 text-center">這段期間沒有訂單</td></tr>`) + `</tbody>`;
+  // 每月統計：照 YFS 訂單系統改單統計的排法（Jerry 2026-10-29 示意圖第二版：欄位縮少、主數字大、拆解小字、每個數字帶單位），這頁沒有金額
+  const dash = `<span class="muted">—</span>`;
+  const big = (v, f, unit) => `<span class="big">${f ? stN(v, f) : fmt(v)}</span>${stU(unit)}`;
+  const stagesOf = m => ["1", "2", "3"].map(k => `<span title="${esc(SL[k])}">${ST_SHORT[k]} ${stN(m.stages[k], { ...mf(m), stage: k }, "", "次")}</span>`).join(" · ");
+  const kindsOf = m => [["qty", "下修"], ["date", "改交期／倉別"], ["split", "拆單"]].map(([k, l]) => `${l} ${stN(m.kinds[k], { ...mf(m), kind: k }, "", "次")}`).join(" · ");
+  $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">有修改紀錄</th><th class="num sep">處理次數</th><th>這輪做了什麼</th>`
+    + `<th class="num sep">系統變動 <span class="u">參考</span></th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    + (rows.map(m => `<tr ${m.month === "合計" ? tot : ""}><td>${esc(m.month)}</td><td class="num">${big(m.pos, null, "張")}</td>`
+      + `<td class="num">${early(m) ? dash : big(m.changed_pos, mf(m), "張") + (m.pos && m.changed_pos ? `<div class="sub2">佔 ${m.changed_pct}%</div>` : "")}</td>`
+      + `<td class="num sep">${early(m) ? dash : big(m.rounds, mf(m), "次") + `<div class="sub2">${stagesOf(m)}</div>`}</td>`
+      + `<td>${early(m) ? dash : `<div class="sub2" style="font-size:12.5px">${kindsOf(m)}</div>`}</td>`
+      + `<td class="num sep">${stN(m.events, { ...mf(m), ev: 1 }, "st-g", "次")}</td>${minutes ? `<td class="num">${early(m) ? dash : fmt(Math.round(m.rounds * minutes / 6) / 10) + stU("小時")}</td>` : ""}</tr>`).join("")
+      || `<tr><td colspan="7" class="muted p-4 text-center">這段期間沒有訂單</td></tr>`) + `</tbody>`;
   let cat = "", body = "";
   for (const r of d.reasons) {
     if (r.cat !== cat) { cat = r.cat; body += `<tr><td colspan="2" class="kbd" style="background:#f8fafc;padding-top:6px">${esc(r.cat_label)}</td></tr>`; }
-    body += `<tr><td>${esc(r.reason)}</td><td class="num">${stN(r.n, { reason: r.reason })}</td></tr>`;
+    body += `<tr><td>${esc(r.reason)}</td><td class="num">${stN(r.n, { reason: r.reason }, "", "次")}</td></tr>`;
   }
   $("#st-reasons").innerHTML = `<thead><tr><th>主因</th><th class="num">次數</th></tr></thead><tbody>`
     + (body || `<tr><td colspan="2" class="muted p-4 text-center">這段期間還沒有修改紀錄</td></tr>`) + `</tbody>`;
   $("#st-stages").innerHTML = `<thead><tr><th>階段</th><th class="num">處理次數</th><th class="num">有下修</th><th class="num">有改交期／倉別</th><th class="num">有拆單</th></tr></thead><tbody>`
-    + d.stages.map(s => `<tr><td>${stStage(s.key, s.short)} ${esc(s.label.split(" ")[1] || "")}</td><td class="num">${stN(s.rounds, { stage: s.key })}</td>`
-      + ["qty", "date", "split"].map(k => `<td class="num">${stN(s.kinds[k], { stage: s.key, kind: k })}</td>`).join("") + `</tr>`).join("")
-    + `<tr ${tot}><td>合計</td><td class="num">${stN(t.rounds, {})}</td>${["qty", "date", "split"].map(k => `<td class="num">${stN(t.kinds[k], { kind: k })}</td>`).join("")}</tr></tbody>`;
+    + d.stages.map(s => `<tr><td>${stStage(s.key, s.short)} ${esc(s.label.split(" ")[1] || "")}</td><td class="num">${stN(s.rounds, { stage: s.key }, "", "次")}</td>`
+      + ["qty", "date", "split"].map(k => `<td class="num">${stN(s.kinds[k], { stage: s.key, kind: k }, "", "次")}</td>`).join("") + `</tr>`).join("")
+    + `<tr ${tot}><td>合計</td><td class="num">${stN(t.rounds, {}, "", "次")}</td>${["qty", "date", "split"].map(k => `<td class="num">${stN(t.kinds[k], { kind: k }, "", "次")}</td>`).join("")}</tr></tbody>`;
   $("#st-top").innerHTML = `<thead><tr><th>PO 單號</th><th>月份</th><th>線別</th><th class="num">品項</th><th class="num">處理次數</th><th>各輪</th><th>主因</th></tr></thead><tbody>`
-    + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}</td><td class="num">${stN(p.rounds, { po: p.po_number })}</td>`
+    + (d.top_pos.map(p => `<tr><td class="mono"><a href="#" class="st-po" data-po="${esc(p.po_number)}">${esc(p.po_number)}</a></td><td>${esc(p.month)}</td><td>${esc(p.lines)}</td><td class="num">${fmt(p.items)}${stU("品")}</td><td class="num">${stN(p.rounds, { po: p.po_number }, "", "次")}</td>`
       + `<td>${p.list.map(r => `<span style="white-space:nowrap;margin-right:6px">${stStage(r.stage, r.stage_short.replace("階段", ""))}${r.kind_labels.map(k => `<span class="badge bd-gray">${esc(k.replace("數量下修", "下修"))}</span>`).join("")}</span>`).join(" ")}</td><td>${esc(p.reasons)}</td></tr>`).join("")
       || `<tr><td colspan="7" class="muted p-4 text-center">這段期間沒有有修改紀錄的 PO</td></tr>`) + `</tbody>`;
   $("#st-top").querySelectorAll(".st-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
