@@ -7,7 +7,7 @@
   料號放國條、品名用蝦皮品名、備註「蝦皮特選」、第 10 欄（標題空白）放轉換率。
     竹運採購進貨：單位、數量照蝦皮原本的（PG竹運進貨範例）。
     供應商直送：小單位那檔單位寫「箱」、數量＝蝦皮數量÷轉換率（PG直出範例 216÷4＝54）。
-- 紙潔（Jerry 2026-10-08：照需求 10.3）：一律換成箱，單位「箱」、數量＝蝦皮數量÷轉換率，一個檔；備註空白；
+- 紙潔：單位、數量照蝦皮原本的，不換箱（Jerry 2026-10-29；10/8 曾照需求 10.3 一律換箱，OP 說下載還是箱單位要改回原單位），一個檔；備註空白；
   「寄銷倉庫存」「前 30 天實銷」先留空（Jerry：不知道要填什麼）。
 - 分檔（寶僑再分箱單位／小單位）：供應商直送一天一倉一個檔；竹運採購進貨整批一個檔（照 PG竹運進貨範例，跨天跨倉合在一起）。
   同一個料號同一個單位合成一列。
@@ -290,8 +290,8 @@ def item_plan(it, conv, adj, eip, other_units=()):
         p["mars"] = {"category": cat, "label": lab, "mars_code": conv["mars_code"] or "", "mars_name": conv["name"] or "",
                      "price": conv["price"], "pcs_per_case": conv["pcs_per_case"], "inner_per_case": conv["inner_per_case"],
                      "note": conv["note"] or "", "po_case_note": conv["po_case_note"] or ""}
-    else:                                            # 紙潔：一律換成箱（需求 10.3）
-        p["out_unit"], p["out_qty"] = "箱", use // box if not p["rem"] else round(use / box, 2)
+    else:                                            # 紙潔：單位、數量照蝦皮原本的，不換箱（OP 2026-10-29 「下載還是箱單位」；Jerry 改回原單位、備註留空白）。
+        p["out_unit"], p["out_qty"] = p["unit"], use  # 10/8 曾照需求 10.3 一律換成箱，同事以前手做的就是原單位；箱數看下採明細
     return p
 
 

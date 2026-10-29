@@ -449,7 +449,7 @@ def stage2(c, preview, orders):
     r = c.post("/api/shopee/purchase/adjust", json={"order_id": oid, "qty": ""})
     check("修改數量清空＝取消修改，又變回除不盡", r.get_json().get("cleared") and item(plan("竹運採購進貨")["POTWCTWA26100514L"], "4987176232878_CNN")["rem"] == 2)
 
-    print("\n【11】供應商直送：一天一倉一個檔；寶僑小單位換箱、紙潔一律換箱（需求 10.2、10.3）")
+    print("\n【11】供應商直送：一天一倉一個檔；寶僑小單位換箱、紙潔照蝦皮原本的單位（需求 10.2；紙潔 Jerry 2026-10-29 改回原單位）")
     imp(purchase_xlsx([("81_1", "1022257_PNN", "橘子工坊浴廁清潔劑480ml", 360, "Pcs"), ("81_2", "1022248_CNN", "橘子工坊洗碗精補充包500ml", 1392, "Pcs"),
                        ("81_3", "1021315_RNN", "橘子工坊洗衣精補充包 箱購", 42, "Carton")],
                       po="POTWCTWA26100800C", pr="PRTWCOTWA202610080001", date="2026-10-22"), "供應商直送")
@@ -476,8 +476,8 @@ def stage2(c, preview, orders):
           and "1022-1023" in r.headers.get("Content-Disposition", ""), str(names))
     if z:
         head, rows = xls_rows(z.read("產品採購表上傳-紙潔直送_1022到觀音.xls"))
-        check("紙潔：一律換成箱（360÷12＝30、1392÷12＝116、箱購 42），備註空白，第 10 欄標題不動",
-              [(r_[1], r_[3], r_[6], r_[8]) for r_ in rows] == [("1022257", "箱", 30, ""), ("1022248", "箱", 116, ""), ("1021315", "箱", 42, "")]
+        check("紙潔：單位、數量照蝦皮原本的（360 瓶、1392 包、42 箱），不換箱，備註空白，第 10 欄標題不動（Jerry 2026-10-29）",
+              [(r_[1], r_[3], r_[6], r_[8]) for r_ in rows] == [("1022257", "瓶", 360, ""), ("1022248", "包", 1392, ""), ("1021315", "箱", 42, "")]
               and head[9] != "", str(rows))
         wbd = openpyxl.load_workbook(io.BytesIO(z.read("蝦皮特選-商品下採_紙潔直送_1022到觀音.xlsx")))
         check("紙潔下採明細只有一頁（不分箱、小單位；Jerry 2026-10-28）", wbd.sheetnames == ["下採"] and wbd["下採"].max_row == 4, str(wbd.sheetnames))
