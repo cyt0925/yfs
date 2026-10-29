@@ -1,7 +1,7 @@
 """MOMO 訂單管理系統（/momo）端到端測試（第一批，2026-10-28）。
 讀 MOMO 下載檔（單據首列往下帶、單位代碼、自動分線別、錯誤清單）→ 一次好幾個檔預覽、確認匯入 → 換成箱數、除不盡改數量、
 贈品改 0 → 產 EIP 採購單（瑪氏依倉／到貨日／箱或盒包／品類／中標分檔）→ 回填 EIP 單號 → 瑪氏採購單、直送採購單 →
-重傳差異、出貨方式、取消產出、右側面板 → ③ 勇信配送明細表核缺貨與效期、填 MOMO 效期匯入檔 → 首頁卡片、歷程。
+重傳差異、出貨方式、取消產出、右側面板 → ③ 勇信配送明細表核缺貨與效期、填 MOMO 效期匯入檔 → ④ 入庫通知單畫線蓋章 → 首頁卡片、歷程。
 
 測試檔照 MOMO 下載檔的表頭用程式造（真的業務檔不放進 repo）；瑪氏商品總表用 samples/mars/fake 那份假的。
 執行：python test_momo.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -103,6 +103,27 @@ def yx_pdf(pages):
         page = doc.new_page(); y = 40
         for ln in lines:
             page.insert_text((40, y), ln, fontname="china-t", fontsize=9); y += 14
+    return doc.tobytes()
+
+
+def notice_pdf(no, items):
+    """假的 MOMO 入庫通知單，表格畫法照真檔（一格一格的矩形、同樣的欄寬）：items = [(商品編號, 單品編號, 數量)]。"""
+    import pymupdf
+    doc = pymupdf.open(); page = doc.new_page(width=595, height=842)
+    page.insert_text((226, 40), "入庫通知單", fontname="china-t", fontsize=12)
+    page.insert_text((63, 75), f"通知單號: {no}", fontname="china-t", fontsize=9)
+    xs = [43.5, 109.3, 135.6, 188.3, 254.1, 301.5, 348.8, 383.0, 417.3, 443.6, 469.9, 483.1, 496.2, 509.4, 551.5]
+    heads = ["商品編碼", "單品", "原廠編號", "商品名稱", "單品詳細", "保存天數", "最低效期", "分類", "單位", "數量", "註", "備", "檢", "商品有效"]
+    def row(y0, y1, texts):
+        for k in range(len(xs) - 1):
+            page.draw_rect(pymupdf.Rect(xs[k], y0, xs[k + 1], y1), color=(0, 0, 0), width=0.5)
+            if texts[k]:
+                page.insert_text((xs[k] + 3, y0 + 14), texts[k], fontname="china-t", fontsize=7)
+    row(160, 200, heads)
+    y = 200
+    for prod, item, qty in items:
+        row(y, y + 49, [prod, item, "M1", "品名", "", "365", "2027/03/18", "零嘴", "組", str(qty), "", "", "一般", "2027/08/17"]); y += 49
+    row(y, y + 16, ["", "", "", "總合", "", "", "", "", "", str(sum(q for _p, _i, q in items)), "", "", "", ""])
     return doc.tobytes()
 
 
@@ -388,6 +409,54 @@ def main():
     side = c.get("/api/momo/order?no=26101657-0001").get_json()
     check("右側面板有缺貨與效期、歷程記到勇信表和人工判斷", side["check"] and len(side["check"]["items"]) == 4
           and {"momo_yx", "momo_check", "momo_expfill"} <= {x["field"] for x in side["logs"]}, str([x["field"] for x in side["logs"]]))
+
+    print("\n【9b】④ 待畫入庫通知單：入庫通知單 PDF 照列畫線、畫掉數量寫實際數、蓋章")
+    o = c.get("/api/momo/orders").get_json()
+    st = {s["key"]: s["count"] for s in o["stages"]}
+    g = {x["inbound_no"]: x for x in o["orders"]}
+    check("③ 做完、有不出貨的單進「待畫入庫通知單」；26101657-0002 效期還沒填不算", st["notice"] == 1 and "notice" in g["26101657-0001"]["todo"]
+          and g["26101657-0001"]["check"]["notice_need"] and not g["26101657-0001"]["check"]["notice"], str(st))
+    r = up(c, "/api/momo/kinds", [("入庫通知單.pdf", notice_pdf("26101657-0001", [("11000001", "001", 48)]))])
+    check("上傳入口認得入庫通知單（跟勇信表都是 PDF）", r.get_json()["files"][0]["kind"] == "notice", str(r.get_json()))
+    check("還沒上傳印章", c.get("/api/momo/stamp").get_json()["has"] is False and c.get("/api/momo/stamp.png").status_code == 404)
+    pdf = notice_pdf("26101657-0001", [("11000001", "001", 48), ("11000002", "002", 300), ("11000003", "001", 5), ("15763571", "001", 100)])
+    r = up(c, "/api/momo/notice", [("26101657-0001入庫通知單.pdf", pdf), ("別的.pdf", notice_pdf("26101657-9999", [("99999999", "001", 1)]))])
+    d = r.get_json()
+    check("入庫通知單收進來：對回入庫單、列出要畫什麼（口香糖、贈品不出貨；彩豆豆出滿不用畫）；不在系統的那張列在錯誤", r.status_code == 200
+          and d["orders"][0]["inbound_no"] == "26101657-0001" and d["orders"][0]["rows"] == 4 and d["orders"][0]["noship"] == 2 and d["orders"][0]["short"] == 0
+          and d["orders"][0]["ready"] and any("26101657-9999" in e for e in d["errors"]), str(d)[:500])
+    r = c.get("/api/momo/notice/26101657-0001/file")
+    check("沒上傳印章也能畫（紅框代替）：畫了 2 列、檔名 _已畫.pdf", r.status_code == 200 and r.headers["X-Momo-Drawn"] == "2" and r.headers["X-Momo-Stamp"] == "0"
+          and "_%E5%B7%B2%E7%95%AB.pdf" in r.headers.get("Content-Disposition", ""), r.get_json() if r.status_code != 200 else r.headers.get("Content-Disposition"))
+    import pymupdf
+    pg0 = pymupdf.open(stream=r.data, filetype="pdf")[0]
+    long_ = [it for dr in pg0.get_drawings() for it in dr["items"] if it[0] == "l" and abs(it[1].x - it[2].x) > 400]
+    check("不出貨兩列各畫一條橫跨整列的線、紅框寫業務專用章", len(long_) == 2 and pg0.get_text().count("業務專用章") == 2, f"{len(long_)} {pg0.get_text()[-80:]!r}")
+    o = c.get("/api/momo/orders").get_json()
+    g = {x["inbound_no"]: x for x in o["orders"]}
+    check("下載過就算畫好：離開「待畫入庫通知單」，記誰幾點畫的", "notice" not in g["26101657-0001"]["todo"] and g["26101657-0001"]["check"]["notice_done"]
+          and g["26101657-0001"]["check"]["notice"]["drawn_by"] == "Jerry")
+    from PIL import Image
+    im = Image.new("RGB", (60, 40), "white"); im.paste((200, 0, 0), (10, 10, 50, 30)); bs = io.BytesIO(); im.save(bs, "JPEG")
+    r = up(c, "/api/momo/stamp", [("章.jpg", bs.getvalue())])
+    check("上傳印章：白底去掉、存起來、能取回", r.status_code == 200 and c.get("/api/momo/stamp").get_json()["has"] and c.get("/api/momo/stamp.png").mimetype == "image/png")
+    import time as _time; _time.sleep(1.1)              # 時間戳到秒：勇信表要比剛剛畫的「晚」才算重傳
+    r = up(c, "/api/momo/yx", [("勇信4.pdf", yx_pdf([(choc, [("89297484", 1, "2028/02/08")])]))])
+    o = c.get("/api/momo/orders").get_json()
+    g = {x["inbound_no"]: x for x in o["orders"]}
+    check("勇信表重傳（彩豆豆只出 1 箱）→ 畫過的不算了、效期檔要重填、彩豆豆要人決定", not g["26101657-0001"]["check"]["notice_done"]
+          and not g["26101657-0001"]["check"]["filled_at"] and g["26101657-0001"]["check"]["pending"] == 1, str(g["26101657-0001"]["check"]))
+    check("還有要決定的 → 不能畫", c.get("/api/momo/notice/26101657-0001/file").status_code == 400)
+    c.post("/api/momo/check", json={"order_id": choc_id, "ship": 1, "reason": "照勇信出的"})
+    r = c.get("/api/momo/notice/26101657-0001/file")
+    pg0 = pymupdf.open(stream=r.data, filetype="pdf")[0]
+    check("彩豆豆改成出 1 箱＝24 盒 → 短出：畫 3 列、數量畫掉寫 24、蓋章用圖片（3 個）、不再畫紅框", r.status_code == 200 and r.headers["X-Momo-Drawn"] == "3"
+          and r.headers["X-Momo-Stamp"] == "1" and "24" in pg0.get_text() and len(pg0.get_images()) >= 3 and "業務專用章" not in pg0.get_text(),
+          f"{r.headers.get('X-Momo-Drawn')} {len(pg0.get_images())}")
+    check("不在待核的單：沒有東西可以畫", c.get("/api/momo/notice/26102158-0003/file").status_code == 404)
+    side = c.get("/api/momo/order?no=26101657-0001").get_json()
+    check("右側面板的核對結果有實際出貨數、箱入數、入庫通知單狀態", all("actual" in x and "conv" in x for x in side["check"]["items"]) and side["check"]["summary"]["notice"]
+          and {"momo_notice", "momo_notice_draw"} <= {x["field"] for x in side["logs"]}, str([x["field"] for x in side["logs"]]))
 
     print("\n【10】首頁、歷程、頁面")
     sm = c.get("/api/portal/summary").get_json()

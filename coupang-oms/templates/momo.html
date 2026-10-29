@@ -127,7 +127,7 @@
 <div id="view-work" class="space-y-4">
   <section class="card p-3 space-y-3">
     <label class="dzbox" id="dz"><i class="bi bi-cloud-arrow-up"></i>
-      <div style="flex:1;min-width:280px"><b>上傳檔案</b>　拖曳至此，或點此選擇<div class="kbd" style="color:var(--s9)">MOMO 後台下載的未出貨清單（UnsendList）可一次選好幾個檔，系統合在一起預覽；勇信配送明細表（PDF）、MOMO 效期匯入檔、價格本、瑪氏商品總表也丟這裡。</div></div>
+      <div style="flex:1;min-width:280px"><b>上傳檔案</b>　拖曳至此，或點此選擇<div class="kbd" style="color:var(--s9)">MOMO 後台下載的未出貨清單（UnsendList）可一次選好幾個檔，系統合在一起預覽；勇信配送明細表（PDF）、MOMO 效期匯入檔、入庫通知單（PDF）、價格本、瑪氏商品總表也丟這裡。</div></div>
       <div class="fresh" id="fresh"></div>
       <input type="file" id="file" accept=".xlsx,.xls,.xlsm,.pdf" multiple class="hidden">
     </label>
@@ -159,6 +159,14 @@
         </ul>
         <div class="kbd mt-1">紙品、潔品的效期照舊人工填 MOMO 後台，不走這一步。</div>
       </div>
+      <div id="nt-help" class="help hidden"><b>這一步怎麼做</b>
+        <ul class="mt-1">
+          <li><b>入庫通知單來了</b>：從 MOMO 後台下載這張單的入庫通知單 PDF，丟進上傳區（好幾張一起也可以）。系統看通知單號對回入庫單。</li>
+          <li><b>系統照 ③ 的結果畫</b>：不出貨的品項整列畫一條線、商品有效日期那格蓋業務專用章；實際出貨數跟 MOMO 訂的不一樣的，數量畫掉、上面寫實際出貨數、蓋章。</li>
+          <li><b>下載畫好的 PDF</b>，印出來給倉庫。③ 後來有改（例如改成出貨），再下載一次就是新的。</li>
+          <li>業務專用章在「資料與設定」上傳一次就好。</li>
+        </ul>
+      </div>
       <div id="buy-go" class="flex items-center gap-3 flex-wrap hidden">
         <button id="b-go" class="btn btn-p" disabled><i class="bi bi-file-earmark-zip"></i> 產出 EIP 採購單</button>
         <span class="kbd" id="b-go-hint">請勾選要產出的入庫單。</span>
@@ -183,6 +191,11 @@
     <b style="font-size:15px">價格本與瑪氏商品總表</b>
     <div class="kbd">跟蝦皮特選、瑪氏出貨共用同一份：紙品、潔品查「紙潔價格本整合」，寶僑查「PG價格本整合」，瑪氏查「瑪氏商品總表」。從訂單畫面最上方的「上傳檔案」上傳。</div>
     <div id="conv-st" class="fresh" style="justify-content:flex-start"></div>
+  </section>
+  <section class="card p-4 space-y-2">
+    <b style="font-size:15px">業務專用章</b>
+    <div class="kbd">畫入庫通知單用的章。上傳一張章的照片或掃描圖（jpg、png），白底會自動去掉；換章再上傳一次就會蓋掉。</div>
+    <div class="flex items-center gap-3 flex-wrap"><span id="stamp-st" class="flex items-center gap-2"></span><button class="btn btn-o btn-sm" id="stamp-btn"><i class="bi bi-upload"></i> 上傳印章圖片</button><input type="file" id="stamp-file" accept="image/*" class="hidden"></div>
   </section>
   <section class="card p-4 space-y-2">
     <b style="font-size:15px">倉別主檔</b>

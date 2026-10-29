@@ -280,7 +280,7 @@ def overview(conn, args):
         ck = checks.get(g["inbound_no"])
         g["check"] = ck["summary"] if ck else None
         todo["yx"] = bool(ck) and not ck["summary"]["done"]
-        todo["notice"] = bool(ck) and not ck["summary"]["wait"] and not ck["summary"]["pending"] and ck["summary"]["noship"] > 0
+        todo["notice"] = bool(ck) and ck["summary"]["notice_need"] and not ck["summary"]["notice_done"]
         g["todo"] = [k for k, _l, _a in STAGES if todo[k]]
         g["next"] = next((a for k, _l, a in STAGES if todo[k]), "")
         g["codes"] = [i["factory_code"] for i in alive]

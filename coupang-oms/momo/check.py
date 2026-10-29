@@ -143,7 +143,7 @@ def check_orders(conn, nos=None):
             code = item_code(r.get("code") or o["base_code"], r.get("mars_code"), skus, canon, conflicts)
             it = {"order_id": o["id"], "inbound_no": o["inbound_no"], "warehouse": o["warehouse"], "factory_code": o["factory_code"],
                   "product_no": o["product_no"], "item_no": o["item_no"], "name": o["product_name"], "qty": o["qty"], "unit": o["unit_name"],
-                  "mars_code": code, "ordered": _num(round(use / box, 4)) if box else 0, "min_expiry": o["min_expiry"] or "",
+                  "mars_code": code, "ordered": _num(round(use / box, 4)) if box else 0, "conv": box, "min_expiry": o["min_expiry"] or "",
                   "eip_po": e["eip_po"], "shipped": None, "batches": (ydata.get(code) or {}).get("batches", []), "yx_at": y["uploaded_at"] if y else ""}
             last[code] = len(items)
             items.append(it)
@@ -169,13 +169,15 @@ def check_orders(conn, nos=None):
             out[o["inbound_no"]]["items"].append({"order_id": o["id"], "inbound_no": o["inbound_no"], "warehouse": o["warehouse"],
                                                    "factory_code": o["factory_code"], "product_no": o["product_no"], "item_no": o["item_no"],
                                                    "name": o["product_name"], "qty": o["qty"], "unit": o["unit_name"], "mars_code": "",
-                                                   "ordered": 0, "min_expiry": o["min_expiry"] or "", "eip_po": "", "shipped": None,
+                                                   "ordered": 0, "conv": 0, "min_expiry": o["min_expiry"] or "", "eip_po": "", "shipped": None,
                                                    "batches": [], "yx_at": "", "skip": True})
     ids = [it["order_id"] for v in out.values() for it in v["items"]]
     m2 = ",".join("?" * len(ids))
     over = {r["order_id"]: r for r in _rows(conn.execute(f"SELECT * FROM momo_check WHERE order_id IN ({m2})", ids))}
     heads = {r["inbound_no"]: r for r in _rows(conn.execute(
         f"SELECT inbound_no, MIN(warehouse) AS warehouse, MIN(expected_date) AS expected_date FROM momo_orders WHERE inbound_no IN ({marks}) GROUP BY inbound_no", nos_all))}
+    notices = {r["inbound_no"]: r for r in _rows(conn.execute(
+        f"SELECT inbound_no, filename, uploaded_by, uploaded_at, drawn_by, drawn_at FROM momo_notice WHERE inbound_no IN ({marks})", nos_all))}
     fills = collections.defaultdict(str)
     for f in _rows(conn.execute("SELECT inbound_nos, created_at FROM momo_expfill ORDER BY id")):
         for no in (f["inbound_nos"] or "").split(","):
@@ -184,6 +186,8 @@ def check_orders(conn, nos=None):
     for no, v in out.items():
         for it in v["items"]:
             judge(it, over.get(it["order_id"]))
+            # 實際出貨數（MOMO 的單位）：勇信出的箱數 × 箱入數；不出貨＝0。跟 MOMO 訂的不一樣就是「短出」，入庫通知單要畫掉寫實際數（Becky 2026-10-29）
+            it["actual"] = _num((it["shipped"] or 0) * (it["conv"] or 0)) if it["decision"] == "ship" else (0 if it["decision"] == "noship" else None)
         its = v["items"]
         yx_at = max((it["yx_at"] for it in its), default="")
         filled = fills.get(no, "")
@@ -195,10 +199,15 @@ def check_orders(conn, nos=None):
                           "noship_bought": sum(1 for it in its if it["decision"] == "noship" and not it.get("skip")),
                           "skip": sum(1 for it in its if it.get("skip")),
                           "ask_qty": sum(1 for it in its if it["decision"] == "pending" and it["status"] in (S_PART, S_OVER)),
+                          "short": sum(1 for it in its if it["decision"] == "ship" and it["actual"] is not None and it["actual"] != (it["qty"] or 0)),
                           "yx_at": yx_at if all(it["yx_at"] or it.get("skip") for it in its) else "",
                           "filled_at": filled if filled and filled >= yx_at else ""})
         s = v["summary"]
         s["done"] = not s["wait"] and not s["pending"] and (not s["ship"] or bool(s["filled_at"]))
+        nt = notices.get(no)
+        s["notice"] = {k: nt[k] for k in ("filename", "uploaded_by", "uploaded_at", "drawn_by", "drawn_at")} if nt else None
+        s["notice_need"] = s["done"] and (s["noship"] > 0 or s["short"] > 0)          # ④：有不出貨或短出的品項才要畫
+        s["notice_done"] = bool(nt and nt["drawn_at"] and nt["drawn_at"] >= yx_at)
     return out
 
 
