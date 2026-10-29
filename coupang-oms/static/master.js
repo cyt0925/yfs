@@ -719,16 +719,15 @@ $("#po-save").addEventListener("click", async () => {
 
 /* ════════════ ④ 改單統計 ════════════
    主管要的：一段期間幾張 PO、涉及幾個 SKU、幾張被改過（佔比）、改了幾次、酷澎改的還是我們改的、
-   我們改的原因分佈、改最多次的 PO。「每次改單約幾分鐘」是人填的，只拿來乘出估計工時。 */
+   我們改的原因分佈、改最多次的 PO。「每次改單約幾分鐘」估計工時 2026-10-29 拿掉（Jerry：沒啥意義）。 */
 async function loadStats() {
   let from = $("#st-from").value, to = $("#st-to").value; if (!from) return;
   if (!to || to < from) { to = from; $("#st-to").value = to; }
-  const line = $("#st-line").value; const minutes = Math.max(0, Number($("#st-min").value) || 0);
-  localStorage.setItem("mst_stat_min", String(minutes));
+  const line = $("#st-line").value;
   const qs = `month=${from}&month_to=${to}&line=${encodeURIComponent(line)}`;
-  $("#btn-export-stats").href = `/api/master/stats/export?${qs}&minutes=${minutes}`;
+  $("#btn-export-stats").href = `/api/master/stats/export?${qs}`;
   let d; try { d = await api(`/api/master/stats?${qs}`); } catch (e) { toast(e.message, "err"); return; }
-  renderStats(d, minutes);
+  renderStats(d);
 }
 let STATS = null;
 /* 數字可以點：data-f 帶篩選條件（月份／階段／做了什麼／主因／PO），點了去撈修改紀錄再過濾；灰字（ev）是系統抓到的變動 */
@@ -738,15 +737,14 @@ const ST_SHORT = { "1": "收單", "2": "排單", "3": "出貨" };     // 小字�
 const ST_SB = { "1": "bd-blue", "2": "bd-warn", "3": "bd-pink" };
 const stStage = (k, label) => `<span class="badge ${ST_SB[k] || "bd-gray"}">${esc(label)}</span>`;
 const stMd = s => s && s.length >= 10 ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : (s || "");
-function renderStats(d, minutes) {
+function renderStats(d) {
   STATS = d; $("#st-since").textContent = d.since;
-  const t = d.total; const hours = minutes ? (t.rounds * minutes / 60) : null; const SL = d.stage_labels;
+  const t = d.total; const SL = d.stage_labels;
   const card = (title, num, unit, sub, cls) => `<div class="kpi${cls || ""}" style="cursor:default"><div class="kt"><span>${title}</span></div><div class="kn">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="ks">${sub || ""}</div></div>`;
   $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 品項 · ${fmt(t.skus)} 個 SKU`)
     + card("有修改紀錄的 PO", stN(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
     + card("處理次數", stN(t.rounds, {}), "次", ["1", "2", "3"].map(k => `<span title="${esc(SL[k])}">${ST_SHORT[k]} ${stN(t.stages[k], { stage: k }, "", "次")}</span>`).join(" · "))
-    + card(`${t.pending ? "⚠ " : ""}處理完成後又有改動`, fmt(t.pending), "張 PO", t.pending ? `清單在 <a href="/portal/stats" style="text-decoration:underline">YFS 訂單系統的改單統計</a>` : "這段期間改過的 PO 都記了處理完成", t.pending ? " warn" : "")
-    + (hours != null ? card("估計工時", fmt(Math.round(hours * 10) / 10), "小時", `每次約 ${minutes} 分鐘，${fmt(t.rounds)} 次`) : card("估計工時", "—", "", "請在上方「每次修改約＿分鐘」填寫分鐘數"));
+    + card(`${t.pending ? "⚠ " : ""}處理完成後又有改動`, fmt(t.pending), "張 PO", t.pending ? `清單在 <a href="/portal/stats" style="text-decoration:underline">YFS 訂單系統的改單統計</a>` : "這段期間改過的 PO 都記了處理完成", t.pending ? " warn" : "");
   const rows = d.months.concat(d.months.length > 1 ? [t] : []);
   const mf = m => m.month === "合計" ? {} : { month: m.month };
   const early = m => m.month !== "合計" && m.month !== "未排日期" && m.month < d.since.slice(0, 7);
@@ -757,12 +755,12 @@ function renderStats(d, minutes) {
   const stagesOf = m => ["1", "2", "3"].map(k => `<span title="${esc(SL[k])}">${ST_SHORT[k]} ${stN(m.stages[k], { ...mf(m), stage: k }, "", "次")}</span>`).join(" · ");
   const kindsOf = m => [["qty", "下修"], ["date", "改交期／倉別"], ["split", "拆單"]].map(([k, l]) => `${l} ${stN(m.kinds[k], { ...mf(m), kind: k }, "", "次")}`).join(" · ");
   $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">有修改紀錄</th><th class="num sep">處理次數</th><th>這輪做了什麼</th>`
-    + `<th class="num sep">系統變動 <span class="u">參考</span></th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+    + `<th class="num sep">系統變動 <span class="u">參考</span></th></tr></thead><tbody>`
     + (rows.map(m => `<tr ${m.month === "合計" ? tot : ""}><td>${esc(m.month)}</td><td class="num">${big(m.pos, null, "張")}</td>`
       + `<td class="num">${early(m) ? dash : big(m.changed_pos, mf(m), "張") + (m.pos && m.changed_pos ? `<div class="sub2">佔 ${m.changed_pct}%</div>` : "")}</td>`
       + `<td class="num sep">${early(m) ? dash : big(m.rounds, mf(m), "次") + `<div class="sub2">${stagesOf(m)}</div>`}</td>`
       + `<td>${early(m) ? dash : `<div class="sub2" style="font-size:12.5px">${kindsOf(m)}</div>`}</td>`
-      + `<td class="num sep">${stN(m.events, { ...mf(m), ev: 1 }, "st-g", "次")}</td>${minutes ? `<td class="num">${early(m) ? dash : fmt(Math.round(m.rounds * minutes / 6) / 10) + stU("小時")}</td>` : ""}</tr>`).join("")
+      + `<td class="num sep">${stN(m.events, { ...mf(m), ev: 1 }, "st-g", "次")}</td></tr>`).join("")
       || `<tr><td colspan="7" class="muted p-4 text-center">這段期間沒有訂單</td></tr>`) + `</tbody>`;
   let cat = "", body = "";
   for (const r of d.reasons) {
@@ -817,8 +815,7 @@ async function showStatEvents(f) {
   $("#stev-table").querySelectorAll(".stev-po").forEach(a => a.addEventListener("click", e => { e.preventDefault(); openPo(a.dataset.po); }));
   $("#dlg-stev").showModal();
 }
-["#st-from", "#st-to", "#st-line", "#st-min"].forEach(sel => $(sel).addEventListener("change", () => { STRD = STEV = null; loadStats(); }));
-$("#st-min").value = localStorage.getItem("mst_stat_min") || "0";
+["#st-from", "#st-to", "#st-line"].forEach(sel => $(sel).addEventListener("change", () => { STRD = STEV = null; loadStats(); }));
 bindDownload("#btn-export-stats");
 
 /* ── 匯入訂單 ── */

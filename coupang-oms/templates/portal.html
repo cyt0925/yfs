@@ -295,7 +295,6 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
         <label>～ <input type="month" id="st-to" class="inp" aria-label="結束月份"></label>
         <label title="系統裡所有月份的 PO 一起算（沒排到貨日的也算）"><input type="checkbox" id="st-all"> 全部期間</label>
         <label>線別 <select id="st-line" class="inp"><option value="">全部線別</option></select></label>
-        <label title="估計值；工時＝處理次數 × 分鐘數，填 0 則不計算">每次修改約 <input type="number" id="st-min" class="inp" min="0" step="5" value="0" style="width:72px"> 分鐘</label>
         <span class="grow"></span>
         <a id="st-export" class="btn" href="#"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
       </div>
@@ -320,7 +319,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
         <div>「處理完成後又有改動的 PO」指上次處理完成之後酷澎或我們有改過（下單或出貨數量變少、到貨日或倉別變了、拆出新單），還沒記處理完成。PO 狀態改成已完成、已取消前要先記。PO 視窗「先存著（尚未完成）」的草稿不算處理完成，清單上會標「有草稿」。</div>
         <div>「系統抓到的變動次數」（灰字）是系統從酷澎訂單管理系統和商品主檔自動化的匯入紀錄、人工修改抓出來的每一次變動，同一張 PO、同一來源、同一時間算一次。好幾次變動可能其實是同一輪處理，所以不當處理次數，留著對照用，每個月都有。改單時勾選「這是測試」的不算。</div>
         <div>原始下單、目前出貨用金額（數量 × 下單單價）計算，因為同一張單有箱、盒、包，數量直接相加沒有意義。原始下單是兩個系統最早看到的下單數量；目前出貨是最近更新那一邊的出貨數量，品項移除算 0。少出分「進系統前就少了」（第一次匯入時出貨數量就比下單數量少）和「進系統後才改」兩段。酷澎拆單時，原單被拿掉的品項出現在拆出來的新單裡，新單那一項接回原單計算。</div>
-        <div>估計工時＝處理次數 × 每次修改分鐘數（人工估計）。資料自 2026 年 9 月中系統啟用起才有。</div>
+        <div>資料自 2026 年 9 月中系統啟用起才有。</div>
       </details>
     </main>
     <dialog id="st-dlg" class="st-dlg">
@@ -360,7 +359,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
 
       <div class="bottom">
         <section class="card" aria-labelledby="h-cost">
-          <div class="sec-h"><h2 id="h-cost">本月改單與估計工時</h2><span class="grow"></span><a class="link" href="{{ url_for('portal.portal_stats') }}">查看改單統計 <i class="bi bi-chevron-right"></i></a></div>
+          <div class="sec-h"><h2 id="h-cost">本月改單</h2><span class="grow"></span><a class="link" href="{{ url_for('portal.portal_stats') }}">查看改單統計 <i class="bi bi-chevron-right"></i></a></div>
           <div class="cost" id="cost"></div>
         </section>
         <section class="card" aria-labelledby="h-log">
@@ -509,14 +508,10 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
 
   function renderCost() {
     const c = D.changes;
-    let minutes = 0; try { minutes = Math.max(0, Number(localStorage.getItem("mst_stat_min")) || 0); } catch (e) {}
-    const hours = minutes ? Math.round((c.rounds * minutes / 60) * 10) / 10 : null;
     const rmax = Math.max(1, ...c.reasons.map(r => r.count));
     $("#cost").innerHTML = `<div class="hero">
-        <div><div class="k">處理次數</div><div class="v num">${fmt(c.rounds)}<small>次</small></div><div class="note">第一階段 ${fmt(c.stages["1"])} · 第二階段 ${fmt(c.stages["2"])} · 第三階段 ${fmt(c.stages["3"])}</div></div>
+        <div><div class="k">處理次數</div><div class="v num">${fmt(c.rounds)}<small>次</small></div><div class="note">收單 ${fmt(c.stages["1"])} 次 · 排單 ${fmt(c.stages["2"])} 次 · 出貨 ${fmt(c.stages["3"])} 次</div></div>
         <div><div class="k">有修改紀錄的 PO</div><div class="v num">${fmt(c.changed_pos)}<small>張${c.pos ? `，佔 ${c.changed_pct}%` : ""}</small></div>${c.pending ? `<div class="note">處理完成後又有改動 ${fmt(c.pending)} 張</div>` : ""}</div>
-        <div><div class="k">估計工時</div><div class="v num">${hours == null ? "—" : fmt(hours)}<small>${hours == null ? "" : "小時"}</small></div>
-          <div class="note">${hours == null ? "請到改單統計頁填寫每次修改分鐘數" : `每次約 ${minutes} 分鐘`}</div></div>
       </div>
       <div class="reasons" aria-label="主因">${c.reasons.length
         ? c.reasons.map(r => `<div class="rs"><span title="${esc(r.cat)}">${esc(r.name)}</span><span class="bar" style="width:${(r.count / rmax) * 100}%"></span><span class="n num">${r.count}</span></div>`).join("")
@@ -548,7 +543,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
 </script>
 {% if view == 'stats' %}
 <script>
-/* 改單統計（2026-10-21 起以 PO 修改紀錄的 OK 數為準）：跟商品主檔那頁同一支 API（/api/master/stats），每次修改幾分鐘也共用同一個記憶（mst_stat_min） */
+/* 改單統計（2026-10-21 起以 PO 修改紀錄的 OK 數為準）：跟商品主檔那頁同一支 API（/api/master/stats）；「每次修改約幾分鐘」估計工時 2026-10-29 拿掉（Jerry：沒啥意義） */
 (function () {
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -574,15 +569,13 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
   }
   async function load() {
     const { from, q } = qs(); if (!from) return;
-    const minutes = Math.max(0, Number($("#st-min").value) || 0);
-    try { localStorage.setItem("mst_stat_min", String(minutes)); } catch (e) {}
-    $("#st-export").href = `/api/master/stats/export?${q}&minutes=${minutes}`;
+    $("#st-export").href = `/api/master/stats/export?${q}`;
     let d; try { d = await api(`/api/master/stats?${q}`); } catch (e) { $("#st-kpi").innerHTML = `<div class="kpi">${esc(e.message)}</div>`; return; }
     STAT = d; $("#st-since").textContent = d.since; document.querySelectorAll(".st-since2").forEach(e => { e.textContent = d.since; });
-    render(d, minutes);
+    render(d);
   }
-  function render(d, minutes) {
-    const t = d.total, hours = minutes ? Math.round(t.rounds * minutes / 6) / 10 : null, KL = d.kind_labels, SL = d.stage_labels;
+  function render(d) {
+    const t = d.total, KL = d.kind_labels, SL = d.stage_labels;
     const card = (k, v, unit, sub, extra) => `<div class="kpi${extra || ""}"><div class="k">${k}</div><div class="v">${v}${unit ? `<small>${unit}</small>` : ""}</div><div class="s">${sub || ""}</div></div>`;
     $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 個品項 · ${fmt(t.skus)} 個 SKU`)
       + card("有修改紀錄的 PO", n(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
@@ -590,8 +583,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
       + card("原始下單 → 目前出貨", `<span class="${t.short_amount < 0 ? "neg" : ""}">${money(t.short_amount)}</span>`, "元",
         t.orig_amount ? `${money(t.orig_amount)} → ${money(t.cur_amount)} 元，少出 ${t.short_pct}%<br>進系統前 ${money(t.pre_amount)} · 進系統後 ${money(t.post_amount)}` : "這段期間沒有金額")
       + `<div class="kpi${t.pending ? " warn" : ""}" id="kpi-pend" role="button" tabindex="0"><div class="k">${t.pending ? "⚠ " : ""}處理完成後又有改動</div><div class="v">${fmt(t.pending)}<small>張 PO</small></div>`
-        + `<div class="s">${t.pending ? "點一下看清單，到 PO 視窗記處理完成" : "這段期間改過的 PO 都記了處理完成"}</div></div>`
-      + (hours == null ? "" : card("估計工時", fmt(hours), "小時", `每次約 ${minutes} 分鐘，${fmt(t.rounds)} 次`));
+        + `<div class="s">${t.pending ? "點一下看清單，到 PO 視窗記處理完成" : "這段期間改過的 PO 都記了處理完成"}</div></div>`;
     const goPend = () => $("#pending").scrollIntoView({ behavior: "smooth", block: "start" });
     $("#kpi-pend").addEventListener("click", goPend);
     $("#kpi-pend").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goPend(); } });
@@ -612,14 +604,14 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     const stagesOf = m => ["1", "2", "3"].map(k => `<span title="${esc(SL[k])}">${SHORT[k]} ${n(m.stages[k], { ...mf(m), stage: k }, "", "次")}</span>`).join(" · ");
     const kindsOf = m => [["qty", "下修"], ["date", "改交期／倉別"], ["split", "拆單"]].map(([k, l]) => `${l} ${n(m.kinds[k], { ...mf(m), kind: k }, "", "次")}`).join(" · ");
     $("#st-months").innerHTML = `<thead><tr><th>月份</th><th class="num">PO</th><th class="num">有修改紀錄</th><th class="num sep">處理次數</th><th>這輪做了什麼</th>`
-      + `<th class="num sep">原始下單</th><th class="num">目前出貨</th><th class="num">少出</th><th class="num sep">系統變動 <span class="u">參考</span></th>${minutes ? `<th class="num">估計工時</th>` : ""}</tr></thead><tbody>`
+      + `<th class="num sep">原始下單</th><th class="num">目前出貨</th><th class="num">少出</th><th class="num sep">系統變動 <span class="u">參考</span></th></tr></thead><tbody>`
       + (rows.map(m => `<tr${tr(m)}><td>${esc(m.month)}</td><td class="num">${big(m.pos, null, "張")}</td>`
         + `<td class="num">${early(m) ? dash : big(m.changed_pos, mf(m), "張") + (m.pos && m.changed_pos ? `<div class="sub2">佔 ${m.changed_pct}%</div>` : "")}</td>`
         + `<td class="num sep">${early(m) ? dash : big(m.rounds, mf(m), "次") + `<div class="sub2">${stagesOf(m)}</div>`}</td>`
         + `<td>${early(m) ? dash : `<div class="sub2" style="font-size:12.5px">${kindsOf(m)}</div>`}</td>`
         + `<td class="num sep">${big(wan(m.orig_amount), null, "萬")}</td><td class="num">${big(wan(m.cur_amount), null, "萬")}</td>`
         + `<td class="num${m.short_amount < 0 ? " neg" : ""}">${big(wan(m.short_amount), null, "萬")}${m.orig_amount && m.short_amount ? `<div class="sub2">${m.short_amount < 0 ? "−" : ""}${Math.abs(m.short_pct)}%</div>` : ""}</td>`
-        + `<td class="num sep">${n(m.events, { ...mf(m), ev: 1 }, "st-g", "次")}</td>${minutes ? `<td class="num">${early(m) ? dash : fmt(Math.round(m.rounds * minutes / 6) / 10) + u("小時")}</td>` : ""}</tr>`).join("")
+        + `<td class="num sep">${n(m.events, { ...mf(m), ev: 1 }, "st-g", "次")}</td></tr>`).join("")
         || `<tr><td colspan="10" class="k" style="padding:18px">此期間查無訂單</td></tr>`) + `</tbody>`;
     // 主因（照類別分組，沒用到的不列）
     const rmax = Math.max(1, ...d.reasons.map(r => r.n));
@@ -686,12 +678,11 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
   $("#st-dlg").addEventListener("click", e => { if (e.target === $("#st-dlg")) $("#st-dlg").close(); });
 
   (async () => {
-    try { $("#st-min").value = localStorage.getItem("mst_stat_min") || "0"; } catch (e) {}
     let meta = {}; try { meta = await api("/api/master/lines"); } catch (e) {}
     $("#st-line").insertAdjacentHTML("beforeend", (meta.groups || []).map(g => `<option>${esc(g)}</option>`).join(""));
     const m = meta.this_month || new Date().toISOString().slice(0, 7);
     $("#st-from").value = m; $("#st-to").value = m;
-    ["#st-from", "#st-to", "#st-all", "#st-line", "#st-min"].forEach(sel => $(sel).addEventListener("change", () => { RD = EV = null; load(); }));
+    ["#st-from", "#st-to", "#st-all", "#st-line"].forEach(sel => $(sel).addEventListener("change", () => { RD = EV = null; load(); }));
     load();
   })();
 })();

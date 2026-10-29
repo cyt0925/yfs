@@ -323,7 +323,7 @@ def main():
     check("變動明細預設也不含測試", len(ev2) == len(ev) and not any(e["reason"] == "測試" for e in ev2))
     wbt = openpyxl.load_workbook(io.BytesIO(client.get("/api/master/stats/export?month=2026-09").data))
     check("Excel 說明頁寫了測試的不算、有幾次", any("這是測試" in str(c.value) and "1 次" in str(c.value) for row in wbt["怎麼算的"].iter_rows() for c in row))
-    res = client.get("/api/master/stats/export?month=2026-09&minutes=15")
+    res = client.get("/api/master/stats/export?month=2026-09")
     from urllib.parse import unquote
     check("匯出統計 Excel：200、是 xlsx、檔名帶月份", res.status_code == 200 and "spreadsheetml" in res.mimetype and "改單統計_2026-09" in unquote(res.headers.get("Content-Disposition", "")), res.headers.get("Content-Disposition", ""))
     wbs = openpyxl.load_workbook(io.BytesIO(res.data))
@@ -338,10 +338,8 @@ def main():
     ws1 = wbs["每月統計"]; hdr1 = [c.value for c in ws1[1]]
     check("每月統計有處理次數、三個階段、三個類別、系統抓到的變動次數、處理完成後又有改動的 PO",
           {"處理次數", "第一階段", "第二階段", "第三階段", "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數", "處理完成後又有改動的 PO"} <= set(hdr1), str(hdr1))
-    check("填了分鐘數就多一欄估計工時，最後一列是合計", "估計工時（每次 15 分鐘）" in hdr1 and ws1.cell(row=ws1.max_row, column=1).value == "合計")
+    check("沒有估計工時欄（2026-10-29 拿掉）、最後一列是合計", "估計工時" not in "".join(str(h) for h in hdr1) and ws1.cell(row=ws1.max_row, column=1).value == "合計")
     check("合計列的 PO 張數對得上", ws1.cell(row=ws1.max_row, column=2).value == t["pos"])
-    res0 = client.get("/api/master/stats/export?month=2026-09")
-    check("沒填分鐘數就沒有估計工時欄", "估計工時" not in "".join(str(c.value) for c in openpyxl.load_workbook(io.BytesIO(res0.data))["每月統計"][1]))
     check("舊的補原因 API 拿掉了", client.post("/api/master/stats/reasons", json={"keys": [], "reason": "其他"}).status_code in (404, 405))
 
     print("\n【8】7 月單線別檔也能一起進（資料照月份分）")

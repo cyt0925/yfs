@@ -287,8 +287,9 @@ def main():
 
         print("\n【4c】④ 改單統計分頁（2026-10-21 起以修改紀錄的 OK 數為準）")
         pg.click('.m-tab[data-tab="stats"]'); pg.wait_for_timeout(900)
-        check("五張卡：PO 張數／曾改單的 PO／處理次數／處理完成後又有改動／估計工時", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5
-              and all(w in pg.inner_text("#st-kpi") for w in ("有修改紀錄的 PO", "處理次數", "處理完成後又有改動", "估計工時")), pg.inner_text("#st-kpi"))
+        check("四張卡：PO 張數／有修改紀錄的 PO／處理次數／處理完成後又有改動（估計工時 2026-10-29 拿掉）", pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4
+              and all(w in pg.inner_text("#st-kpi") for w in ("有修改紀錄的 PO", "處理次數", "處理完成後又有改動")) and "估計工時" not in pg.inner_text("#tab-stats")
+              and pg.query_selector("#st-min") is None, pg.inner_text("#st-kpi"))
         check("拿掉的：含測試勾選框、酷澎修改／我方修改、改單類型表", pg.query_selector("#st-test") is None and "我方修改" not in pg.inner_text("#st-kpi") and pg.query_selector("#st-kinds") is None)
         check("每月統計（Jerry 2026-10-22 第二版）：9 月那列、表頭分組（訂單／修改紀錄／這輪做了什麼／參考）、單位寫在表頭、10/20 以前寫「—」",
               "2026-09" in pg.inner_text("#st-months")
@@ -303,10 +304,6 @@ def main():
         check("明細列出時間／PO／誰／改了什麼、不列原因", pg.eval_on_selector_all("#stev-table tbody tr", "els => els.length") >= 1 and "我方修改" in pg.inner_text("#stev-table") and "原因" not in pg.inner_text("#stev-table thead"))
         pg.click("#stev-table .stev-po >> nth=0"); pg.wait_for_timeout(700)
         check("明細裡點 PO 會打開 PO 視窗", pg.evaluate("document.getElementById('dlg-po').open")); pg.keyboard.press("Escape"); pg.wait_for_timeout(200); pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
-        check("沒填分鐘數時估計工時顯示破折號", "—" in pg.inner_text("#st-kpi"))
-        pg.fill("#st-min", "15"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(700)
-        check("填 15 分鐘後算出估計工時、表格多一欄", "小時" in pg.inner_text("#st-kpi") and "估計工時" in pg.inner_text("#st-months"))
-        pg.fill("#st-min", "0"); pg.dispatch_event("#st-min", "change"); pg.wait_for_timeout(500)
 
         print("\n【4d】① 來源檔上傳：三個檔一起拖進主檔匯入口")
         pg.click('.m-tab[data-tab="products"]'); pg.wait_for_timeout(700)
@@ -714,7 +711,8 @@ def main():
         check("「填寫修改紀錄」連到 /coupang?po=單號 → 直接打開那張 PO 的視窗、看得到修改紀錄", pg.inner_text("#po-title").strip() == po_s2 and "修改紀錄" in pg.inner_text("#po-rounds") and "po=" not in pg.url)
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.goto(f"{base}/"); pg.wait_for_selector("#cost .hero", timeout=15000)
-        check("首頁「本月改單與估計工時」卡改成處理次數、三個階段、主因", "處理次數" in pg.inner_text("#cost") and "第一階段" in pg.inner_text("#cost") and "我方修改" not in pg.inner_text("#cost"), pg.inner_text("#cost"))
+        check("首頁「本月改單」卡：處理次數、三個階段（收單／排單／出貨 N 次）、主因，沒有估計工時", "處理次數" in pg.inner_text("#cost") and "收單" in pg.inner_text("#cost")
+              and "估計工時" not in pg.inner_text("#cost") and "我方修改" not in pg.inner_text("#cost"), pg.inner_text("#cost"))
         pg.goto(f"{base}/master#stats"); pg.wait_for_selector("#tab-stats:not(.hidden)", timeout=15000)
         check("商品主檔的 /master#stats 還是能直接打開改單統計分頁（原本的分頁先留著）", pg.is_visible("#tab-stats"))
         pg.set_viewport_size({"width": 390, "height": 844}); pg.goto(f"{base}/"); pg.wait_for_selector("#c-bar svg"); pg.wait_for_timeout(300)

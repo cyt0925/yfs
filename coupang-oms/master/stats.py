@@ -16,7 +16,6 @@
   Excel 也有「明細」分頁，主管想自己做樞紐分析就用那一頁。
 - 測試：原因記成「測試」的改單（同事在正式站試功能時勾的）預設不算，統計頁「含測試」勾了才算；
   排除掉的次數另外回 test_events，畫面上寫一句「另有 N 次測試沒算」讓人知道有這回事。
-- 估計工時：每次改單大約幾分鐘由主管給（畫面上填），系統只是乘出來，不是系統決定的。
 資料從系統開始用（2026-09 中）才有，之前 Excel 時代的不在裡面。
 
 2026-10-19 改版（Ivan 要追「原本下多少、最後出多少、為什麼改」，Jerry 看過示意圖）：
@@ -592,7 +591,6 @@ def api_stats_export():
     if not months:
         return jsonify({"error": "月份格式錯誤，請使用 2026-09 格式。"}), 400
     line = norm_text(request.args.get("line"))
-    minutes = norm_int(request.args.get("minutes")) or 0
     conn = get_conn()
     try:
         d = _build_stats(conn, month_from, month_to, line, _include_test())
@@ -610,16 +608,12 @@ def api_stats_export():
     hdr = ["月份", "PO 張數", "品項數", "不同 SKU 數", "有修改紀錄的 PO", "有修改紀錄的比例", "處理次數", "第一階段", "第二階段", "第三階段",
            "有下修", "有改交期／倉別", "有拆單", "系統抓到的變動次數", "處理完成後又有改動的 PO",
            "原始下單金額", "目前出貨金額", "少出金額", "少出比例", "其中進系統前就少了", "其中進系統後才改", "拆單接回原單的金額"]
-    if minutes:
-        hdr.append(f"估計工時（每次 {minutes} 分鐘）")
     ws.append(hdr)
     for m in d["months"] + [d["total"]]:
         row = [m["month"], m["pos"], m["items"], m["skus"], m["changed_pos"], f"{m['changed_pct']}%", m["rounds"],
                m["stages"]["1"], m["stages"]["2"], m["stages"]["3"], m["kinds"]["qty"], m["kinds"]["date"], m["kinds"]["split"],
                m["events"], m["pending"], m["orig_amount"], m["cur_amount"], m["short_amount"], f"{m['short_pct']}%",
                m["pre_amount"], m["post_amount"], m["moved_amount"]]
-        if minutes:
-            row.append(round(m["rounds"] * minutes / 60, 1))
         ws.append(row)
     _style(ws, hdr, bold, head, tot, total_row=True)
     for r in ws.iter_rows(min_row=2, min_col=14, max_col=14):
@@ -693,7 +687,6 @@ def api_stats_export():
         "金額：數量 × 下單單價（一張單有箱、盒、包，數量直接相加沒有意思）。原始下單＝兩個系統最早看到的下單數量；目前出貨＝最近更新那邊的出貨數量，品項移除算 0。",
         "少出拆兩段：進系統前就少了＝第一次匯入時出貨數量就比下單數量少（在 Kate 系統先改的，沒有修改紀錄）；進系統後才改＝之後的變動。",
         "酷澎拆單：原單拿掉的品項在拆出來的新單裡（原訂單欄），新單那項接回原單算，不算少出、也不算新的下單。",
-        "估計工時：處理次數× 每次幾分鐘 ÷ 60。每次幾分鐘是人填的，不是系統算的。",
         "資料從系統開始用（2026 年 9 月中）才有，之前 Excel 時代的紀錄不在裡面。",
     ]:
         ws8.append([line_text])

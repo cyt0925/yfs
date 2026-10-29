@@ -390,8 +390,6 @@
       <label class="text-sm muted">從</label><input type="month" id="st-from" class="sel" style="padding:4px 8px">
       <label class="text-sm muted">到</label><input type="month" id="st-to" class="sel" style="padding:4px 8px">
       <label class="text-sm muted ml-2">線別</label><select id="st-line" class="sel"><option value="">全部線別</option></select>
-      <label class="text-sm muted ml-3" title="分鐘數為人工估計，系統只用來計算估計工時；填 0 不計算工時">每次修改約</label>
-      <input type="number" id="st-min" class="sel" min="0" step="5" style="width:70px;padding:4px 8px" value="0"><span class="text-sm muted">分鐘</span>
       <div class="flex-1"></div>
       <a id="btn-export-stats" class="btn btn-p"><i class="bi bi-file-earmark-excel"></i> 匯出統計 Excel</a>
     </div>
@@ -410,7 +408,7 @@
         <div>「有修改紀錄的 PO」是至少有一筆修改紀錄的 PO。「第一／二／三階段」是記處理完成時選的「這一輪在哪個階段結束」。</div>
         <div>「有下修」「有改交期／倉別」「有拆單」和主因都是記處理完成時勾的，一輪可以勾好幾項，加總會大於處理次數。</div>
         <div>「系統抓到的變動次數」（灰字）是系統從兩個系統的匯入紀錄和人工修改抓到的每一次變動，好幾次變動可能其實是同一輪，所以不算處理次數，只留著對照。勾了「這是測試」的不算。</div>
-        <div>估計工時 = 處理次數 × 填寫的分鐘數，分鐘數為人工估計，不是系統計算。資料自 2026-09 中旬系統上線起計算。</div>
+        <div>資料自 2026-09 中旬系統上線起計算。</div>
       </div>
     </details>
   </section>
