@@ -9,6 +9,8 @@
   公式格同時塞算好的值（_cache）：下載的檔 Excel 用「受保護的檢視」打開時不算公式，沒塞值整欄會是空白（Jerry 2026-10-21 截圖）。
   B21「請安排 M/D 到貨」  A22「蝦皮特選店-倉名」  C22 那個倉的進倉說明（WH_NOTES，可在資料與設定改）  C23 固定的進倉注意事項。
 採購單ID 用產檔當下的入庫單號（蝦皮入庫單常常是 EIP 產出之後才上傳），其他照 EIP 存下來的內容。
+寶僑可以不先產 EIP 就先下載（Jerry 2026-10-29「PG直送採購單可以不用給PO單號」，選 B）：在「待產採購單」勾寶僑的直送單，照同一份下採計畫、
+同樣的分檔（一天一倉、箱單位／小單位）產，D1 單號留空；之後照常產 EIP。中間改了數量要重下載。紙潔還是要回填 EIP 單號才給下載。
 """
 import datetime as _dt
 import re
@@ -51,10 +53,12 @@ def wh_notes(conn):
     return {code: w.get("notes") or WH_NOTES.get(code, "") for code, w in wh_settings(conn).items()}
 
 
-def direct_rows(conn, e):
-    """一張 EIP（shp_eip 那列）→ 一品一列：採購單ID 用現在的入庫單號（沒有就 PR）、數量照 EIP 存的 parts（沒有 parts 的舊 EIP 照合併列）。"""
+def direct_rows(conn, e, ids=None):
+    """一張 EIP（shp_eip 那列）→ 一品一列：採購單ID 用現在的入庫單號（沒有就 PR）、數量照 EIP 存的 parts（沒有 parts 的舊 EIP 照合併列）。
+    ids：還沒產 EIP 的先下載（沒有 shp_eip_items），直接給這份包含哪些品項。"""
     rows = json.loads(e["rows_json"] or "[]")
-    ids = [r["order_id"] for r in _rows(conn.execute("SELECT order_id FROM shp_eip_items WHERE eip_id = ?", (e["id"],)))]
+    if ids is None:
+        ids = [r["order_id"] for r in _rows(conn.execute("SELECT order_id FROM shp_eip_items WHERE eip_id = ?", (e["id"],)))]
     orders = {}
     if ids:
         marks = ",".join("?" * len(ids))
@@ -221,4 +225,55 @@ def api_shopee_direct_po_zip():
     return resp
 
 
-__all__ = ["WH_NOTES", "wh_notes", "direct_rows", "direct_name", "direct_xlsx", "direct_bytes", "api_shopee_direct_po", "api_shopee_direct_po_zip"]
+@shopee_bp.route("/api/shopee/direct_po/draft", methods=["POST"])
+def api_shopee_direct_po_draft():
+    """寶僑供應商直送：還沒產 EIP 就先下載直送採購單（zip）。分檔、數量跟產 EIP 一樣；D1 單號留空。"""
+    from .purchase import _merge_rows, build_plan
+    nos = [str(x) for x in ((request.get_json(silent=True) or {}).get("order_nos") or []) if str(x).strip()]
+    if not nos:
+        return jsonify({"error": "請先勾選要下載直送採購單的訂單。"}), 400
+    conn = get_conn()
+    try:
+        orders = [g for g in build_plan(conn, DIRECT, order_nos=nos) if g["line"] == "寶僑"]
+        if not orders:
+            return jsonify({"error": "勾選的訂單裡沒有寶僑的供應商直送；紙潔要先產 EIP、回填單號才能下載直送採購單。"}), 400
+        # 已回填 EIP 單號不擋（先下載本來就跟 EIP 無關）；其他問題（除不盡、價格本找不到…）數量會錯，要先處理
+        bad = [f"{g['order_no']} {p['supplier_sku_id']}：{'；'.join(x for x in p['problems'] if not x.startswith('已回填 EIP'))}"
+               for g in orders for p in g["items"] if any(not x.startswith("已回填 EIP") for x in p["problems"]) and p["blocking"]]
+        if bad:
+            return jsonify({"error": f"有 {len(bad)} 個品項需要先處理，數量才會對。", "details": bad[:30]}), 400
+        groups = collections.OrderedDict()
+        for g in orders:
+            for p in g["items"]:
+                groups.setdefault((g["expected_date"], g["warehouse"], p["unit_group"]), []).append(p)
+        notes, files = wh_notes(conn), []
+        for (date, whc, ug), ps in groups.items():
+            rows = [r for r in _merge_rows(ps) if r["qty"]]
+            if not rows:
+                continue
+            e = {"id": None, "eip_po": "", "warehouse": whc, "expected_date": date, "unit_group": ug, "line": "寶僑", "fulfil": DIRECT,
+                 "rows_json": json.dumps(rows, ensure_ascii=False)}
+            files.append((direct_name(e), direct_xlsx(e, direct_rows(conn, e, [p["order_id"] for p in ps]), notes.get(whc, ""))))
+        for g in orders:
+            _log(conn, "寶僑", g["order_no"], "", "", "shopee_direct_draft", "先下載直送採購單", "", f"{len(g['items'])} 品項（還沒產 EIP，單號留空）",
+                 _operator(), "manual")
+        conn.commit()
+    finally:
+        conn.close()
+    if not files:
+        return jsonify({"error": "勾選的訂單都改成 0 不下採，沒有東西可以下載。"}), 400
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files:
+            zf.writestr(name, data)
+    buf.seek(0)
+    ds = sorted({k[0] for k in groups})
+    md = lambda d: f"{d[5:7]}{d[8:10]}" if d else "日期不明"  # noqa: E731
+    zname = f"蝦皮特選直送採購單_寶僑_{md(ds[0])}" + (f"-{md(ds[-1])}" if ds[-1] != ds[0] else "") + ".zip"
+    resp = send_file(buf, as_attachment=True, download_name=zname, mimetype="application/zip")
+    resp.headers["X-Shopee-Files"] = str(len(files))
+    return resp
+
+
+__all__ = ["WH_NOTES", "wh_notes", "direct_rows", "direct_name", "direct_xlsx", "direct_bytes", "api_shopee_direct_po", "api_shopee_direct_po_zip",
+           "api_shopee_direct_po_draft"]

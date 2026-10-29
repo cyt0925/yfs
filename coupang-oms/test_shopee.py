@@ -464,6 +464,16 @@ def stage2(c, preview, orders):
           and "沒有箱入數" in item(E, "1099999_PNN")["problems"][0], str([p["problems"] for p in E["items"]]))
     check("瑪氏商品總表還沒有這些料號 → 擋下來、說要到瑪氏出貨頁更新商品總表", N["supported"] and N["blocking"] == 2
           and "瑪氏商品總表找不到" in N["items"][0]["problems"][0], str(N["items"][0]["problems"]))
+    r = c.post("/api/shopee/direct_po/draft", json={"order_nos": ["POTWCTWG26100800D", "POTWCTWA26100800C"]})
+    zd = zipfile.ZipFile(io.BytesIO(r.data)) if r.status_code == 200 else None
+    dnames = sorted(zd.namelist()) if zd else []
+    check("寶僑直送不先產 EIP 就能先下載直送採購單：箱單位、小單位兩份、單號留空；勾到的紙潔不算（Jerry 2026-10-29）", r.status_code == 200
+          and dnames == ["蝦皮特選直送採購單_1023_高鐵南_小單位.xlsx", "蝦皮特選直送採購單_1023_高鐵南_箱單位.xlsx"], str(dnames) if zd else r.get_json())
+    if zd:
+        wsd = openpyxl.load_workbook(io.BytesIO(zd.read("蝦皮特選直送採購單_1023_高鐵南_小單位.xlsx"))).active
+        check("先下載的直送採購單：D1 空白、一品一列（採購單ID＝PR、料號、數量 216、箱入數 4）", wsd["D1"].value in ("", None)
+              and [wsd.cell(4, k).value for k in (2, 3, 5, 7)] == ["PRTWCOTWG202610080002", "4987176232878_CNN", 216, 4], str([wsd.cell(4, k).value for k in range(1, 9)]))
+    check("只勾紙潔 → 400（紙潔還是要先回填 EIP 單號）", c.post("/api/shopee/direct_po/draft", json={"order_nos": ["POTWCTWA26100800C"]}).status_code == 400)
     r = gen("供應商直送", ["POTWCTWA26100800C", "POTWCTWA26100514N"])
     check("勾到被擋的瑪氏單 → 400", r.status_code == 400)
     r = gen("供應商直送", ["POTWCTWA26100800C", "POTWCTWG26100800D"])

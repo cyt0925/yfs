@@ -669,6 +669,8 @@ function renderPlan() {
   renderBatchBar("#b-bar", BSEL, renderPlan);
   const n = BSEL.size, pn = bPicked().length;        // 勾的可以拿去批次改履約方式；產出只算可產出的
   $("#b-go").disabled = !pn;
+  const dn = bPicked().filter(k => { const g = PLAN.orders.find(x => x.order_no === k); return g.line === "寶僑" && g.fulfil === "供應商直送"; }).length;
+  $("#b-direct").classList.toggle("hidden", !dn); $("#b-direct").innerHTML = `<i class="bi bi-file-earmark-excel"></i> 先下載直送採購單（寶僑 ${dn} 張）`;
   $("#b-go-hint").textContent = n ? `已勾選 ${n} 張訂單${pn < n ? `，其中 ${pn} 張可產出（其他要先處理）` : ""}，會產出 EIP 採購單（竹運採購進貨另附採購下採明細）。`
     : picks.length ? `請勾選要產出的訂單。${blkHint(blk)}` : blkHint(blk) || "這一步目前沒有可產出的訂單。";
 }
@@ -695,6 +697,25 @@ $("#b-go").addEventListener("click", async () => {
     if (done.length) { toast(`已產出 ${done.join("、")}。上傳 EIP 後，請至「待回填 EIP 採購單號」回填。`); refresh(); }
   } catch (err) { toast(err.message, "err"); }
   finally { b.disabled = ![...BSEL].length; }
+});
+
+/* 寶僑直送：不先產 EIP，先下載直送採購單（Jerry 2026-10-29 選 B） */
+$("#b-direct").addEventListener("click", async () => {
+  const nos = bPicked().filter(k => { const g = PLAN.orders.find(x => x.order_no === k); return g.line === "寶僑" && g.fulfil === "供應商直送"; });
+  if (!nos.length) return;
+  const b = $("#b-direct"); b.disabled = true; $("#b-err").innerHTML = "";
+  try {
+    const res = await fetch("/api/shopee/direct_po/draft", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order_nos: nos }) });
+    if (!res.ok) {
+      let d = {}; try { d = await res.json(); } catch (e) {}
+      $("#b-err").innerHTML = `<div class="alert al-bad"><b>${esc(d.error || `伺服器錯誤（${res.status}）`)}</b>${(d.details || []).length ? `<div class="mt-1">${d.details.map(esc).join("<br>")}</div>` : ""}</div>`;
+      return;
+    }
+    const blob = await res.blob(); const m = (res.headers.get("Content-Disposition") || "").match(/filename\*=UTF-8''([^;]+)/);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = m ? decodeURIComponent(m[1]) : "蝦皮特選直送採購單.zip"; document.body.appendChild(a); a.click(); a.remove();
+    toast(`已下載 ${res.headers.get("X-Shopee-Files")} 份直送採購單（單號留空）。之後照常勾選產出 EIP 採購單；中間改了數量要重新下載。`);
+  } catch (err) { toast(err.message, "err"); }
+  finally { b.disabled = false; }
 });
 
 /* ── 修改下採數量（需求 10.5：除不盡不自動進位或捨去，人改＋寫原因） ── */
