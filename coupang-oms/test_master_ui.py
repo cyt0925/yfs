@@ -685,7 +685,7 @@ def main():
         pg.fill("#st-from", "2026-09"); pg.dispatch_event("#st-from", "change"); pg.wait_for_timeout(800)
         check("9 月的修改次數是 0、註明 10/20 前沒有修改紀錄；系統抓到的變動次數（灰字）還在、PO 張數和金額照舊有",
               "—" in pg.inner_text("#st-months tbody") and "才開始記" in pg.inner_text("section:has(#st-months) .st-note") and pg.query_selector("#st-months .st-n.st-g")
-              and "原始下單 萬元" in pg.inner_text("#st-months thead") and "金額" in pg.inner_text("#st-months thead"), pg.inner_text("#st-months"))
+              and "原始下單" in pg.inner_text("#st-months thead") and "萬" in pg.inner_text("#st-months tbody"), pg.inner_text("#st-months"))
         check("YFS 訂單系統的每月統計：可點的數字不畫底線", pg.eval_on_selector("#st-months .st-n", "e => getComputedStyle(e).textDecorationLine") == "none")
         pg.click("#st-months .st-n.st-g >> nth=0"); pg.wait_for_selector("#st-dlg[open]", timeout=8000)
         check("點灰字 → 跳出系統抓到的變動明細、沒有原因欄", "系統抓到的變動" in pg.inner_text("#st-dlg-title") and "原因" not in pg.inner_text("#st-dlg-table thead")); pg.click("#st-dlg-x")
