@@ -176,6 +176,8 @@ def check_orders(conn, nos=None):
     over = {r["order_id"]: r for r in _rows(conn.execute(f"SELECT * FROM momo_check WHERE order_id IN ({m2})", ids))}
     heads = {r["inbound_no"]: r for r in _rows(conn.execute(
         f"SELECT inbound_no, MIN(warehouse) AS warehouse, MIN(expected_date) AS expected_date FROM momo_orders WHERE inbound_no IN ({marks}) GROUP BY inbound_no", nos_all))}
+    marks_ = {r["inbound_no"]: r for r in _rows(conn.execute(
+        f"SELECT inbound_no, filename, uploaded_by, uploaded_at, drawn_by, drawn_at FROM momo_mark WHERE inbound_no IN ({marks})", nos_all))}
     notices = {r["inbound_no"]: r for r in _rows(conn.execute(
         f"SELECT inbound_no, filename, uploaded_by, uploaded_at, drawn_by, drawn_at FROM momo_notice WHERE inbound_no IN ({marks})", nos_all))}
     fills = collections.defaultdict(str)
@@ -206,6 +208,8 @@ def check_orders(conn, nos=None):
         s["done"] = not s["wait"] and not s["pending"] and (not s["ship"] or bool(s["filled_at"]))
         nt = notices.get(no)
         s["notice"] = {k: nt[k] for k in ("filename", "uploaded_by", "uploaded_at", "drawn_by", "drawn_at")} if nt else None
+        mk = marks_.get(no)
+        s["mark"] = {k: mk[k] for k in ("filename", "uploaded_by", "uploaded_at", "drawn_by", "drawn_at")} if mk else None
         s["notice_need"] = s["done"] and (s["noship"] > 0 or s["short"] > 0)          # ④：有不出貨或短出的品項才要畫
         s["notice_done"] = bool(nt and nt["drawn_at"] and nt["drawn_at"] >= yx_at)
     return out

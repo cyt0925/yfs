@@ -88,17 +88,21 @@ async function uploadNotice(files) {
   $("#previews").prepend(box);
   let d; try { d = await api("/api/momo/notice", { method: "POST", body: fd }); }
   catch (err) { box.innerHTML = `<div class="alert al-bad">${esc(err.message).replace(/\n/g, "<br>")}</div>`; setTimeout(() => box.remove(), 15000); return; }
-  const line = o => `<div class="flex items-center gap-2 flex-wrap" style="margin:3px 0"><b class="fn" style="color:var(--ink)">${esc(o.inbound_no)}</b>（${esc(o.warehouse)}）
+  const line = o => o.kind === "mark" ? `<div class="flex items-center gap-2 flex-wrap" style="margin:3px 0"><span class="badge b-s">嘜頭</span><b class="fn" style="color:var(--ink)">${esc(o.inbound_no)}</b>（${esc(o.warehouse)}）
+      ${o.rows} 頁：填共幾箱 ${o.fill} 頁${o.drop ? `、不出貨拿掉 ${o.drop} 頁` : ""}
+      ${o.problems.length ? `<span class="badge b-warn">還有 ${o.problems.length} 品要先決定</span>` : ""}${o.unmatched.length ? `<span class="badge b-bad">系統找不到 ${o.unmatched.map(esc).join("、")}（照原樣留著）</span>` : ""}
+      ${o.ready ? `<a class="btn btn-p btn-sm" href="/api/momo/mark/${encodeURIComponent(o.inbound_no)}/file"><i class="bi bi-download"></i> 下載填好的嘜頭</a>` : ""}</div>`
+    : `<div class="flex items-center gap-2 flex-wrap" style="margin:3px 0"><span class="badge b-s">入庫通知單</span><b class="fn" style="color:var(--ink)">${esc(o.inbound_no)}</b>（${esc(o.warehouse)}）
       ${o.need ? `要畫：${esc(o.marks)}` : `<span class="kbd">全部照訂單出，沒有要畫的</span>`}
       ${o.problems.length ? `<span class="badge b-warn">還有 ${o.problems.length} 品要先決定</span>` : ""}${o.unmatched.length ? `<span class="badge b-bad">PDF 上找不到 ${o.unmatched.map(esc).join("、")}</span>` : ""}
       ${o.ready && o.need ? `<a class="btn btn-p btn-sm" href="/api/momo/notice/${encodeURIComponent(o.inbound_no)}/file"><i class="bi bi-download"></i> 下載畫好的</a>` : ""}</div>`;
-  box.innerHTML = `<h3><i class="bi bi-file-earmark-pdf" style="color:var(--s8)"></i> 入庫通知單 ${d.orders.length} 份<span style="flex:1"></span><button class="btn btn-o btn-sm" data-a="x">關閉</button></h3>
+  box.innerHTML = `<h3><i class="bi bi-file-earmark-pdf" style="color:var(--s8)"></i> 入庫通知單／嘜頭 ${d.orders.length} 份<span style="flex:1"></span><button class="btn btn-o btn-sm" data-a="x">關閉</button></h3>
     <div class="mt-2" style="font-size:13px">${d.orders.map(line).join("")}</div>
     ${d.errors.length ? `<div class="alert al-warn mt-2">${d.errors.map(esc).join("<br>")}</div>` : ""}
     ${d.orders.some(o => o.warnings.length) ? `<div class="alert al-warn mt-2">${d.orders.flatMap(o => o.warnings).map(esc).join("<br>")}</div>` : ""}`;
   box.querySelector("[data-a=x]").addEventListener("click", () => box.remove());
   box.querySelectorAll("a.btn").forEach(a => a.addEventListener("click", () => setTimeout(() => { refresh(); if (SIDE) openSide(SIDE); }, 1500)));
-  if (d.orders.length && STAGE !== "notice") STAGE = "notice";
+  if (d.orders.some(o => o.kind === "notice") && STAGE !== "notice") STAGE = "notice";
   refresh(); if (SIDE) openSide(SIDE);
 }
 /* MOMO 效期匯入檔跟 MOMO 下載檔長得一樣：裡面的單都核過勇信表時，讓人選要填效期還是當訂單匯入 */
@@ -457,7 +461,7 @@ function checkSec(ck, sec) {
   const nb = s.noship_bought + s.skip;
   return sec(`<span style="color:var(--s8)">③</span> 缺貨與效期`, top + `<div class="tbl-wrap" style="max-height:none"><table class="t ck-t"><tr><th>商品</th><th>下採</th><th>勇信出／效期</th><th>MOMO 最低</th><th>結果</th></tr>${rows}</table></div>
       <div class="kbd mt-1">不出貨的可以改成出貨（例如採購說會補出）；改了會記誰改的。</div>` + foot)
-    + ((nb || s.short) ? sec(`<span style="color:var(--s8)">④</span> 入庫通知單`, noticeBody(ck)) : "");
+    + (s.yx_at ? sec(`<span style="color:var(--s8)">④</span> 入庫通知單與嘜頭`, ((nb || s.short) ? noticeBody(ck) : `<div class="kbd">全部照訂單出，入庫通知單不用畫。</div>`) + markBody(ck)) : "");
 }
 function noticeBody(ck) {
   const s = ck.summary, nt = s.notice;
@@ -471,6 +475,13 @@ function noticeBody(ck) {
       <span class="kbd">${STAMP_HAS ? "" : "還沒上傳業務專用章，會畫紅框代替；到「資料與設定」上傳。"}</span></div>`
     : `<div class="alert al-blue mt-1" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe">還沒收到這張的入庫通知單：從 MOMO 後台下載 PDF，丟進最上面的上傳區。</div>`;
   return state + lines + file;
+}
+function markBody(ck) {
+  const s = ck.summary, mk = s.mark, no = ck.inbound_no || SIDE;
+  const head = `<div class="sd-it"><b>嘜頭</b>：「共＿箱」填勇信出的箱數，「第＿箱」留白給倉庫寫；不出貨的那頁拿掉。</div>`;
+  return head + (mk ? `<div class="kbd"><i class="bi bi-check2-circle" style="color:var(--ok)"></i> 嘜頭 ${esc(mk.filename)}，${esc(mk.uploaded_by)} ${when(mk.uploaded_at)} 上傳${mk.drawn_at ? `；${esc(mk.drawn_by)} ${when(mk.drawn_at)} 下載過` : ""}</div>
+      <div class="mt-2"><a class="btn btn-p btn-sm nt-dl" href="/api/momo/mark/${encodeURIComponent(no)}/file"><i class="bi bi-download"></i> 下載填好的嘜頭</a></div>`
+    : `<div class="kbd">還沒收到這張的嘜頭：從 MOMO 後台下載嘜頭 PDF，丟進最上面的上傳區。</div>`);
 }
 let STAMP_HAS = true;
 function bindCheck(no) {
@@ -520,6 +531,14 @@ $("#da-clear").addEventListener("click", async () => {
 /* ── 資料與設定 ─────────────────────────────────────────── */
 $("#btn-set").addEventListener("click", () => showSettings(true));
 $("#set-back").addEventListener("click", () => showSettings(false));
+/* 清除資料（限管理員；Jerry 2026-10-29，照蝦皮特選） */
+if ($("#rs-go")) $("#rs-go").addEventListener("click", async () => {
+  const body = { logs: $("#rs-logs").checked, confirm: $("#rs-confirm").value.trim() };
+  if (body.confirm !== "清空資料") return toast("請輸入「清空資料」以確認", "err");
+  if (!confirm("確定清除 MOMO 的訂單資料？清除後無法復原。")) return;
+  try { const r = await post("/api/momo/reset", body); toast(r.message); $("#rs-confirm").value = ""; closeSide(); refresh(); loadFresh(); loadUploads(); }
+  catch (err) { toast(err.message, "err"); }
+});
 function showSettings(on) {
   $("#view-work").classList.toggle("hidden", on); $("#view-set").classList.toggle("hidden", !on);
   if (on) { closeSide(); loadWh(); loadUploads(); loadStamp(); }

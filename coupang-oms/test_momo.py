@@ -1,7 +1,7 @@
 """MOMO 訂單管理系統（/momo）端到端測試（第一批，2026-10-28）。
 讀 MOMO 下載檔（單據首列往下帶、單位代碼、自動分線別、錯誤清單）→ 一次好幾個檔預覽、確認匯入 → 換成箱數、除不盡改數量、
 贈品改 0 → 產 EIP 採購單（瑪氏依倉／到貨日／箱或盒包／品類／中標分檔）→ 回填 EIP 單號 → 瑪氏採購單、直送採購單 →
-重傳差異、出貨方式、取消產出、右側面板 → ③ 勇信配送明細表核缺貨與效期、填 MOMO 效期匯入檔 → ④ 入庫通知單畫線蓋章 → 首頁卡片、歷程。
+重傳差異、出貨方式、取消產出、右側面板 → ③ 勇信配送明細表核缺貨與效期、填 MOMO 效期匯入檔 → ④ 入庫通知單畫線蓋章、嘜頭填箱數 → 首頁卡片、歷程 → 清除資料。
 
 測試檔照 MOMO 下載檔的表頭用程式造（真的業務檔不放進 repo）；瑪氏商品總表用 samples/mars/fake 那份假的。
 執行：python test_momo.py（設了 DATABASE_URL 就跑 PostgreSQL）
@@ -124,6 +124,18 @@ def notice_pdf(no, items):
     for prod, item, qty in items:
         row(y, y + 49, [prod, item, "M1", "品名", "", "365", "2027/03/18", "零嘴", "組", str(qty), "", "", "一般", "2027/08/17"]); y += 49
     row(y, y + 16, ["", "", "", "總合", "", "", "", "", "", str(sum(q for _p, _i, q in items)), "", "", "", ""])
+    return doc.tobytes()
+
+
+def mark_pdf(no, codes):
+    """假的 MOMO 嘜頭，排法照真檔：一品一頁，入庫通知單單號 12 碼、商品編號 11 碼、最下面「共　箱 / 第　箱」。codes = [商品編號+單品編號]"""
+    import pymupdf
+    doc = pymupdf.open()
+    for code in codes:
+        page = doc.new_page(width=595, height=842)
+        for x, y, t in ((62, 300, "嘜頭/入庫裝箱明細"), (62, 320, "入庫通知單單號"), (196, 320, no.replace("-", "")), (62, 360, "商品編號"), (196, 360, code),
+                        (62, 685, "箱數"), (180, 685, "共"), (328, 685, "箱"), (348, 685, "/"), (362, 685, "第"), (516, 685, "箱")):
+            page.insert_text((x, y), t, fontname="china-t", fontsize=12)
     return doc.tobytes()
 
 
@@ -494,6 +506,38 @@ def main():
     check("別名不能跟別的倉重複", c.put("/api/momo/warehouses/新富倉", json={"aliases": "DC6"}).status_code == 400)
     o = {x["inbound_no"]: x for x in c.get("/api/momo/orders").get_json()["orders"]}
     check("訂單清單：兩張單都認得倉了（不再標主檔沒有）", o["26109999-0101"]["wh_known"] and o["26109999-0102"]["wh_known"])
+
+    print("\n【11】嘜頭填共幾箱、不出貨拿掉；清除資料")
+    r = up(c, "/api/momo/kinds", [("嘜頭.pdf", mark_pdf("26101657-0001", ["11000001001"]))])
+    check("上傳入口認得嘜頭（跟入庫通知單同一支收）", r.get_json()["files"][0]["kind"] == "notice", str(r.get_json()))
+    r = up(c, "/api/momo/notice", [("26101657-0001嘜頭.pdf", mark_pdf("26101657-0001", ["11000001001", "11000002002", "11000003001", "15763571001"]))])
+    d = r.get_json()["orders"][0]
+    check("嘜頭收進來：4 頁，3 頁填箱數、口香糖（不出貨）拿掉；贈品不下採也拿掉", d["kind"] == "mark" and d["rows"] == 4 and d["drop"] == 2 and d["fill"] == 2 and d["ready"], str(d))
+    r = c.get("/api/momo/mark/26101657-0001/file")
+    import pymupdf
+    mdoc = pymupdf.open(stream=r.data, filetype="pdf") if r.status_code == 200 else None
+    filled = [[w[4] for w in p_.get_text("words") if 194 < w[0] < 328 and 655 < w[1] < 695] for p_ in mdoc] if mdoc else []
+    check("下載填好的嘜頭：剩 2 頁、「共＿箱」中間填勇信箱數（彩豆豆 1 箱、喵愛餡 5 箱）、檔名 _已填箱數.pdf", mdoc is not None and len(mdoc) == 2 and r.headers["X-Momo-Dropped"] == "2"
+          and "_%E5%B7%B2%E5%A1%AB%E7%AE%B1%E6%95%B8.pdf" in r.headers.get("Content-Disposition", "") and filled == [["1"], ["5"]], str(filled) if mdoc else r.get_json())
+    sd = c.get("/api/momo/order?no=26101657-0001").get_json()["check"]["summary"]
+    check("右側面板帶嘜頭狀態（誰上傳、下載過）", sd["mark"] and sd["mark"]["drawn_by"] == "Jerry", str(sd.get("mark")))
+    users = app_module.get_users(); users.setdefault("Jerry", "pw"); users.setdefault("Alice", "pw")
+    app_module._write_users(users, {"Jerry"})
+    with c.session_transaction() as s_:
+        s_["user"] = "Alice"
+    check("一般同事：看不到清除資料、按了也 403", c.post("/api/momo/reset", json={"confirm": "清空資料"}).status_code == 403 and 'id="reset-box"' not in c.get("/momo").get_data(as_text=True))
+    with c.session_transaction() as s_:
+        s_["user"] = "Jerry"
+    check("管理員看得到清除資料；沒打「清空資料」→ 400", 'id="reset-box"' in c.get("/momo").get_data(as_text=True) and c.post("/api/momo/reset", json={"confirm": "清空"}).status_code == 400)
+    n_wh = len(c.get("/api/momo/warehouses").get_json()["warehouses"])
+    r = c.post("/api/momo/reset", json={"confirm": "清空資料"})
+    conn = db.get_conn()
+    left = {t: conn.execute(f"SELECT COUNT(*) AS n FROM {t}").fetchone()["n"] for t in ("momo_orders", "momo_eip", "momo_yx", "momo_notice", "momo_mark", "momo_uploads")}
+    n_conv = conn.execute("SELECT COUNT(*) AS n FROM shp_conv").fetchone()["n"]
+    conn.close()
+    check("清除：MOMO 訂單、EIP、勇信、入庫通知單、嘜頭、上傳紀錄都清空；倉別主檔（含畫面上加的）、印章、共用價格本還在", r.status_code == 200 and not any(left.values())
+          and len(c.get("/api/momo/warehouses").get_json()["warehouses"]) == n_wh and c.get("/api/momo/stamp").get_json()["has"] and n_conv > 0, str((left, r.get_json())))
+    check("清完：作業流程格子全部 0", all(s_["count"] == 0 for s_ in c.get("/api/momo/orders").get_json()["stages"]))
 
     print("\n" + "=" * 62)
     print(f"通過 {len(PASS)} 項／失敗 {len(FAIL)} 項")

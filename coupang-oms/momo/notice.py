@@ -6,6 +6,8 @@
   實際出貨數跟 MOMO 訂的不一樣（勇信少出，或除不盡捨去之後本來就少）→ 數量畫掉、上面寫實際出貨數、蓋章。實際出貨數＝勇信箱數 × 箱入數（MOMO 的單位）。
 - 業務專用章在「資料與設定」上傳（圖片，白底自動去掉，存 mst_meta momo_stamp）；沒上傳就畫一個紅框寫「業務專用章」，先能用。
 - 原 PDF 存在 momo_notice（一張入庫單一份，再傳就換掉），下載時才畫，所以 ③ 的判斷後來改了，再下載一次就是新的。
+- 嘜頭（Jerry 2026-10-29「嘜頭只填共幾箱 不出貨拿掉」）：MOMO 的「嘜頭/入庫裝箱明細」PDF 一品一頁，照商品編號（11 碼＝商品編號 8＋單品編號 3）對回品項，
+  「共＿箱」填勇信出的箱數，「第＿箱」留白給倉庫寫；不出貨的那頁整頁拿掉。存 momo_mark，一樣下載時才畫。
 """
 import base64
 import datetime as _dt  # noqa: F401
@@ -17,6 +19,7 @@ from .check import check_orders
 from .common import *  # noqa: F401,F403
 
 NO_RE = re.compile(r"通知單號[:：]\s*(\d{8}-\d{4})")
+MARK_NO_RE = re.compile(r"入庫通知單單號\s*(\d{8})-?(\d{4})")
 STAMP_KEY = "momo_stamp"
 
 
@@ -27,6 +30,38 @@ def is_notice(data):
     except Exception:  # noqa: BLE001
         return False
     return "入庫通知單" in text and bool(NO_RE.search(text))
+
+
+def is_mark(data):
+    try:
+        doc = pymupdf.open(stream=data, filetype="pdf")
+        text = doc[0].get_text() if len(doc) else ""
+    except Exception:  # noqa: BLE001
+        return False
+    return "嘜頭" in text and "入庫通知單單號" in text
+
+
+def parse_mark(data, filename=""):
+    """→ {inbound_no, pages:[{page, product_no, item_no, total_at:[x, y] or None}]}。「共」和它後面第一個「箱」中間就是填箱數的位置。"""
+    try:
+        doc = pymupdf.open(stream=data, filetype="pdf")
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"{filename}：無法開啟此 PDF 檔。") from exc
+    out = {"inbound_no": "", "pages": []}
+    for pno, page in enumerate(doc):
+        text = page.get_text()
+        m = MARK_NO_RE.search(text.replace("\n", " "))
+        if m and not out["inbound_no"]:
+            out["inbound_no"] = f"{m.group(1)}-{m.group(2)}"
+        words = page.get_text("words")
+        code = next((w[4] for w in words if re.fullmatch(r"\d{11}", w[4])), "")
+        gong = next((w for w in words if w[4] == "共"), None)
+        xiang = min((w for w in words if gong and w[4].startswith("箱") and abs(w[1] - gong[1]) < 3 and w[0] > gong[2]), key=lambda w: w[0], default=None)
+        out["pages"].append({"page": pno, "product_no": code[:8], "item_no": code[8:],
+                             "total_at": [(gong[2] + xiang[0]) / 2, (gong[1] + gong[3]) / 2, gong[3] - gong[1]] if gong and xiang else None})
+    if not out["inbound_no"]:
+        raise ValueError(f"{filename}：這份 PDF 不是 MOMO 嘜頭（找不到入庫通知單單號）。")
+    return out
 
 
 def _cells(page):
@@ -252,6 +287,12 @@ def api_notice_upload():
     try:
         for f in files:
             data = f.read()
+            if is_mark(data):                                 # 嘜頭也從這支進來（上傳入口認成 notice 一起送）
+                try:
+                    out.append(_upload_mark(conn, f, data, operator, stamp))
+                except ValueError as exc:
+                    errs.append(str(exc))
+                continue
             try:
                 p = parse_notice(data, f.filename)
             except ValueError as exc:
@@ -267,7 +308,7 @@ def api_notice_upload():
             marks, problems = marks_for(ck)
             keys = {(r["product_no"], r["item_no"]) for r in p["rows"]}
             unmatched = [v["factory_code"] for k, v in marks.items() if k not in keys]
-            out.append({"inbound_no": no, "warehouse": ck["warehouse"], "filename": f.filename, "rows": len(p["rows"]),
+            out.append({"kind": "notice", "inbound_no": no, "warehouse": ck["warehouse"], "filename": f.filename, "rows": len(p["rows"]),
                         "noship": sum(1 for v in marks.values() if v["kind"] == "noship"), "short": sum(1 for v in marks.values() if v["kind"] == "short"),
                         "marks": _desc_marks(marks), "problems": problems, "unmatched": unmatched, "ready": not problems and not unmatched,
                         "need": bool(marks), "warnings": p["warnings"]})
@@ -275,7 +316,7 @@ def api_notice_upload():
     finally:
         conn.close()
     if not out and errs:
-        return jsonify({"error": "入庫通知單沒有收進來。", "details": errs}), 400
+        return jsonify({"error": "入庫通知單／嘜頭沒有收進來。", "details": errs}), 400
     return jsonify({"ok": True, "orders": out, "errors": errs})
 
 
@@ -309,5 +350,89 @@ def api_notice_file(no):
     return resp
 
 
-__all__ = ["is_notice", "parse_notice", "draw_notice", "marks_for", "load_stamp", "api_notice_upload", "api_notice_file",
+# ── 嘜頭 ────────────────────────────────────────────────────────────────────
+def mark_plan(ck):
+    """→ ({(商品編號, 單品編號): 共幾箱 或 None＝拿掉}, 還不能畫的)"""
+    plan, problems = {}, []
+    for it in ck["items"]:
+        key = (it["product_no"], it["item_no"])
+        if it["decision"] in ("wait", "pending"):
+            problems.append(f"{it['factory_code']}：{it['why']}")
+        elif it["decision"] == "noship":
+            plan[key] = None
+        else:
+            plan[key] = it["shipped"]
+    return plan, problems
+
+
+def draw_mark(data, pages, plan):
+    """回 (bytes, 留下幾頁, 拿掉幾頁, 對不到的頁)。"""
+    src = pymupdf.open(stream=data, filetype="pdf")
+    keep, dropped, unknown = [], 0, []
+    for pg in pages:
+        key = (pg["product_no"], pg["item_no"])
+        if key not in plan:
+            unknown.append(f"第 {pg['page'] + 1} 頁（{pg['product_no']}{pg['item_no']}）"); keep.append((pg, None)); continue
+        if plan[key] is None:
+            dropped += 1; continue
+        keep.append((pg, plan[key]))
+    out = pymupdf.open()
+    for pg, n in keep:
+        out.insert_pdf(src, from_page=pg["page"], to_page=pg["page"])
+        if n is not None and pg["total_at"]:
+            x, y, h = pg["total_at"]
+            s = f"{n:g}"
+            fs = max(10, min(16, h + 2))
+            out[-1].insert_text((x - pymupdf.get_text_length(s, fontname="helv", fontsize=fs) / 2, y + fs / 3), s, fontsize=fs, fontname="helv", color=(0, 0, 0))
+    return out.tobytes(), len(keep), dropped, unknown
+
+
+@momo_bp.route("/api/momo/mark/<no>/file")
+def api_mark_file(no):
+    conn = get_conn()
+    try:
+        mk = _row(conn.execute("SELECT * FROM momo_mark WHERE inbound_no = ?", (no,)))
+        if mk is None:
+            return jsonify({"error": f"{no} 的嘜頭還沒上傳，請先把 MOMO 下載的嘜頭 PDF 丟進上傳區。"}), 404
+        ck = check_orders(conn, [no]).get(no)
+        if ck is None:
+            return jsonify({"error": f"{no} 不在「待核缺貨與效期」，沒有勇信的箱數可以填。"}), 400
+        plan, problems = mark_plan(ck)
+        if problems:
+            return jsonify({"error": f"還有 {len(problems)} 個品項要先決定，還不能填箱數。", "details": problems}), 400
+        pdf, kept, dropped, unknown = draw_mark(base64.b64decode(mk["pdf_b64"]), json.loads(mk["pages_json"] or "[]"), plan)
+        operator, stamp = _operator(), now()
+        conn.execute("UPDATE momo_mark SET drawn_by = ?, drawn_at = ? WHERE inbound_no = ?", (operator, stamp, no))
+        _log(conn, MARS, no, "", "", "momo_mark_draw", "填嘜頭箱數", "", f"留 {kept} 頁、拿掉 {dropped} 頁", operator, "manual", mk["filename"])
+        conn.commit()
+    finally:
+        conn.close()
+    base = mk["filename"].rsplit(".", 1)[0] if "." in mk["filename"] else mk["filename"]
+    resp = send_file(io.BytesIO(pdf), as_attachment=True, download_name=f"{base}_已填箱數.pdf", mimetype="application/pdf")
+    resp.headers["X-Momo-Pages"] = str(kept)
+    resp.headers["X-Momo-Dropped"] = str(dropped)
+    resp.headers["X-Momo-Unknown"] = str(len(unknown))
+    return resp
+
+
+def _upload_mark(conn, f, data, operator, stamp):
+    p = parse_mark(data, f.filename)
+    no = p["inbound_no"]
+    ck = check_orders(conn, [no]).get(no)
+    if ck is None:
+        raise ValueError(f"{f.filename}：{no} 不在「待核缺貨與效期」（不是瑪氏、還沒回填 EIP 單號，或系統裡沒有這張單），先不收。")
+    conn.execute("DELETE FROM momo_mark WHERE inbound_no = ?", (no,))
+    conn.execute("INSERT INTO momo_mark (inbound_no, filename, pdf_b64, pages_json, uploaded_by, uploaded_at) VALUES (?,?,?,?,?,?)",
+                 (no, f.filename, base64.b64encode(data).decode("ascii"), json.dumps(p["pages"], ensure_ascii=False), operator, stamp))
+    _log(conn, MARS, no, "", "", "momo_mark", "嘜頭", "", f"{len(p['pages'])} 頁", operator, "import", f.filename)
+    plan, problems = mark_plan(ck)
+    keys = {(x["product_no"], x["item_no"]) for x in p["pages"]}
+    return {"kind": "mark", "inbound_no": no, "warehouse": ck["warehouse"], "filename": f.filename, "rows": len(p["pages"]),
+            "drop": sum(1 for k in keys if plan.get(k, 0) is None), "fill": sum(1 for k in keys if plan.get(k) is not None),
+            "unmatched": [f"{x['product_no']}{x['item_no']}" for x in p["pages"] if (x["product_no"], x["item_no"]) not in plan],
+            "no_box": sum(1 for x in p["pages"] if not x["total_at"]), "problems": problems,
+            "ready": not problems, "warnings": []}
+
+
+__all__ = ["is_notice", "is_mark", "parse_notice", "parse_mark", "draw_notice", "draw_mark", "mark_plan", "marks_for", "load_stamp", "api_notice_upload", "api_notice_file", "api_mark_file",
            "api_stamp_upload", "api_stamp_info", "api_stamp_png"]

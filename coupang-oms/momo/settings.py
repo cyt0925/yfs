@@ -101,8 +101,8 @@ def api_warehouse_save(name):
 def detect(data, filename):
     """orders（MOMO 下載檔）／mars（瑪氏商品總表）／conv（價格本）／yx（PDF，勇信配送明細表）／notice（PDF，MOMO 入庫通知單）；認不出來回空字串。蝦皮的檔不收，免得傳錯頁。"""
     if data[:5] == b"%PDF-":
-        from .notice import is_notice
-        return "notice" if is_notice(data) else "yx"     # MOMO 入庫通知單，不然當勇信配送明細表（讀不到收貨單號，/api/momo/yx 會講）
+        from .notice import is_mark, is_notice
+        return "notice" if is_notice(data) or is_mark(data) else "yx"   # MOMO 入庫通知單、嘜頭（同一支收），不然當勇信配送明細表
     if looks_like(data, filename):
         return "orders"
     try:

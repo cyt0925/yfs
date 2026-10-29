@@ -571,7 +571,7 @@ _LASTROWID_TABLES = ("ORDERS", "IMPORT_BATCHES", "EXPORT_BATCHES",
                      "MST_MARS_SPLITS",   # 瑪氏單列自動存（/api/mars/splits/ensure）要拿新的 id 馬上下載
                      "SHP_UPLOADS", "SHP_ORDERS",   # 蝦皮特選：上傳預覽要回 id、新訂單要拿 id 記版本
                      "SHP_EIP", "SHP_DISPATCH", "SHP_NOTIFY",                     # 產 EIP 採購單：存檔要拿 id 掛品項
-                     "MOMO_UPLOADS", "MOMO_ORDERS", "MOMO_EIP", "MOMO_YX", "MOMO_EXPFILL", "MOMO_NOTICE")   # MOMO：上傳預覽、新品項記版本、EIP 掛品項、勇信表、效期檔
+                     "MOMO_UPLOADS", "MOMO_ORDERS", "MOMO_EIP", "MOMO_YX", "MOMO_EXPFILL", "MOMO_NOTICE", "MOMO_MARK")   # MOMO：上傳預覽、新品項記版本、EIP 掛品項、勇信表、效期檔
 
 
 def _wants_returning_id(sql):
@@ -1439,6 +1439,7 @@ CREATE TABLE IF NOT EXISTS momo_check (
 );
 -- 填好效期的 MOMO 效期匯入檔：哪幾張入庫單、什麼時候、誰；有這筆（而且在最後一次勇信表之後）就算這張單效期填完了
 CREATE TABLE IF NOT EXISTS momo_notice (id INTEGER PRIMARY KEY AUTOINCREMENT, inbound_no TEXT NOT NULL UNIQUE, filename TEXT DEFAULT '', pdf_b64 TEXT DEFAULT '', rows_json TEXT DEFAULT '[]', uploaded_by TEXT DEFAULT '', uploaded_at TEXT DEFAULT '', drawn_by TEXT DEFAULT '', drawn_at TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS momo_mark (id INTEGER PRIMARY KEY AUTOINCREMENT, inbound_no TEXT NOT NULL UNIQUE, filename TEXT DEFAULT '', pdf_b64 TEXT DEFAULT '', pages_json TEXT DEFAULT '[]', uploaded_by TEXT DEFAULT '', uploaded_at TEXT DEFAULT '', drawn_by TEXT DEFAULT '', drawn_at TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS momo_expfill (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     filename    TEXT DEFAULT '',
