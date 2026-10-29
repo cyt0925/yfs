@@ -1067,6 +1067,7 @@ def main():
         up = tc.post("/api/shopee/import/preview", data={"file": (io.BytesIO(bm.getvalue()), "PurchaseOrder_ui_mars2.xlsx")}, content_type="multipart/form-data").get_json()
         tc.post("/api/shopee/import/commit", json={"upload_id": up["upload_id"], "fulfil": "供應商直送"})
         pg.reload(); pg.wait_for_selector("#stages .st.on", timeout=15000)
+        pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)   # 重新整理後到貨日回到預設「今天往前 7 天」，假單 10/21 會被篩掉（2026-10-29 CI 紅燈）
         stage("buy"); pg.wait_for_selector("#b-tbl tr.og[data-k='POTWCTWA26102198N']", timeout=10000)
         check("待產採購單：這張寫「瑪氏商品總表找不到 1 項」", "瑪氏商品總表找不到 1 項" in pg.inner_text("#b-tbl tr.og[data-k='POTWCTWA26102198N']"))
         pg.click("#b-tbl tr.og[data-k='POTWCTWA26102198N']"); pg.wait_for_selector("#side .sd-mp", timeout=10000)
