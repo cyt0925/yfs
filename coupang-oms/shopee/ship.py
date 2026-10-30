@@ -549,7 +549,8 @@ def api_ship_plan():
 
 @shopee_bp.route("/api/shopee/ship/adjust", methods=["POST"])
 def api_ship_adjust():
-    """改出貨量／選效期（需求 5.5）。lots＝[{exp, qty}]，加總要等於出貨量；不能超過可出貨量；要寫原因。clear＝回到系統建議。"""
+    """改出貨量／選效期（需求 5.5）。lots＝[{exp, qty}]，加總要等於出貨量；不能超過可出貨量；要寫原因。clear＝回到系統建議。
+    只給 qty（清單上直接改出貨量，Jerry 2026-10-30）：效期照系統的挑法由早到晚自動挑。"""
     p = request.get_json(silent=True) or {}
     try:
         oid = int(p.get("order_id"))
@@ -586,6 +587,18 @@ def api_ship_adjust():
             return jsonify({"error": "這張單已產出拋單檔，要修改請先取消產出。"}), 400
         if not item["life"]:
             return jsonify({"error": "商品主檔沒有這個品項的商品年限，無法判斷效期，請先上傳竹運商品主檔。"}), 400
+        if p.get("qty") not in (None, "") and not p.get("lots"):
+            try:
+                need = int(str(p["qty"]).replace(",", ""))
+            except ValueError:
+                return jsonify({"error": "出貨量請填整數。"}), 400
+            if need < 0:
+                return jsonify({"error": "出貨量不能小於 0。"}), 400
+            qual = sorted([l for l in item["lots"] if l["ok"] and l["qty"] > 0], key=lambda l: l["exp"])
+            lots = [{"exp": e, "qty": q} for e, q in _alloc(qual, need)]
+            total = sum(x["qty"] for x in lots)
+            if total < need:
+                return jsonify({"error": f"符合效期的庫存只有 {total}，出貨量最多填 {min(total, item['qty'], item['ec'] or 0)}。"}), 400
         avail = {l["exp"]: l["qty"] for l in item["lots"] if l["ok"]}
         for x in lots:
             if x["exp"] not in avail:

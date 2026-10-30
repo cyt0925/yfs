@@ -380,6 +380,7 @@ async function loadStage() {
 }
 const firstInStage = () => (VIEW.orders.find(g => inStage(g.order_no)) || {}).order_no || "";
 async function refresh() {
+  ITEMS.clear();                       // 展開的品項重拿（改過出貨量、重傳過）
   await Promise.all([loadOrders(), loadEipCount()]);
   if (!STAGE) {        // 一進來：網址指定的那一步（首頁今日事項連 /shopee#diff）→ 上次看的那一步 → 第一個有待辦的
     let saved = ""; try { saved = localStorage.getItem("shopee_stage") || ""; } catch (e) { /* 讀不到就算了 */ }
@@ -415,7 +416,7 @@ function render() {
   const nDel = VIEW.deleted_count || 0;
   $("#sum").innerHTML = (delView ? `<span><b>${all.length}</b> 張已刪除的訂單</span>`
       : `<span><b>${all.length}</b> 張訂單</span><span><b>${fmt(all.reduce((a, g) => a + g.item_count, 0))}</b> 個品項</span><span><b>${fmt(all.reduce((a, g) => a + g.qty, 0))}</b> 件（蝦皮數量）</span>`) + hfNote(list.length)
-    + (STAGE === "all" && (nDel || SHOW_DEL) ? `<span class="chip ${SHOW_DEL ? "on" : ""}" id="a-del" title="${SHOW_DEL ? "回到一般的訂單清單" : "只列刪掉的單，可以還原"}"><i class="bi bi-trash3"></i> ${SHOW_DEL ? "顯示已刪除（再點一下回到全部訂單）" : `顯示已刪除 ${nDel}`}</span>` : "");
+    + (delView ? "" : expAllChip(list, OPEN).replace('class="chip ex-all', 'data-for="#tbl" class="chip ex-all')) + (STAGE === "all" && (nDel || SHOW_DEL) ? `<span class="chip ${SHOW_DEL ? "on" : ""}" id="a-del" title="${SHOW_DEL ? "回到一般的訂單清單" : "只列刪掉的單，可以還原"}"><i class="bi bi-trash3"></i> ${SHOW_DEL ? "顯示已刪除（再點一下回到全部訂單）" : `顯示已刪除 ${nDel}`}</span>` : "");
   const ad = $("#a-del"); if (ad) ad.addEventListener("click", () => { SHOW_DEL = !SHOW_DEL; refresh(); });
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="a-all" ${aAll ? "checked" : ""} ${list.length ? "" : "disabled"} title="全選"></th>${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("ff")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("qty", "num")}${hfTh("ship", "num opt")}${hfTh("short", "num opt")}${hfTh("next")}</tr></thead><tbody>`;
   for (const g of list) {
@@ -431,17 +432,18 @@ function render() {
     }
     h += `<tr class="og ${g.diff_pending ? "pend" : ""}" data-k="${esc(k)}">
       <td><input type="checkbox" class="ck a-ck" data-k="${esc(k)}" ${ASEL.has(k) ? "checked" : ""}></td>
-      <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : !g.po_id ? `<div class="kbd">尚未成 PO</div>` : ""}</td>
+      <td class="nw">${togBtn(k, OPEN)}<span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd tog-pad">${esc(g.pr_id)}</div>` : !g.po_id ? `<div class="kbd tog-pad">尚未成 PO</div>` : ""}</td>
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td>
       ${ffTd(g)}<td class="opt">${codesTd(g)}</td>
       <td class="num opt">${g.item_count}${g.removed_count ? `<div class="kbd neg">移除 ${g.removed_count}</div>` : ""}</td>
       <td class="num"><b>${fmt(g.qty)}</b>${g.qty_original !== g.qty ? `<div class="kbd">原 ${fmt(g.qty_original)}</div>` : ""}</td>
       <td class="num opt ${g.qty_ship == null ? "muted" : ""}">${fmt(g.qty_ship)}</td><td class="num opt ${g.qty_short ? "neg" : g.qty_short == null ? "muted" : ""}">${fmt(g.qty_short)}</td>
-      <td>${STAGE === "diff" ? `<button class="btn btn-p btn-sm dd" data-k="${esc(k)}"><i class="bi bi-arrow-left-right"></i> 確認差異</button>` : nextBadges(g)}</td></tr>`;
+      <td>${STAGE === "diff" ? `<button class="btn btn-p btn-sm dd" data-k="${esc(k)}"><i class="bi bi-arrow-left-right"></i> 確認差異</button>` : nextBadges(g)}</td></tr>` + subRows(k, OPEN, 13);
   }
   if (!list.length) h += all.length ? hfEmpty(13) : emptyRow(13);
   $("#tbl").innerHTML = h + "</tbody>";
-  $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .go-st, .ff-cell")) return; openSide(tr.dataset.k); }));
+  $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .go-st, .ff-cell, .tog")) return; openSide(tr.dataset.k); }));
+  bindSub("#tbl", list, OPEN, render);
   $$("#tbl button.dd").forEach(b => b.addEventListener("click", () => { LAST_K = b.dataset.k; openDiff(b.dataset.k); }));
   $$("#tbl button.rs-del").forEach(b => b.addEventListener("click", () => restoreOrder(b.dataset.k)));
   $$("#tbl .go-st").forEach(b => b.addEventListener("click", () => setStage(b.dataset.s)));
@@ -594,6 +596,72 @@ $("#dl-go").addEventListener("click", async () => {
 async function restoreOrder(no) {
   try { const r = await post("/api/shopee/order/restore", { order_no: no }); toast(r.message); if ((VIEW.deleted_count || 0) <= 1) SHOW_DEL = false; refresh(); }     // 最後一張還原了就回到一般清單
   catch (err) { toast(err.message, "err"); }
+}
+
+/* ── 清單上展開品項、直接改出貨量（Jerry 2026-10-30「無須點進去訂單 在外面就能改」，看過示意圖，三步都要）──────────
+   訂單那列左邊 ▸ 展開，品項列在那張單下面；「全部展開」一次打開。展開哪幾張就一次跟伺服器拿哪幾張（/api/shopee/orders/items）。
+   出貨量那格點了就改、Enter 存：寶僑、紙潔手填缺貨存成這次下修；竹運出貨系統照效期由早到晚自動挑批次（要指定效期再點進訂單）；
+   瑪氏、已產出拋單檔、通知過的不能改，那格寫原因。 */
+const ITEMS = new Map(), ITEMS_LOADING = new Set();      // 訂單編號 → 品項列（refresh 時清掉重拿）；正在拿的那幾張不重複拿
+const togBtn = (k, set) => `<span class="tog" data-tog="${esc(k)}" role="button" tabindex="0" title="${set.has(k) ? "收起品項" : "展開品項，直接改出貨量"}">${set.has(k) ? "▾" : "▸"}</span>`;
+function expAllChip(list, set) {
+  const ks = list.filter(g => !g.trash).map(g => g.order_no), on = ks.length && ks.every(k => set.has(k));
+  return ks.length ? `<span class="chip ex-all ${on ? "on" : ""}" title="${on ? "全部收起" : "每張單都展開品項"}"><i class="bi bi-arrows-expand"></i> ${on ? "全部收起" : "全部展開"}</span>` : "";
+}
+function subRows(k, set, cols) {
+  if (!set.has(k)) return "";
+  const rows = ITEMS.get(k);
+  if (!rows) return `<tr class="sub" data-sub="${esc(k)}"><td></td><td colspan="${cols - 1}" class="kbd">讀取品項中…</td></tr>`;
+  return `<tr class="sub" data-sub="${esc(k)}"><td></td><td colspan="${cols - 1}" style="padding:4px 8px 10px 28px"><table class="it-sub"><thead><tr><th>永豐料號</th><th>品名</th><th class="num">蝦皮數量</th><th class="num">出貨量</th><th class="num">缺貨</th><th>原因</th></tr></thead><tbody>
+    ${rows.map(r => `<tr data-id="${r.order_id}"><td class="fn nw">${esc(r.sku)}</td><td class="nm">${esc(r.name || "")}</td><td class="num nw"><b>${fmt(r.qty)}</b> ${esc(r.unit || "")}</td>
+      <td class="num nw qe-td">${r.edit ? `<b class="qe-cell" data-k="${esc(k)}" data-id="${r.order_id}" title="點一下改出貨量">${r.final == null ? fmt(r.qty) : fmt(r.final)}</b>${r.adj ? `<div class="kbd">（已修改）</div>` : ""}`
+        : `<span class="${r.final == null ? "kbd" : ""}">${r.final == null ? "—" : fmt(r.final)}</span>${r.lock ? `<div class="kbd">${esc(r.lock)}</div>` : ""}`}</td>
+      <td class="num nw ${r.short ? "neg" : ""}">${r.short == null ? "—" : fmt(r.short)}${r.pending ? `<div><span class="badge b-warn">待通知</span></div>` : ""}</td>
+      <td class="kbd">${esc((r.reasons || []).join("、"))}</td></tr>`).join("") || `<tr><td colspan="6" class="kbd">沒有品項。</td></tr>`}</tbody></table></td></tr>`;
+}
+async function needItems(set, redraw) {
+  const miss = [...set].filter(k => !ITEMS.has(k) && !ITEMS_LOADING.has(k)); if (!miss.length) return;
+  miss.forEach(k => ITEMS_LOADING.add(k));
+  try {
+    const d = await api(`/api/shopee/orders/items?${new URLSearchParams({ ...fq(), nos: miss.join(",") })}`);
+    miss.forEach(k => ITEMS.set(k, d.orders[k] || []));
+  } catch (err) { toast(err.message, "err"); miss.forEach(k => set.delete(k)); }
+  finally { miss.forEach(k => ITEMS_LOADING.delete(k)); }
+  redraw();
+}
+function bindSub(tbl, list, set, redraw) {
+  $$(`${tbl} .tog`).forEach(t => t.addEventListener("click", e => { e.stopPropagation(); set.has(t.dataset.tog) ? set.delete(t.dataset.tog) : set.add(t.dataset.tog); redraw(); needItems(set, redraw); }));
+  $$(`${tbl} .qe-cell`).forEach(c => c.addEventListener("click", () => editRowQty(c.closest("td"), (ITEMS.get(c.dataset.k) || []).find(r => r.order_id === Number(c.dataset.id)), redraw)));
+  const ex = document.querySelector(`.ex-all[data-for="${tbl}"]`);
+  if (ex) ex.addEventListener("click", () => { const ks = list.filter(g => !g.trash).map(g => g.order_no), on = ks.every(k => set.has(k)); ks.forEach(k => on ? set.delete(k) : set.add(k)); redraw(); needItems(set, redraw); });
+  needItems(set, redraw);
+}
+function editRowQty(td, r, redraw) {
+  if (!td || !r || !r.edit) return;
+  const cur = r.final == null ? r.qty : r.final, max = r.edit === "ship" ? r.cap : r.prev, picked = new Set(r.reasons && r.reasons.length ? r.reasons : ["庫存不足"]);
+  td.innerHTML = `<input class="inp qe-in" inputmode="numeric" value="${cur}" style="width:84px;text-align:right;font-weight:700;border:2px solid var(--s8)">
+    <div class="kbd mt-1 qe-cut"></div>${r.edit === "short" ? `<div class="flex gap-1 mt-1 justify-end">${SHORT_REASONS.map(x => `<span class="chip qe-r ${picked.has(x) ? "on" : ""}" style="padding:1px 8px;font-size:12px">${x}</span>`).join("")}</div>` : `<div class="kbd">效期由早到晚自動挑</div>`}
+    <div class="flex gap-1 mt-1 justify-end"><button class="btn btn-p btn-sm qe-save">儲存</button><button class="btn btn-o btn-sm qe-x">取消</button></div>`;
+  const inp = td.querySelector(".qe-in");
+  const cut = () => { const v = Number(inp.value.replace(/,/g, "")); td.querySelector(".qe-cut").textContent = Number.isFinite(v) ? `缺 ${fmt(Math.max(r.qty - v, 0))}${v === 0 ? "（刪單）" : ""}　最多 ${fmt(max)}` : ""; };
+  cut(); inp.focus(); inp.select();
+  td.querySelectorAll(".qe-r").forEach(c => c.addEventListener("click", () => c.classList.toggle("on")));
+  const save = async () => {
+    const v = Number(inp.value.replace(/,/g, "").trim());
+    if (!Number.isInteger(v) || v < 0 || v > max) return toast(`出貨量要在 0 到 ${fmt(max)} 之間`, "err");
+    try {
+      if (r.edit === "ship") { await post("/api/shopee/ship/adjust", { order_id: r.order_id, qty: v, ...fq() }); toast(`${r.sku} 出貨量改成 ${fmt(v)}（效期系統自動挑）`); }
+      else {
+        const x = await post("/api/shopee/short/save", { order_id: r.order_id, short: r.prev - v, reasons: [...td.querySelectorAll(".qe-r.on")].map(c => c.textContent), note: r.note || "" });
+        toast(x.cleared ? `${r.sku} 已改回 ${fmt(v)}，取消這次缺貨` : `${r.sku} 出貨量改成 ${fmt(x.after)}（第 ${x.round} 次下修），已列入「待通知蝦皮」`);
+      }
+      refresh();
+    } catch (err) { toast(err.message, "err"); }
+  };
+  inp.addEventListener("input", cut);
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") save(); else if (e.key === "Escape") { e.stopPropagation(); redraw(); } });
+  td.querySelector(".qe-save").addEventListener("click", save);
+  td.querySelector(".qe-x").addEventListener("click", () => redraw());
 }
 
 /* ── 差異視窗（需求 3.1.1 差異畫面的欄位） ─────────────────── */
@@ -978,7 +1046,8 @@ function renderShip() {
   const blkList = every.filter(g => g.blocking && g.dispatch_status !== "已產出");
   $("#z-sum").innerHTML = `<span><b>${every.length}</b> 張訂單</span><span><b>${fmt(every.reduce((a, g) => a + g.qty, 0))}</b> 訂購</span>`
     + `<span><b>${fmt(every.reduce((a, g) => a + g.ship, 0))}</b> 可出貨</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.short, 0))}</b> 缺貨</span>`
-    + (blkList.length ? hfQuick("chk", [...new Set(blkList.flatMap(g => whyKeys(g.items)))], `<b style="color:var(--bad)">${blkList.length}</b> 張需先處理`) : "") + hfNote(list.length);
+    + (blkList.length ? hfQuick("chk", [...new Set(blkList.flatMap(g => whyKeys(g.items)))], `<b style="color:var(--bad)">${blkList.length}</b> 張需先處理`) : "") + hfNote(list.length)
+    + expAllChip(list, ZOPEN).replace('class="chip ex-all', 'data-for="#z-tbl" class="chip ex-all');
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="z-all" ${all ? "checked" : ""} ${open_.length ? "" : "disabled"} title="全選還沒產出的訂單"></th>
     ${hfTh("no")}${hfTh("line")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("ff")}${hfTh("codes", "opt")}${hfTh("items", "num")}${hfTh("qty", "num")}${hfTh("ship", "num")}${hfTh("short", "num")}${hfTh("chk")}${hfTh("disp")}</tr></thead><tbody>`;
   for (const g of list) {
@@ -987,15 +1056,16 @@ function renderShip() {
       : `<span class="badge ${g.short ? "b-warn" : "b-ok"}">${g.short ? (g.deleted ? `缺貨（刪單 ${g.deleted} 品）` : "部分缺貨") : "可全數出貨"}</span>${g.warnings ? ` <span class="badge b-warn">${g.warnings} 項提醒</span>` : ""}`;
     h += `<tr class="og ${g.blocking && !done ? "blk" : ""} ${done ? "lock" : ""}" data-k="${esc(k)}">
       <td class="nw"><input type="checkbox" class="ck z-ck" data-k="${esc(k)}" ${ZSEL.has(k) ? "checked" : ""} ${done ? "disabled" : ""}>${!done && g.blocking ? " " + BLK_ICON : ""}</td>
-      <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
+      <td class="nw">${togBtn(k, ZOPEN)}<span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd tog-pad">${esc(g.pr_id)}</div>` : ""}</td>
       <td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td>${ffTd(g)}<td class="opt">${codesTd(g)}</td><td class="num">${g.items.length}</td>
       <td class="num">${fmt(g.qty)}</td><td class="num"><b>${fmt(g.ship)}</b></td><td class="num ${g.short ? "neg" : ""}">${fmt(g.short)}</td><td>${st}</td>
       <td class="nw">${done ? `<span class="badge b-s">已產出</span> <span class="kbd">${esc((g.dispatch_at || "").slice(5, 16).replace("T", " "))}</span> <button class="btn btn-o btn-sm z-undo" data-k="${esc(k)}">取消產出</button>`
-        : `<span class="badge b-dim">${esc(g.dispatch_status)}</span>`}</td></tr>`;
+        : `<span class="badge b-dim">${esc(g.dispatch_status)}</span>`}</td></tr>` + subRows(k, ZOPEN, 14);
   }
   if (!list.length) h += every.length ? hfEmpty(14) : emptyRow(14);
   $("#z-tbl").innerHTML = h + "</tbody>";
-  $$("#z-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .ff-cell")) return; openSide(tr.dataset.k); }));
+  $$("#z-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .ff-cell, .tog")) return; openSide(tr.dataset.k); }));
+  bindSub("#z-tbl", list, ZOPEN, renderShip);
   $$("#z-tbl input.z-ck").forEach(c => c.addEventListener("change", () => tick(c, ZSEL, renderShip)));
   const za = $("#z-all"); if (za) za.addEventListener("change", () => { open_.forEach(g => za.checked ? ZSEL.add(g.order_no) : ZSEL.delete(g.order_no)); renderShip(); });
   markSel();
@@ -1105,21 +1175,23 @@ function renderShort() {
   hfKeep(KSEL, list);
   const picks = list.filter(g => g.pending), all = list.length && list.every(g => KSEL.has(g.order_no));
   $("#k-sum").innerHTML = `<span><b>${every.length}</b> 張訂單</span><span><b>${every.filter(g => g.short_items).length}</b> 張有缺貨</span>`
-    + `<span><b style="color:var(--warn)">${every.reduce((a, g) => a + g.pending, 0)}</b> 品待通知</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.cut, 0))}</b> 累計下修</span>${hfNote(list.length)}`;
+    + `<span><b style="color:var(--warn)">${every.reduce((a, g) => a + g.pending, 0)}</b> 品待通知</span><span><b style="color:var(--bad)">${fmt(every.reduce((a, g) => a + g.cut, 0))}</b> 累計下修</span>${hfNote(list.length)}`
+    + expAllChip(list, KOPEN).replace('class="chip ex-all', 'data-for="#k-tbl" class="chip ex-all');
   let h = `<thead><tr><th><input type="checkbox" class="ck" id="k-all" ${all ? "checked" : ""} ${list.length ? "" : "disabled"} title="全選"></th>
     ${hfTh("no")}${hfTh("line")}${hfTh("ff")}${hfTh("date")}${hfTh("up", "opt")}${hfTh("wh")}${hfTh("codes", "opt")}${hfTh("items", "num opt")}${hfTh("orig", "num opt")}${hfTh("final", "num")}${hfTh("cut", "num")}${hfTh("st")}</tr></thead><tbody>`;
   for (const g of list) {
     const k = g.order_no;
     h += `<tr class="og ${g.pending ? "pend" : ""}" data-k="${esc(k)}">
       <td><input type="checkbox" class="ck k-ck" data-k="${esc(k)}" ${KSEL.has(k) ? "checked" : ""}></td>
-      <td><span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd">${esc(g.pr_id)}</div>` : ""}</td>
+      <td class="nw">${togBtn(k, KOPEN)}<span class="fn" style="font-weight:700;color:var(--ink)">${esc(k)}</span>${g.po_id && g.pr_id ? `<div class="kbd tog-pad">${esc(g.pr_id)}</div>` : ""}</td>
       <td class="nw">${esc(g.line)}</td>${ffTd(g)}<td class="nw">${esc(g.expected_date)}</td><td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td><td class="opt">${codesTd(g)}</td><td class="num opt">${g.items.length}</td>
       <td class="num opt">${fmt(g.orig)}</td><td class="num"><b>${fmt(g.final)}</b></td><td class="num ${g.cut ? "neg" : ""}">${fmt(g.cut)}${g.deleted ? `<div class="kbd">刪單 ${g.deleted} 品</div>` : ""}</td>
-      <td><span class="badge ${g.status === "待通知" ? "b-warn" : g.status.startsWith("已通知") ? "b-ok" : "b-dim"}">${esc(g.status)}</span></td></tr>`;
+      <td><span class="badge ${g.status === "待通知" ? "b-warn" : g.status.startsWith("已通知") ? "b-ok" : "b-dim"}">${esc(g.status)}</span></td></tr>` + subRows(k, KOPEN, 13);
   }
   if (!list.length) h += every.length ? hfEmpty(13) : emptyRow(13);
   $("#k-tbl").innerHTML = h + "</tbody>";
-  $$("#k-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .ff-cell")) return; openSide(tr.dataset.k); }));
+  $$("#k-tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .ff-cell, .tog")) return; openSide(tr.dataset.k); }));
+  bindSub("#k-tbl", list, KOPEN, renderShort);
   $$("#k-tbl input.k-ck").forEach(c => c.addEventListener("change", () => tick(c, KSEL, renderShort)));
   const ka = $("#k-all"); if (ka) ka.addEventListener("change", () => { list.forEach(g => ka.checked ? KSEL.add(g.order_no) : KSEL.delete(g.order_no)); renderShort(); });
   markSel();

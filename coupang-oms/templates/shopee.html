@@ -51,6 +51,14 @@
   table.t tr.og.lock td { color:var(--muted); }
   table.t tr.og.del td { color:#9a918b; background:#faf8f7; } table.t tr.og.del td .fn { text-decoration:line-through; }   /* 刪掉的單（顯示已刪除才列） */
   .b-del { background:#ececec; color:#555; }
+  /* 清單上展開品項、直接改出貨量（2026-10-30） */
+  .tog { display:inline-grid; place-items:center; width:20px; height:20px; border:1px solid var(--line); border-radius:5px; color:var(--s9); font-size:11px; margin-right:6px; cursor:pointer; background:#fff; vertical-align:middle; }
+  .tog:hover { background:var(--s0); border-color:var(--s8); } .tog-pad { margin-left:26px; }
+  table.t tr.sub > td { background:#fffaf8; border-top:0; } table.t tr.sub > td:first-child { box-shadow:inset 3px 0 0 #f6c9b8; }
+  table.it-sub { width:100%; border-collapse:collapse; font-size:12.5px; } table.it-sub th { background:transparent; color:var(--muted); font-weight:600; padding:4px 8px; border-bottom:1px solid var(--line2); position:static; }
+  table.it-sub td { padding:6px 8px; border-bottom:1px solid var(--line2); vertical-align:top; } table.it-sub td.nm { min-width:240px; }
+  .qe-cell { display:inline-block; min-width:54px; text-align:right; padding:1px 6px; border:1px dashed var(--s9); border-radius:6px; color:var(--s9); cursor:pointer; background:#fff; }
+  .qe-cell:hover { background:var(--s0); }
   .btn-d { background:#fff; color:var(--bad); border:1px solid #f2b8b8; } .btn-d:hover:not(:disabled) { background:var(--badbg); } .btn-d:disabled { opacity:.5; cursor:not-allowed; }
   .ck { width:16px; height:16px; accent-color:var(--s8); cursor:pointer; vertical-align:middle; } .ck:disabled { cursor:not-allowed; }
   .prob { color:var(--bad); font-size:12px; } .prob + .prob { margin-top:2px; }

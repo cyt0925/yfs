@@ -671,6 +671,7 @@ def stage2(c, preview, orders):
     flow_tests(c, orders)
     trash_tests(c, orders)
     po_pdf_tests(c, orders)
+    items_tests(c, orders)
     mixed_tests(c, preview, orders)
 
 
@@ -1432,6 +1433,43 @@ def po_pdf_tests(c, orders):
         check("勾的裡面沒有已回填的瑪氏 → 講「勾選的檔裡沒有」", r.status_code == 400 and "勾選的檔裡沒有" in r.get_json()["error"], str(r.get_json()))
     else:
         check("（測試資料裡要有已回填的瑪氏 EIP 和別的線別）", False, str([(e["line"], e["eip_po"]) for e in eips]))
+
+
+
+def items_tests(c, orders):
+    print("\n【25】清單上展開品項、直接改出貨量（Jerry 2026-10-30「無須點進去訂單 在外面就能改」）")
+    nos = [g["order_no"] for g in orders()["orders"]]
+    get = lambda: c.get("/api/shopee/orders/items", query_string={"nos": ",".join(nos), "from": "2026-01-01"}).get_json()["orders"]
+    d = get()
+    rows = [r for k in d for r in d[k]]
+    check("一次拿好幾張單的品項：每張都有、每品寫能不能改（不能改的寫原因）", set(d) == set(nos) and rows
+          and all((r["edit"] in ("ship", "short")) != bool(r["lock"]) for r in rows), str([(r["sku"], r["edit"], r["lock"]) for r in rows][:8]))
+    check("沒給單號 → 空的", c.get("/api/shopee/orders/items").get_json()["orders"] == {})
+    sh = next((r for r in rows if r["edit"] == "ship" and r["cap"] >= 2), None)
+    if sh:
+        v = min(sh["cap"], sh["final"] if sh["final"] is not None else sh["qty"]) - 1
+        r = c.post("/api/shopee/ship/adjust", json={"order_id": sh["order_id"], "qty": v, "from": "2026-01-01"})
+        sh2 = next(x for k in get().values() for x in k if x["order_id"] == sh["order_id"])
+        check("竹運出貨只給數字 → 系統照效期自動挑批次、出貨量變那個數、標已修改、缺貨跟著算", r.status_code == 200 and r.get_json()["qty"] == v
+              and sh2["final"] == v and sh2["adj"] and sh2["short"] == sh2["qty"] - v, str((r.get_json(), sh2)))
+        r = c.post("/api/shopee/ship/adjust", json={"order_id": sh["order_id"], "qty": sh["cap"] + 999999, "from": "2026-01-01"})
+        check("超過符合效期的庫存 → 講最多填多少", r.status_code == 400 and "最多" in r.get_json()["error"], str(r.get_json()))
+        c.post("/api/shopee/ship/adjust", json={"order_id": sh["order_id"], "clear": True})
+    else:
+        check("（測試資料裡要有能改的竹運出貨品項）", False, str([(r["sku"], r["edit"], r.get("cap")) for r in rows if r["edit"] == "ship"]))
+    mk = next((r for r in rows if r["edit"] == "short" and r["prev"] >= 2), None)
+    if mk:
+        v = mk["prev"] - 2
+        r = c.post("/api/shopee/short/save", json={"order_id": mk["order_id"], "short": mk["prev"] - v, "reasons": ["庫存不足"]})
+        mk2 = next(x for k in get().values() for x in k if x["order_id"] == mk["order_id"])
+        check("寶僑、紙潔手填缺貨：改成 prev−2 → 存成這次下修、待通知、原因帶出來", r.status_code == 200 and mk2["final"] == v and mk2["pending"]
+              and "庫存不足" in mk2["reasons"], str(mk2))
+        c.post("/api/shopee/short/save", json={"order_id": mk["order_id"], "short": 0})
+    else:
+        check("（測試資料裡要有能手填缺貨的品項）", False, str([(r["sku"], r["edit"]) for r in rows if r["edit"] == "short"]))
+    lk = [r for r in rows if r["lock"]]
+    check("不能改的寫原因（瑪氏看勇信表、已產出拋單檔、已通知…）", lk and all(r["lock"] in ("瑪氏看勇信表", "已產出拋單檔", "缺商品年限", "已刪除", "不能改") or r["lock"].startswith("已通知")
+          for r in lk), str({r["lock"] for r in lk}))
 
 
 if __name__ == "__main__":
