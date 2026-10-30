@@ -76,7 +76,7 @@
   table.t th.hf-on .hf-b { background:var(--s9); border-color:var(--s9); color:#fff; }
   #hf-pop { position:fixed; z-index:60; width:300px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
   #hf-pop .hf-t { font-weight:700; font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
-  #ff-pop { position:fixed; z-index:60; width:320px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
+  #ff-pop { position:fixed; z-index:70; width:320px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(60,20,10,.18); padding:10px 12px; font-size:13px; }
   #ff-pop .hf-t { font-weight:700; font-size:12.5px; color:var(--ink2); margin-bottom:6px; }
   td.ff-cell { cursor:pointer; } td.ff-cell:hover span { text-decoration:underline; } td.ff-cell .ff-i { font-size:10px; color:var(--muted); }
   .hf-o { display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer; }
@@ -129,9 +129,24 @@
   .st.on { border:2px solid var(--s8); background:var(--s0); padding:8px 11px; box-shadow:0 2px 10px rgba(238,77,45,.14); }
   .nx { display:inline-flex; gap:4px; flex-wrap:wrap; }
   .layout { display:flex; align-items:flex-start; }
-  #side { flex:none; width:540px; position:sticky; top:0; height:100vh; background:#fff; border-left:1px solid var(--line); box-shadow:-8px 0 24px rgba(80,30,10,.08); display:flex; flex-direction:column; z-index:20; }
-  @media (max-width:1180px) { #side { position:fixed; right:0; top:0; width:min(540px,100vw); box-shadow:-10px 0 40px rgba(31,20,16,.25); } }
-  .sd-h { display:flex; align-items:flex-start; gap:10px; padding:14px 16px 10px; border-bottom:1px solid var(--line2); background:var(--s0); }
+  #side { position:fixed; inset:0; z-index:50; background:rgba(40,22,14,.45); display:flex; align-items:flex-start; justify-content:center; padding:18px 14px; }
+  #side.hidden { display:none; }
+  body.side-open { overflow:hidden; }
+  .sd-box { width:min(1420px,100%); max-height:calc(100vh - 36px); background:#fff; border-radius:14px; box-shadow:0 24px 70px rgba(30,12,4,.35); display:flex; flex-direction:column; overflow:hidden; }
+  .sd-h { display:flex; align-items:flex-start; gap:10px; padding:14px 20px 12px; border-bottom:1px solid var(--line2); background:var(--s0); }
+  .sd-f { display:flex; align-items:center; gap:8px; padding:10px 20px; border-top:1px solid var(--line); background:#fff; }
+  .sd-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
+  .sd-facts > div { border:1px solid var(--line2); border-radius:10px; padding:6px 12px; background:#fff; } .sd-facts .k { font-size:11.5px; color:var(--muted); } .sd-facts .v { font-size:14px; font-weight:700; }
+  .sd-facts .ff-cell { cursor:pointer; color:var(--s9); } .sd-facts .ff-cell:hover { text-decoration:underline; }
+  .sd-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:12px; align-items:start; margin-top:12px; } .sd-grid > .sd-sec { margin-top:0; }
+  .it-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:2px 0 8px; }
+  table.it-t td { vertical-align:top; padding:8px 9px; } table.it-t th { padding:7px 9px; position:sticky; top:0; }
+  table.it-t tr.sd-it td { border-top:1px solid var(--line2); }
+  table.it-t tr.sd-it.bad td { background:#fff6f4; } table.it-t tr.sd-it.bad td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
+  table.it-t tr.sd-it.hit td { background:var(--s0); } table.it-t tr.sd-it.hit td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
+  table.it-t tr.sd-it.muted td { color:var(--muted); }
+  table.it-t .big { font-size:15px; font-weight:700; } table.it-t .nm { min-width:220px; max-width:420px; }
+  table.it-t .acts { display:flex; flex-direction:column; gap:4px; align-items:stretch; min-width:118px; }
   .sd-x { background:transparent; border:0; font-size:18px; color:var(--muted); cursor:pointer; padding:2px 4px; } .sd-x:hover { color:var(--ink); }
   .sd-b { flex:1; overflow:auto; padding:12px 16px 24px; }
   .sd-sec { border:1px solid var(--line2); border-radius:10px; margin-top:10px; }
@@ -145,9 +160,9 @@
   .sd-it .r { display:flex; gap:8px; align-items:baseline; }
   .sd-kv { display:flex; flex-wrap:wrap; gap:2px 14px; font-size:12px; color:var(--ink2); margin-top:3px; } .sd-kv b { color:var(--ink); }
   .sd-acts { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-  @media (min-width:1181px) { body.side-open table.t .opt { display:none; } }   /* 右側面板開著：清單只留主要欄位，細節看面板 */
+  /* 2026-10-30 訂單詳細改成中間大視窗，清單不用再為右側面板收欄位 */
   /* 每一欄都有篩選鈕之後（2026-10-20），面板開著時欄距收窄一點，1366 寬也放得下 */
-  @media (min-width:1181px) { body.side-open table.t th, body.side-open table.t td { padding-left:7px; padding-right:7px; } body.side-open .hf-b { margin-left:3px; } }
+
   table.t tr.og.sel td { background:var(--s1); } table.t tr.og.sel td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
   a.lnk { color:var(--s9); text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
   .abar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fdf3f2; border:1px solid #f3d9d6; border-radius:10px; padding:8px 12px; font-size:13px; }
@@ -310,9 +325,15 @@
 </div>
 </main>
 <!-- 右側面板（改版第二次）：點一張單，這張單的全部在這裡看、在這裡改；清單不被蓋住 -->
-<aside id="side" class="hidden" aria-label="訂單詳細">
-  <div class="sd-h"><div id="sd-title" style="flex:1;min-width:0"></div><button class="sd-x" id="sd-close" title="關閉（Esc）" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
-  <div class="sd-b" id="sd-body"></div>
+<!-- 訂單視窗：點清單的一張單，畫面中間打開（Jerry 2026-10-30 跟同事討論後「像酷澎 PO 視窗」，看過示意圖「OK 照這樣做」；以前是右側面板） -->
+<aside id="side" class="hidden" aria-label="訂單詳細" role="dialog" aria-modal="true">
+  <div class="sd-box">
+    <div class="sd-h"><div id="sd-title" style="flex:1;min-width:0"></div><button class="sd-x" id="sd-close" title="關閉（Esc）" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+    <div class="sd-b" id="sd-body"></div>
+    <div class="sd-f"><span class="kbd" style="margin-right:auto">← → 換上一張／下一張（照清單順序）　Esc 關閉</span><span class="kbd" id="sd-pos"></span>
+      <button class="btn btn-o btn-sm" id="sd-prev"><i class="bi bi-chevron-left"></i> 上一張</button><button class="btn btn-o btn-sm" id="sd-next">下一張 <i class="bi bi-chevron-right"></i></button>
+      <button class="btn btn-p btn-sm" id="sd-close2">關閉</button></div>
+  </div>
 </aside>
 </div>
 

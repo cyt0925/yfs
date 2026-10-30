@@ -29,10 +29,11 @@ description: 做新畫面、加功能到既有畫面、或改版之前一定要�
    [GOV.GR tabs](https://guide.services.gov.gr/docs/components/tabs)、[NICE tabs](https://design-system.nice.org.uk/components/tabs/)）
 4. **常用的放前面，偶爾用的收起來。** 價格本、庫存資料、倉資料、收件資料、效期設定這些「參考資料」平常不用看，
    收到「資料與設定」；每天要做的事留在主畫面。（Progressive disclosure，[NN/g](https://www.nngroup.com/articles/progressive-disclosure/)）
-5. **看一筆、改一筆用側邊面板，清單不要被蓋住。** 點一張單，右邊打開那張單的全部（品項、採購單、缺貨、版本、歷程），
-   該改的在那裡改；不要另開頁籤、不要用蓋住整個畫面的大視窗。（[NN/g Data Tables](https://www.nngroup.com/articles/data-tables/)：
-   modal 會擋住旁邊的資料，non-modal 側邊面板可以一邊看表一邊改；[SAP detail panel](https://www.sap.com/design-system/hcm/components/panel/detail-panel-fcl/usage)、
-   [saasui list-detail](https://www.saasui.design/blog/saas-list-detail-master-detail-ux-patterns)）
+5. **看一筆、改一筆：點一張單，畫面中間打開那張單的大視窗，品項一品一列。** 那張單的全部（品項、採購單、缺貨、效期、版本、歷程）在這裡看、在這裡改；
+   不要另開頁籤。視窗裡要有：品項搜尋、篩選（需處理／缺貨）、上一張／下一張（照清單順序，← → 也可以）、Esc 和點外面灰色區域關掉。
+   清單上就地改的東西（勾選、履約方式那格）不要順手打開視窗。
+   （Jerry 2026-10-30：同事討論後要「像酷澎 PO 視窗那樣」。原本照 NN/g 做右側面板，清單不被蓋住，
+   但面板太窄，一個商品擠成一團，改缺貨時很難找、很難看。品項多的單，看清楚每一列比同時看到清單重要。）
 6. **一個入口收所有檔案。** 系統本來就能看表頭認檔案種類，就不要讓人先決定「去哪一頁傳」。拖進來，系統認出是什麼，再問該問的（例如選履約方式）。
 7. **流程可以跳、可以回頭。** 複雜工作系統的使用者會跳步驟、回頭改，不要做成只能一路往下的精靈。
    （[NN/g 8 Design Guidelines for Complex Applications](https://www.nngroup.com/articles/complex-application-design/)）
@@ -54,5 +55,5 @@ description: 做新畫面、加功能到既有畫面、或改版之前一定要�
 
 - 首頁（YFS 訂單系統）「今日事項」：一進來就列出要處理的事，點了直接過去。
 - 酷澎訂單管理系統：一張 PO 一列，點開看明細；酷澎修改用顏色標出來、數字在最上面。
-- 蝦皮特選訂單管理系統（2026-10-13 改版後）：一個上傳入口、作業流程格子（每格寫幾張要做）、點一張單開右側面板（該單的全部在這裡看、在這裡改）。
+- 蝦皮特選訂單管理系統（2026-10-13 改版後）：一個上傳入口、作業流程格子（每格寫幾張要做）、點一張單開中間大視窗（該單的全部在這裡看、在這裡改；2026-10-30 從右側面板改，MOMO 一樣）。
   之後新的訂單系統（例如 PChome）照這個樣子做。

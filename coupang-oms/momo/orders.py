@@ -372,7 +372,7 @@ def api_ship_method():
     finally:
         conn.close()
     if blocked and not changed:
-        return jsonify({"error": f"{'、'.join(blocked)} 已產出 EIP 採購單，請先在右側面板取消產出，再改出貨方式。"}), 400
+        return jsonify({"error": f"{'、'.join(blocked)} 已產出 EIP 採購單，請先在入庫單視窗取消產出，再改出貨方式。"}), 400
     return jsonify({"ok": True, "count": changed, "blocked": blocked})
 
 

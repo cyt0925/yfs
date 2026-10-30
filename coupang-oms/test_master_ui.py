@@ -728,7 +728,11 @@ def main():
             for sku, sup, name, qty in rows:
                 wss.append(["PRTWCOTWA202610019999", None, "TWA", "2026-10-19", sku, sup, name, str(qty), "Pcs", sup.split("_")[0]])
             wbs.save(path)
+        def close_side():                                          # 訂單視窗（2026-10-30 改成中間大視窗）會蓋住清單，點清單前先關
+            if pg.is_visible("#side"):
+                pg.keyboard.press("Escape"); pg.wait_for_selector("#side", state="hidden", timeout=5000)
         def stage(k):
+            close_side()
             pg.click(f"#stages .st[data-s='{k}']"); pg.wait_for_selector(f"#stages .st.on[data-s='{k}']", timeout=10000); pg.wait_for_timeout(700)
         def count(k):
             return int(pg.inner_text(f"#stages .st[data-s='{k}'] .n").replace(",", ""))
@@ -779,15 +783,20 @@ def main():
         row = pg.inner_text("#tbl tr.og >> nth=0")
         check("全部訂單：這張 PR、寶僑、觀音、竹運出貨，下一步「產出拋單檔」，列上沒有一排按鈕", "PRTWCOTWA202610019999" in row and "寶僑" in row and "觀音" in row and "竹運出貨" in row
               and "產出拋單檔" in row and pg.eval_on_selector_all("#tbl tr.og button", "els => els.length") == 0, row[:200])
-        pg.click("#tbl tr.og >> nth=0"); pg.wait_for_selector("#side:not(.hidden) .sd-it", timeout=8000)
-        check("點那一列 → 右側面板打開：品項（包／箱）、改履約方式；清單還在、那一列標起來", "包" in pg.inner_text("#side") and "箱" in pg.inner_text("#side")
-              and "履約方式" in pg.inner_text("#sd-title") and pg.is_visible("#tbl tr.og.sel") and pg.eval_on_selector_all("#tbl tr.sub", "els => els.length") == 0)
+        pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side:not(.hidden) .sd-it", timeout=8000)
+        check("點那一列 → 畫面中間打開訂單視窗（2026-10-30 從右側面板改）：品項一品一列（包／箱）、履約方式、上一張／下一張", "包" in pg.inner_text("#side") and "箱" in pg.inner_text("#side")
+              and "履約方式" in pg.inner_text("#sd-title") and pg.eval_on_selector_all("#sd-items tr.sd-it", "els => els.length") == 2 and pg.is_visible("#sd-next")
+              and pg.eval_on_selector_all("#tbl tr.sub", "els => els.length") == 0)
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        check("Esc 關掉訂單視窗", pg.is_hidden("#side"))
         pg.set_input_files("#file", sp2); pg.wait_for_selector(".pv .ok", timeout=15000)
         check("重傳改過數量 → 預覽紅字列出差異 240 → 200", "跟上一版有 1 處不同" in pg.inner_text(".pv") and "200" in pg.inner_text(".pv"), pg.inner_text(".pv")[:300])
         pg.click(".pv .ok"); pg.wait_for_function("document.querySelectorAll('.pv').length === 0", timeout=10000); pg.wait_for_timeout(800)
         check("匯入後「差異待確認」那格變 1", count("diff") == 1, pg.inner_text("#stages"))
-        pg.wait_for_function("document.querySelector('#side').innerText.includes('處不同')", timeout=10000)
-        check("開著的右側面板跟著更新：紅字列出差異、有「確認差異」", "240 → 200" in pg.inner_text("#side") and pg.is_visible("#side .sd-dconf"), pg.inner_text("#side")[:300])
+        pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_function("document.querySelector('#side').innerText.includes('處不同')", timeout=10000)
+        check("打開那張：紅字列出差異、有「確認差異」、那品標差異待確認", "240 → 200" in pg.inner_text("#side") and pg.is_visible("#side .sd-dconf")
+              and "差異待確認" in pg.inner_text("#sd-items"), pg.inner_text("#side")[:300])
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         stage("diff")
         check("點「差異待確認」：只列這張、列上直接有「確認差異」", pg.eval_on_selector_all("#tbl tr.og", "els => els.length") == 1 and pg.is_visible("#tbl tr.og button.dd"))
         pg.click("#tbl tr.og button.dd"); pg.wait_for_selector("#dd-body table", timeout=8000)
@@ -796,39 +805,40 @@ def main():
         # 批次確認差異（Alice 2026-10-21「用批次點選的方式確認，不要一張一張點」；Jerry：差異待確認也一起做）
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
         pg.click("#tbl tr.og input.a-ck >> nth=0"); pg.wait_for_selector("#a-bar .bb-confirm", timeout=5000)
-        check("勾選那張 → 下面出現批次列：履約方式改成…、「勾選的一起確認差異」；右側卡片跟著切到那張", "履約方式改成" in pg.inner_text("#a-bar") and "一起確認差異" in pg.inner_text("#a-bar")
-              and pg.is_visible("#side") and "PRTWCOTWA202610019999" in pg.inner_text("#sd-title"), pg.inner_text("#a-bar"))
+        check("勾選那張 → 下面出現批次列：履約方式改成…、「勾選的一起確認差異」；勾選不會跳出訂單視窗（才能繼續勾）", "履約方式改成" in pg.inner_text("#a-bar") and "一起確認差異" in pg.inner_text("#a-bar")
+              and pg.is_hidden("#side"), pg.inner_text("#a-bar"))
         pg.click("#a-bar .bb-confirm"); pg.wait_for_timeout(1000)
         check("按「勾選的一起確認差異」→ 那格回到 0、清單沒有了", count("diff") == 0 and "這一步目前沒有要處理的訂單" in pg.inner_text("#tbl"), pg.inner_text("#stages"))
-        stage("all"); pg.click("#tbl tr.og >> nth=0"); pg.wait_for_selector("#side:not(.hidden)", timeout=8000)
+        stage("all"); pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side:not(.hidden)", timeout=8000)
         pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('履約方式')", timeout=10000)   # CI 比較慢：等卡片資料讀完再看
-        check("右側卡片沒有「修改履約方式」鈕了，改在清單那一格", pg.query_selector("#side .sd-ff") is None and "在清單那一格點一下可改" in pg.inner_text("#sd-title"), pg.inner_text("#sd-title"))
-        pg.click("#tbl tr.og .ff-cell >> nth=0"); pg.wait_for_selector("#ff-pop", timeout=5000)
-        check("點清單的履約方式那一格 → 跳三個選項、不用原因", pg.eval_on_selector_all("#ff-pop .ff-opt", "els => els.length") == 3 and "不用填原因" in pg.inner_text("#ff-pop"))
+        check("訂單視窗的履約方式那格寫「點一下可改」", pg.query_selector("#side .sd-ff") is None and "點一下可改" in pg.inner_text("#sd-title"), pg.inner_text("#sd-title"))
+        pg.click("#side .ff-cell"); pg.wait_for_selector("#ff-pop", timeout=5000)
+        check("點視窗裡的履約方式 → 跳三個選項、不用原因（選單蓋在視窗上面）", pg.eval_on_selector_all("#ff-pop .ff-opt", "els => els.length") == 3 and "不用填原因" in pg.inner_text("#ff-pop"))
         pg.click("#ff-pop .ff-opt[data-f='供應商直送']")
         pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('供應商直送')", timeout=10000); pg.wait_for_timeout(300)
         row = pg.inner_text("#tbl tr.og >> nth=0")
         check("改履約方式 → 面板寫供應商直送、下一步「產出 EIP 採購單」、待產拋單檔 0、待產採購單 1", "產出 EIP 採購單" in row
               and count("ship") == 0 and count("buy") == 1, row[:200])
         pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
-        check("按 Esc 關掉右側面板、欄位回來", pg.is_hidden("#side") and "供應商直送" in pg.inner_text("#tbl tr.og >> nth=0"))
+        check("按 Esc 關掉訂單視窗、清單那張也是供應商直送", pg.is_hidden("#side") and "供應商直送" in pg.inner_text("#tbl tr.og >> nth=0"))
+        pg.click("#tbl tr.og .ff-cell >> nth=0"); pg.wait_for_selector("#ff-pop", timeout=5000)
+        check("清單上的履約方式那格一樣可以點（不會開訂單視窗）", pg.eval_on_selector_all("#ff-pop .ff-opt", "els => els.length") == 3 and pg.is_hidden("#side"))
+        pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
         # 批次改履約方式、不用原因（Alice 2026-10-21）：改成竹運出貨再改回供應商直送，後面的段落照舊
         pg.click("#tbl tr.og input.a-ck >> nth=0"); pg.wait_for_selector("#a-bar .bb-apply", timeout=5000)
-        check("全部訂單勾一張 → 批次列、套用鈕要先選履約方式；卡片跟著開", pg.is_disabled("#a-bar .bb-apply") and "已勾選 1 張" in pg.inner_text("#a-bar").replace("\n", " ") and pg.is_visible("#side"), pg.inner_text("#a-bar"))
+        check("全部訂單勾一張 → 批次列、套用鈕要先選履約方式；訂單視窗不開", pg.is_disabled("#a-bar .bb-apply") and "已勾選 1 張" in pg.inner_text("#a-bar").replace("\n", " ") and pg.is_hidden("#side"), pg.inner_text("#a-bar"))
         pg.click("#a-bar .bb-ff[data-f='竹運出貨']"); pg.click("#a-bar .bb-apply")
         pg.wait_for_function("document.querySelector('#tbl tr.og').innerText.includes('竹運出貨')", timeout=10000); pg.wait_for_timeout(300)
         check("選竹運出貨、套用（沒填原因）→ 那張改成竹運出貨、勾選清掉、待產拋單檔 1", "竹運出貨" in pg.inner_text("#tbl tr.og >> nth=0") and pg.is_hidden("#a-bar") and count("ship") == 1, pg.inner_text("#stages"))
         pg.click("#tbl tr.og input.a-ck >> nth=0"); pg.wait_for_selector("#a-bar .bb-apply", timeout=5000); pg.click("#a-bar .bb-ff[data-f='供應商直送']"); pg.click("#a-bar .bb-apply")
         pg.wait_for_function("document.querySelector('#tbl tr.og').innerText.includes('供應商直送')", timeout=10000); pg.wait_for_timeout(300)
         check("再批次改回供應商直送", "供應商直送" in pg.inner_text("#tbl tr.og >> nth=0") and count("buy") == 1)
-        # 卡片跟著步驟走（Jerry 2026-10-21「從待產拋單檔按到待通知蝦皮，右邊卡片還停在舊的訂單」）
-        pg.click("#tbl tr.og >> nth=0"); pg.wait_for_selector("#side:not(.hidden) .sd-sec", timeout=8000)
-        stage("ship"); pg.wait_for_timeout(800)
-        check("卡片開著切到「待產拋單檔」（這張不在、清單空）→ 卡片關掉", pg.is_hidden("#side"), pg.inner_text("#stages"))
-        stage("buy"); pg.wait_for_selector("#b-tbl tr.og", timeout=10000); pg.click("#b-tbl tr.og >> nth=0"); pg.wait_for_selector("#side:not(.hidden) .sd-sec", timeout=8000)
-        stage("all"); pg.wait_for_selector("#tbl tr.og", timeout=10000); pg.wait_for_timeout(500)
-        check("切到「全部訂單」（這張還在）→ 卡片留著同一張", pg.is_visible("#side") and "PRTWCOTWA202610019999" in pg.inner_text("#sd-title"))
-        pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+        # 訂單視窗：上一張／下一張照清單順序；點視窗外面也關
+        stage("buy"); pg.wait_for_selector("#b-tbl tr.og", timeout=10000); pg.click("#b-tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side:not(.hidden) .sd-sec", timeout=8000)
+        check("待產採購單打開一張：寫第 1／1 張、上一張下一張都按不了", "第 1／1 張" in pg.inner_text("#sd-pos") and pg.is_disabled("#sd-prev") and pg.is_disabled("#sd-next"), pg.inner_text("#sd-pos"))
+        pg.mouse.click(5, 300); pg.wait_for_timeout(300)
+        check("點視窗外面的灰色區域 → 關掉", pg.is_hidden("#side"))
+        stage("all"); pg.wait_for_selector("#tbl tr.og", timeout=10000)
         pg.fill("#f-from", "2027-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_selector("#tbl .clr-f", timeout=8000)
         check("到貨日篩掉全部：清單寫「系統共有 1 張，到貨日 10/19～10/19」，有「清除篩選」", "系統共有 1 張" in pg.inner_text("#tbl")
               and "10/19～10/19" in pg.inner_text("#tbl"), pg.inner_text("#tbl")[:200])
@@ -879,12 +889,15 @@ def main():
         pg.click("#b-sum .hf-q"); pg.wait_for_timeout(300)
         check("再點一次 → 取消篩選", pg.query_selector("#b-tbl thead th.hf-on") is None and "篩選後" not in pg.inner_text("#b-sum"), pg.inner_text("#b-sum"))
         pg.click("#b-tbl tr.og .blk-i"); pg.wait_for_selector("#side:not(.hidden) .prob", timeout=8000)
-        check("點紅色驚嘆號 → 右側打開，列出每一品的原因，品項標題寫「2 項需處理，排在最前面」", "價格本找不到" in pg.inner_text("#side")
-              and "2 項需處理，排在最前面" in pg.inner_text("#side .sd-sec .h >> nth=0"), pg.inner_text("#side")[:300])
+        check("點紅色驚嘆號 → 訂單視窗打開，需處理的品項標紅排最前面、原因寫在品名下面，標題寫「2 項需處理，排在最前面」", "價格本找不到" in pg.inner_text("#side")
+              and "2 項需處理，排在最前面" in pg.inner_text("#side .sd-sec .h >> nth=0") and pg.eval_on_selector_all("#sd-items tr.sd-it.bad", "els => els.length") == 2, pg.inner_text("#side")[:300])
+        pg.click("#side .sd-fl[data-f='bad']"); pg.wait_for_timeout(200)
+        check("視窗裡按「需處理 2」→ 只剩那 2 品", pg.eval_on_selector_all("#sd-items tr.sd-it", "els => els.length") == 2 and "顯示 2 品" in pg.inner_text("#sd-found"))
+        pg.click("#side .sd-fl[data-f='all']"); pg.wait_for_timeout(200)
         pg.set_input_files("#file", spp); pg.wait_for_function("document.querySelector('#fresh').innerText.includes('寶僑價格本 ')", timeout=10000); pg.wait_for_timeout(800)
-        check("同一個上傳入口丟價格本 → 自己認出來、提示已更新", "價格本已更新" in pg.inner_text("#toasts"), pg.inner_text("#toasts"))
-        pg.click("#b-tbl tr.og >> nth=0"); pg.wait_for_selector("#side .sd-adj", timeout=8000)
-        check("點這張 → 右側看到 200 包除以轉換率 3 除不盡的原因和「修改數量」", "除不盡" in pg.inner_text("#side") and pg.is_visible("#side .sd-adj"), pg.inner_text("#side")[:300])
+        check("同一個上傳入口丟價格本（視窗開著也能丟）→ 自己認出來、提示已更新", "價格本已更新" in pg.inner_text("#toasts"), pg.inner_text("#toasts"))
+        pg.wait_for_selector("#side .sd-adj", timeout=8000)
+        check("開著的視窗跟著更新：200 包除以轉換率 3 除不盡的原因和「修改數量」", "除不盡" in pg.inner_text("#side") and pg.is_visible("#side .sd-adj"), pg.inner_text("#side")[:300])
         pg.click("#side .sd-adj"); pg.wait_for_selector("#dlg-adj[open]", timeout=5000)
         check("修改數量視窗：原始數量、轉換率、計算結果、餘數，快速填入 198／201", all(w in pg.inner_text("#da-facts") for w in ("200", "轉換率", "66.67", "餘數"))
               and "198" in pg.inner_text("#da-down") and "201" in pg.inner_text("#da-up"), pg.inner_text("#da-facts"))
@@ -892,8 +905,9 @@ def main():
         check("沒寫原因不能存（視窗還開著）", pg.is_visible("#dlg-adj"))
         pg.fill("#da-reason", "與業務確認改為整箱"); pg.click("#da-save"); pg.wait_for_selector("#dlg-adj[open]", state="detached", timeout=5000)
         pg.wait_for_function("document.querySelector('#side').innerText.includes('已修改')", timeout=10000); pg.wait_for_timeout(300)
-        check("存好後：清單變可產出、右側下採 198 已修改、EIP 66 箱、出現「產出這張單的 EIP 採購單」", "可產出" in pg.inner_text("#b-tbl tr.og >> nth=0") and "198" in pg.inner_text("#side")
-              and "EIP 採購數量 66 箱" in pg.inner_text("#side") and pg.is_visible("#side .sd-regen"), pg.inner_text("#side")[:400])
+        check("存好後：清單變可產出、視窗裡下採 198 已修改、EIP 數量 66 箱、出現「產出這張單的 EIP 採購單」", "可產出" in pg.inner_text("#b-tbl tr.og >> nth=0") and "198" in pg.inner_text("#side")
+              and "66 箱" in pg.inner_text("#sd-items") and pg.is_visible("#side .sd-regen"), pg.inner_text("#side")[:400])
+        close_side()
         pg.click("#b-all")
         with pg.expect_download(timeout=15000) as dl:
             pg.click("#b-go")
@@ -946,7 +960,7 @@ def main():
         check("待產拋單檔：沒有竹運出貨的單時寫提示", "這一步目前沒有要處理的訂單" in pg.inner_text("#z-tbl"), pg.inner_text("#z-tbl")[:100])
 
         print("\n【6e-4】寶僑填缺貨（全部訂單點開那張）→ 待通知蝦皮 → 產 LINE 通知")
-        stage("all"); pg.click("#tbl tr.og >> nth=0"); pg.wait_for_selector("#side .sd-short", timeout=8000)
+        stage("all"); pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side .sd-short", timeout=8000)
         pg.click("#side .sd-short >> nth=0"); pg.wait_for_selector("#dlg-short[open]", timeout=5000)
         check("填缺貨視窗：第 1 次下修、這次之前可出貨量、預設勾庫存不足", "第 1 次下修" in pg.inner_text("#dk-round") and pg.is_checked(".dk-r[value='庫存不足']"))
         pg.fill("#dk-short", "6"); pg.dispatch_event("#dk-short", "input")
@@ -1044,20 +1058,20 @@ def main():
         pg.click("#hf-pop .hf-ok"); pg.wait_for_timeout(300)
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og[data-k='POTWCTWA26102099M']", timeout=10000); stage("all"); pg.wait_for_selector("#tbl tr.og", timeout=10000)
         check("換一步再回來，表頭篩選清掉（只管目前這一步）", pg.eval_on_selector_all("#tbl tr.og", "els => els.length") == n_all and pg.query_selector("#tbl thead th.hf-on") is None)
-        # 右側面板跟著左邊動（Jerry 2026-10-20）：搜一個料號 → 面板裡那一品排最前面並標起來；開著的單被篩掉 → 面板換成清單第一張
-        pg.click("#tbl tr.og[data-k='POTWCTWA26102099M']"); pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('POTWCTWA26102099M')", timeout=10000)
+        # 訂單視窗裡的品項搜尋（2026-10-30）：打料號只留那幾品並標起來；上面清單的搜尋框有字，打開時帶進來
         pg.fill("#f-q", "4987176232878_CNN"); pg.press("#f-q", "Enter"); pg.wait_for_timeout(1500)
-        side_no = pg.inner_text("#sd-title").split("\n")[0].strip()
-        hit_first = pg.eval_on_selector_all("#side .sd-it", "els => els.length > 0 && els[0].classList.contains('hit') && els[0].innerText.includes('4987176232878_CNN')")
-        check("搜料號 4987176232878_CNN → 瑪氏那張被篩掉，面板換成清單第一張；面板裡符合的那品排最前面、標起來、標題寫「符合…排在最前面」",
-              side_no != "POTWCTWA26102099M" and hit_first and "排在最前面" in pg.inner_text("#side .sd-sec .h >> nth=0"), f"{side_no} / {pg.inner_text('#side .sd-sec .h >> nth=0')}")
-        pg.fill("#f-q", ""); pg.press("#f-q", "Enter"); pg.wait_for_timeout(1200)
-        check("清掉搜尋 → 面板還開著、不再標", pg.query_selector("#side:not(.hidden)") is not None and pg.query_selector("#side .sd-it.hit") is None)
+        pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side:not(.hidden) #sd-items tr.sd-it", timeout=10000)
+        hit_all = pg.eval_on_selector_all("#sd-items tr.sd-it", "els => els.length > 0 && els.every(e => e.classList.contains('hit') && e.innerText.includes('4987176232878_CNN'))")
+        check("清單搜料號 4987176232878_CNN 再打開一張 → 視窗的品項搜尋帶進同一個字，只剩符合的品項、標起來、寫找到幾品",
+              pg.input_value("#sd-q") == "4987176232878_CNN" and hit_all and "找到" in pg.inner_text("#sd-found"), pg.inner_text("#sd-found"))
+        pg.fill("#sd-q", ""); pg.wait_for_timeout(300)
+        check("清掉視窗裡的搜尋 → 品項全部回來、不再標", pg.query_selector("#side .sd-it.hit") is None and pg.eval_on_selector_all("#sd-items tr.sd-it", "els => els.length") > 1)
+        close_side(); pg.fill("#f-q", ""); pg.press("#f-q", "Enter"); pg.wait_for_timeout(1200)
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og[data-k='POTWCTWA26102099M']", timeout=10000)
-        pg.click("#k-tbl tr.og[data-k='POTWCTWA26102099M']")
+        pg.click("#k-tbl tr.og[data-k='POTWCTWA26102099M'] .fn")
         pg.wait_for_function("document.querySelector('#sd-title').innerText.includes('POTWCTWA26102099M') && document.querySelectorAll('#side .sd-it').length > 0", timeout=10000)
         side = pg.inner_text("#side")
-        check("右側面板：下修紀錄來源勇信核對、沒有填缺貨按鈕（寫依勇信配送明細表核對）、可直接產這張單的通知", "勇信核對" in side and "瑪氏的缺貨依勇信配送明細表核對" in side and side.count("勇信配送明細表核對") == 1
+        check("訂單視窗：下修紀錄來源勇信核對、沒有填缺貨按鈕（寫依勇信配送明細表核對）、可直接產這張單的通知", "勇信核對" in side and "瑪氏的缺貨依勇信配送明細表核對" in side and side.count("勇信配送明細表核對") == 1
               and pg.query_selector("#side .sd-short") is None and pg.is_visible("#side .sd-notify"), side[:400])
         print("\n【6e-6】瑪氏新品不在商品總表：面板按「補商品資料」直接補，不用改 Excel、不用到瑪氏出貨頁")
         wbm = openpyxl.Workbook(); wsm = wbm.active; wsm.append(hdr)
@@ -1069,7 +1083,7 @@ def main():
         pg.fill("#f-from", "2026-01-01"); pg.dispatch_event("#f-from", "change"); pg.wait_for_timeout(500)   # 重新整理後到貨日回到預設「今天往前 7 天」，假單 10/21 會被篩掉（2026-10-29 CI 紅燈）
         stage("buy"); pg.wait_for_selector("#b-tbl tr.og[data-k='POTWCTWA26102198N']", timeout=10000)
         check("待產採購單：這張寫「瑪氏商品總表找不到 1 項」", "瑪氏商品總表找不到 1 項" in pg.inner_text("#b-tbl tr.og[data-k='POTWCTWA26102198N']"))
-        pg.click("#b-tbl tr.og[data-k='POTWCTWA26102198N']"); pg.wait_for_selector("#side .sd-mp", timeout=10000)
+        pg.click("#b-tbl tr.og[data-k='POTWCTWA26102198N'] .fn"); pg.wait_for_selector("#side .sd-mp", timeout=10000)
         check("右側那品：寫「請按「補商品資料」填寫」、有「補商品資料」按鈕", "請按「補商品資料」填寫" in pg.inner_text("#side") and pg.is_visible("#side .sd-mp"))
         pg.click("#side .sd-mp"); pg.wait_for_selector("#dlg-mp[open]", timeout=5000)
         check("補商品資料視窗：料號、單位盒、蝦皮品名、三個品類可選", "M69990002" in pg.inner_text("#dm-facts") and "盒" in pg.inner_text("#dm-facts")
@@ -1207,10 +1221,13 @@ def main():
         check("再勾紙品：兩個都勾著（瑪氏、紙品）", "瑪氏、紙品" in pg.inner_text("#pk-line [data-pk]") and pg.locator("#tbl tr.og").count() == 2)
         pg.uncheck("#pk-line .pick-pop input[value='紙品']")
         pg.uncheck("#pk-line .pick-pop input[value='瑪氏']"); pg.click("body", position={"x": 5, "y": 5}); pg.wait_for_timeout(600)
-        pg.click("#tbl tr.og[data-no='26109999-0002']"); pg.wait_for_selector("#sd-body .sd-sec", timeout=10000)
-        check("點一張入庫單 → 右側面板：出貨方式、品項與下採（200 包 ÷ 200 ＝ 1 箱）、倉別資料", "品項與下採" in pg.inner_text("#sd-body") and "下採 1 箱" in pg.inner_text("#sd-body")
-              and "台南市新市區" in pg.inner_text("#sd-body"), pg.inner_text("#sd-body")[:400])
-        pg.click("#sd-close")
+        pg.click("#tbl tr.og[data-no='26109999-0002']"); pg.wait_for_selector("#side:not(.hidden) #sd-items tr.sd-it", timeout=10000)
+        check("點一張入庫單 → 畫面中間打開入庫單視窗（2026-10-30 從右側面板改）：出貨方式、品項一品一列（200 包 ÷ 200 ＝ 1 箱）、倉別資料、上一張／下一張",
+              "出貨方式" in pg.inner_text("#sd-title") and "品項與下採" in pg.inner_text("#sd-body") and "1 箱" in pg.inner_text("#sd-items")
+              and "台南市新市區" in pg.inner_text("#sd-body") and "／2 張" in pg.inner_text("#sd-pos"), pg.inner_text("#side")[:400])
+        p0 = pg.inner_text("#sd-pos"); pg.click("#sd-next" if "第 1" in p0 else "#sd-prev"); pg.wait_for_timeout(800)
+        check("按下一張（或上一張）→ 換成另一張入庫單", "26109999-0002" not in pg.inner_text("#sd-title") and pg.inner_text("#sd-pos") != p0, pg.inner_text("#sd-title")[:100])
+        pg.keyboard.press("Escape"); pg.wait_for_selector("#side", state="hidden", timeout=5000)
         pg.check("#ck-all")
         with pg.expect_download(timeout=15000) as dlm:
             pg.click("#b-go")
@@ -1249,14 +1266,18 @@ def main():
         no0 = ords[0]["inbound_no"]
         check("丟勇信 PDF → 上傳區列出核對結果、跳到「待核缺貨與效期」、那張單已核對", no0 in pg.inner_text(".pv") and "已核對" in pg.inner_text(f"#tbl tr.og[data-no='{no0}']"),
               pg.inner_text(".pv")[:300])
-        pg.click(f"#tbl tr.og[data-no='{no0}']"); pg.wait_for_selector("#sd-body .ck-t", timeout=10000)
-        ntie = pg.locator("#sd-body [data-pick]").count()
-        check("右側 ③：兩批數量一樣的標「要決定」、效期可以點", ntie >= 2 and "要決定" in pg.inner_text("#sd-body .ck-t"), pg.inner_text("#sd-body .ck-t")[:300])
+        pg.click(f"#tbl tr.og[data-no='{no0}']"); pg.wait_for_selector("#sd-items th:has-text('③ 結果')", timeout=10000)
+        ntie = pg.locator("#sd-items [data-pick]").count()
+        check("入庫單視窗：下採和 ③ 在同一列，兩批數量一樣的標「要決定」、排在最前面、效期可以點", ntie >= 2 and "要決定" in pg.inner_text("#sd-items")
+              and "ask" in (pg.get_attribute("#sd-items tr.sd-it >> nth=0", "class") or ""), pg.inner_text("#sd-items")[:300])
+        pg.fill("#sd-q", ords[0]["factory_code"]); pg.wait_for_timeout(300)
+        check("視窗裡搜尋原廠編號 → 只剩那品、寫「找到 1 品」", pg.locator("#sd-items tr.sd-it").count() == 1 and "找到 1 品" in pg.inner_text("#sd-found"), pg.inner_text("#sd-found"))
+        pg.fill("#sd-q", ""); pg.wait_for_timeout(300)
         for _ in range(10):                                # 選過的列效期還能再點（可以改），所以只點還在「要決定」的列；最多 10 次
-            if not pg.locator("#sd-body tr.ask [data-pick]").count():
+            if not pg.locator("#sd-items tr.ask [data-pick]").count():
                 break
-            pg.click("#sd-body tr.ask [data-pick] >> nth=0"); pg.wait_for_timeout(900)
-        check("點一批的效期 → 寫入效期、不用再決定", "要決定" not in pg.inner_text("#sd-body .ck-t") and "寫入效期" in pg.inner_text("#sd-body .ck-t"), pg.inner_text("#sd-body .ck-t")[:300])
+            pg.click("#sd-items tr.ask [data-pick] >> nth=0"); pg.wait_for_timeout(900)
+        check("點一批的效期 → 寫入效期、不用再決定", "要決定" not in pg.inner_text("#sd-items") and "寫入效期" in pg.inner_text("#sd-items"), pg.inner_text("#sd-items")[:300])
         xh = ["倉別", "入庫單號", "入庫預定日期", "商品編號", "商品名稱", "單品編號", "商品有效日期", "入庫最低有效期限", "採購數量", "商品原廠編號"]
         wbx = openpyxl.Workbook(); wsx = wbx.active; wsx.append(xh)
         for j, o_ in enumerate(ords):
@@ -1266,7 +1287,7 @@ def main():
         with pg.expect_download(timeout=15000) as dlx:
             pg.set_input_files("#ck-file", xfp)
         wsd = openpyxl.load_workbook(io.BytesIO(open(dlx.value.path(), "rb").read())).active
-        check("右側按「下載填好效期的匯入檔」選檔 → 下載 _已填效期、商品有效日期填好", dlx.value.suggested_filename == "UnsendList_效期_已填效期.xlsx"
+        check("視窗裡按「下載填好效期的匯入檔」選檔 → 下載 _已填效期、商品有效日期填好", dlx.value.suggested_filename == "UnsendList_效期_已填效期.xlsx"
               and wsd.cell(2, 7).value == "2028/02/08", f"{dlx.value.suggested_filename} {wsd.cell(2, 7).value}")
         pg.wait_for_timeout(800)
         rowx = pg.locator(f"#tbl tr.og[data-no='{no0}']")

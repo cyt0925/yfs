@@ -362,12 +362,10 @@ function setStage(k) {
   renderStages(); loadStage();
   followSide();
 }
-/* 右側卡片跟著清單走（Jerry 2026-10-21「從待產拋單檔按到待通知蝦皮，右邊卡片還停在待產拋單檔的訂單」）：
-   卡片那張單不在這一步的清單裡，就換成這一步的第一張；清單空了就關掉 */
+/* 訂單視窗（2026-10-30 從右側面板改成中間大視窗）開著時清單更新：那張單還在就留著重畫，不見了（被清掉、被篩掉）才關。
+   以前右側面板會跟著清單換成第一張（10/21），大視窗蓋住清單，自己換單會讓人不知道在看哪張，所以改成不換，要換用「上一張／下一張」。 */
 function followSide() {
-  if (!SIDE_NO) return;
-  if (ORD.has(SIDE_NO) && inStage(SIDE_NO)) return;
-  const first = firstInStage(); if (first) openSide(first); else closeSide();
+  if (SIDE_NO && !ORD.has(SIDE_NO)) closeSide();
 }
 async function loadStage() {
   const d = SDEF[STAGE];
@@ -394,12 +392,8 @@ async function refresh() {
   renderStages();
   const pane = loadStage();
   if (STAGE === "ship") await pane;      // 待產拋單檔：等清單算好，面板直接拿來用；其他步驟清單和面板同時更新，不互等
-  // 右側面板跟著左邊動（Jerry 2026-10-20「我左邊在操作的時候右邊要跟著動啦」）：開著的那張還在清單裡就重畫（搜尋到的品項排最前面）；
-  // 被篩掉了就換成清單第一張；清單空了就關掉；搜尋只剩一張就直接打開
-  const q = $("#f-q").value.trim();
-  if (SIDE_NO && !(ORD.has(SIDE_NO) && inStage(SIDE_NO))) followSide();   // 被篩掉、或做完事離開這一步了 → 換成這一步的第一張
-  else if (SIDE_NO) openSide(SIDE_NO);       // 做完事，右側面板也換成最新的
-  else if (q && VIEW.orders.filter(g => inStage(g.order_no)).length === 1) openSide(firstInStage());
+  // 訂單視窗開著（在視窗裡做完事）：同一張重畫成最新的；那張不見了才關
+  if (SIDE_NO && ORD.has(SIDE_NO)) openSide(SIDE_NO); else followSide();
 }
 
 /* ── 差異待確認／全部訂單：一張單一列，點開看品項與操作 ─────── */
@@ -433,7 +427,7 @@ function render() {
   if (!list.length) h += all.length ? hfEmpty(13) : emptyRow(13);
   $("#tbl").innerHTML = h + "</tbody>";
   $$("#tbl tr.og").forEach(tr => tr.addEventListener("click", e => { if (e.target.closest("button, a, input, .go-st, .ff-cell")) return; openSide(tr.dataset.k); }));
-  $$("#tbl button.dd").forEach(b => b.addEventListener("click", () => { LAST_K = b.dataset.k; openSide(b.dataset.k); openDiff(b.dataset.k); }));
+  $$("#tbl button.dd").forEach(b => b.addEventListener("click", () => { LAST_K = b.dataset.k; openDiff(b.dataset.k); }));
   $$("#tbl .go-st").forEach(b => b.addEventListener("click", () => setStage(b.dataset.s)));
   $$("#tbl input.a-ck").forEach(c => c.addEventListener("change", () => tick(c, ASEL, render)));
   const aa = $("#a-all"); if (aa) aa.addEventListener("change", () => { list.forEach(g => aa.checked ? ASEL.add(g.order_no) : ASEL.delete(g.order_no)); render(); });
@@ -461,10 +455,10 @@ function ffOpen(cell) {
     try {
       const f = c.dataset.f, chk = await ffCheck([k], f); if (!chk) return;
       const d = await post("/api/shopee/fulfil", { order_nos: [k], fulfil: f });
-      ffToast(d, f, chk, k); SIDE_NO = k; refresh();
+      ffToast(d, f, chk, k); refresh();          // 視窗開著的話 refresh 會重畫同一張
     } catch (err) { toast(err.message, "err"); }
   }));
-  LAST_K = k; openSide(k);
+  LAST_K = k;
 }
 document.addEventListener("click", e => {
   const c = e.target.closest(".ff-cell");
@@ -522,7 +516,7 @@ function ffToast(r, f, chk, k) {
     + (reup ? "如果已經上傳到蝦皮 EIP，記得重新上傳。" : "");
   toast(msg, r.handled.length ? "warn" : "");
 }
-const tick = (c, sel, redraw) => { const k = c.dataset.k; if (c.checked) { sel.add(k); LAST_K = k; openSide(k); } else sel.delete(k); redraw(); };
+const tick = (c, sel, redraw) => { const k = c.dataset.k; if (c.checked) { sel.add(k); LAST_K = k; } else sel.delete(k); redraw(); };   // 勾選不開視窗（會擋住清單，Jerry 2026-10-30 改成中間大視窗）
 function renderBatchBar(barSel, sel, redraw) {
   const bar = $(barSel), n = sel.size;
   bar.classList.toggle("hidden", !n);
@@ -538,12 +532,12 @@ function renderBatchBar(barSel, sel, redraw) {
     try {
       const f = BB_FF, chk = await ffCheck(nos, f); if (!chk) return;
       const r = await post("/api/shopee/fulfil", { order_nos: nos, fulfil: f, reason: BB_REASON.trim() });
-      ffToast(r, f, chk, nos.length === 1 ? nos[0] : ""); sel.clear(); BB_FF = ""; BB_REASON = ""; if (LAST_K) SIDE_NO = LAST_K; refresh();
+      ffToast(r, f, chk, nos.length === 1 ? nos[0] : ""); sel.clear(); BB_FF = ""; BB_REASON = ""; refresh();
     } catch (err) { toast(err.message, "err"); }
   });
   const bc = bar.querySelector(".bb-confirm"); if (bc) bc.addEventListener("click", async () => {
     const nos = [...sel]; if (!nos.length) return;
-    try { const r = await post("/api/shopee/diffs/confirm", { order_nos: nos }); toast(`已確認 ${r.confirmed} 張的差異`); sel.clear(); if (LAST_K) SIDE_NO = LAST_K; refresh(); }
+    try { const r = await post("/api/shopee/diffs/confirm", { order_nos: nos }); toast(`已確認 ${r.confirmed} 張的差異`); sel.clear(); refresh(); }
     catch (err) { toast(err.message, "err"); }
   });
   bar.querySelector(".bb-clear").addEventListener("click", e => { e.preventDefault(); sel.clear(); redraw(); });
@@ -1217,16 +1211,31 @@ $("#nm-save").addEventListener("click", async () => {
 });
 async function loadNotifyMail() { try { NM_TO = (await api("/api/shopee/notify_mail")).to || ""; $("#nm-to").value = NM_TO; } catch (e) { /* 讀不到就空著 */ } }
 
-/* ── 右側面板：一張單的全部（改版第二次） ─────────────────────── */
-let SIDE = null, SIDE_NO = "";
-$("#sd-close").addEventListener("click", closeSide);
-document.addEventListener("keydown", e => { if (e.key === "Escape" && SIDE_NO && !document.querySelector("dialog[open]")) closeSide(); });
+/* ── 訂單視窗：一張單的全部（2026-10-30 從右側面板改成畫面中間的大視窗，像酷澎 PO 視窗；品項一品一列） ── */
+let SIDE = null, SIDE_NO = "", SDQ = "", SDF = "all";
+$("#sd-close").addEventListener("click", closeSide); $("#sd-close2").addEventListener("click", closeSide);
+$("#side").addEventListener("mousedown", e => { if (e.target.id === "side") closeSide(); });          // 點視窗外面的灰色區域也關
+document.addEventListener("keydown", e => {
+  if (!SIDE_NO || document.querySelector("dialog[open]") || FF_POP) return;
+  if (e.key === "Escape") closeSide();
+  else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && !e.target.closest("input, textarea, select")) { e.preventDefault(); sideStep(e.key === "ArrowLeft" ? -1 : 1); }
+});
+$("#sd-prev").addEventListener("click", () => sideStep(-1)); $("#sd-next").addEventListener("click", () => sideStep(1));
+/* 上一張／下一張：照目前這一步清單上看得到的順序（篩過、排過的） */
+const sideList = () => [...new Set($$("table.t tr.og[data-k]").filter(tr => tr.offsetParent !== null).map(tr => tr.dataset.k))];
+function sideStep(dir) { const l = sideList(), i = l.indexOf(SIDE_NO); if (i < 0 || !l[i + dir]) return; openSide(l[i + dir]); }
+function sideNav() {
+  const l = sideList(), i = l.indexOf(SIDE_NO);
+  $("#sd-prev").disabled = i <= 0; $("#sd-next").disabled = i < 0 || i >= l.length - 1;
+  $("#sd-pos").textContent = i >= 0 ? `第 ${i + 1}／${l.length} 張` : "";
+}
 function markSel() { $$("table.t tr.og[data-k]").forEach(tr => tr.classList.toggle("sel", !!SIDE_NO && tr.dataset.k === SIDE_NO)); }
 function closeSide() { SIDE = null; SIDE_NO = ""; $("#side").classList.add("hidden"); document.body.classList.remove("side-open"); markSel(); }
 async function openSide(no) {
   const again = SIDE_NO === no && SIDE;
-  SIDE_NO = no; $("#side").classList.remove("hidden"); document.body.classList.add("side-open"); markSel();
-  if (!again) { $("#sd-title").innerHTML = `<b class="fn" style="font-size:15px;color:var(--ink)">${esc(no)}</b>`; $("#sd-body").innerHTML = `<div class="kbd" style="padding:12px 0">讀取中…</div>`; }
+  if (!again) { SDQ = $("#f-q").value.trim(); SDF = "all"; }      // 換一張單：品項搜尋帶上面搜尋框的字，篩選回到全部
+  SIDE_NO = no; $("#side").classList.remove("hidden"); document.body.classList.add("side-open"); markSel(); sideNav();
+  if (!again) { $("#sd-title").innerHTML = `<b class="fn" style="font-size:16px;color:var(--ink)">${esc(no)}</b>`; $("#sd-body").innerHTML = `<div class="kbd" style="padding:12px 0">讀取中…</div>`; }
   // 清單剛算好同一組篩選的拋單檔計畫就直接用，不叫伺服器再算一次（算一次要把範圍內每張單都扣過庫存，搜尋才會慢）
   const have = SHIP.q === JSON.stringify(fq()) ? SHIP.orders.find(g => g.order_no === no) : null;
   let d; try { d = await api(`/api/shopee/order?${new URLSearchParams({ ...fq(), no, ...(have ? { ship: "0" } : {}) })}`); }
@@ -1236,65 +1245,103 @@ async function openSide(no) {
   const top = $("#sd-body").scrollTop; SIDE = d; renderSide(); if (again && !$("#f-q").value.trim()) $("#sd-body").scrollTop = top;
 }
 const byId = grp => new Map(((grp || {}).items || []).map(x => [x.order_id, x]));
+/* 訂單視窗的品項表：一品一列。搜尋、篩選改了只重畫這張表 */
+function drawItems() {
+  const d = SIDE; if (!d) return;
+  const g = d.order, buy = byId(d.buy), ship = byId(d.ship), sh = byId(d.short);
+  const under12 = i => { const z = ship.get(i.id); return !!(z && !z.dispatch && z.final > 0 && z.final < 12); };
+  const isBad = i => { const p = buy.get(i.id), z = ship.get(i.id); return !!((g.todo.includes("buy") && p && p.blocking) || (z && z.blocking && !z.dispatch)); };
+  const isShort = i => { const z = ship.get(i.id), k = sh.get(i.id); return !!((z && z.short) || (k && k.cut)); };
+  const q = SDQ.toLowerCase();
+  const isHit = i => !!q && [i.supplier_sku_id, i.sku_name, i.shopee_sku_id, i.inbound_ids, i.barcode, i.base_code].some(v => String(v || "").toLowerCase().includes(q));
+  let list = g.items.map((i, k) => [i, k]).sort((a, b) => (isBad(a[0]) ? 0 : 1) - (isBad(b[0]) ? 0 : 1) || a[1] - b[1]).map(x => x[0]);
+  if (q) list = list.filter(isHit);
+  if (SDF === "bad") list = list.filter(isBad); else if (SDF === "short") list = list.filter(isShort);
+  $("#sd-found").textContent = q ? `　找到 ${list.length} 品（符合「${SDQ}」）` : SDF !== "all" ? `　顯示 ${list.length} 品` : "";
+  const dash = `<span class="kbd">—</span>`;
+  let h = `<thead><tr><th></th><th>永豐料號</th><th>品名</th><th>入庫單號</th><th class="num">蝦皮數量</th><th class="num">轉換率</th><th class="num">下採數量</th><th class="num">EIP 數量</th>
+    <th class="num">出貨量</th><th class="num">缺貨</th><th>效期</th><th></th></tr></thead><tbody>`;
+  for (const i of list) {
+    const p = buy.get(i.id), z = ship.get(i.id), k = sh.get(i.id), unit = i.unit_name || i.unit_code, bad = isBad(i);
+    const probs = [...(g.todo.includes("buy") && p ? p.problems : []), ...(z ? z.problems : [])];
+    let acts = "";
+    if (p) {
+      if (g.todo.includes("buy") && p.problems.some(x => /^瑪氏商品總表(找不到|有 )/.test(x))) acts += `<button class="btn btn-p btn-sm sd-mp" data-id="${i.id}"><i class="bi bi-plus-square"></i> 補商品資料</button>`;
+      if ((p.rem || p.adj) && !(p.eip && p.eip.eip_po)) acts += `<button class="btn ${p.rem ? "btn-p" : "btn-o"} btn-sm sd-adj" data-id="${i.id}"><i class="bi bi-pencil"></i> 修改數量</button>`;
+    }
+    if (z) {
+      if (!z.dispatch && z.life && z.lots.length) acts += `<button class="btn ${z.warnings.length ? "btn-p" : "btn-o"} btn-sm sd-ship" data-id="${i.id}"><i class="bi bi-box-seam"></i> 效期批次／改出貨量</button>`;
+      if (under12(i)) acts += `<button class="btn btn-o btn-sm sd-zero" data-ids="${i.id}"><i class="bi bi-x-circle"></i> 改成 0（刪單）</button>`;
+    }
+    if (k && k.edit_round) acts += `<button class="btn ${k.pending ? "btn-p" : "btn-o"} btn-sm sd-short" data-id="${i.id}"><i class="bi bi-dash-circle"></i> ${k.rounds.length && !k.pending ? `填第 ${k.edit_round} 次缺貨` : k.pending ? "修改缺貨" : "填缺貨"}</button>`;
+    const name = `${esc(i.sku_name || "")}${i.removed ? ` <span class="badge b-diff">已移除</span>` : i.diff_pending ? ` <span class="badge b-diff">差異待確認</span>` : ""}
+      ${i.version > 1 ? `<div><a class="lnk ver kbd" data-id="${i.id}" data-t="${esc(i.supplier_sku_id)}">蝦皮重傳過 ${i.version - 1} 次，查看各版本</a></div>` : ""}
+      ${probs.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("")}
+      ${z ? z.warnings.map(x => `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(x)}</div>`).join("") : ""}
+      ${k && k.rounds.length ? `<div class="kbd">${k.rounds.map(r => `${roundText(r)}（${esc(r.source)}${r.reasons.length ? "，" + esc(r.reasons.join("、")) : ""}）`).join("<br>")}</div>` : ""}`;
+    const qty = `<span class="big">${fmt(i.qty)}</span> ${esc(unit)}${i.qty_original !== i.qty ? `<div class="kbd">原始訂購量 ${fmt(i.qty_original)}</div>` : ""}`;
+    const eip = p && p.out_qty != null ? `${fmt(p.out_qty)} ${esc(p.out_unit || "")}${p.cases != null && p.out_unit !== "箱" ? `<div class="kbd">${fmt(p.cases)} 箱</div>` : ""}${p.unit_group ? `<div class="kbd">EIP 檔：${esc(p.unit_group)}</div>` : ""}` : dash;
+    const out = z ? `<b>${fmt(z.final)}</b>${z.adj ? `<div class="kbd">（已修改）</div>` : ""}${z.dispatch ? "" : `<div class="kbd">EC ${fmt(z.ec)}${usedNote(z.ec_file, z.ec_used, z.ec_users)}</div><div class="kbd">符合效期 ${fmt(z.qualified)}</div>`}`
+      : k ? `<b>${fmt(k.final)}</b>` : dash;
+    const short = z && z.short ? `<b class="neg">${fmt(z.short)}</b>${z.reasons.length ? `<div class="kbd">${esc(z.reasons.join("、"))}</div>` : ""}`
+      : k && k.cut ? `<b class="neg">${fmt(k.cut)}</b>` : (z || k) ? "0" : dash;
+    const notice = k && k.rounds.length ? (k.pending ? `<div><span class="badge b-warn">待通知</span></div>` : k.notified_round ? `<div><span class="badge b-ok">已通知第 ${k.notified_round} 次</span></div>` : "") : "";
+    h += `<tr class="sd-it ${i.removed ? "muted" : ""}${bad ? " bad" : ""}${isHit(i) ? " hit" : ""}">
+      <td>${bad ? `<i class="bi bi-exclamation-circle" style="color:var(--bad)" title="需處理"></i>` : ""}</td>
+      <td class="fn nw" style="font-weight:700;color:var(--ink)" title="永豐料號（蝦皮採購單的 Supplier SKU ID）">${esc(i.supplier_sku_id)}</td>
+      <td class="nm">${name}</td><td class="fn">${esc(i.inbound_ids || "") || dash}</td>
+      <td class="num nw">${qty}</td><td class="num">${p ? fmt(p.conv) : dash}</td>
+      <td class="num nw">${p ? `${fmt(p.use_qty)}${p.adj ? `<div class="kbd">（已修改）</div>` : ""}` : dash}</td><td class="num nw">${eip}</td>
+      <td class="num nw">${out}</td><td class="num nw">${short}${notice}</td>
+      <td class="nw kbd">${z && z.alloc.length ? z.alloc.map(a => `${esc(a.exp)}（${fmt(a.qty)}）`).join("<br>") : "—"}</td>
+      <td>${acts ? `<div class="acts">${acts}</div>` : ""}</td></tr>`;
+  }
+  if (!list.length) h += `<tr><td colspan="12" class="kbd" style="padding:18px;text-align:center">${q ? `這張單沒有符合「${esc(SDQ)}」的品項。` : "沒有符合的品項。"}</td></tr>`;
+  $("#sd-items").innerHTML = h + "</tbody>";
+  $$("#sd-items .sd-zero").forEach(b => b.addEventListener("click", () => zeroShip(b.dataset.ids)));
+  $$("#sd-items a.ver").forEach(a => a.addEventListener("click", () => openVersions(a.dataset.id, a.dataset.t)));
+  $$("#sd-items .sd-adj").forEach(b => b.addEventListener("click", () => openAdj(Number(b.dataset.id))));
+  $$("#sd-items .sd-mp").forEach(b => b.addEventListener("click", () => openMarsProduct(Number(b.dataset.id))));
+  $$("#sd-items .sd-ship").forEach(b => b.addEventListener("click", () => openShip(Number(b.dataset.id))));
+  $$("#sd-items .sd-short").forEach(b => b.addEventListener("click", () => openShort(Number(b.dataset.id))));
+}
+async function zeroShip(idstr) {
+  const ids = idstr.split(",").map(Number); if (!ids.length) return;
+  if (!confirm(`把這 ${ids.length} 項的出貨量改成 0（刪單）？原因會記「低於 12 件拒收，刪單」。改錯可以在效期視窗按「回到系統建議」。`)) return;
+  try { const r = await post("/api/shopee/ship/zero", { order_ids: ids, reason: "低於 12 件拒收，刪單", ...zq() }); toast(`${r.count} 項已改成 0（刪單）`); refresh(); }
+  catch (err) { toast(err.message, "err"); }
+}
 function renderSide() {
   const d = SIDE, g = d.order, buy = byId(d.buy), ship = byId(d.ship), sh = byId(d.short);
   const pendDiffs = d.diffs.filter(x => !x.confirmed);
   const under12 = i => { const z = ship.get(i.id); return !!(z && !z.dispatch && z.final > 0 && z.final < 12); };   // 少於 12 件蝦皮會拒收：改成 0 放這裡（Jerry 2026-10-21）
   const under = g.items.filter(under12);
-  $("#sd-title").innerHTML = `<b class="fn" style="font-size:15px;color:var(--ink)">${esc(g.order_no)}</b>${g.po_id && g.pr_id ? `<div class="kbd fn">${esc(g.pr_id)}</div>` : ""}
-    <div class="facts" style="margin-top:4px"><span>${esc(g.line)}</span><span>${wh(g.warehouse)}</span><span>到貨 <b>${esc(g.expected_date)}</b></span>
-      <span>履約方式 <b>${esc(g.fulfil)}</b> <span class="kbd">（在清單那一格點一下可改）</span></span></div>
-    <div class="mt-1">${nextBadges(g)}${under.length ? ` <button class="btn btn-o btn-sm sd-zero-all" data-ids="${esc(under.map(i => i.id).join(","))}"><i class="bi bi-x-circle"></i> 這張少於 12 件的 ${under.length} 項改成 0（刪單）</button>` : ""}</div>`;
+  $("#sd-title").innerHTML = `<div class="flex items-center gap-2 flex-wrap"><b class="fn" style="font-size:16px;color:var(--ink)">${esc(g.order_no)}</b>${g.po_id && g.pr_id ? `<span class="kbd fn">${esc(g.pr_id)}</span>` : ""}
+      ${nextBadges(g)}${under.length ? ` <button class="btn btn-o btn-sm sd-zero-all" data-ids="${esc(under.map(i => i.id).join(","))}"><i class="bi bi-x-circle"></i> 這張少於 12 件的 ${under.length} 項改成 0（刪單）</button>` : ""}</div>
+    <div class="sd-facts"><div><div class="k">線別</div><div class="v">${esc(g.line)}</div></div><div><div class="k">倉別</div><div class="v">${wh(g.warehouse)}</div></div>
+      <div><div class="k">到貨日</div><div class="v">${esc(g.expected_date)}</div></div>
+      <div><div class="k">履約方式 <span class="kbd">（點一下可改）</span></div><div class="v ff-cell" data-k="${esc(g.order_no)}" title="點一下改履約方式"><span>${esc(g.fulfil)}</span> <i class="bi bi-caret-down-fill ff-i"></i></div></div>
+      <div><div class="k">品項</div><div class="v">${g.item_count}${g.removed_count ? ` <span class="kbd">（移除 ${g.removed_count}）</span>` : ""}</div></div>
+      <div><div class="k">蝦皮數量</div><div class="v">${fmt(g.qty)}${g.qty_original !== g.qty ? ` <span class="kbd">原 ${fmt(g.qty_original)}</span>` : ""}</div></div></div>`;
   let h = "";
   if (pendDiffs.length) h += `<div class="alert al-bad"><b><i class="bi bi-exclamation-triangle-fill"></i> 蝦皮重傳後有 ${pendDiffs.length} 處不同</b>，確認後才能往下處理：
       <div class="mt-1">${pendDiffs.map(x => `<div>${esc(x.supplier_sku_id)}　${esc(x.field_label)}：${esc(x.old_value)} → <b>${esc(x.new_value)}</b>${x.qty_delta ? `（${delta(x.qty_delta)}）` : ""}</div>`).join("")}</div>
       <button class="btn btn-p btn-sm mt-2 sd-dconf"><i class="bi bi-check2-circle"></i> 確認差異</button></div>`;
 
-  // 品項：每一品把各步的資料放在一起，該改的按鈕就在旁邊
-  // 需處理的品項排最前面（瑪氏一張單常常四十幾品，擋下來的那幾品不能讓人一品一品捲著找）
+  // 品項：一品一列（2026-10-30 改成表格，數字對齊好比；以前是右側面板裡一品一塊，擠成一團）。
+  // 需處理的排最前面（瑪氏一張單常常四十幾品）；上面搜尋框打字只留符合的；「需處理／有缺貨」點一下只看那些
   const isBad = i => { const p = buy.get(i.id), z = ship.get(i.id); return !!((g.todo.includes("buy") && p && p.blocking) || (z && z.blocking && !z.dispatch)); };
-  // 左邊搜尋框有字：符合的品項排最前面並標起來（Jerry 2026-10-20：搜一個料號，右邊 28 品還要自己捲著找）
-  const q = $("#f-q").value.trim().toLowerCase();
-  const isHit = i => !!q && [i.supplier_sku_id, i.sku_name, i.shopee_sku_id, i.inbound_ids, i.barcode, i.base_code].some(v => String(v || "").toLowerCase().includes(q));
-  const rank = i => (isHit(i) ? 0 : 2) + (isBad(i) ? 0 : 1);
-  const items = g.items.map((i, k) => [i, k]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(x => x[0]);
-  const nBad = g.items.filter(isBad).length, nHit = g.items.filter(isHit).length;
-  h += `<div class="sd-sec"><div class="h"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）${nHit
-    ? `<span style="font-weight:400;font-size:13px;color:var(--s9)">　符合「${esc($("#f-q").value.trim())}」的 ${nHit} 品排在最前面</span>` : ""}${nBad
-    ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理${nHit ? "" : "，排在最前面"}</span>` : ""}</div><div class="b">
-    ${g.line === "瑪氏" && d.short ? `<div class="kbd" style="padding:6px 0">瑪氏的缺貨依勇信配送明細表核對，PDF 請拖曳至上方「上傳檔案」。</div>` : ""}`;
-  for (const i of items) {
-    const p = buy.get(i.id), z = ship.get(i.id), k = sh.get(i.id), unit = i.unit_name || i.unit_code;
-    const kv = [`原始訂購量 <b>${fmt(i.qty_original)}</b>`, i.inbound_ids ? `入庫單號 <span class="fn">${esc(i.inbound_ids)}</span>` : "",
-      i.version > 1 ? `<a class="lnk ver" data-id="${i.id}" data-t="${esc(i.supplier_sku_id)}">蝦皮重傳過 ${i.version - 1} 次，查看各版本</a>` : ""];
-    let more = "", acts = "";
-    if (p) {
-      more += `<div class="sd-kv"><span>轉換率 <b>${fmt(p.conv)}</b></span><span>下採數量 <b>${fmt(p.use_qty)}</b>${p.adj ? "（已修改）" : ""}</span>
-        <span>EIP 採購數量 <b>${p.out_qty == null ? "—" : fmt(p.out_qty)}</b> ${esc(p.out_unit || "")}${p.cases != null && p.out_unit !== "箱" ? `（${fmt(p.cases)} 箱）` : ""}</span>${p.unit_group ? `<span>EIP 檔：${esc(p.unit_group)}</span>` : ""}</div>`;
-      if (g.todo.includes("buy")) more += p.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("");
-      if (g.todo.includes("buy") && p.problems.some(x => /^瑪氏商品總表(找不到|有 )/.test(x))) acts += `<button class="btn btn-p btn-sm sd-mp" data-id="${i.id}"><i class="bi bi-plus-square"></i> 補商品資料</button>`;   // 已產出的單不再列產出前的檢查
-      if ((p.rem || p.adj) && !(p.eip && p.eip.eip_po)) acts += `<button class="btn ${p.rem ? "btn-p" : "btn-o"} btn-sm sd-adj" data-id="${i.id}"><i class="bi bi-pencil"></i> 修改數量</button>`;
-    }
-    if (z) {
-      more += `<div class="sd-kv">${z.dispatch ? "" : `<span>EC 可用量 <b>${fmt(z.ec)}</b>${usedNote(z.ec_file, z.ec_used, z.ec_users)}</span><span>符合效期量 <b>${fmt(z.qualified)}</b></span>`}<span>出貨量 <b>${fmt(z.final)}</b>${z.adj ? "（已修改）" : ""}</span>
-        ${z.short ? `<span class="neg">缺貨 ${fmt(z.short)}${z.reasons.length ? `（${esc(z.reasons.join("、"))}）` : ""}</span>` : ""}${z.alloc.length ? `<span>出貨效期 ${z.alloc.map(a => `${esc(a.exp)}（${fmt(a.qty)}）`).join("、")}</span>` : ""}</div>`;
-      more += z.problems.map(x => `<div class="prob"><i class="bi bi-exclamation-circle"></i> ${esc(x)}</div>`).join("") + z.warnings.map(x => `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(x)}</div>`).join("");
-      if (!z.dispatch && z.life && z.lots.length) acts += `<button class="btn ${z.warnings.length ? "btn-p" : "btn-o"} btn-sm sd-ship" data-id="${i.id}"><i class="bi bi-box-seam"></i> 效期批次／改出貨量</button>`;
-      if (under12(i)) acts += `<button class="btn btn-o btn-sm sd-zero" data-ids="${i.id}"><i class="bi bi-x-circle"></i> 改成 0（刪單）</button>`;
-    }
-    if (k) {
-      if (k.rounds.length) more += `<div class="sd-kv"><span>可出貨量 <b>${fmt(k.final)}</b></span><span class="neg">累計下修 ${fmt(k.cut)}</span>
-        ${k.pending ? `<span class="badge b-warn">待通知</span>` : k.notified_round ? `<span class="badge b-ok">已通知第 ${k.notified_round} 次</span>` : ""}</div>
-        <div class="kbd">${k.rounds.map(r => `${roundText(r)}（${esc(r.source)}${r.reasons.length ? "，" + esc(r.reasons.join("、")) : ""}）`).join("<br>")}</div>`;
-      if (k.edit_round) acts += `<button class="btn ${k.pending ? "btn-p" : "btn-o"} btn-sm sd-short" data-id="${i.id}"><i class="bi bi-dash-circle"></i> ${k.rounds.length && !k.pending ? `填第 ${k.edit_round} 次缺貨` : k.pending ? "修改缺貨" : "填缺貨"}</button>`;
-    }
-    h += `<div class="sd-it ${i.removed ? "muted" : ""}${isHit(i) ? " hit" : ""}"><div class="r"><span class="fn" style="font-weight:700;color:var(--ink)" title="永豐料號（蝦皮採購單的 Supplier SKU ID）"><span class="kbd" style="font-weight:400">永豐料號</span> ${esc(i.supplier_sku_id)}</span>
-        <span style="flex:1;min-width:0">${esc((i.sku_name || "").slice(0, 40))}</span><span class="nw"><b style="font-size:15px">${fmt(i.qty)}</b> ${esc(unit)}</span></div>
-      <div class="sd-kv">${kv.filter(Boolean).map(x => `<span>${x}</span>`).join("")}${i.removed ? `<span class="badge b-diff">已移除</span>` : i.diff_pending ? `<span class="badge b-diff">差異待確認</span>` : ""}</div>
-      ${more}${acts ? `<div class="sd-acts">${acts}</div>` : ""}</div>`;
-  }
-  h += `</div></div>`;
+  const isShort = i => { const z = ship.get(i.id), k = sh.get(i.id); return !!((z && z.short) || (k && k.cut)); };
+  const nBad = g.items.filter(isBad).length, nShort = g.items.filter(isShort).length;
+  h += `<div class="sd-sec" style="border:0"><div class="h" style="padding:6px 0"><i class="bi bi-box-seam"></i> 品項（${g.item_count}${g.removed_count ? `，移除 ${g.removed_count}` : ""}）${nBad
+      ? `<span class="neg" style="font-weight:400;font-size:13px">　${nBad} 項需處理，排在最前面</span>` : ""}<span class="kbd" id="sd-found" style="font-weight:400"></span></div>
+    <div class="it-tools"><input class="inp" id="sd-q" placeholder="搜尋這張單的料號、品名、入庫單號" value="${esc(SDQ)}" style="width:300px">
+      <span class="chip sd-fl ${SDF === "all" ? "on" : ""}" data-f="all">全部 ${g.items.length}</span>${nBad ? `<span class="chip sd-fl ${SDF === "bad" ? "on" : ""}" data-f="bad">需處理 ${nBad}</span>` : ""}${nShort
+      ? `<span class="chip sd-fl ${SDF === "short" ? "on" : ""}" data-f="short">有缺貨 ${nShort}</span>` : ""}
+      <span style="flex:1"></span>${g.line === "瑪氏" && d.short ? `<span class="kbd">瑪氏的缺貨依勇信配送明細表核對，PDF 請拖曳至上方「上傳檔案」。</span>` : ""}</div>
+    <div class="tbl-wrap" style="max-height:none"><table class="t it-t" id="sd-items"></table></div></div>`;
 
+  h += `<div class="sd-grid">`;          // 下面各區塊（EIP、調整原因、拋單檔、通知、差異、歷程）排成卡片
   // EIP 採購單（竹運採購進貨、直送）
   if (d.buy) h += `<div class="sd-sec"><div class="h"><i class="bi bi-file-earmark-spreadsheet"></i> EIP 採購單 <span class="kbd">${d.eips.length ? `${d.eips.length} 份` : "尚未產出"}</span></div><div class="b">
     ${d.eips.map(e => `<div class="sd-it"><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.note ? `<div class="ff-note">${esc(e.note)}</div>` : ""}
@@ -1343,14 +1390,15 @@ function renderSide() {
     ${d.logs.map(l => `<div class="sd-it"><span class="kbd">${esc((l.changed_at || "").slice(5, 16).replace("T", " "))}　${esc(l.operator)}</span>　<b>${esc(l.field_label)}</b>
       ${l.old_value || l.new_value ? `<div>${esc(l.old_value)}${l.old_value && l.new_value ? " → " : ""}${esc(l.new_value)}</div>` : ""}${l.note ? `<div class="kbd">${esc(l.note)}</div>` : ""}</div>`).join("")
       || `<div class="kbd">尚無紀錄</div>`}</div></details>`;
+  h += `</div>`;
   $("#sd-body").innerHTML = h;
+  drawItems();
+  $("#sd-q").addEventListener("input", () => { SDQ = $("#sd-q").value.trim(); drawItems(); });
+  $$("#side .sd-fl").forEach(c => c.addEventListener("click", () => { SDF = c.dataset.f; $$("#side .sd-fl").forEach(x => x.classList.toggle("on", x === c)); drawItems(); }));
+  $$("#sd-title .go-st").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); const s_ = b.dataset.s; closeSide(); setStage(s_); }));
+  sideNav();
 
-  $$("#side .sd-zero, #side .sd-zero-all").forEach(b => b.addEventListener("click", async () => {
-    const ids = b.dataset.ids.split(",").map(Number); if (!ids.length) return;
-    if (!confirm(`把這 ${ids.length} 項的出貨量改成 0（刪單）？原因會記「低於 12 件拒收，刪單」。改錯可以在效期視窗按「回到系統建議」。`)) return;
-    try { const r = await post("/api/shopee/ship/zero", { order_ids: ids, reason: "低於 12 件拒收，刪單", ...zq() }); toast(`${r.count} 項已改成 0（刪單）`); refresh(); }
-    catch (err) { toast(err.message, "err"); }
-  }));
+  $$("#side .sd-zero-all").forEach(b => b.addEventListener("click", () => zeroShip(b.dataset.ids)));
   const saveRsn = async (ids, reason) => {
     try { const r = await post("/api/shopee/ship/reasons", { order_ids: ids, reason }); toast(r.count ? `${r.count} 項調整原因已存為「${reason}」` : "原因沒有變"); refresh(); }
     catch (err) { toast(err.message, "err"); }
@@ -1362,11 +1410,6 @@ function renderSide() {
   $$("#side .sd-dconf").forEach(b => b.addEventListener("click", async () => {
     try { await post("/api/shopee/diffs/confirm", { order_nos: [g.order_no] }); toast(`已確認 ${g.order_no} 的差異`); refresh(); } catch (err) { toast(err.message, "err"); }
   }));
-  $$("#side a.ver").forEach(a => a.addEventListener("click", () => openVersions(a.dataset.id, a.dataset.t)));
-  $$("#side .sd-adj").forEach(b => b.addEventListener("click", () => openAdj(Number(b.dataset.id))));
-  $$("#side .sd-mp").forEach(b => b.addEventListener("click", () => openMarsProduct(Number(b.dataset.id))));
-  $$("#side .sd-ship").forEach(b => b.addEventListener("click", () => openShip(Number(b.dataset.id))));
-  $$("#side .sd-short").forEach(b => b.addEventListener("click", () => openShort(Number(b.dataset.id))));
   $$("#side .sd-po-save").forEach(b => b.addEventListener("click", () => saveEip(b.dataset.id, $(`#side .sd-po[data-id="${b.dataset.id}"]`).value)));
   $$("#side .sd-eip-cancel").forEach(b => b.addEventListener("click", () => cancelEip(b.dataset.id, (d.eips || []).find(x => String(x.id) === b.dataset.id))));
   $$("#side .sd-po").forEach(i => i.addEventListener("keydown", e => { if (e.key === "Enter") saveEip(i.dataset.id, i.value); }));

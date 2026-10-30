@@ -102,7 +102,7 @@ def item_plan(it, conv, adj, eip, other_units=()):
          "unit": it["unit_name"], "qty": qty, "use_qty": use, "conv": box, "adj": adj if adj and adj["qty_before"] == qty else None,
          "problems": [], "blocking": False, "eip": eip, "line": line, "unit_group": "", "out_qty": None, "skip": use == 0}
     if it["diff_pending"]:
-        p["problems"].append("MOMO 改過這張單，請先在右側面板確認差異")
+        p["problems"].append("MOMO 改過這張單，請先點這張單確認差異")
         p["blocking"] = True
     if eip and eip["eip_po"]:
         p["problems"].append(f"已回填 EIP 採購單號 {eip['eip_po']}；要重新產出請先清除單號")

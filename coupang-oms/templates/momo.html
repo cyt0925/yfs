@@ -58,8 +58,6 @@
   .fresh span.w { border-color:#fde68a; background:var(--warnbg); color:var(--warn); }
   .pv { border:1px solid var(--s2); border-radius:12px; background:#fff; padding:14px 16px; }
   table.t tr.og.ask td { background:#fffbeb; }
-  .ck-t td { vertical-align:top; } .ck-t td, .ck-t th { padding:6px 5px; font-size:12px; } .ck-t th { font-size:11.5px; }
-  .ck-t .nm { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; max-width:118px; } .ck-t tr.x td.xs { text-decoration:line-through; color:var(--muted); } .ck-t tr.ask td { background:#fffbeb; }
   .help { border:1px solid #fde68a; background:#fffdf3; border-radius:10px; padding:10px 14px; font-size:12.5px; color:var(--ink2); }
   .help li { margin:3px 0 3px 18px; list-style:disc; } .help b { color:var(--ink); }
   .pv h3 { font-weight:700; font-size:14.5px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -74,18 +72,31 @@
   .st.on { border:2px solid var(--s8); background:var(--s0); padding:8px 11px; box-shadow:0 2px 10px rgba(228,0,127,.14); }
   .st.soon { cursor:default; background:repeating-linear-gradient(135deg,#fff 0 10px,#faf5f8 10px 20px); } .st.soon .n { color:#d4c3cc; }
   .layout { display:flex; align-items:flex-start; }
-  #side { flex:none; width:560px; position:sticky; top:0; height:100vh; background:#fff; border-left:1px solid var(--line); box-shadow:-8px 0 24px rgba(80,10,40,.08); display:flex; flex-direction:column; z-index:20; }
-  @media (max-width:1180px) { #side { position:fixed; right:0; top:0; width:min(560px,100vw); box-shadow:-10px 0 40px rgba(31,16,24,.25); } }
-  .sd-h { display:flex; align-items:flex-start; gap:10px; padding:14px 16px 10px; border-bottom:1px solid var(--line2); background:var(--s0); }
-  .sd-x { background:transparent; border:0; font-size:18px; color:var(--muted); cursor:pointer; padding:2px 4px; }
-  .sd-b { flex:1; overflow:auto; padding:12px 16px 24px; }
+  #side { position:fixed; inset:0; z-index:50; background:rgba(60,8,34,.45); display:flex; align-items:flex-start; justify-content:center; padding:18px 14px; }
+  #side.hidden { display:none; }
+  body.side-open { overflow:hidden; }
+  .sd-box { width:min(1420px,100%); max-height:calc(100vh - 36px); background:#fff; border-radius:14px; box-shadow:0 24px 70px rgba(60,8,34,.35); display:flex; flex-direction:column; overflow:hidden; }
+  .sd-h { display:flex; align-items:flex-start; gap:10px; padding:14px 20px 12px; border-bottom:1px solid var(--line2); background:var(--s0); }
+  .sd-f { display:flex; align-items:center; gap:8px; padding:10px 20px; border-top:1px solid var(--line); background:#fff; }
+  .sd-x { background:transparent; border:0; font-size:18px; color:var(--muted); cursor:pointer; padding:2px 4px; } .sd-x:hover { color:var(--ink); }
+  .sd-b { flex:1; overflow:auto; padding:12px 20px 24px; }
+  .sd-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
+  .sd-facts > div { border:1px solid var(--line2); border-radius:10px; padding:6px 12px; background:#fff; } .sd-facts .k { font-size:11.5px; color:var(--muted); } .sd-facts .v { font-size:14px; font-weight:700; }
+  .sd-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:12px; align-items:start; margin-top:12px; } .sd-grid > .sd-sec { margin-top:0; }
+  .it-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:2px 0 8px; }
+  table.it-t td { vertical-align:top; padding:8px 9px; } table.it-t th { padding:7px 9px; position:sticky; top:0; }
+  table.it-t tr.sd-it td { border-top:1px solid var(--line2); }
+  table.it-t tr.sd-it.bad td { background:#fff6f4; } table.it-t tr.sd-it.bad td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
+  table.it-t tr.sd-it.ask td { background:#fffbeb; } table.it-t tr.sd-it.ask td:first-child { box-shadow:inset 4px 0 0 var(--warn); }
+  table.it-t tr.sd-it.hit td:first-child { box-shadow:inset 4px 0 0 var(--s8); }
+  table.it-t tr.sd-it.x td.xs { text-decoration:line-through; color:var(--muted); }
+  table.it-t .big { font-size:15px; font-weight:700; } table.it-t .nm2 { min-width:220px; max-width:380px; }
   .sd-sec { border:1px solid var(--line2); border-radius:10px; margin-top:10px; }
   .sd-sec > .h { display:flex; align-items:center; gap:8px; padding:8px 12px; font-weight:700; font-size:13.5px; }
   .sd-sec > .b { padding:0 12px 10px; }
   details.sd-sec > summary { list-style:none; cursor:pointer; } details.sd-sec > summary::-webkit-details-marker { display:none; }
-  .sd-it { padding:9px 0; border-top:1px solid var(--line2); font-size:13px; } .sd-it:first-child { border-top:0; }
+  div.sd-it { padding:9px 0; border-top:1px solid var(--line2); font-size:13px; } div.sd-it:first-child { border-top:0; }
   .sd-kv { display:flex; flex-wrap:wrap; gap:2px 14px; font-size:12px; color:var(--ink2); margin-top:3px; } .sd-kv b { color:var(--ink); }
-  @media (min-width:1181px) { body.side-open table.t .opt { display:none; } }
   .abar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:#fdf2f7; border:1px solid #f3d6e5; border-radius:10px; padding:8px 12px; font-size:13px; }
   .pick { position:relative; display:inline-block; }
   .pick-pop { position:absolute; z-index:40; top:calc(100% + 4px); left:0; min-width:200px; max-height:320px; overflow:auto; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 30px rgba(60,10,30,.18); padding:6px 10px; font-size:13px; }
@@ -223,9 +234,14 @@
   {% endif %}
 </div>
 </main>
-<aside id="side" class="hidden" aria-label="入庫單詳細">
-  <div class="sd-h"><div id="sd-title" style="flex:1;min-width:0"></div><button class="sd-x" id="sd-close" title="關閉（Esc）" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
-  <div class="sd-b" id="sd-body"></div>
+<aside id="side" class="hidden" aria-label="入庫單詳細" role="dialog" aria-modal="true">
+  <div class="sd-box">
+    <div class="sd-h"><div id="sd-title" style="flex:1;min-width:0"></div><button class="sd-x" id="sd-close" title="關閉（Esc）" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+    <div class="sd-b" id="sd-body"></div>
+    <div class="sd-f"><span class="kbd" style="margin-right:auto">← → 換上一張／下一張（照清單順序）　Esc 關閉</span><span class="kbd" id="sd-pos"></span>
+      <button class="btn btn-o btn-sm" id="sd-prev"><i class="bi bi-chevron-left"></i> 上一張</button><button class="btn btn-o btn-sm" id="sd-next">下一張 <i class="bi bi-chevron-right"></i></button>
+      <button class="btn btn-p btn-sm" id="sd-close2">關閉</button></div>
+  </div>
 </aside>
 </div>
 
