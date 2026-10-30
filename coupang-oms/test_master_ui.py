@@ -672,9 +672,9 @@ def main():
         pg.click("#btn-yfs"); pg.wait_for_selector("#chs .ch", timeout=15000)
         check("酷澎訂單管理系統按「YFS 訂單系統」回到入口首頁（網站首頁 /）", pg.url.rstrip("/") == base)
         pg.click("#nav a:has-text('改單統計')"); pg.wait_for_selector("#st-kpi .kpi", timeout=15000); pg.wait_for_timeout(500)
-        check("左側「改單統計」：在 YFS 訂單系統裡看，五張數字卡（PO 張數、曾改單的 PO、處理次數、原始下單→目前出貨、處理完成後又有改動）、還沒記 OK 清單、每月表、主因、各階段做了什麼、修改次數最多的 PO 都有（Jerry 2026-10-21 看過示意圖）",
-              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 5 and pg.query_selector("#kpi-pend")
-              and "原始下單" in pg.inner_text("#st-kpi") and "處理次數" in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
+        check("左側「改單統計」：在 YFS 訂單系統裡看，四張數字卡（PO 張數、有修改紀錄的 PO、處理次數、處理完成後又有改動；金額卡 2026-10-30 拿掉）、清單、每月表、主因、各階段、處理最多次的 PO 都有",
+              pg.url.endswith("/portal/stats") and pg.eval_on_selector_all("#st-kpi .kpi", "els => els.length") == 4 and pg.query_selector("#kpi-pend")
+              and "原始下單" not in pg.inner_text("#st-kpi") and "原始下單" in pg.inner_text("#st-months thead") and "處理次數" in pg.inner_text("#st-kpi") and pg.query_selector("#pd-table thead")
               and all(pg.query_selector(sel) for sel in ("#st-months thead", "#st-reasons thead", "#st-stages thead", "#st-top thead")) and "/api/master/stats/export" in pg.get_attribute("#st-export", "href"), pg.inner_text("#st-kpi"))
         check("拿掉的：含測試、待補原因、酷澎修改／我方修改、改單類型；寫了修改紀錄從 2026-10-20 起",
               pg.query_selector("#st-test") is None and "待補" not in pg.inner_text("main") and "我方修改" not in pg.inner_text("#st-months thead") and pg.query_selector("#st-kinds") is None

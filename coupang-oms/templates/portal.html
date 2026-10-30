@@ -580,8 +580,7 @@ tr.grp td { background: var(--surface-2); color: var(--muted); font-size: 11.5px
     $("#st-kpi").innerHTML = card("PO 張數", fmt(t.pos), "張", `${fmt(t.items)} 個品項 · ${fmt(t.skus)} 個 SKU`)
       + card("有修改紀錄的 PO", n(t.changed_pos, {}), "張", t.pos ? `佔 ${t.changed_pct}%，平均每張改 ${fmt(t.per_changed_po)} 次` : "")
       + card("處理次數", n(t.rounds, {}), "次", ["1", "2", "3"].map(k => `<span title="${esc(SL[k])}">${SHORT[k]} ${n(t.stages[k], { stage: k }, "", "次")}</span>`).join(" · "))
-      + card("原始下單 → 目前出貨", `<span class="${t.short_amount < 0 ? "neg" : ""}">${money(t.short_amount)}</span>`, "元",
-        t.orig_amount ? `${money(t.orig_amount)} → ${money(t.cur_amount)} 元，少出 ${t.short_pct}%<br>進系統前 ${money(t.pre_amount)} · 進系統後 ${money(t.post_amount)}` : "這段期間沒有金額")
+      // 「原始下單 → 目前出貨」金額卡拿掉（Jerry 2026-10-30「拿掉」；10/19 就說過金額只放每月統計），金額看下面每月統計和 Excel
       + `<div class="kpi${t.pending ? " warn" : ""}" id="kpi-pend" role="button" tabindex="0"><div class="k">${t.pending ? "⚠ " : ""}處理完成後又有改動</div><div class="v">${fmt(t.pending)}<small>張 PO</small></div>`
         + `<div class="s">${t.pending ? "點一下看清單，到 PO 視窗記處理完成" : "這段期間改過的 PO 都記了處理完成"}</div></div>`;
     const goPend = () => $("#pending").scrollIntoView({ behavior: "smooth", block: "start" });
