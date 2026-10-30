@@ -421,7 +421,7 @@ function render() {
       h += `<tr class="og del" data-k="${esc(k)}"><td></td><td><span class="fn" style="font-weight:700">${esc(k)}</span></td><td class="nw">${esc(g.line)}</td><td class="nw">${esc(g.expected_date)}</td>
         <td class="nw opt">${esc(g.upload_date || "—")}</td><td class="nw">${wh(g.warehouse)}</td><td class="nw">${esc(g.fulfil)}</td><td class="opt">${codesTd(g)}</td><td class="num opt">${g.item_count}</td>
         <td class="num">${fmt(g.qty)}</td><td class="num opt"></td><td class="num opt"></td>
-        <td><span class="badge b-del">已刪除</span> <span class="kbd">${esc(g.trash.deleted_by)} ${esc((g.trash.deleted_at || "").slice(5, 16).replace("T", " "))}：${esc(g.trash.reason)}</span>
+        <td><span class="badge b-del">已刪除</span> <span class="kbd">${esc(g.trash.deleted_by)} ${esc((g.trash.deleted_at || "").slice(5, 16).replace("T", " "))}：${esc(g.trash.reason || "沒填原因")}</span>
           <button class="btn btn-o btn-sm rs-del" data-k="${esc(k)}"><i class="bi bi-arrow-counterclockwise"></i> 還原</button></td></tr>`;
       continue;
     }
@@ -570,7 +570,7 @@ async function exportOrders(nos, btn) {
   } catch (err) { toast(err.message, "err"); }
   finally { btn.disabled = false; }
 }
-/* 刪除、還原訂單（Alice 2026-10-30；Jerry：大家都能刪、要能還原）。刪掉的單不列、不產 EIP 和拋單檔，再上傳蝦皮檔也不會回來 */
+/* 刪除、還原訂單（Alice 2026-10-30；Jerry：大家都能刪、原因選填、要能還原）。刪掉的單不列、不產 EIP 和拋單檔，再上傳蝦皮檔也不會回來 */
 const DEL_REASONS = ["贈品不用出", "重複的單", "蝦皮取消"];
 let DEL_NO = "";
 function openDelete(g) {
@@ -584,7 +584,6 @@ function openDelete(g) {
 }
 $("#dl-go").addEventListener("click", async () => {
   const reason = $("#dl-reason").value.trim();
-  if (!reason) { toast("請填刪除原因", "err"); $("#dl-reason").focus(); return; }
   try { const r = await post("/api/shopee/order/delete", { order_no: DEL_NO, reason }); $("#dlg-del").close(); toast(r.message); ASEL.delete(DEL_NO); BSEL.delete(DEL_NO); ZSEL.delete(DEL_NO); KSEL.delete(DEL_NO); closeSide(); refresh(); }
   catch (err) { toast(err.message, "err"); }
 });
@@ -1380,7 +1379,7 @@ function renderSide() {
       <div><div class="k">品項</div><div class="v">${g.item_count}${g.removed_count ? ` <span class="kbd">（移除 ${g.removed_count}）</span>` : ""}</div></div>
       <div><div class="k">蝦皮數量</div><div class="v">${fmt(g.qty)}${g.qty_original !== g.qty ? ` <span class="kbd">原 ${fmt(g.qty_original)}</span>` : ""}</div></div></div>`;
   let h = "";
-  if (g.trash) h += `<div class="alert al-bad"><b><i class="bi bi-trash3"></i> 這張單已刪除</b>：${esc(g.trash.deleted_by)} ${esc((g.trash.deleted_at || "").slice(5, 16).replace("T", " "))}，原因「${esc(g.trash.reason)}」。
+  if (g.trash) h += `<div class="alert al-bad"><b><i class="bi bi-trash3"></i> 這張單已刪除</b>：${esc(g.trash.deleted_by)} ${esc((g.trash.deleted_at || "").slice(5, 16).replace("T", " "))}${g.trash.reason ? `，原因「${esc(g.trash.reason)}」` : ""}。
       不會產 EIP、拋單檔，也不會通知；按右上角「還原這張訂單」就回到原本那一步。</div>`;
   if (pendDiffs.length) h += `<div class="alert al-bad"><b><i class="bi bi-exclamation-triangle-fill"></i> 蝦皮重傳後有 ${pendDiffs.length} 處不同</b>，確認後才能往下處理：
       <div class="mt-1">${pendDiffs.map(x => `<div>${esc(x.supplier_sku_id)}　${esc(x.field_label)}：${esc(x.old_value)} → <b>${esc(x.new_value)}</b>${x.qty_delta ? `（${delta(x.qty_delta)}）` : ""}</div>`).join("")}</div>

@@ -1,4 +1,4 @@
-"""刪除、還原蝦皮訂單（Alice 2026-10-30：贈品料號那種不要的單要能刪；Jerry：大家都能刪、要填原因、要能還原）。
+"""刪除、還原蝦皮訂單（Alice 2026-10-30：贈品料號那種不要的單要能刪；Jerry：大家都能刪、原因選填、要能還原）。
 
 不動 shp_orders，只在 shp_deleted 記一筆；清單、產 EIP、拋單檔、缺貨通知、勇信核對都用 not_deleted() 跳過。
 之後再上傳蝦皮檔，這張單也不會跑回來（PR、PO 都記，PR 後來變成 PO 也對得到）。已產出 EIP 或拋單檔的要先取消產出才能刪。
@@ -17,8 +17,6 @@ def api_order_delete():
     no, reason = str(p.get("order_no") or "").strip(), str(p.get("reason") or "").strip()
     if not no:
         return jsonify({"error": "缺少訂單編號。"}), 400
-    if not reason:
-        return jsonify({"error": "請填刪除原因。"}), 400
     op = _operator()
     conn = get_conn()
     try:

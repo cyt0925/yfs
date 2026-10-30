@@ -1275,7 +1275,9 @@ def trash_tests(c, orders):
     check("先匯入一張贈品單：在清單、待產採購單", X in {g["order_no"] for g in orders()["orders"]}
           and "buy" in {g["order_no"]: g for g in orders()["orders"]}[X]["todo"])
     r = c.post("/api/shopee/order/delete", json={"order_no": X, "reason": ""})
-    check("刪除沒填原因 → 擋下來", r.status_code == 400 and "原因" in r.get_json()["error"], str(r.get_json()))
+    gx = {g["order_no"]: g for g in orders(deleted="1")["orders"]}.get(X)
+    check("原因選填（Jerry 2026-10-30）：沒填也能刪，記成空白", r.status_code == 200 and gx and gx["trash"]["reason"] == "", str(r.get_json()))
+    c.post("/api/shopee/order/restore", json={"order_no": X})
     n_buy = next(s_["count"] for s_ in orders()["stages"] if s_["key"] == "buy")
     r = c.post("/api/shopee/order/delete", json={"order_no": X, "reason": "贈品不用出"})
     check("填原因刪除 → 成功，訊息講怎麼還原", r.status_code == 200 and "顯示已刪除" in r.get_json()["message"], str(r.get_json()))
