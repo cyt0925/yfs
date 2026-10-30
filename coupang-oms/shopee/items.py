@@ -6,7 +6,7 @@
 每品回 edit：ship（竹運出貨，改了系統照效期由早到晚自動挑批次）、short（存成這次下修），不能改的回 lock 寫原因。
 """
 from .common import *  # noqa: F401,F403
-from .orders import overview
+from .orders import overview, received_map
 from .ship import build_ship
 from .short import LINES_HERE, MANUAL_FULFILS, build_short
 
@@ -25,6 +25,7 @@ def items_view(conn, nos, a):
                 alone, _c = build_ship(conn, g["expected_date"], g["expected_date"], "")
                 ship.update({z["order_id"]: z for grp in alone if grp["order_no"] == g["order_no"] for z in grp["items"]})
     short = {k["order_id"]: k for grp in build_short(conn, order_nos=list(want)) for k in grp["items"]}
+    rcv = received_map(conn)
     out = {}
     for g in gs:
         rows = []
@@ -57,7 +58,7 @@ def items_view(conn, nos, a):
                 lock = "不能改"
             reasons = z["reasons"] if z and z["short"] else sorted({x for r in (k["rounds"] if k else []) for x in r["reasons"]})
             rows.append({"order_id": i["id"], "sku": i["supplier_sku_id"], "name": i["sku_name"], "unit": i["unit_name"] or i["unit_code"],
-                         "qty": i["qty"], "final": final, "short": cut, "reasons": reasons,
+                         "qty": i["qty"], "final": final, "short": cut, "reasons": reasons, "received": rcv.get(g["order_no"], {}).get(i["supplier_sku_id"]),
                          "pending": bool(k and k["pending"]), "adj": bool((z and z["adj"]) or (k and k["rounds"])),
                          "edit": edit, "lock": lock, **extra})
         out[g["order_no"]] = rows

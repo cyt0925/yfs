@@ -17,6 +17,7 @@ from .orders import overview
 
 RED = (0.85, 0.1, 0.1)
 COLS = {"no": "No.", "sku": "SupplierSKUID", "qu": "PurchaseQTY(unit)", "unit": "UnitName", "qp": "PurchaseQTY(pcs)"}
+OPT_COLS = {"rcv": "ActualReceived"}         # 驗收量（Jerry 2026-10-30：蝦皮驗收後後台下載的採購單這欄有數字，像酷澎的實際驗入數量）
 
 
 def _num(s):
@@ -94,10 +95,10 @@ def parse_po_pdf(data, filename=""):
         col = {}
         for x0, x1 in zip(xs, xs[1:]):
             label = "".join(w[4] for w in within(x0, x1, h0, h1))
-            for k, v in COLS.items():
+            for k, v in {**COLS, **OPT_COLS}.items():
                 if label == v:
                     col[k] = (x0, x1)
-        if len(col) < len(COLS):
+        if not all(k in col for k in COLS):
             raise ValueError(f"{filename}：第 {pi + 1} 頁找不到 {'、'.join(v for k, v in COLS.items() if k not in col)} 欄，採購單格式可能跟之前不一樣，請人工畫。")
         for y0, y1 in zip(below, below[1:]):
             nos = [w for w in within(*col["no"], y0, y1) if re.fullmatch(r"\d{1,4}", w[4])]
@@ -107,7 +108,8 @@ def parse_po_pdf(data, filename=""):
             box = lambda k: [min(w[0] for w in cell(k)), min(w[1] for w in cell(k)), max(w[2] for w in cell(k)), max(w[3] for w in cell(k))] if cell(k) else None
             rows.append({"no": int(nos[0][4]), "sku": "".join(w[4] for w in cell("sku")), "page": pi, "band": [y0, y1], "x0": xs[0], "x1": xs[-1],
                          "qty_unit": _num("".join(w[4] for w in cell("qu"))), "qty_pcs": _num("".join(w[4] for w in cell("qp"))),
-                         "qu": {"col": list(col["qu"]), "box": box("qu")}, "qp": {"col": list(col["qp"]), "box": box("qp")}, "unit": list(col["unit"])})
+                         "qu": {"col": list(col["qu"]), "box": box("qu")}, "qp": {"col": list(col["qp"]), "box": box("qp")}, "unit": list(col["unit"]),
+                         "received": _num("".join(w[4] for w in cell("rcv"))) if "rcv" in col and cell("rcv") else None})
     if not rows:
         raise ValueError(f"{filename}：讀不到採購單的品項表格。")
     return {"po_id": po, "rows": rows}
@@ -217,7 +219,8 @@ def api_po_pdf_upload():
                          (no, f.filename, base64.b64encode(data).decode("ascii"), json.dumps(p["rows"], ensure_ascii=False), operator, stamp))
             _log(conn, g["line"], no, "", "", "shopee_po_pdf", "蝦皮採購單 PDF", "", f"{len(p['rows'])} 列", operator, "import", f.filename)
             marks, warns = po_marks(side_data(conn, no, {}), p["rows"])
-            out.append({"order_no": no, "filename": f.filename, "rows": len(p["rows"]),
+            rcv = [r for r in p["rows"] if r.get("received") is not None]
+            out.append({"order_no": no, "filename": f.filename, "rows": len(p["rows"]), "received": len(rcv),
                         "noship": sum(1 for v in marks.values() if v["kind"] == "noship"), "short": sum(1 for v in marks.values() if v["kind"] == "short"),
                         "marks": desc_marks(marks), "warnings": warns})
         conn.commit()

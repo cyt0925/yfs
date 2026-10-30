@@ -13,9 +13,10 @@ from .ship import build_ship
 from .side import side_data
 
 HEAD = ("訂單編號", "PO 單號", "PR 單號", "線別", "倉別", "到貨日", "履約方式", "永豐料號", "品名", "入庫單號", "蝦皮數量", "單位", "原始訂購量",
-        "轉換率", "箱數", "下採數量", "EIP 數量", "EIP 單位", "出貨量", "缺貨", "缺貨原因", "效期", "調整原因", "缺貨通知", "狀態")
-WIDTH = (20, 20, 22, 7, 13, 11, 12, 22, 40, 22, 10, 6, 10, 8, 8, 10, 10, 8, 9, 8, 14, 24, 16, 13, 12)
-NUMS = ("蝦皮數量", "原始訂購量", "轉換率", "箱數", "下採數量", "EIP 數量", "出貨量", "缺貨")
+        "轉換率", "箱數", "下採數量", "EIP 數量", "EIP 單位", "出貨量", "缺貨", "驗收量", "缺貨原因", "效期", "調整原因", "缺貨通知", "狀態")
+WIDTH = (20, 20, 22, 7, 13, 11, 12, 22, 40, 22, 10, 6, 10, 8, 8, 10, 10, 8, 9, 8, 9, 14, 24, 16, 13, 12)
+NUMS = ("蝦皮數量", "原始訂購量", "轉換率", "箱數", "下採數量", "EIP 數量", "出貨量", "缺貨", "驗收量")
+RCV_FONT = Font(bold=True, color="C00000")      # 驗收量跟出貨量不一樣：紅字
 SHORT_FILL = PatternFill("solid", fgColor="FFF2A8")
 HEAD_FILL = PatternFill("solid", fgColor="D9E1F2")
 
@@ -45,7 +46,7 @@ def item_rows(d, conv_of=lambda i: None):
                "入庫單號": i["inbound_ids"] or "", "蝦皮數量": i["qty"], "單位": i["unit_name"] or i["unit_code"],
                "原始訂購量": i["qty_original"], "轉換率": conv, "箱數": cases, "下採數量": p["use_qty"] if p else None,
                "EIP 數量": p["out_qty"] if p else None, "EIP 單位": (p["out_unit"] or "") if p else "",
-               "出貨量": final, "缺貨": cut, "缺貨原因": "、".join(reasons),
+               "出貨量": final, "缺貨": cut, "驗收量": (d.get("received") or {}).get(i["supplier_sku_id"]), "缺貨原因": "、".join(reasons),
                "效期": "、".join(f"{a['exp']}（{a['qty']:,}）" for a in z["alloc"]) if z else "",
                "調整原因": (z["adj"]["reason"] or "") if z and z["adj"] else (p["adj"]["reason"] or "") if p and p.get("adj") else "",
                "缺貨通知": notice, "狀態": state}
@@ -82,8 +83,12 @@ def api_orders_export():
     for c in ws[1]:
         c.font, c.fill, c.alignment = Font(bold=True), HEAD_FILL, Alignment(horizontal="center", vertical="center")
     n_items = n_short = 0
+    rc = HEAD.index("驗收量") + 1
     for row, short in rows_all:
         ws.append([row[h] for h in HEAD])
+        want = row["出貨量"] if row["出貨量"] is not None else row["蝦皮數量"]
+        if row["驗收量"] is not None and row["驗收量"] != want:
+            ws.cell(ws.max_row, rc).font = RCV_FONT
         n_items += 1
         if short:
             n_short += 1

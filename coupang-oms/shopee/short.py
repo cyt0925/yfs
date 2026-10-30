@@ -220,6 +220,7 @@ LINE_MAX = 4800          # LINE 一則最多 5000 字，留一點餘裕
 def line_messages(groups):
     """通知文字（Penny 2026-10-22「刪單的合成一則，缺貨的合成一則，可以不用分那麼多則」，Jerry 看過示意圖「OK 照這樣做」）：
     同一個賣場的刪單全部合成一則、下修全部合成一則，裡面照 PR 分段（每段照 Alice 的 LINE 機器人格式：PR ID、預計到貨日、到貨倉別、品項）；
+    每品寫 PO ID、蝦皮SKU ID、IN 單號（有才寫）、料號，不寫品名（Alice 2026-10-30）；
     刪單在前、下修在後；不同賣場（P&G、紙潔、瑪氏）分開。超過 LINE 上限就照 PR 切成（1/2）（2/2）。
     混到不同次通知的，標題用最高那次，每品後面標第幾次。"""
     buckets = collections.OrderedDict()
@@ -243,7 +244,9 @@ def line_messages(groups):
             out = [f"■ PR ID：{pr}", f"預計到貨日：{g['expected_date'] or ''}", f"到貨倉別：{g['warehouse'] or ''}", f"{kind}SKU（{len(its)}項）："]
             for i, p in enumerate(its, 1):
                 tag = f"（第{p['rounds'][-1]['round']}次）" if len(rounds) > 1 else ""
-                out += [f"{i}. PO ID：{p['po_id'] or '尚未產生'}", f"蝦皮SKU ID：{p['shopee_sku_id']}", f"{p['supplier_sku_id']} {p['name']}{tag}"]
+                # Alice 2026-10-30：加 IN 單號（入庫單號，沒有就不寫那行）、刪品名（料號留著）
+                ins = "、".join(x.strip() for x in (p.get("inbound_ids") or "").split(",") if x.strip())
+                out += [f"{i}. PO ID：{p['po_id'] or '尚未產生'}", f"蝦皮SKU ID：{p['shopee_sku_id']}"] + ([f"IN 單號：{ins}"] if ins else []) + [f"{p['supplier_sku_id']}{tag}"]
                 if kind == "下修":
                     out += [f"訂購{p['orig']}／可出貨{p['final']}／缺貨{p['cut']}", f"處理方式：下修至{p['final']}"]
             sections.append((len(its), "\n".join(out)))

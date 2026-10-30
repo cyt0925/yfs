@@ -369,6 +369,16 @@ STAGES = (("diff", "差異待確認", "確認差異"), ("buy", "待產採購單"
 BUY_FULFILS = ("竹運採購進貨", "供應商直送")
 
 
+def received_map(conn):
+    """訂單編號 → {永豐料號: 驗收量}；只算 PDF 上 Actual Received 有填的（蝦皮驗收後才有）。"""
+    out = {}
+    for r in _rows(conn.execute("SELECT order_no, rows_json FROM shp_po_pdf")):
+        m = {x["sku"]: x["received"] for x in json.loads(r["rows_json"] or "[]") if x.get("received") is not None}
+        if m:
+            out[r["order_no"]] = m
+    return out
+
+
 def overview(conn, args):
     """訂單總覽：一張單（PO，還沒有 PO 就用 PR）一列，底下是品項；每張單算出還有哪些待辦（todo）。"""
     where, params = _order_filter(args)
@@ -379,6 +389,7 @@ def overview(conn, args):
     ship_st = ship_status_map(conn, [i["id"] for i in items if not i["removed"]])
     from .short import notify_status_map           # 缺貨維護：下修後的可出貨量、通知狀態
     short_st = notify_status_map(conn, [i["id"] for i in items if not i["removed"]])
+    rcv = received_map(conn)                        # 驗收量：蝦皮採購單 PDF 的 Actual Received（Jerry 2026-10-30）
     trash = {}                                     # 刪掉的單（只有 deleted=1 才會被撈出來）：PR、PO 都可以對
     for r in _rows(conn.execute("SELECT * FROM shp_deleted")):
         for k in (r["pr_id"], r["po_id"], r["order_no"]):
@@ -435,6 +446,9 @@ def overview(conn, args):
                 "ship": any(ships(i) and (i["qty"] or 0) > 0 and i["id"] not in ship_st for i in alive),     # 竹運採購進貨入庫單到了也算（2026-10-22）
                 "eip": any(po_st.get(i["id"]) == "已產出" for i in buy),
                 "notify": pend}
+        rv = rcv.get(g["order_no"])
+        g["received"] = sum(rv.get(i["supplier_sku_id"]) or 0 for i in alive) if rv else None
+        g["received_diff"] = bool(rv) and any(rv.get(i["supplier_sku_id"]) is not None and rv[i["supplier_sku_id"]] != final_of(i) for i in alive)
         g["trash"] = trash.get(g["po_id"] or "") or trash.get(g["pr_id"] or "")
         if g["trash"]:                                 # 刪掉的單沒有待辦
             todo = dict.fromkeys(todo, False)

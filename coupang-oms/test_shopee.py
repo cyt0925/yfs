@@ -72,13 +72,13 @@ def yx_pdf(pages):
     return doc.tobytes()
 
 
-def po_pdf(po, rows, text=True):
+def po_pdf(po, rows, text=True, received=None):
     """假的蝦皮後台採購單 PDF（照 678050_POTWCTWA2610121L1_PO.pdf：橫式、表格線、表頭每頁重複）。rows = [(Supplier SKU ID, 數量)]，一頁 8 列。
     text=False 模擬「Microsoft Print to PDF」印出來的：只有線、沒有字。"""
     import pymupdf
     doc = pymupdf.open()
-    heads = ["No.", "Shopee SKU ID", "Supplier SKU ID", "Barcode", "Item Name", "Purchase QTY (unit)", "Unit Name", "Purchase QTY (pcs)", "Comment"]
-    xs = [20, 45, 120, 200, 260, 400, 470, 530, 600, 700]
+    heads = ["No.", "Shopee SKU ID", "Supplier SKU ID", "Barcode", "Item Name", "Purchase QTY (unit)", "Unit Name", "Purchase QTY (pcs)", "Comment", "Actual Received"]
+    xs = [20, 45, 120, 200, 260, 400, 470, 530, 600, 700, 770]
     for k in range(0, max(len(rows), 1), 8):
         page = doc.new_page(width=842, height=595)
         t = (lambda pt, s_, **kw: page.insert_text(pt, s_, fontname="helv", fontsize=7, **kw)) if text else (lambda *a, **kw: None)
@@ -94,7 +94,8 @@ def po_pdf(po, rows, text=True):
             t((x + 2, y0 + 18), h)
         for j, (sku, q) in enumerate(rows[k:k + 8]):
             yy = ys[1] + 40 * j + 22
-            for x, v in zip(xs, [str(k + j + 1), "123_456", sku, "471", "item", str(q), "Pieces", str(q), ""]):
+            rv = (received or {}).get(sku)
+            for x, v in zip(xs, [str(k + j + 1), "123_456", sku, "471", "item", str(q), "Pieces", str(q), "", "" if rv is None else str(rv)]):
                 t((x + 2, yy), v)
     return doc.tobytes()
 
@@ -1001,14 +1002,20 @@ def short_tests(c, orders):
     check("合成兩則（Penny 2026-10-22「刪單的合成一則，缺貨的合成一則」）：同一個賣場的刪單一則、下修一則，刪單在前；L、H 的下修都在下修那則",
           r.status_code == 200 and [m.split("\n")[0] for m in ms] == ["【蝦皮缺貨刪單通知｜首次通知】", "【蝦皮缺貨下修通知｜首次通知】"]
           and "PR ID：PRTWCOTWA202610010001" in mL and "POTWCTWA26101500H" in mL, str([m.split("\n")[:3] for m in ms]))
-    check("下修那則：開頭賣場 P&G、共幾張 PR 幾項；裡面照 PR 分段（■ PR ID、預計到貨日、到貨倉別、下修SKU）、PO ID、蝦皮SKU ID、料號品名、訂購／可出貨／缺貨、處理方式",
+    check("下修那則：開頭賣場 P&G、共幾張 PR 幾項；裡面照 PR 分段（■ PR ID、預計到貨日、到貨倉別、下修SKU）、PO ID、蝦皮SKU ID、料號（不寫品名，Alice 2026-10-30）、訂購／可出貨／缺貨、處理方式",
           mL.split("\n")[:3] == ["【蝦皮缺貨下修通知｜首次通知】", "賣場：P&G", f"共 2 張 PR、{mL.count('處理方式：')} 項"]
           and "■ PR ID：PRTWCOTWA202610010001\n預計到貨日：2026-10-20\n到貨倉別：TWA\n下修SKU（1項）：" in mL
-          and "1. PO ID：POTWCTWA26100514L" in mL and "蝦皮SKU ID：41511463369_285962283475" in mL and "4987176232878_CNN 幫寶適 清新幫 拉拉褲(XXL)26片" in mL
+          and "1. PO ID：POTWCTWA26100514L" in mL and "蝦皮SKU ID：41511463369_285962283475" in mL and "\n4987176232878_CNN\n" in mL and "幫寶適" not in mL
           and "訂購190／可出貨140／缺貨50" in mL and "處理方式：下修至140" in mL and mL.endswith("請協助下修訂單數量，完成後請回覆，謝謝。"), mL)
     mH = next((m for m in ms if m.startswith("【蝦皮缺貨刪單通知")), "")
     check("刪單那則：H 那段刪單SKU 2 項、PO ID、不寫數量、結尾請協助處理刪單", "刪單SKU（2項）：" in mH and "4987176372093_TNN" in mH and "4987176386700_CNN" in mH
           and "訂購" not in mH and mH.endswith("請協助處理刪單，完成後請回覆，謝謝。"), mH)
+    ins = c.get("/api/shopee/orders", query_string={"from": "2026-01-01"}).get_json()["orders"]
+    with_in = {i["supplier_sku_id"]: i["inbound_ids"] for g in ins for i in g["items"] if i["inbound_ids"]}
+    import re as _re
+    items_txt = [b for m in ms for b in _re.split(r"\n(?=\d+\. PO ID)", m) if "PO ID" in b]       # 一品一段
+    check("有入庫單號的品項多一行「IN 單號：…」，沒有的不寫（Alice 2026-10-30）", items_txt and any("IN 單號：" in b for b in items_txt)
+          and all(("IN 單號：" in b) == any(k in b for k in with_in) for b in items_txt), "\n---\n".join(items_txt)[:600])
     check("取得通知時帶刪單幾項、下修幾項（Email 主旨用）", n.get("del_items") == 2 and n.get("cut_items", 0) >= 1, str((n.get("del_items"), n.get("cut_items"))))
     import shopee.short as _sh
     big = [{"line": "寶僑", "order_no": f"PO{i}", "expected_date": "2026-10-20", "warehouse": "TWA",
@@ -1037,7 +1044,7 @@ def short_tests(c, orders):
     ms2 = c.get(f"/api/shopee/short/notify/{r.get_json()['id']}").get_json()["messages"]; t = ms2[0]
     check("同一張 PR 一個 SKU 第 2 次、另一個第 1 次 → 下修合成一則（Jerry 2026-10-14），標題用第二次通知、每品標第幾次、缺貨寫累計、下修至 120",
           len(ms2) == 1 and t.startswith("【蝦皮缺貨下修通知｜第二次通知】") and "下修SKU（2項）：" in t and "訂購190／可出貨120／缺貨70" in t
-          and "處理方式：下修至120" in t and "拉拉褲(XXL)26片（第2次）" in t and "4987176232878_RNN" in t and "箱購(XXL)26片X4包（第1次）" in t, t)
+          and "處理方式：下修至120" in t and "4987176232878_CNN（第2次）" in t and "4987176232878_RNN（第1次）" in t, t)
     r = save({"order_id": oid, "short": 1, "reasons": ["庫存不足"]})
     check("寶僑兩次都通知過 → 不能再填（400）", r.status_code == 400 and "2 次" in r.get_json()["error"], r.get_json()["error"])
     cc = it(plan(), C, "1022257_PNN")
@@ -1414,6 +1421,25 @@ def po_pdf_tests(c, orders):
     check("記下誰下載過、歷程有上傳和畫採購單", sd["po_pdf"]["drawn_by"] == "Jerry" and {l["field"] for l in lg} == {"shopee_po_pdf", "shopee_po_draw"}, str(lg)[:200])
     r = c.get("/api/shopee/po_pdf/POTWCTWA0000000X0/file")
     check("沒上傳過的單按下載 → 講要先上傳", r.status_code == 404 and "還沒上傳" in r.get_json()["error"])
+    # 驗收量（Jerry 2026-10-30「像酷澎的實際驗入數量」）：蝦皮驗收後的採購單 PDF，Actual Received 那欄有數字
+    check("還沒驗收的 PDF（Actual Received 空白）→ 沒有驗收量", next(x for x in orders()["orders"] if x["order_no"] == g["order_no"])["received"] is None)
+    s0, s1 = rows[0][0], rows[-1][0]
+    want0 = final[s0] if final[s0] is not None else rows[0][1]
+    rcv = {s_: (final[s_] if final[s_] is not None else q) for s_, q in rows}
+    rcv[s0] = want0 - 1                               # 第一品少收 1 個
+    d = up((po_pdf(g["po_id"], rows, received=rcv), f"678050_{g['po_id']}_PO_驗收.pdf")).get_json()
+    gg = next(x for x in orders()["orders"] if x["order_no"] == g["order_no"])
+    check("驗收後的 PDF 再上傳 → 讀到每品驗收量；清單那張寫驗收量合計、有一品跟出貨量不一樣標記起來", d["orders"][0]["received"] == len(rows)
+          and gg["received"] == sum(rcv.values()) and gg["received_diff"], str((d["orders"], gg["received"], gg["received_diff"])))
+    it = c.get("/api/shopee/orders/items", query_string={"nos": g["order_no"], "from": "2026-01-01"}).get_json()["orders"][g["order_no"]]
+    sd = c.get("/api/shopee/order", query_string={"no": g["order_no"], "from": "2026-01-01"}).get_json()
+    check("展開品項、訂單視窗都帶每品驗收量", {r_["sku"]: r_["received"] for r_ in it} == rcv and sd["received"] == rcv, str(sd["received"])[:200])
+    r = c.post("/api/shopee/orders/export", json={"order_nos": [g["order_no"]], "from": "2026-01-01"})
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).active
+    hd = [x.value for x in ws[1]]; ci = hd.index("驗收量")
+    cells = {row[hd.index("永豐料號")].value: row[ci] for row in ws.iter_rows(min_row=2)}
+    check("匯出訂單明細多一欄驗收量；跟出貨量不一樣的那格紅字", cells[s0].value == want0 - 1 and cells[s0].font.color and cells[s0].font.color.rgb.endswith("C00000")
+          and (s1 == s0 or not (cells[s1].font.color and str(cells[s1].font.color.rgb).endswith("C00000"))), str((hd[ci - 2:ci + 1], cells[s0].value)))
 
     print("\n【24】待回填 EIP 採購單號勾選 → 一次下載勾的那幾份（Jerry 2026-10-30「就跟其他部份一樣」）")
     eips = c.get("/api/shopee/eips", query_string={"from": "2026-01-01"}).get_json()["eips"]
