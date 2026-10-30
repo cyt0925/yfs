@@ -386,6 +386,8 @@ async function drawEips() {
   $$("#e-tbl [data-open]").forEach(a => a.addEventListener("click", () => openSide(a.dataset.open)));
 }
 
+/* 下面的卡片：幾張就分幾欄（最多 3 欄、每欄至少 340px），一欄一欄往下疊；歷程另外放最底下整排 */
+const sdGrid = html => { const n = (html.match(/<div class="sd-sec"/g) || []).length; return n ? `<div class="sd-grid" style="columns:${Math.min(n, 3)} 340px">${html}</div>` : ""; };
 /* ── 入庫單視窗：一張單的全部（2026-10-30 從右側面板改成畫面中間的大視窗，跟蝦皮特選一樣；品項一品一列，下採和 ③ 放同一列） ── */
 let SD = null, SDQ = "", SDF = "all";
 $("#sd-close").addEventListener("click", closeSide); $("#sd-close2").addEventListener("click", closeSide);
@@ -449,14 +451,15 @@ function renderSide() {
     <div class="tbl-wrap" style="max-height:none"><table class="t it-t" id="sd-items"></table></div>
     ${ck ? `<div class="kbd mt-1">不出貨的可以改成出貨（例如採購說會補出）；改了會記誰改的。</div>` : ""}`
     : `<div class="kbd">${g.ship_method === "竹運出貨" ? "這張單是竹運出貨，不用下採。" : "沒有要下採的品項。"}</div>`);
-  html += `<div class="sd-grid">`;
-  if (ck) html += checkSec(ck, sec);
-  if (d.eips.length) html += sec(`EIP 採購單（${d.eips.length} 份）`, d.eips.map(e => `<div class="sd-it"><div class="fn" style="white-space:normal">${esc(e.filename)}</div>
+  let cards = "";
+  if (ck) cards += checkSec(ck, sec);
+  if (d.eips.length) cards += sec(`EIP 採購單（${d.eips.length} 份）`, d.eips.map(e => `<div class="sd-it"><div class="fn" style="white-space:normal">${esc(e.filename)}</div>
       <div class="sd-kv"><span>${e.rows} 列・${fmt(e.boxes)} 箱</span><span>${esc(e.created_by)} ${when(e.created_at)} 產出</span></div><div class="mt-1 nw">${eipActs(e)}</div></div>`).join(""));
-  html += sec("倉別資料", d.warehouse ? `<div class="kbd" style="white-space:pre-line;color:var(--ink2)">${esc(d.warehouse.note)}</div>`
+  cards += sec("倉別資料", d.warehouse ? `<div class="kbd" style="white-space:pre-line;color:var(--ink2)">${esc(d.warehouse.note)}</div>`
     : `<div class="alert al-warn">倉別主檔沒有「${esc(g.warehouse)}」，瑪氏採購單、直送採購單的地址、電話會空白。請到「資料與設定」的倉別主檔加進來。</div>`);
-  html += `<details class="sd-sec"><summary class="h">歷程（${d.logs.length}）</summary><div class="b">${d.logs.map(l => `<div class="sd-it"><b>${esc(l.field_label)}</b>　${esc(l.old_value)}${l.old_value ? " → " : ""}${esc(l.new_value)}
-    <div class="kbd">${esc(l.operator)} ${when(l.changed_at)}${l.note ? "・" + esc(l.note).slice(0, 120) : ""}</div></div>`).join("") || `<div class="kbd">沒有紀錄</div>`}</div></details></div>`;
+  html += sdGrid(cards);
+  html += `<details class="sd-sec sd-log"><summary class="h">歷程（${d.logs.length}）</summary><div class="b">${d.logs.map(l => `<div class="sd-it"><b>${esc(l.field_label)}</b>　${esc(l.old_value)}${l.old_value ? " → " : ""}${esc(l.new_value)}
+    <div class="kbd">${esc(l.operator)} ${when(l.changed_at)}${l.note ? "・" + esc(l.note).slice(0, 120) : ""}</div></div>`).join("") || `<div class="kbd">沒有紀錄</div>`}</div></details>`;
   $("#sd-body").innerHTML = html;
   $$("#sd-title [data-ship]").forEach(c => c.addEventListener("click", () => { if (!c.classList.contains("on")) setShip([no], c.dataset.ship); }));
   const ok = $("#sd-diff-ok");

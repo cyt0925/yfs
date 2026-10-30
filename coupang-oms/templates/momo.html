@@ -82,7 +82,8 @@
   .sd-b { flex:1; overflow:auto; padding:12px 20px 24px; }
   .sd-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-top:10px; }
   .sd-facts > div { border:1px solid var(--line2); border-radius:10px; padding:6px 12px; background:#fff; } .sd-facts .k { font-size:11.5px; color:var(--muted); } .sd-facts .v { font-size:14px; font-weight:700; }
-  .sd-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:12px; align-items:start; margin-top:12px; } .sd-grid > .sd-sec { margin-top:0; }
+  .sd-grid { column-gap:12px; margin-top:12px; } .sd-grid > .sd-sec { break-inside:avoid; margin:0 0 12px; }   /* 卡片一欄一欄往下疊，矮的下面不留空（Jerry 2026-10-30「一堆空間空白」） */
+  .sd-log .sd-it { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 12px; padding:6px 0; } .sd-log .sd-it > div { margin:0; }
   .it-tools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:2px 0 8px; }
   table.it-t td { vertical-align:top; padding:8px 9px; } table.it-t th { padding:7px 9px; position:sticky; top:0; }
   table.it-t tr.sd-it td { border-top:1px solid var(--line2); }

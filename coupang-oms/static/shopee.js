@@ -169,14 +169,14 @@ const STAGE_DEF = [
   { key: "diff", t: "差異待確認", d: "蝦皮重傳後內容有變", act: "確認差異", bad: true,
     hint: "蝦皮重傳後數量、到貨日或倉別有變；確認差異後，訂單才能往下處理。" },
   { key: "buy", t: "待產採購單", d: "竹運採購進貨、直送", act: "產出 EIP 採購單",
-    hint: "勾選訂單產出 EIP 採購單；「需處理」的訂單請點該列，在右側修正。" },
+    hint: "勾選訂單產出 EIP 採購單；「需處理」的訂單請點該列，在視窗裡修正。" },
   { key: "eip", t: "待回填 EIP 採購單號", d: "上傳 EIP 後回填", act: "回填 EIP 採購單號",
     hint: "上傳 EIP 後回填採購單號，回填後即鎖定；回填後瑪氏可下載瑪氏採購單，寶僑、紙潔直送可下載直送採購單（給採購轉原廠）。" },
   { key: "ship", t: "待產拋單檔", d: "竹運出貨、採購進貨入庫單到了", act: "產出拋單檔",
     hint: "竹運出貨的單，和竹運採購進貨入庫單（IN 開頭）到了的單，都在這裡產拋單檔，履約方式不用改。系統依 EC 庫存、竹運效期判斷可出貨量；缺貨會自動列入「待通知蝦皮」。" },
   { key: "notify", t: "待通知蝦皮", d: "有缺貨、尚未通知", act: "通知蝦皮",
-    hint: "勾選訂單產生蝦皮通知，可以 LINE 複製或用 Email 寄；之前的通知在下面的通知紀錄。瑪氏缺貨請上傳勇信配送明細表；寶僑、紙潔缺貨請點該單，在右側填寫。" },
-  { key: "all", t: "全部訂單", d: "", hint: "點一張單，右側看品項、採購單、缺貨、差異與歷程；採購來信缺貨時，搜尋訂單後在右側填寫。" },
+    hint: "勾選訂單產生蝦皮通知，可以 LINE 複製或用 Email 寄；之前的通知在下面的通知紀錄。瑪氏缺貨請上傳勇信配送明細表；寶僑、紙潔缺貨請點該單，在視窗裡填寫。" },
+  { key: "all", t: "全部訂單", d: "", hint: "點一張單，視窗裡看品項、採購單、缺貨、差異與歷程；採購來信缺貨時，搜尋訂單後在視窗裡填寫。" },
 ];
 const SDEF = Object.fromEntries(STAGE_DEF.map(x => [x.key, x]));
 
@@ -628,8 +628,8 @@ function whyText(items) {
   return [...n].map(([w, c]) => `${w} ${c} 項`).join("、");
 }
 const blockCell = g => `<span class="badge b-diff">${g.blocking} 項需處理</span><div class="kbd" style="color:var(--bad);margin-top:3px">${esc(whyText(g.items))}</div>`;
-const BLK_ICON = `<i class="bi bi-exclamation-circle blk-i" title="需先處理：點這一列，右側會列出每一品的原因"></i>`;
-const blkHint = n => n ? `有 ${n} 張需先處理：點該列，右側會列出每一品的原因和修正方式。` : "";
+const BLK_ICON = `<i class="bi bi-exclamation-circle blk-i" title="需先處理：點這一列，視窗裡會列出每一品的原因"></i>`;
+const blkHint = n => n ? `有 ${n} 張需先處理：點該列，視窗裡會列出每一品的原因和修正方式。` : "";
 
 const PLAN_FREE = new Set(["可產出", "瑪氏目前只開放供應商直送", "認不出線別"]);
 const planChk = g => !g.supported ? [g.line === "瑪氏" ? "瑪氏目前只開放供應商直送" : "認不出線別"] : g.blocking ? whyKeys(g.items) : ["可產出"];
@@ -1211,6 +1211,8 @@ $("#nm-save").addEventListener("click", async () => {
 });
 async function loadNotifyMail() { try { NM_TO = (await api("/api/shopee/notify_mail")).to || ""; $("#nm-to").value = NM_TO; } catch (e) { /* 讀不到就空著 */ } }
 
+/* 下面的卡片：幾張就分幾欄（最多 3 欄、每欄至少 340px），一欄一欄往下疊；歷程另外放最底下整排 */
+const sdGrid = html => { const n = (html.match(/<div class="sd-sec"/g) || []).length; return n ? `<div class="sd-grid" style="columns:${Math.min(n, 3)} 340px">${html}</div>` : ""; };
 /* ── 訂單視窗：一張單的全部（2026-10-30 從右側面板改成畫面中間的大視窗，像酷澎 PO 視窗；品項一品一列） ── */
 let SIDE = null, SIDE_NO = "", SDQ = "", SDF = "all";
 $("#sd-close").addEventListener("click", closeSide); $("#sd-close2").addEventListener("click", closeSide);
@@ -1341,7 +1343,7 @@ function renderSide() {
       <span style="flex:1"></span>${g.line === "瑪氏" && d.short ? `<span class="kbd">瑪氏的缺貨依勇信配送明細表核對，PDF 請拖曳至上方「上傳檔案」。</span>` : ""}</div>
     <div class="tbl-wrap" style="max-height:none"><table class="t it-t" id="sd-items"></table></div></div>`;
 
-  h += `<div class="sd-grid">`;          // 下面各區塊（EIP、調整原因、拋單檔、通知、差異、歷程）排成卡片
+  const head_ = h; h = "";               // 下面各區塊（EIP、調整原因、拋單檔、通知）排成卡片，差異紀錄、歷程放最底下整排
   // EIP 採購單（竹運採購進貨、直送）
   if (d.buy) h += `<div class="sd-sec"><div class="h"><i class="bi bi-file-earmark-spreadsheet"></i> EIP 採購單 <span class="kbd">${d.eips.length ? `${d.eips.length} 份` : "尚未產出"}</span></div><div class="b">
     ${d.eips.map(e => `<div class="sd-it"><a class="lnk" href="/api/shopee/eips/${e.id}/file">${esc(e.filename)}</a>${e.note ? `<div class="ff-note">${esc(e.note)}</div>` : ""}
@@ -1383,14 +1385,14 @@ function renderSide() {
     <div class="sd-acts"><button class="btn btn-p btn-sm sd-notify"><i class="bi bi-chat-dots"></i> 產生這張單的蝦皮通知（LINE）</button><span class="kbd">產生後這次的下修紀錄會鎖定。</span></div></div></div>`;
 
   // 差異紀錄、歷程（平常收起來）
-  if (d.diffs.length) h += `<details class="sd-sec"><summary class="h"><i class="bi bi-arrow-left-right"></i> 差異紀錄 <span class="kbd">${d.diffs.length} 筆</span></summary><div class="b">
+  h = head_ + sdGrid(h);
+  if (d.diffs.length) h += `<details class="sd-sec sd-log"><summary class="h"><i class="bi bi-arrow-left-right"></i> 差異紀錄 <span class="kbd">${d.diffs.length} 筆</span></summary><div class="b">
     ${d.diffs.map(x => `<div class="sd-it"><span class="fn">${esc(x.supplier_sku_id)}</span>　${esc(x.field_label)}：${esc(x.old_value)} → <b>${esc(x.new_value)}</b>
       <div class="kbd">${esc(x.uploaded_by)} ${esc((x.uploaded_at || "").slice(5, 16))} 上傳　${x.confirmed ? `${esc(x.confirmed_by)} ${esc((x.confirmed_at || "").slice(5, 16))} 確認` : `<span class="neg">待確認</span>`}</div></div>`).join("")}</div></details>`;
-  h += `<details class="sd-sec"><summary class="h"><i class="bi bi-clock-history"></i> 歷程 <span class="kbd">${d.logs.length} 筆</span></summary><div class="b">
+  h += `<details class="sd-sec sd-log"><summary class="h"><i class="bi bi-clock-history"></i> 歷程 <span class="kbd">${d.logs.length} 筆</span></summary><div class="b">
     ${d.logs.map(l => `<div class="sd-it"><span class="kbd">${esc((l.changed_at || "").slice(5, 16).replace("T", " "))}　${esc(l.operator)}</span>　<b>${esc(l.field_label)}</b>
       ${l.old_value || l.new_value ? `<div>${esc(l.old_value)}${l.old_value && l.new_value ? " → " : ""}${esc(l.new_value)}</div>` : ""}${l.note ? `<div class="kbd">${esc(l.note)}</div>` : ""}</div>`).join("")
       || `<div class="kbd">尚無紀錄</div>`}</div></details>`;
-  h += `</div>`;
   $("#sd-body").innerHTML = h;
   drawItems();
   $("#sd-q").addEventListener("input", () => { SDQ = $("#sd-q").value.trim(); drawItems(); });
