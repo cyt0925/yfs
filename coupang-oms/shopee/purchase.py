@@ -762,6 +762,30 @@ def api_eip_file(eid):
                      mimetype="application/vnd.ms-excel")
 
 
+@shopee_bp.route("/api/shopee/eips.zip")
+def api_eips_zip():
+    """勾選的 EIP 檔一次下載（待回填 EIP 採購單號勾選，Jerry 2026-10-30）：內容跟一份一份點檔名下載的一樣。"""
+    ids = eip_ids_arg()
+    if not ids:
+        return jsonify({"error": "請先勾選要下載的 EIP 檔。"}), 400
+    conn = get_conn()
+    try:
+        eips = _rows(conn.execute(f"SELECT * FROM shp_eip WHERE id IN ({','.join('?' * len(ids))}) ORDER BY expected_date, warehouse, id", ids))
+    finally:
+        conn.close()
+    if not eips:
+        return jsonify({"error": "找不到勾選的 EIP 檔，請重新整理頁面。"}), 404
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for e in eips:
+            name = e["filename"] if not e["eip_po"] else e["filename"].replace(".xls", f"({e['eip_po']}).xls")
+            zf.writestr(name, eip_xls(json.loads(e["rows_json"] or "[]"), e["line"]))
+    buf.seek(0)
+    resp = send_file(buf, as_attachment=True, download_name=f"蝦皮特選EIP採購單_勾選{len(eips)}份.zip", mimetype="application/zip")
+    resp.headers["X-Shopee-Files"] = str(len(eips))
+    return resp
+
+
 def po_status_map(conn, ids):
     """訂單總覽「採購單產出狀態」用：品項 id → 已產出／已回填。"""
     return {k: ("已回填" if v["eip_po"] else "已產出") for k, v in _eip_map(conn, ids).items()}

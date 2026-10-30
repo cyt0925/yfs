@@ -1406,6 +1406,25 @@ def po_pdf_tests(c, orders):
     r = c.get("/api/shopee/po_pdf/POTWCTWA0000000X0/file")
     check("沒上傳過的單按下載 → 講要先上傳", r.status_code == 404 and "還沒上傳" in r.get_json()["error"])
 
+    print("\n【24】待回填 EIP 採購單號勾選 → 一次下載勾的那幾份（Jerry 2026-10-30「就跟其他部份一樣」）")
+    eips = c.get("/api/shopee/eips", query_string={"from": "2026-01-01"}).get_json()["eips"]
+    pick = eips[:2]
+    r = c.get("/api/shopee/eips.zip", query_string={"ids": ",".join(str(e["id"]) for e in pick)})
+    names = zipfile.ZipFile(io.BytesIO(r.data)).namelist() if r.status_code == 200 else []
+    check("勾兩份 → EIP 檔壓縮檔裡就這兩份、檔名寫勾選幾份", len(names) == 2 and "%E5%8B%BE%E9%81%B82%E4%BB%BD" in r.headers.get("Content-Disposition", ""),
+          str((r.status_code, names, r.headers.get("Content-Disposition"))))
+    check("沒勾就下載 EIP 檔 → 擋下來", c.get("/api/shopee/eips.zip").status_code == 400)
+    mf = [e for e in eips if e["line"] == "瑪氏" and e["eip_po"]]
+    other = next((e for e in eips if e["line"] != "瑪氏"), None)
+    if mf and other:
+        r = c.get("/api/shopee/mars_po.zip", query_string={"ids": f"{mf[0]['id']},{other['id']}"})
+        check("勾一份已回填的瑪氏＋一份寶僑 → 瑪氏採購單只有那 1 份（不管到貨日）", r.status_code == 200
+              and len(zipfile.ZipFile(io.BytesIO(r.data)).namelist()) == 1 and r.headers["X-Shopee-Files"] == "1", str(r.status_code))
+        r = c.get("/api/shopee/mars_po.zip", query_string={"ids": str(other["id"])})
+        check("勾的裡面沒有已回填的瑪氏 → 講「勾選的檔裡沒有」", r.status_code == 400 and "勾選的檔裡沒有" in r.get_json()["error"], str(r.get_json()))
+    else:
+        check("（測試資料裡要有已回填的瑪氏 EIP 和別的線別）", False, str([(e["line"], e["eip_po"]) for e in eips]))
+
 
 if __name__ == "__main__":
     main()

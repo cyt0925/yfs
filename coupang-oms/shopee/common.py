@@ -81,10 +81,31 @@ __all__ = ["upload_cond", "group_meta", "ships", "ship_cond", "SHIP_DIRECT", "SH
     "base64", "collections", "io", "json", "re", "current_app", "jsonify", "render_template", "request", "send_file",
     "get_conn", "_guard_ready", "_log", "_operator", "_row", "_rows", "now",
     "shopee_bp", "SYSTEM", "FULFILS", "LINES", "UNIT_CODES", "WAREHOUSES", "ST_IMPORTED", "ST_DIFF",
-    "split_supplier_sku", "line_of", "wh_name", "not_deleted",
+    "split_supplier_sku", "line_of", "wh_name", "not_deleted", "eip_ids_arg", "eip_scope",
 ]
 
 _ORDER_NO_SQL = "CASE WHEN po_id != '' THEN po_id ELSE pr_id END"
+
+
+def eip_ids_arg():
+    """?ids=1,2,3：待回填 EIP 採購單號勾選的那幾份（Jerry 2026-10-30）。"""
+    return [int(x) for x in str(request.args.get("ids") or "").split(",") if x.strip().isdigit()]
+
+
+def eip_scope(where, params):
+    """EIP 檔的下載範圍：有勾（ids）就只看勾的、不管到貨日；沒勾就照畫面的到貨日、上傳日篩選。回 (where, params)。"""
+    ids = eip_ids_arg()
+    if ids:
+        return where + [f"id IN ({','.join('?' * len(ids))})"], params + ids
+    where, params = list(where), list(params)
+    if request.args.get("from"):
+        where.append("expected_date >= ?"); params.append(request.args["from"])
+    if request.args.get("to"):
+        where.append("expected_date <= ?"); params.append(request.args["to"])
+    usql, up = upload_cond(request.args.get("up_from", ""), request.args.get("up_to", ""), "o.")
+    if usql:
+        where.append(f"id IN (SELECT i.eip_id FROM shp_eip_items i JOIN shp_orders o ON o.id = i.order_id WHERE {usql})"); params += up
+    return where, params
 
 
 def not_deleted(prefix="shp_orders."):

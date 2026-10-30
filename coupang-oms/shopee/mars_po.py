@@ -162,20 +162,14 @@ def api_shopee_mars_po(eid):
 
 @shopee_bp.route("/api/shopee/mars_po.zip")
 def api_shopee_mars_po_zip():
-    """到貨日區間內、已回填 EIP 採購單號的瑪氏採購單一次下載。"""
+    """到貨日區間內（或勾選的那幾份）、已回填 EIP 採購單號的瑪氏採購單一次下載。"""
     where, params = ["line = ?", "eip_po != ''"], [MARS_LINE]
-    if request.args.get("from"):
-        where.append("expected_date >= ?"); params.append(request.args["from"])
-    if request.args.get("to"):
-        where.append("expected_date <= ?"); params.append(request.args["to"])
-    usql, up = upload_cond(request.args.get("up_from", ""), request.args.get("up_to", ""), "o.")
-    if usql:
-        where.append(f"id IN (SELECT i.eip_id FROM shp_eip_items i JOIN shp_orders o ON o.id = i.order_id WHERE {usql})"); params += up
+    where, params = eip_scope(where, params)
     conn = get_conn()
     try:
         eips = _rows(conn.execute(f"SELECT * FROM shp_eip WHERE {' AND '.join(where)} ORDER BY expected_date, warehouse, id", params))
         if not eips:
-            return jsonify({"error": "這段到貨日沒有已回填 EIP 採購單號的瑪氏採購單。"}), 400
+            return jsonify({"error": "勾選的檔裡沒有已回填 EIP 採購單號的瑪氏採購單。" if request.args.get("ids") else "這段到貨日沒有已回填 EIP 採購單號的瑪氏採購單。"}), 400
         whs, base = wh_settings(conn), mars_settings(conn)
         files = [po_bytes(conn, e, whs, base) for e in eips]
     finally:

@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import zipfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 FAKE = os.path.join(BASE, "samples", "master", "fake")
@@ -851,12 +852,12 @@ def main():
         check("點原因「贈品不用出」→ 刪除：視窗關掉、清單少一張、出現「顯示已刪除 1」", pg.is_visible("#a-del") and "顯示已刪除 1" in pg.inner_text("#a-del")
               and k0 not in pg.inner_text("#tbl"), pg.inner_text("#sum"))
         pg.click("#a-del"); pg.wait_for_selector("#tbl tr.og.del", timeout=8000)
-        check("點「顯示已刪除」→ 那張灰色列出來，寫誰刪的、原因、有「還原」", "贈品不用出" in pg.inner_text("#tbl tr.og.del") and "Jerry" in pg.inner_text("#tbl tr.og.del")
-              and pg.is_visible("#tbl tr.og.del .rs-del"), pg.inner_text("#tbl tr.og.del"))
+        check("點「顯示已刪除」→ 只列刪掉的那張（灰色），寫誰刪的、原因、有「還原」", "贈品不用出" in pg.inner_text("#tbl tr.og.del") and "Jerry" in pg.inner_text("#tbl tr.og.del")
+              and pg.is_visible("#tbl tr.og.del .rs-del") and pg.locator("#tbl tr.og:not(.del)").count() == 0 and "1 張已刪除的訂單" in pg.inner_text("#sum"), pg.inner_text("#tbl")[:300])
         pg.click("#tbl tr.og.del .rs-del"); pg.wait_for_function("!document.querySelector('#tbl tr.og.del')", timeout=8000); pg.wait_for_timeout(300)
-        check("按還原 → 回到清單、回到待產採購單", k0 in pg.inner_text("#tbl") and count("buy") == 1, pg.inner_text("#stages"))
-        pg.click("#a-del"); pg.wait_for_timeout(600)
-        check("再點一下「顯示已刪除」關掉；沒有刪掉的單就不顯示這顆", pg.query_selector("#a-del") is None and pg.locator("#tbl tr.og").count() == n0)
+        pg.wait_for_function(f"document.querySelectorAll('#tbl tr.og').length === {n0}", timeout=8000)
+        check("按還原 → 最後一張還原了就回到一般清單：那張回來、回到待產採購單、沒有刪掉的單就不顯示「顯示已刪除」", k0 in pg.inner_text("#tbl") and count("buy") == 1
+              and pg.query_selector("#a-del") is None, pg.inner_text("#stages"))
         # 訂單視窗：上一張／下一張照清單順序；點視窗外面也關
         stage("buy"); pg.wait_for_selector("#b-tbl tr.og", timeout=10000); pg.click("#b-tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side:not(.hidden) .sd-sec", timeout=8000)
         check("待產採購單打開一張：寫第 1／1 張、上一張下一張都按不了", "第 1／1 張" in pg.inner_text("#sd-pos") and pg.is_disabled("#sd-prev") and pg.is_disabled("#sd-next"), pg.inner_text("#sd-pos"))
@@ -956,6 +957,19 @@ def main():
               pg.is_visible("#e-direct") and dl.value.suggested_filename.startswith("PO202610003蝦皮特選直送採購單_1019_觀音_"), dl.value.suggested_filename)
         check("每份 EIP 那列有「取消產出」；已回填的那份灰掉", pg.eval_on_selector_all("#e-tbl button.e-cancel", "els => els.length") == 2
               and pg.eval_on_selector_all("#e-tbl button.e-cancel:disabled", "els => els.length") == 1, pg.inner_text("#e-tbl")[:200])
+        # 勾選 → 一次下載勾的那幾份（Jerry 2026-10-30「就跟其他部份一樣」）
+        pg.check("#e-ck-all"); pg.wait_for_selector("#e-bar .eb-eip", timeout=5000)
+        check("表頭全選 → 下面一條：已勾選 2 份、下載勾選的 EIP 檔（2 份）、直送採購單只算已回填的（1 份）", "已勾選 2 份" in pg.inner_text("#e-bar")
+              and "EIP 檔（2 份）" in pg.inner_text("#e-bar") and "直送採購單（1 份）" in pg.inner_text("#e-bar") and "還沒回填" in pg.inner_text("#e-bar"), pg.inner_text("#e-bar"))
+        with pg.expect_download(timeout=15000) as dlz:
+            pg.click("#e-bar .eb-eip")
+        zf_ = zipfile.ZipFile(io.BytesIO(open(dlz.value.path(), "rb").read()))
+        check("下載勾選的 EIP 檔 → 一個壓縮檔、裡面 2 份（回填過的檔名帶單號）", len(zf_.namelist()) == 2 and any("PO202610003" in n for n in zf_.namelist()), str(zf_.namelist()))
+        with pg.expect_download(timeout=15000) as dlz:
+            pg.click("#e-bar .eb-direct")
+        check("下載勾選的直送採購單 → 只有回填過的那 1 份", len(zipfile.ZipFile(io.BytesIO(open(dlz.value.path(), "rb").read())).namelist()) == 1)
+        pg.click("#e-bar .eb-clear"); pg.wait_for_timeout(300)
+        check("取消勾選 → 那條收起來", pg.is_hidden("#e-bar") and not pg.is_checked("#e-tbl input.e-ck >> nth=0"))
         pg.once("dialog", lambda d: d.accept()); pg.click("#e-tbl button.e-cancel:not(:disabled)"); pg.wait_for_timeout(1200)
         check("沒回填的那份按「取消產出」→ 刪掉、提示回到待產採購單、待產採購單變 1", "回到「待產採購單」" in pg.inner_text("#toasts") and count("buy") == 1
               and pg.eval_on_selector_all("#e-tbl button.e-cancel", "els => els.length") == 1, pg.inner_text("#toasts") + pg.inner_text("#stages"))
@@ -983,13 +997,22 @@ def main():
         stage("ship")
         check("待產拋單檔：沒有竹運出貨的單時寫提示", "這一步目前沒有要處理的訂單" in pg.inner_text("#z-tbl"), pg.inner_text("#z-tbl")[:100])
 
-        print("\n【6e-4】寶僑填缺貨（全部訂單點開那張）→ 待通知蝦皮 → 產 LINE 通知")
-        stage("all"); pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side .sd-short", timeout=8000)
+        print("\n【6e-4】寶僑缺貨（全部訂單點開那張，出貨量直接改）→ 待通知蝦皮 → 產 LINE 通知")
+        stage("all"); pg.click("#tbl tr.og >> nth=0 >> .fn >> nth=0"); pg.wait_for_selector("#side .sd-qe", timeout=8000)
+        check("訂單視窗：寶僑的出貨量可以點、寫「點一下可改」；「填缺貨」按鈕改成「缺貨紀錄」（Jerry 2026-10-30「像酷澎那樣」）",
+              "點一下可改" in pg.inner_text("#sd-items") and "缺貨紀錄" in pg.inner_text("#sd-items") and pg.query_selector("#sd-items button.sd-short") is None, pg.inner_text("#sd-items")[:300])
         pg.click("#side .sd-short >> nth=0"); pg.wait_for_selector("#dlg-short[open]", timeout=5000)
-        check("填缺貨視窗：第 1 次下修、這次之前可出貨量、預設勾庫存不足", "第 1 次下修" in pg.inner_text("#dk-round") and pg.is_checked(".dk-r[value='庫存不足']"))
-        pg.fill("#dk-short", "6"); pg.dispatch_event("#dk-short", "input")
-        check("填 6 → 顯示這次之後可出貨", "這次之後可出貨" in pg.inner_text("#dk-after"))
-        pg.fill("#dk-note", "採購來信缺貨"); pg.click("#dk-save"); pg.wait_for_selector("#dlg-short[open]", state="detached", timeout=5000); pg.wait_for_timeout(1000)
+        check("「缺貨紀錄」一樣打開原本的視窗：第 1 次下修、預設勾庫存不足", "第 1 次下修" in pg.inner_text("#dk-round") and pg.is_checked(".dk-r[value='庫存不足']"))
+        pg.click("#dlg-short .x"); pg.wait_for_timeout(300)
+        q0 = int(pg.inner_text("#side .sd-qe >> nth=0").replace(",", ""))
+        pg.click("#side .sd-qe >> nth=0"); pg.wait_for_selector("#side .qe-in", timeout=5000)
+        check("點出貨量 → 變輸入框，下面缺貨原因預設勾庫存不足、有儲存／取消", pg.is_visible("#side .qe-save") and "庫存不足" in pg.inner_text("#side .qe-r.on"))
+        pg.fill("#side .qe-in", str(q0 - 6)); pg.dispatch_event("#side .qe-in", "input")
+        check("打新的數字 → 寫這次缺幾個", "缺 6" in pg.inner_text("#side .qe-cut"), pg.inner_text("#side .qe-cut"))
+        pg.press("#side .qe-in", "Enter"); pg.wait_for_function("[...document.querySelectorAll('.toast')].some(t => t.innerText.includes('已列入「待通知蝦皮」'))", timeout=8000)
+        pg.wait_for_timeout(1000)
+        check("按 Enter 存好：視窗還開著、出貨量變新的、寫（已修改）", pg.is_visible("#side") and str(q0 - 6) in pg.inner_text("#side .sd-qe >> nth=0").replace(",", "")
+              and "已修改" in pg.inner_text("#sd-items"), pg.inner_text("#sd-items")[:300])
         check("存好後：待通知蝦皮那格變 1、這張下一步多「通知蝦皮」", count("notify") == 1 and "通知蝦皮" in pg.inner_text("#tbl tr.og >> nth=0"), pg.inner_text("#stages"))
         stage("notify"); pg.wait_for_selector("#k-tbl tr.og", timeout=8000)
         check("待通知蝦皮：只列這張、待通知", pg.eval_on_selector_all("#k-tbl tr.og", "els => els.length") == 1 and "待通知" in pg.inner_text("#k-tbl tr.og >> nth=0"))
