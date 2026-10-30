@@ -40,7 +40,7 @@ async function handleFiles(files) {
   const pdfs = files.filter(f => /\.pdf$/i.test(f.name)), others = files.filter(f => !/\.pdf$/i.test(f.name));
   let changed = false;
   for (const f of others) changed = (await dropOne(f)) || changed;
-  if (pdfs.length) await yxUpload(pdfs);
+  if (pdfs.length) changed = (await pdfUpload(pdfs)) || changed;
   if (changed) { loadFresh(); refresh(); }
 }
 async function dropOne(f) {
@@ -1162,6 +1162,17 @@ $("#k-go").addEventListener("click", async () => {
 /* 瑪氏：勇信配送明細表核對（需求 8.1） */
 let YX = null;
 const YX_ST = { ok: ["b-ok", "無缺貨"], partial: ["b-warn", "部分缺貨"], none: ["b-diff", "全缺"], over: ["b-diff", "數量異常"] };
+/* PDF：蝦皮採購單（後台下載的 PURCHASE ORDER，2026-10-30 畫缺貨用）先收下，其餘的（勇信配送明細表）交給勇信核對 */
+async function pdfUpload(files) {
+  const fd = new FormData(); files.forEach(f => fd.append("file", f));
+  let d; try { d = await api("/api/shopee/po_pdf", { method: "POST", body: fd }); } catch (err) { toast(err.message, "err"); return false; }
+  d.orders.forEach(o => toast(`已收到 ${o.order_no} 的蝦皮採購單（${o.rows} 列）：` + (o.noship || o.short ? `照目前的缺貨紀錄，${o.noship ? `${o.noship} 品不出貨` : ""}${o.noship && o.short ? "、" : ""}${o.short ? `${o.short} 品短出` : ""}。` : "目前沒有缺貨紀錄，下載會照原樣。")
+    + "打開那張單的視窗下載畫好的採購單。" + (o.warnings.length ? `\n${o.warnings.slice(0, 3).join("\n")}` : ""), o.warnings.length ? "warn" : undefined));
+  d.errors.forEach(e => toast(e, "err"));
+  const rest = files.filter(f => d.others.includes(f.name));
+  if (rest.length) await yxUpload(rest);
+  return d.orders.length > 0;
+}
 async function yxUpload(files) {
   const fd = new FormData(); files.forEach(f => fd.append("file", f));
   try { showYx(await api("/api/shopee/yx/compare", { method: "POST", body: fd })); }
@@ -1440,6 +1451,17 @@ function renderSide() {
     <div class="sd-acts"><button class="btn btn-p btn-sm sd-notify"><i class="bi bi-chat-dots"></i> 產生這張單的蝦皮通知（LINE）</button><span class="kbd">產生後這次的下修紀錄會鎖定。</span></div></div></div>`;
 
   // 差異紀錄、歷程（平常收起來）
+  // 蝦皮採購單 PDF 畫缺貨（Alice 2026-10-30；Jerry：短出劃掉數量、寫實際數量、蓋章；不出貨整列畫線）。有缺貨或傳過 PDF 才出現
+  const pp = d.po_pdf;
+  if (pp || (g.qty_short || 0) > 0) h += `<div class="sd-sec"><div class="h"><i class="bi bi-file-earmark-pdf"></i> 蝦皮採購單（畫缺貨） <span class="kbd">${pp ? (pp.marks.length ? `${pp.marks.length} 品要畫` : "沒有缺貨") : "尚未上傳"}</span></div><div class="b">
+    ${pp ? `${pp.marks.map(m => `<div class="sd-it"><span class="fn">${esc(m.sku)}</span> ${esc((m.name || "").slice(0, 28))}<div class="sd-kv">${m.kind === "noship"
+        ? `<span class="badge b-diff">不出貨</span><span>第 ${m.no} 列整列畫線</span>` : `<span class="badge b-warn">短出</span><span>第 ${m.no} 列數量 ${fmt(m.qty)} 劃掉、寫 <b>${fmt(m.actual)}</b>，蓋章</span>`}</div></div>`).join("")}
+      ${pp.warnings.map(w => `<div class="kbd" style="color:var(--warn)"><i class="bi bi-info-circle"></i> ${esc(w)}</div>`).join("")}
+      <div class="kbd mt-1"><i class="bi bi-check2-circle" style="color:var(--ok)"></i> ${esc(pp.filename)}，${esc(pp.uploaded_by)} ${esc((pp.uploaded_at || "").slice(5, 16).replace("T", " "))} 上傳${pp.drawn_at ? `；${esc(pp.drawn_by)} ${esc(pp.drawn_at.slice(5, 16).replace("T", " "))} 下載過` : ""}</div>
+      <div class="sd-acts"><a class="btn btn-p btn-sm sd-podl" href="/api/shopee/po_pdf/${encodeURIComponent(g.order_no)}/file?${new URLSearchParams(fq())}"><i class="bi bi-download"></i> 下載畫好的採購單</a>
+        <span class="kbd">照下載當下的缺貨紀錄畫；印章跟 MOMO 共用（MOMO「資料與設定」上傳）。</span></div>`
+    : `<div class="kbd">從蝦皮後台下載這張單的採購單 PDF，丟進最上面的上傳區；系統照缺貨紀錄畫好：不出貨整列畫線，短出劃掉數量、寫實際數量、蓋章。請上傳後台下載的原檔，自己印成 PDF 的讀不到字。</div>`}
+  </div></div>`;
   h = head_ + sdGrid(h);
   if (d.diffs.length) h += `<details class="sd-sec sd-log"><summary class="h"><i class="bi bi-arrow-left-right"></i> 差異紀錄 <span class="kbd">${d.diffs.length} 筆</span></summary><div class="b">
     ${d.diffs.map(x => `<div class="sd-it"><span class="fn">${esc(x.supplier_sku_id)}</span>　${esc(x.field_label)}：${esc(x.old_value)} → <b>${esc(x.new_value)}</b>
@@ -1452,6 +1474,7 @@ function renderSide() {
   drawItems();
   $("#sd-q").addEventListener("input", () => { SDQ = $("#sd-q").value.trim(); drawItems(); });
   $$("#side .sd-fl").forEach(c => c.addEventListener("click", () => { SDF = c.dataset.f; $$("#side .sd-fl").forEach(x => x.classList.toggle("on", x === c)); drawItems(); }));
+  $$("#sd-body a.sd-podl").forEach(a => a.addEventListener("click", () => setTimeout(() => openSide(g.order_no), 1500)));
   const sdl = $("#sd-title .sd-del"); if (sdl) sdl.addEventListener("click", () => openDelete(g));
   const srs = $("#sd-title .sd-restore"); if (srs) srs.addEventListener("click", () => restoreOrder(g.order_no));
   $$("#sd-title .go-st").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); const s_ = b.dataset.s; closeSide(); setStage(s_); }));

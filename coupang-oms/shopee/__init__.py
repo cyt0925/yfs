@@ -22,6 +22,7 @@
   side.py     右側面板：一張單的全部（品項、採購單計畫、竹運出貨、缺貨、EIP、差異、歷程）
 刪除訂單、匯出明細（2026-10-30，Alice 要的，Jerry 看過示意圖）：
   trash.py    刪除／還原一張訂單（shp_deleted，不動 shp_orders；各步用 not_deleted() 跳過，重傳不會回來）
+  po_pdf.py   蝦皮採購單 PDF 畫缺貨（不出貨整列畫線；短出劃掉數量、寫實際、蓋章；印章跟 MOMO 共用）
   export.py   勾選訂單匯出訂單明細 Excel（一張工作表、一品一列、缺貨整列黃底；資料跟訂單視窗同一份 side_data）
 判讀依據、Jerry 定的規則、還沒問清楚的事寫在 docs/蝦皮特選_設計筆記.md。
 """
@@ -29,6 +30,6 @@ from flask import Blueprint
 
 shopee_bp = Blueprint("shopee", __name__)
 
-from . import admin, direct_po, drop, export, mars_po, orders, purchase, refulfil, ship, short, side, trash, yx  # noqa: E402,F401 — 讓路由生效
+from . import admin, direct_po, drop, export, mars_po, orders, po_pdf, purchase, refulfil, ship, short, side, trash, yx  # noqa: E402,F401 — 讓路由生效
 
 __all__ = ["shopee_bp"]

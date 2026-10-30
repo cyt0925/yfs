@@ -71,7 +71,13 @@ def side_data(conn, no, a, ship_groups=None):
         e["direct"] = e["fulfil"] == "供應商直送" and e["line"] != "瑪氏"     # 寶僑、紙潔直送：回填後可下載直送採購單
     for d in diffs:
         d["confirmed"] = bool(d["confirmed_at"])
-    return {"order": g, "buy": buy, "ship": ship, "short": short, "eips": eips, "diffs": diffs, "logs": logs}
+    d = {"order": g, "buy": buy, "ship": ship, "short": short, "eips": eips, "diffs": diffs, "logs": logs, "po_pdf": None}
+    pp = _row(conn.execute("SELECT filename, rows_json, uploaded_by, uploaded_at, drawn_by, drawn_at FROM shp_po_pdf WHERE order_no = ?", (no,)))
+    if pp:                                           # 蝦皮採購單 PDF：照目前的缺貨紀錄，列出下載時會畫哪幾品
+        from .po_pdf import po_marks
+        marks, warns = po_marks(d, json.loads(pp.pop("rows_json") or "[]"))
+        d["po_pdf"] = {**pp, "marks": [dict(v, no=k) for k, v in sorted(marks.items())], "warnings": warns}
+    return d
 
 
 __all__ = ["api_side", "side_data"]

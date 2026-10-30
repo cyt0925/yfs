@@ -1097,6 +1097,28 @@ def main():
         side = pg.inner_text("#side")
         check("訂單視窗：下修紀錄來源勇信核對、沒有填缺貨按鈕（寫依勇信配送明細表核對）、可直接產這張單的通知", "勇信核對" in side and "瑪氏的缺貨依勇信配送明細表核對" in side and side.count("勇信配送明細表核對") == 1
               and pg.query_selector("#side .sd-short") is None and pg.is_visible("#side .sd-notify"), side[:400])
+        check("有缺貨的單：視窗裡有「蝦皮採購單（畫缺貨）」，還沒上傳就寫怎麼做", "蝦皮採購單（畫缺貨）" in side and "尚未上傳" in side and "後台下載" in side)
+        # 蝦皮採購單 PDF 畫缺貨（Alice 2026-10-30）：丟後台下載的採購單 PDF → 視窗裡下載畫好的
+        pdoc = pymupdf.open(); ppg = pdoc.new_page(width=842, height=595); pxs = [20, 45, 120, 200, 400, 470, 530, 600]
+        for (px, py), tx in [((300, 30), "PURCHASE ORDER"), ((40, 50), "Purchase Order ID"), ((160, 50), "POTWCTWA26102099M")]:
+            ppg.insert_text((px, py), tx, fontname="helv", fontsize=7)
+        for y in (80, 110, 150):
+            ppg.draw_line((pxs[0], y), (pxs[-1], y), width=0.8)
+        for x in pxs:
+            ppg.draw_line((x, 80), (x, 150), width=0.8)
+        for x, h, v in zip(pxs, ["No.", "Shopee SKU ID", "Supplier SKU ID", "Purchase QTY (unit)", "Unit Name", "Purchase QTY (pcs)", "Comment"],
+                           ["1", "99_1", "M69990001_QMN", "24", "Pieces", "24", ""]):
+            ppg.insert_text((x + 2, 98), h, fontname="helv", fontsize=7); ppg.insert_text((x + 2, 132), v, fontname="helv", fontsize=7)
+        ppdf = os.path.join(os.environ["COUPANG_OMS_DATA"], "678050_POTWCTWA26102099M_PO.pdf"); pdoc.save(ppdf)
+        close_side(); pg.set_input_files("#file", [ppdf])
+        pg.wait_for_function("[...document.querySelectorAll('.toast')].some(t => t.innerText.includes('已收到 POTWCTWA26102099M 的蝦皮採購單'))", timeout=15000)
+        pg.click("#k-tbl tr.og[data-k='POTWCTWA26102099M'] .fn"); pg.wait_for_selector("#side a.sd-podl", timeout=10000)
+        check("丟蝦皮後台下載的採購單 PDF → 跳提示；視窗裡列出要畫的那品、有「下載畫好的採購單」", "678050_POTWCTWA26102099M_PO.pdf" in pg.inner_text("#side")
+              and "M69990001_QMN" in pg.inner_text("#side .sd-sec:has(a.sd-podl)"), pg.inner_text("#side .sd-sec:has(a.sd-podl)")[:300])
+        with pg.expect_download(timeout=15000) as dlp:
+            pg.click("#side a.sd-podl")
+        check("按下載 → 拿到「…_已畫.pdf」", dlp.value.suggested_filename == "678050_POTWCTWA26102099M_PO_已畫.pdf", dlp.value.suggested_filename)
+        close_side()
         print("\n【6e-6】瑪氏新品不在商品總表：面板按「補商品資料」直接補，不用改 Excel、不用到瑪氏出貨頁")
         wbm = openpyxl.Workbook(); wsm = wbm.active; wsm.append(hdr)
         wsm.append(["PRTWCOTWA202610219998", "POTWCTWA26102198N", "TWA", "2026-10-21", "98_1", "M69990002_QMN", "【蝦皮直營】UI 測試 瑪氏新品", "24", "Pcs", "M69990002"])

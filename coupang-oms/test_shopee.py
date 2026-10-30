@@ -72,6 +72,33 @@ def yx_pdf(pages):
     return doc.tobytes()
 
 
+def po_pdf(po, rows, text=True):
+    """假的蝦皮後台採購單 PDF（照 678050_POTWCTWA2610121L1_PO.pdf：橫式、表格線、表頭每頁重複）。rows = [(Supplier SKU ID, 數量)]，一頁 8 列。
+    text=False 模擬「Microsoft Print to PDF」印出來的：只有線、沒有字。"""
+    import pymupdf
+    doc = pymupdf.open()
+    heads = ["No.", "Shopee SKU ID", "Supplier SKU ID", "Barcode", "Item Name", "Purchase QTY (unit)", "Unit Name", "Purchase QTY (pcs)", "Comment"]
+    xs = [20, 45, 120, 200, 260, 400, 470, 530, 600, 700]
+    for k in range(0, max(len(rows), 1), 8):
+        page = doc.new_page(width=842, height=595)
+        t = (lambda pt, s_, **kw: page.insert_text(pt, s_, fontname="helv", fontsize=7, **kw)) if text else (lambda *a, **kw: None)
+        y0 = 40
+        if k == 0:
+            t((300, 30), "PURCHASE ORDER"); t((40, 50), "Purchase Order ID"); t((160, 50), po); y0 = 80
+        ys = [y0, y0 + 30] + [y0 + 30 + 40 * (j + 1) for j in range(len(rows[k:k + 8]))]
+        for y in ys:
+            page.draw_line((xs[0], y), (xs[-1], y), width=0.8)
+        for x in xs:
+            page.draw_line((x, ys[0]), (x, ys[-1]), width=0.8)
+        for x, h in zip(xs, heads):
+            t((x + 2, y0 + 18), h)
+        for j, (sku, q) in enumerate(rows[k:k + 8]):
+            yy = ys[1] + 40 * j + 22
+            for x, v in zip(xs, [str(k + j + 1), "123_456", sku, "471", "item", str(q), "Pieces", str(q), ""]):
+                t((x + 2, yy), v)
+    return doc.tobytes()
+
+
 def purchase_xlsx(rows, pr="PRTWCOTWA202610010001", po=None, wh="TWA", date="2026-10-19"):
     """rows = [(Shopee SKU ID, Supplier SKU ID, 品名, 數量, Selling Type)]"""
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Sheet1"; ws.append(PO_HDR)
@@ -643,6 +670,7 @@ def stage2(c, preview, orders):
     yx_tests(c, orders)
     flow_tests(c, orders)
     trash_tests(c, orders)
+    po_pdf_tests(c, orders)
     mixed_tests(c, preview, orders)
 
 
@@ -1330,6 +1358,53 @@ def trash_tests(c, orders):
               and int(r.headers.get("X-Shopee-Short", 0)) == sum(1 for q, _f in fills if q), str(fills))
     else:
         check("（這份測試資料裡要有一張有缺貨的單）", False)
+
+
+
+def po_pdf_tests(c, orders):
+    print("\n【23】蝦皮採購單 PDF 畫缺貨（Alice 2026-10-30；Jerry：不出貨整列畫線，短出劃掉數量、寫實際數量、蓋章）")
+    import pymupdf
+
+    def up(*files):
+        return c.post("/api/shopee/po_pdf", data={"file": [(io.BytesIO(d), n) for d, n in files]}, content_type="multipart/form-data")
+    g = next((x for x in orders()["orders"] if (x["qty_short"] or 0) > 0 and x["po_id"]), None)
+    check("（測試資料裡要有一張有缺貨、有 PO 的單）", g is not None)
+    if g is None:
+        return
+    sd = c.get("/api/shopee/order", query_string={"no": g["order_no"], "from": "2026-01-01"}).get_json()
+    by = lambda grp: {x["order_id"]: x for x in (grp or {}).get("items", [])}
+    ship, short = by(sd["ship"]), by(sd["short"])
+    alive = [i for i in sd["order"]["items"] if not i["removed"]]
+    final = {i["supplier_sku_id"]: (ship[i["id"]]["final"] if i["id"] in ship else short[i["id"]]["final"] if i["id"] in short else None) for i in alive}
+    want_no = sum(1 for i in alive if final[i["supplier_sku_id"]] == 0)
+    want_short = sum(1 for i in alive if final[i["supplier_sku_id"]] not in (None, 0) and final[i["supplier_sku_id"]] < i["qty"])
+    rows = [(i["supplier_sku_id"], i["qty"]) for i in alive]
+    r = up((po_pdf(g["po_id"], rows), f"678050_{g['po_id']}_PO.pdf"), (yx_pdf([("PO209901001", "2026/10/20", [("10001", 1, "2027/01/01")])]), "勇信.pdf"),
+           (po_pdf(g["po_id"], rows, text=False), "印出來的.pdf"), (po_pdf("POTWCTWA9999999Z9", rows), "別張.pdf"))
+    d = r.get_json()
+    o = (d.get("orders") or [{}])[0]
+    check("上傳區丟四個 PDF：蝦皮採購單收下、對到那張單，照缺貨紀錄算出不出貨幾品、短出幾品", r.status_code == 200 and len(d["orders"]) == 1
+          and o["order_no"] == g["order_no"] and o["rows"] == len(rows) and (o["noship"], o["short"]) == (want_no, want_short) and o["noship"] + o["short"] > 0,
+          str((o, want_no, want_short))[:300])
+    check("勇信配送明細表不收、交回去給勇信核對", d["others"] == ["勇信.pdf"], str(d["others"]))
+    check("自己印成 PDF 的（讀不到字）講清楚要上傳後台下載的原檔；系統沒有的 PO 也講", any("印出來的.pdf" in e and "原檔" in e for e in d["errors"])
+          and any("POTWCTWA9999999Z9" in e for e in d["errors"]), str(d["errors"]))
+    sd = c.get("/api/shopee/order", query_string={"no": g["order_no"], "from": "2026-01-01"}).get_json()
+    check("訂單視窗帶採購單 PDF：誰上傳、要畫哪幾列", sd["po_pdf"] and sd["po_pdf"]["uploaded_by"] == "Jerry" and len(sd["po_pdf"]["marks"]) == want_no + want_short,
+          str(sd["po_pdf"])[:300])
+    r = c.get(f"/api/shopee/po_pdf/{g['order_no']}/file", query_string={"from": "2026-01-01"})
+    doc = pymupdf.open(stream=r.data, filetype="pdf")
+    reds = sum(1 for p in doc for dr in p.get_drawings() if dr.get("color") and dr["color"][0] > 0.8 and dr["color"][1] < 0.2)
+    text = "".join(p.get_text() for p in doc)
+    acts = [str(final[s_]) for s_, q in rows if final[s_] not in (None, 0) and final[s_] < q]
+    check("下載畫好的採購單：檔名加「_已畫」、不出貨整列紅線、短出兩格劃掉（各一條紅線）並寫實際數量、沒上傳印章就畫紅框「業務專用章」",
+          r.status_code == 200 and "_%E5%B7%B2%E7%95%AB.pdf" in r.headers.get("Content-Disposition", "") and int(r.headers["X-Shopee-Drawn"]) == want_no + want_short
+          and reds >= want_no + 3 * want_short and all(a in text for a in acts) and ("業務專用章" in text) == (want_short > 0), str((reds, acts, r.headers.get("X-Shopee-Drawn"))))
+    sd = c.get("/api/shopee/order", query_string={"no": g["order_no"], "from": "2026-01-01"}).get_json()
+    lg = [l for l in sd["logs"] if l["field"] in ("shopee_po_pdf", "shopee_po_draw")]
+    check("記下誰下載過、歷程有上傳和畫採購單", sd["po_pdf"]["drawn_by"] == "Jerry" and {l["field"] for l in lg} == {"shopee_po_pdf", "shopee_po_draw"}, str(lg)[:200])
+    r = c.get("/api/shopee/po_pdf/POTWCTWA0000000X0/file")
+    check("沒上傳過的單按下載 → 講要先上傳", r.status_code == 404 and "還沒上傳" in r.get_json()["error"])
 
 
 if __name__ == "__main__":

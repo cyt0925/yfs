@@ -1304,6 +1304,9 @@ CREATE TABLE IF NOT EXISTS shp_notify (
     created_at  TEXT NOT NULL
 );
 
+-- 蝦皮採購單 PDF（後台下載的 PURCHASE ORDER，Alice 2026-10-30 要像 MOMO 一樣畫缺貨）：一張 PO 一份，下載時照當下的缺貨紀錄畫（shopee/po_pdf.py）。
+CREATE TABLE IF NOT EXISTS shp_po_pdf (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT NOT NULL UNIQUE, filename TEXT DEFAULT '', pdf_b64 TEXT DEFAULT '', rows_json TEXT DEFAULT '[]', uploaded_by TEXT DEFAULT '', uploaded_at TEXT DEFAULT '', drawn_by TEXT DEFAULT '', drawn_at TEXT DEFAULT '');
+
 -- 刪掉的蝦皮訂單（Alice 2026-10-30：贈品料號那種不要的單要能刪；Jerry：大家都能刪、要能還原）。
 -- 不刪 shp_orders 的資料，只記在這裡；清單、產 EIP、拋單檔、缺貨通知都跳過。之後再上傳蝦皮檔也不會跑回來（PR、PO 號碼都記，PR 之後變成 PO 也對得到）。
 CREATE TABLE IF NOT EXISTS shp_deleted (
