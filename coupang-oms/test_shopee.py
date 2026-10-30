@@ -1352,6 +1352,14 @@ def trash_tests(c, orders):
                                                           "轉換率", "下採數量", "EIP 數量", "出貨量", "缺貨", "效期", "調整原因")), str(head))
     xr = next(x for x in rows if x[col["永豐料號"]] == "1078888_PNN")
     check("那品的數字：蝦皮數量 1500、倉別寫中文", xr[col["蝦皮數量"]] == 1500 and "觀音" in (xr[col["倉別"]] or ""), str(xr))
+    def want_cases(x):
+        base = x[col["出貨量"]] if x[col["出貨量"]] is not None else x[col["下採數量"]] if x[col["下採數量"]] is not None else x[col["蝦皮數量"]]
+        return round(base / x[col["轉換率"]], 2)
+    withc = [x for x in rows if x[col["轉換率"]]]
+    check("加 PO 單號、箱數（Jerry 2026-10-30）：PO 單號、PR 單號各一欄；箱數＝出貨量 ÷ 轉換率（還沒有出貨量用下採數量），沒有轉換率空白",
+          xr[col["PO 單號"]] == X and xr[col["PR 單號"]] == XP and withc and all(abs((x[col["箱數"]] or 0) - want_cases(x)) < 0.01 for x in withc)
+          and all(x[col["箱數"]] is None for x in rows if not x[col["轉換率"]]) and head.index("箱數") == head.index("轉換率") + 1,
+          str([(x[col["轉換率"]], x[col["出貨量"]], x[col["箱數"]]) for x in rows][:6]))
     if sh:
         fills = [(row[col["缺貨"]].value, row[0].fill.fgColor.rgb) for row in ws.iter_rows(min_row=2) if row[col["訂單編號"]].value == sh["order_no"]]
         check("有缺貨的那列整列黃底，沒缺貨的不塗", any((q or 0) > 0 for q, _f in fills) and all(f.endswith("FFF2A8") == bool(q) for q, f in fills)

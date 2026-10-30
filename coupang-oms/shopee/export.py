@@ -12,15 +12,18 @@ from .common import *  # noqa: F401,F403
 from .ship import build_ship
 from .side import side_data
 
-HEAD = ("訂單編號", "PR 單號", "線別", "倉別", "到貨日", "履約方式", "永豐料號", "品名", "入庫單號", "蝦皮數量", "單位", "原始訂購量",
-        "轉換率", "下採數量", "EIP 數量", "EIP 單位", "出貨量", "缺貨", "缺貨原因", "效期", "調整原因", "缺貨通知", "狀態")
-WIDTH = (20, 22, 7, 13, 11, 12, 22, 40, 22, 10, 6, 10, 8, 10, 10, 8, 9, 8, 14, 24, 16, 13, 12)
+HEAD = ("訂單編號", "PO 單號", "PR 單號", "線別", "倉別", "到貨日", "履約方式", "永豐料號", "品名", "入庫單號", "蝦皮數量", "單位", "原始訂購量",
+        "轉換率", "箱數", "下採數量", "EIP 數量", "EIP 單位", "出貨量", "缺貨", "缺貨原因", "效期", "調整原因", "缺貨通知", "狀態")
+WIDTH = (20, 20, 22, 7, 13, 11, 12, 22, 40, 22, 10, 6, 10, 8, 8, 10, 10, 8, 9, 8, 14, 24, 16, 13, 12)
+NUMS = ("蝦皮數量", "原始訂購量", "轉換率", "箱數", "下採數量", "EIP 數量", "出貨量", "缺貨")
 SHORT_FILL = PatternFill("solid", fgColor="FFF2A8")
 HEAD_FILL = PatternFill("solid", fgColor="D9E1F2")
 
 
-def item_rows(d):
-    """一張單 → 每品一列（dict：欄名 → 值），另外回這列有沒有缺貨。"""
+def item_rows(d, conv_of=lambda i: None):
+    """一張單 → 每品一列（dict：欄名 → 值），另外回這列有沒有缺貨。
+    箱數（Jerry 2026-10-30 要加）＝出貨量 ÷ 轉換率；還沒有出貨量用下採數量、再沒有用蝦皮數量；除不盡寫到小數兩位，沒有轉換率空白。
+    轉換率：有採購計畫的用計畫的，竹運出貨沒有採購計畫就用 conv_of 查（價格本、瑪氏商品總表）。"""
     g = d["order"]
     by = lambda grp: {x["order_id"]: x for x in (grp or {}).get("items", [])}
     buy, ship, short = by(d["buy"]), by(d["ship"]), by(d["short"])
@@ -31,11 +34,16 @@ def item_rows(d):
         cut = (z["short"] or 0) if z else (k["cut"] or 0) if k else None
         reasons = z["reasons"] if z and z["short"] else sorted({x for r in (k["rounds"] if k else []) for x in r["reasons"]})
         notice = ("待通知" if k["pending"] else f"已通知第 {k['notified_round']} 次" if k["notified_round"] else "") if k and k["rounds"] else ""
+        conv = p["conv"] if p else conv_of(i)
+        base = final if final is not None else p["use_qty"] if p else i["qty"]
+        cases = None
+        if conv and base is not None:
+            cases = base // conv if base % conv == 0 else round(base / conv, 2)
         state = "已刪除" if g.get("trash") else "已移除" if i["removed"] else "差異待確認" if i["diff_pending"] else ""
-        row = {"訂單編號": g["order_no"], "PR 單號": g["pr_id"] if g["po_id"] else "", "線別": i["line"], "倉別": wh_name(i["warehouse"]),
+        row = {"訂單編號": g["order_no"], "PO 單號": g["po_id"] or "", "PR 單號": g["pr_id"] or "", "線別": i["line"], "倉別": wh_name(i["warehouse"]),
                "到貨日": i["expected_date"], "履約方式": i["fulfil"], "永豐料號": i["supplier_sku_id"], "品名": i["sku_name"],
                "入庫單號": i["inbound_ids"] or "", "蝦皮數量": i["qty"], "單位": i["unit_name"] or i["unit_code"],
-               "原始訂購量": i["qty_original"], "轉換率": p["conv"] if p else None, "下採數量": p["use_qty"] if p else None,
+               "原始訂購量": i["qty_original"], "轉換率": conv, "箱數": cases, "下採數量": p["use_qty"] if p else None,
                "EIP 數量": p["out_qty"] if p else None, "EIP 單位": (p["out_unit"] or "") if p else "",
                "出貨量": final, "缺貨": cut, "缺貨原因": "、".join(reasons),
                "效期": "、".join(f"{a['exp']}（{a['qty']:,}）" for a in z["alloc"]) if z else "",
@@ -62,6 +70,9 @@ def api_orders_export():
             if d is None:
                 return jsonify({"error": f"找不到訂單 {no}，請重新整理頁面。"}), 404
             datas.append(d)
+        from .purchase import box_of, conv_for_item
+        conv_of = lambda i: box_of(conv_for_item(conn, i))  # noqa: E731
+        rows_all = [r for d in datas for r in item_rows(d, conv_of)]
     finally:
         conn.close()
     wb = openpyxl.Workbook()
@@ -71,18 +82,17 @@ def api_orders_export():
     for c in ws[1]:
         c.font, c.fill, c.alignment = Font(bold=True), HEAD_FILL, Alignment(horizontal="center", vertical="center")
     n_items = n_short = 0
-    for d in datas:
-        for row, short in item_rows(d):
-            ws.append([row[h] for h in HEAD])
-            n_items += 1
-            if short:
-                n_short += 1
-                for c in ws[ws.max_row]:
-                    c.fill = SHORT_FILL
+    for row, short in rows_all:
+        ws.append([row[h] for h in HEAD])
+        n_items += 1
+        if short:
+            n_short += 1
+            for c in ws[ws.max_row]:
+                c.fill = SHORT_FILL
     for k, w in enumerate(WIDTH, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(k)].width = w
-    for col in ("J", "L", "M", "N", "O", "Q", "R"):
-        for c in ws[col][1:]:
+    for h in NUMS:
+        for c in ws[openpyxl.utils.get_column_letter(HEAD.index(h) + 1)][1:]:
             c.number_format = "#,##0.##"
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
