@@ -83,7 +83,7 @@ def main():
     base = f"http://127.0.0.1:{port}"
     errs, bad = [], []
     launch = {}
-    local = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")
+    local = glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome")
     if local and not os.environ.get("CI"):
         launch["executable_path"] = local[0]
 
