@@ -121,7 +121,7 @@ def _waiting_items(conn, line):
     """還沒產採購單、要用這個線別價格本的品項（竹運採購進貨、供應商直送；還沒掛到任何 EIP）→ {料號3: 品名}。"""
     marks = ",".join("?" * len(BUY_FULFILS))
     out = {}
-    for r in _rows(conn.execute(f"SELECT base_code, unit_code, sku_name FROM shp_orders o WHERE line = ? AND removed = 0 AND fulfil IN ({marks}) "
+    for r in _rows(conn.execute(f"SELECT base_code, unit_code, sku_name FROM shp_orders o WHERE line = ? AND removed = 0 AND {not_deleted('o.')} AND fulfil IN ({marks}) "
                                 "AND NOT EXISTS (SELECT 1 FROM shp_eip_items i WHERE i.order_id = o.id) ORDER BY id", [line, *BUY_FULFILS])):
         if r["base_code"]:
             out.setdefault((r["base_code"] or "") + (r["unit_code"] or ""), r["sku_name"] or "")
@@ -300,7 +300,7 @@ def fmt_n(n):
 
 
 def build_plan(conn, fulfil, d1="", d2="", line="", order_nos=None, up1="", up2=""):
-    where, params = ["fulfil = ?", "removed = 0"], [fulfil]
+    where, params = ["fulfil = ?", "removed = 0", not_deleted()], [fulfil]
     if d1:
         where.append("expected_date >= ?"); params.append(d1)
     if d2:

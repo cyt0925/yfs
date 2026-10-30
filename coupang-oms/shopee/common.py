@@ -81,10 +81,17 @@ __all__ = ["upload_cond", "group_meta", "ships", "ship_cond", "SHIP_DIRECT", "SH
     "base64", "collections", "io", "json", "re", "current_app", "jsonify", "render_template", "request", "send_file",
     "get_conn", "_guard_ready", "_log", "_operator", "_row", "_rows", "now",
     "shopee_bp", "SYSTEM", "FULFILS", "LINES", "UNIT_CODES", "WAREHOUSES", "ST_IMPORTED", "ST_DIFF",
-    "split_supplier_sku", "line_of", "wh_name",
+    "split_supplier_sku", "line_of", "wh_name", "not_deleted",
 ]
 
 _ORDER_NO_SQL = "CASE WHEN po_id != '' THEN po_id ELSE pr_id END"
+
+
+def not_deleted(prefix="shp_orders."):
+    """不是被刪掉的單（shp_deleted，2026-10-30）。prefix 一定要寫外層表（"shp_orders." 或別名 "o."），
+    不然子查詢裡的 pr_id 會被當成 shp_deleted 自己的欄位。PR、PO 任一個對到就算刪掉。"""
+    return (f"NOT EXISTS (SELECT 1 FROM shp_deleted x WHERE (x.pr_id != '' AND x.pr_id = {prefix}pr_id) "
+            f"OR (x.po_id != '' AND x.po_id = {prefix}po_id))")
 
 
 def upload_cond(up1, up2, prefix=""):

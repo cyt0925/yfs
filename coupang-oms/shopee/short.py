@@ -78,7 +78,7 @@ def short_item(it, rounds, done):
 
 
 def build_short(conn, d1="", d2="", line="", fulfil="", order_nos=None, up1="", up2=""):
-    where, params = ["removed = 0", "line IN (?, ?, ?)", "(line != ? OR fulfil = ?)"], list(LIST_LINES) + ["瑪氏", "供應商直送"]
+    where, params = ["removed = 0", not_deleted(), "line IN (?, ?, ?)", "(line != ? OR fulfil = ?)"], list(LIST_LINES) + ["瑪氏", "供應商直送"]
     fulfils = (fulfil,) if fulfil in MANUAL_FULFILS + (SHIP_FULFIL,) else MANUAL_FULFILS + (SHIP_FULFIL,)
     where.append(f"fulfil IN ({','.join('?' * len(fulfils))})"); params += list(fulfils)
     if d1:

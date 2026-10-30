@@ -1304,6 +1304,17 @@ CREATE TABLE IF NOT EXISTS shp_notify (
     created_at  TEXT NOT NULL
 );
 
+-- 刪掉的蝦皮訂單（Alice 2026-10-30：贈品料號那種不要的單要能刪；Jerry：大家都能刪、要能還原）。
+-- 不刪 shp_orders 的資料，只記在這裡；清單、產 EIP、拋單檔、缺貨通知都跳過。之後再上傳蝦皮檔也不會跑回來（PR、PO 號碼都記，PR 之後變成 PO 也對得到）。
+CREATE TABLE IF NOT EXISTS shp_deleted (
+    order_no    TEXT PRIMARY KEY,
+    pr_id       TEXT DEFAULT '',
+    po_id       TEXT DEFAULT '',
+    reason      TEXT DEFAULT '',
+    deleted_by  TEXT DEFAULT '',
+    deleted_at  TEXT NOT NULL
+);
+
 -- ── MOMO（momo/，2026-10-28）────────────────────────────────────────
 -- 一次上傳（可以好幾個檔）一筆；原始檔一個檔一筆存在 momo_upload_files。status 跟蝦皮一樣：pending／ok／canceled。
 CREATE TABLE IF NOT EXISTS momo_uploads (

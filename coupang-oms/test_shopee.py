@@ -642,6 +642,7 @@ def stage2(c, preview, orders):
     short_tests(c, orders)
     yx_tests(c, orders)
     flow_tests(c, orders)
+    trash_tests(c, orders)
     mixed_tests(c, preview, orders)
 
 
@@ -1259,6 +1260,74 @@ def flow_tests(c, orders):
           and "buy" in {g["order_no"]: g for g in orders(**{"from": "2026-01-01"})["orders"]}[H]["todo"], str(r))
     chk = c.post("/api/shopee/fulfil/check", json={"order_nos": ["POTWCTWA26100514L"], "fulfil": "竹運出貨"}).get_json()["orders"]
     check("竹運採購進貨改竹運出貨 → 提醒「入庫單到了會自動進待產拋單檔，不用改」", chk and chk[0]["buy_to_ship"], str(chk))
+
+
+
+def trash_tests(c, orders):
+    print("\n【22】刪除／還原訂單、匯出訂單明細（Alice 2026-10-30；Jerry：大家都能刪、要能還原、一張工作表、缺貨整列黃底）")
+
+    def up(data, name):
+        return c.post("/api/shopee/import/preview", data={"file": (io.BytesIO(data), name)}, content_type="multipart/form-data")
+    X, XP = "POTWCTWA27020190X", "PRTWCOTWA202702019001"
+    raw = purchase_xlsx([("90000000201_1", "1078888_PNN", "贈品 五月花 試用包", 1500, "Pcs"), ("90000000201_2", "1078889_PNN", "贈品 五月花 小包", 12, "Pcs")],
+                        pr=XP, po=X, date="2027-02-03")
+    c.post("/api/shopee/import/commit", json={"upload_id": up(raw, "PurchaseOrder_gift.xlsx").get_json()["upload_id"], "fulfil": "供應商直送"})
+    check("先匯入一張贈品單：在清單、待產採購單", X in {g["order_no"] for g in orders()["orders"]}
+          and "buy" in {g["order_no"]: g for g in orders()["orders"]}[X]["todo"])
+    r = c.post("/api/shopee/order/delete", json={"order_no": X, "reason": ""})
+    check("刪除沒填原因 → 擋下來", r.status_code == 400 and "原因" in r.get_json()["error"], str(r.get_json()))
+    n_buy = next(s_["count"] for s_ in orders()["stages"] if s_["key"] == "buy")
+    r = c.post("/api/shopee/order/delete", json={"order_no": X, "reason": "贈品不用出"})
+    check("填原因刪除 → 成功，訊息講怎麼還原", r.status_code == 200 and "顯示已刪除" in r.get_json()["message"], str(r.get_json()))
+    v = orders()
+    check("刪掉的單：清單沒有、待產採購單少一張、回傳有幾張被刪", X not in {g["order_no"] for g in v["orders"]}
+          and next(s_["count"] for s_ in v["stages"] if s_["key"] == "buy") == n_buy - 1 and v["deleted_count"] == 1, str(v["deleted_count"]))
+    plan_ = c.get("/api/shopee/purchase/plan", query_string={"fulfil": "供應商直送", "from": "2026-01-01"}).get_json()["orders"]
+    check("產 EIP 的計畫也跳過刪掉的單", X not in {g["order_no"] for g in plan_})
+    vd = orders(deleted="1")
+    gx = {g["order_no"]: g for g in vd["orders"]}.get(X)
+    check("「顯示已刪除」才列出來：帶誰刪的、原因，沒有待辦；數字列不算它", gx and gx["trash"]["reason"] == "贈品不用出" and gx["trash"]["deleted_by"] == "Jerry"
+          and gx["todo"] == [] and vd["summary"]["orders"] == v["summary"]["orders"], str(gx and gx["trash"]))
+    sd = c.get("/api/shopee/order", query_string={"no": X}).get_json()
+    check("刪掉的單還是打得開訂單視窗（看得到是誰刪的）", sd.get("order", {}).get("trash", {}).get("reason") == "贈品不用出", str(sd)[:200])
+    c.post("/api/shopee/import/commit", json={"upload_id": up(raw, "PurchaseOrder_gift.xlsx").get_json()["upload_id"], "fulfil": "供應商直送"})
+    check("同一份蝦皮檔再上傳一次 → 刪掉的單不會跑回來", X not in {g["order_no"] for g in orders()["orders"]})
+    r = c.post("/api/shopee/order/delete", json={"order_no": X, "reason": "重複的單"})
+    check("已經刪掉的再刪 → 講已經刪除了", r.status_code == 400 and "已經刪除" in r.get_json()["error"], str(r.get_json()))
+    made = next((g for g in orders()["orders"] if g["po_status"] in ("已產出", "已回填")), None)
+    r = c.post("/api/shopee/order/delete", json={"order_no": made["order_no"], "reason": "測試"})
+    check("已產出 EIP 的單不能刪，要先取消產出", r.status_code == 400 and "取消產出" in r.get_json()["error"], str(r.get_json()))
+    r = c.post("/api/shopee/order/restore", json={"order_no": X})
+    v = orders()
+    check("還原 → 回到清單、回到待產採購單、刪除數歸零", r.status_code == 200 and "buy" in {g["order_no"]: g for g in v["orders"]}[X]["todo"] and v["deleted_count"] == 0,
+          str(r.get_json()))
+    lg = [l for l in c.get("/api/master/logs?scope=shopee&limit=300").get_json()["logs"] if l["po_number"] == X and l["field"] in ("shopee_delete", "shopee_restore")]
+    check("歷程：記刪除（原因）和還原", {l["field"] for l in lg} == {"shopee_delete", "shopee_restore"}
+          and any(l["field"] == "shopee_delete" and l["reason"] == "贈品不用出" for l in lg), str(lg)[:300])
+
+    r = c.post("/api/shopee/orders/export", json={"order_nos": []})
+    check("沒勾就匯出 → 擋下來", r.status_code == 400)
+    sh = next((g for g in orders()["orders"] if (g["qty_short"] or 0) > 0), None)
+    nos = [X] + ([sh["order_no"]] if sh else [])
+    r = c.post("/api/shopee/orders/export", json={"order_nos": nos, "from": "2026-01-01"})
+    ws = openpyxl.load_workbook(io.BytesIO(r.data)).active
+    head = [x.value for x in ws[1]]
+    rows = [[x.value for x in row] for row in ws.iter_rows(min_row=2)]
+    col = {h: k for k, h in enumerate(head)}
+    check("匯出訂單明細：一張工作表「訂單明細」、檔名寫幾張、一品一列、每列帶訂單編號",
+          r.status_code == 200 and len(openpyxl.load_workbook(io.BytesIO(r.data)).sheetnames) == 1 and ws.title == "訂單明細"
+          and f"_{len(nos)}" in r.headers.get("Content-Disposition", "") and sum(1 for x in rows if x[col["訂單編號"]] == X) == 2,
+          str((head[:8], len(rows))))
+    check("欄位照訂單視窗的品項表", all(h in head for h in ("訂單編號", "線別", "倉別", "到貨日", "履約方式", "永豐料號", "品名", "入庫單號", "蝦皮數量",
+                                                          "轉換率", "下採數量", "EIP 數量", "出貨量", "缺貨", "效期", "調整原因")), str(head))
+    xr = next(x for x in rows if x[col["永豐料號"]] == "1078888_PNN")
+    check("那品的數字：蝦皮數量 1500、倉別寫中文", xr[col["蝦皮數量"]] == 1500 and "觀音" in (xr[col["倉別"]] or ""), str(xr))
+    if sh:
+        fills = [(row[col["缺貨"]].value, row[0].fill.fgColor.rgb) for row in ws.iter_rows(min_row=2) if row[col["訂單編號"]].value == sh["order_no"]]
+        check("有缺貨的那列整列黃底，沒缺貨的不塗", any((q or 0) > 0 for q, _f in fills) and all(f.endswith("FFF2A8") == bool(q) for q, f in fills)
+              and int(r.headers.get("X-Shopee-Short", 0)) == sum(1 for q, _f in fills if q), str(fills))
+    else:
+        check("（這份測試資料裡要有一張有缺貨的單）", False)
 
 
 if __name__ == "__main__":

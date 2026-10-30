@@ -8,7 +8,7 @@
   內容完全一樣只記上傳紀錄、不跳警示。同一張 PR 重傳時少掉的品項算「品項移除」（數量改 0、留紀錄）。
 - 履約方式匯入時人選一次（同一個檔的新單都套用），之後可以整張改，要寫原因、留紀錄。
 """
-from .common import group_meta, ships, upload_cond  # noqa: F401
+from .common import group_meta, not_deleted, ships, upload_cond  # noqa: F401
 from .common import (
     FULFILS, LINES, ST_DIFF, ST_IMPORTED, SYSTEM, _log, _operator, _row, _rows, base64, current_app, get_conn, io, json,
     jsonify, now, render_template, request, send_file, shopee_bp, wh_name,
@@ -353,6 +353,8 @@ def _order_filter(args):
             where.append(f"{k} = ?"); params.append(args.get(k))
     if args.get("pending") in ("1", "true"):
         where.append("diff_pending = 1")
+    if args.get("deleted") != "1":                       # 刪掉的單平常不列；deleted=1（全部訂單「顯示已刪除」、打開刪掉的那張）才一起列
+        where.append(not_deleted())
     q = str(args.get("q") or "").strip()
     if q:
         where.append("(pr_id LIKE ? OR po_id LIKE ? OR inbound_ids LIKE ? OR shopee_sku_id LIKE ? OR supplier_sku_id LIKE ? OR sku_name LIKE ?)")
@@ -377,6 +379,11 @@ def overview(conn, args):
     ship_st = ship_status_map(conn, [i["id"] for i in items if not i["removed"]])
     from .short import notify_status_map           # 缺貨維護：下修後的可出貨量、通知狀態
     short_st = notify_status_map(conn, [i["id"] for i in items if not i["removed"]])
+    trash = {}                                     # 刪掉的單（只有 deleted=1 才會被撈出來）：PR、PO 都可以對
+    for r in _rows(conn.execute("SELECT * FROM shp_deleted")):
+        for k in (r["pr_id"], r["po_id"], r["order_no"]):
+            if k:
+                trash[k] = {"order_no": r["order_no"], "reason": r["reason"], "deleted_by": r["deleted_by"], "deleted_at": r["deleted_at"]}
     groups = {}
     for it in items:
         no = order_no(it)
@@ -428,6 +435,9 @@ def overview(conn, args):
                 "ship": any(ships(i) and (i["qty"] or 0) > 0 and i["id"] not in ship_st for i in alive),     # 竹運採購進貨入庫單到了也算（2026-10-22）
                 "eip": any(po_st.get(i["id"]) == "已產出" for i in buy),
                 "notify": pend}
+        g["trash"] = trash.get(g["po_id"] or "") or trash.get(g["pr_id"] or "")
+        if g["trash"]:                                 # 刪掉的單沒有待辦
+            todo = dict.fromkeys(todo, False)
         g["todo"] = [k for k, _l, _a in STAGES if todo[k]]
         g["next"] = next((a for k, _l, a in STAGES if todo[k]), "")
         out.append(g)
@@ -445,14 +455,18 @@ def api_orders():
         # 篩選條件下沒有訂單時，畫面要說清楚是「還沒匯入」還是「被到貨日篩掉了」（Jerry 2026-10-13：「甚麼都沒有」）
         every = conn.execute("SELECT COUNT(DISTINCT CASE WHEN po_id != '' THEN po_id ELSE pr_id END) AS n, MIN(expected_date) AS d1, "
                              "MAX(expected_date) AS d2 FROM shp_orders").fetchone()
+        deleted_n = conn.execute("SELECT COUNT(*) AS n FROM shp_deleted").fetchone()["n"]
     finally:
         conn.close()
-    stages = [{"key": k, "label": lab, "count": sum(1 for g in out if k in g["todo"])} for k, lab, _a in STAGES]
-    stages.append({"key": "done", "label": "已處理", "count": sum(1 for g in out if not g["todo"])})
+    trashed = [g for g in out if g["trash"]]
+    out_live = [g for g in out if not g["trash"]]
+    stages = [{"key": k, "label": lab, "count": sum(1 for g in out_live if k in g["todo"])} for k, lab, _a in STAGES]
+    stages.append({"key": "done", "label": "已處理", "count": sum(1 for g in out_live if not g["todo"])})
     return jsonify({"orders": out, "pending_orders": pending_all, "stages": stages,
                     "all_orders": {"count": every["n"] or 0, "first": every["d1"] or "", "last": every["d2"] or ""},
-                    "summary": {"orders": len(out), "items": sum(g["item_count"] for g in out), "qty": sum(g["qty"] for g in out),
-                                "pending": sum(1 for g in out if g["diff_pending"])}})
+                    "deleted_count": deleted_n, "deleted_shown": len(trashed),
+                    "summary": {"orders": len(out_live), "items": sum(g["item_count"] for g in out_live), "qty": sum(g["qty"] for g in out_live),
+                                "pending": sum(1 for g in out_live if g["diff_pending"])}})
 
 
 def _group_ids(conn, order_no_):
@@ -608,7 +622,7 @@ def portal_summary(conn, today_iso):
     return {
         "daily_new": daily,
         "new_today": one(f"SELECT COUNT(DISTINCT {no}) AS n FROM shp_orders WHERE created_at >= ?", (today_iso,)),
-        "pending_pos": one(f"SELECT COUNT(DISTINCT {no}) AS n FROM shp_orders WHERE expected_date >= ? AND removed = 0", (today_iso,)),
+        "pending_pos": one(f"SELECT COUNT(DISTINCT {no}) AS n FROM shp_orders WHERE expected_date >= ? AND removed = 0 AND {not_deleted()}", (today_iso,)),
         "diff_pos": one(f"SELECT COUNT(DISTINCT {no}) AS n FROM shp_orders WHERE diff_pending = 1"),
         "last_import": one("SELECT MAX(committed_at) AS m FROM shp_uploads WHERE status = 'ok'") or "",
     }

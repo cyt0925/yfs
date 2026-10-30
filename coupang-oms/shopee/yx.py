@@ -88,7 +88,7 @@ def compare(conn, pages, skip_eips=()):
     if ids:
         marks = ",".join("?" * len(ids))
         for r in _rows(conn.execute(f"SELECT i.eip_id, o.* FROM shp_eip_items i JOIN shp_orders o ON o.id = i.order_id "
-                                    f"WHERE i.eip_id IN ({marks}) AND o.removed = 0 ORDER BY o.id", ids)):
+                                    f"WHERE i.eip_id IN ({marks}) AND o.removed = 0 AND {not_deleted('o.')} ORDER BY o.id", ids)):
             links[r["eip_id"]].append(r)
     oids = [o["id"] for v in links.values() for o in v]
     adj = _adj_map(conn, oids)

@@ -49,6 +49,9 @@
   .sum { display:flex; flex-wrap:wrap; gap:8px 22px; align-items:baseline; } .sum span { white-space:nowrap; } .sum b { font-size:18px; color:var(--s9); margin-right:3px; }
   table.t tr.og.blk td:first-child { box-shadow:inset 4px 0 0 var(--bad); }
   table.t tr.og.lock td { color:var(--muted); }
+  table.t tr.og.del td { color:#9a918b; background:#faf8f7; } table.t tr.og.del td .fn { text-decoration:line-through; }   /* 刪掉的單（顯示已刪除才列） */
+  .b-del { background:#ececec; color:#555; }
+  .btn-d { background:#fff; color:var(--bad); border:1px solid #f2b8b8; } .btn-d:hover:not(:disabled) { background:var(--badbg); } .btn-d:disabled { opacity:.5; cursor:not-allowed; }
   .ck { width:16px; height:16px; accent-color:var(--s8); cursor:pointer; vertical-align:middle; } .ck:disabled { cursor:not-allowed; }
   .prob { color:var(--bad); font-size:12px; } .prob + .prob { margin-top:2px; }
   .lst { display:flex; flex-wrap:wrap; gap:10px; }
@@ -345,6 +348,15 @@
 <dialog id="dlg-ff" style="width:min(620px,96vw)"><div class="dh"><i class="bi bi-arrow-left-right"></i><span id="df-title">改履約方式</span><button class="x" data-close="dlg-ff" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3"><div id="df-body"></div>
     <div class="flex items-center gap-2 justify-end"><button id="df-no" class="btn btn-o">先不要</button><button id="df-ok" class="btn btn-p"><i class="bi bi-check2"></i> 確定改</button></div>
+  </div></dialog>
+<dialog id="dlg-del" style="width:min(540px,96vw)"><div class="dh"><i class="bi bi-trash3" style="color:var(--bad)"></i><span id="dl-title">刪除訂單</span><button class="x" data-close="dlg-del" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
+  <div class="db space-y-3">
+    <div id="dl-facts" style="font-weight:600"></div>
+    <div class="kbd">刪除後不會出現在清單，不會產 EIP 和拋單檔，也不會通知；之後再上傳蝦皮檔，這張單也不會跑回來。按錯可以在「全部訂單」點「顯示已刪除」還原。</div>
+    <div class="flex items-center gap-2 flex-wrap"><b>原因</b><span id="dl-chips" class="flex gap-2 flex-wrap"></span></div>
+    <input id="dl-reason" class="inp" style="width:100%" placeholder="刪除原因（必填）">
+    <div class="flex items-center gap-2 justify-end"><button class="btn btn-o" data-close="dlg-del">取消</button>
+      <button id="dl-go" class="btn" style="background:var(--bad);color:#fff"><i class="bi bi-trash3"></i> 刪除</button></div>
   </div></dialog>
 <dialog id="dlg-adj" style="width:min(580px,96vw)"><div class="dh"><i class="bi bi-calculator"></i><span id="da-title">修改下採數量</span><button class="x" data-close="dlg-adj" aria-label="關閉"><i class="bi bi-x-lg"></i></button></div>
   <div class="db space-y-3">

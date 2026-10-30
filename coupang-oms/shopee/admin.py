@@ -12,7 +12,7 @@ from master.common import _is_admin
 from .common import *  # noqa: F401,F403
 
 # 訂單資料：子表先刪
-ORDER_TABLES = ("shp_notify", "shp_short", "shp_dispatch_items", "shp_dispatch", "shp_ship", "shp_eip_items", "shp_eip",
+ORDER_TABLES = ("shp_deleted", "shp_notify", "shp_short", "shp_dispatch_items", "shp_dispatch", "shp_ship", "shp_eip_items", "shp_eip",
                 "shp_qty_adj", "shp_diffs", "shp_order_versions", "shp_orders", "shp_uploads")
 REF_TABLES = ("shp_conv", "shp_stock")
 
